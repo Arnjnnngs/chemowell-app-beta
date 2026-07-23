@@ -1211,6 +1211,7 @@ function fmtInpatientPeriod(p) {
 // --------- Render ---------
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
+  let deferredValue; // <select> needs value applied AFTER its options exist; attribute alone never selects an option
   if (attrs) {
     for (const [k, v] of Object.entries(attrs)) {
       if (k === 'style' && typeof v === 'object') {
@@ -1221,6 +1222,9 @@ function h(tag, attrs, ...children) {
         el.innerHTML = v;
       } else if (k === 'className') {
         el.className = v;
+      } else if (k === 'value') {
+        el.setAttribute('value', v);
+        deferredValue = v;
       } else {
         el.setAttribute(k, v);
       }
@@ -1230,6 +1234,7 @@ function h(tag, attrs, ...children) {
     if (child == null || child === false) continue;
     el.appendChild(typeof child === 'string' || typeof child === 'number' ? document.createTextNode(String(child)) : child);
   }
+  if (deferredValue !== undefined) { try { el.value = deferredValue; } catch (e) {} }
   return el;
 }
 
