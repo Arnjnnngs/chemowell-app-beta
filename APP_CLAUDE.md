@@ -1,4 +1,4 @@
-# APP_CLAUDE.md — chemowell-app (APP-BETA)
+# APP_CLAUDE.md — chemowell-app-beta (APP-BETA)
 
 Instructions for any AI agent working in this repo.
 

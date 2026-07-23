@@ -4,7 +4,7 @@ Private medication & symptom tracker for chemo patients and caregivers. **All da
 
 This is the native-app codebase (APP-BETA in the 4-target system). It was seeded from `chemowell-beta` (WEB-BETA) at v71 and differs in one fundamental way: Firebase/Firestore is fully removed and replaced with an on-device storage layer (`localStorage`), plus a first-run setup flow. It will be wrapped with Capacitor for Play Store / App Store distribution.
 
-- Live test build: https://arnjnnngs.github.io/chemowell-app/
+- Live test build: https://arnjnnngs.github.io/chemowell-app-beta/
 - Sibling repos: `care-tracker` (WEB-MAIN, Brandi's live app) · `chemowell-beta` (WEB-BETA, staging for WEB-MAIN)
 
 ## Version history
