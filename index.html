@@ -218,7 +218,9 @@ function normalizeArchivedMeds(raw) {
 }
 
 function defaultMedicationConfig() {
-  return { meds: deepCopyMeds(DEFAULT_MEDS).map(normalizeMedication), archivedMeds: {} };
+  // APP: fresh installs start with an empty list — the first-run guide walks the user
+  // through building their own. DEFAULT_MEDS is retained only for legacy migrations.
+  return { meds: [], archivedMeds: {} };
 }
 
 // v37 one-shot migration: Senokot became plain as-needed with 1- or 2-pill options.
@@ -238,11 +240,8 @@ function migrateSenokotV37(med) {
 // appended, in DEFAULT_MEDS order at the end; existing customizations for meds already present are
 // left untouched.
 function mergeMissingDefaultMeds(meds, archivedMeds) {
-  const known = new Set(meds.map(m => m.id));
-  const archivedIds = new Set(Object.keys(archivedMeds || {}));
-  const missing = DEFAULT_MEDS.filter(m => !known.has(m.id) && !archivedIds.has(m.id));
-  if (!missing.length) return meds;
-  return meds.concat(deepCopyMeds(missing).map(normalizeMedication));
+  // APP: no auto-seeding of defaults — the user's list is entirely their own.
+  return meds;
 }
 
 function loadMedicationConfig() {
@@ -274,7 +273,7 @@ const CONFIG = { patientName: '', ceilingMg: 2500, tempUnit: 'Fahrenheit' };
 
 // State
 const initialMedicationConfig = loadMedicationConfig();
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: 'home', reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: 'home', reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -1164,6 +1163,7 @@ function navigateTo(view) {
   const next = { view, reportsView: view === 'reports' ? null : state.reportsView, medEditor: view === 'meds' ? state.medEditor : null, confirmDeleteMed: null };
   setState(next);
   window.scrollTo(0, 0);
+  tourEvent('view:' + view);
 }
 
 function openReport(report) {
@@ -1230,7 +1230,8 @@ function renderHeader(now) {
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', color: '#AA5375', marginBottom: '4px' } },
           appIcon('heart', 18),
           h('span', { style: { fontSize: '14px', fontWeight: '800', letterSpacing: '-0.01em' } }, 'ChemoWell'),
-          TEST_MODE ? h('span', { style: { color: '#fff', background: '#C77800', border: '1px solid #A86400', borderRadius: '99px', padding: '4px 11px', fontSize: '11.5px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', boxShadow: '0 2px 6px rgba(199,120,0,0.4)' } }, 'APP BETA') : null
+          TEST_MODE ? h('span', { style: { color: '#fff', background: '#C77800', border: '1px solid #A86400', borderRadius: '99px', padding: '4px 11px', fontSize: '11.5px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', boxShadow: '0 2px 6px rgba(199,120,0,0.4)' } }, 'APP BETA') : null,
+          h('button', { onClick: startTour, 'aria-label': 'Open the how-to guide', title: 'How-to guide', style: { width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(170,83,117,0.12)', color: '#AA5375', border: '1.5px solid rgba(170,83,117,0.35)', fontSize: '14px', fontWeight: '800', cursor: 'pointer' } }, '?')
         ),
         h('div', { style: { fontSize: '22px', fontWeight: '800', letterSpacing: '-0.035em', color: '#342530', lineHeight: '1.05' } }, title),
         h('div', { style: { fontSize: '12px', color: '#6E5261', marginTop: '4px', fontWeight: '600' } }, dateLabel)
@@ -1272,7 +1273,7 @@ function renderBottomNav() {
     h('div', { style: { maxWidth: '720px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '4px' } },
       ...items.map(item => {
         const active = state.view === item.key;
-        return h('button', { onClick: () => navigateTo(item.key), 'aria-label': item.label, 'aria-current': active ? 'page' : 'false', style: { minHeight: '54px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', borderRadius: '14px', color: active ? '#AA5375' : '#705B66', background: active ? 'rgba(170,83,117,0.13)' : 'transparent', fontSize: '10.5px', fontWeight: active ? '800' : '700', transition: 'background .18s ease, color .18s ease' } },
+        return h('button', { onClick: () => navigateTo(item.key), 'data-tour': 'nav-' + item.key, 'aria-label': item.label, 'aria-current': active ? 'page' : 'false', style: { minHeight: '54px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', borderRadius: '14px', color: active ? '#AA5375' : '#705B66', background: active ? 'rgba(170,83,117,0.13)' : 'transparent', fontSize: '10.5px', fontWeight: active ? '800' : '700', transition: 'background .18s ease, color .18s ease' } },
           appIcon(item.icon, 21),
           h('span', null, item.label)
         );
@@ -1346,6 +1347,7 @@ function completeSetup() {
   if (!name) { setToast('Enter the patient\u2019s name to get started'); return; }
   setPrefsDB({ patientName: name });
   setToast('Welcome to ChemoWell');
+  if (!getPrefsDB().tourDone) setState({ tourStep: 0 });
 }
 function renderSetup() {
   const root = document.getElementById('root');
@@ -1367,10 +1369,86 @@ function renderSetup() {
         onClick: completeSetup,
         style: { width: '100%', padding: '14px', fontSize: '16px', fontWeight: '800', color: '#FFFFFF', background: 'linear-gradient(135deg, #C9648E 0%, #AA5375 100%)', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 8px 22px rgba(170,83,117,0.35)' } }, 'Get started'),
       h('div', { style: { fontSize: '11.5px', color: '#B295AA', marginTop: '16px', lineHeight: '1.5' } },
-        'You can add or edit medications any time on the Meds tab. A ready-made chemo starter list is included.')
+        'After this, a short interactive guide will walk you through adding your medications and using the app.')
     )
   );
   root.replaceChildren(page);
+}
+
+
+// ---------- Interactive first-run walkthrough (coach marks) ----------
+// A step either waits for a real user action (advanceOn matches a tourEvent fired from the app's
+// own handlers) or shows a Next button. Highlighting/positioning happens after every render in
+// positionTour(), since render() rebuilds the whole DOM each pass.
+const TOUR_STEPS = [
+  { target: null, title: 'Welcome — let\u2019s set up together', text: 'ChemoWell works best once your medications are in. This quick guide walks you through adding your first medication and shows you where everything lives. It takes about two minutes.', next: 'Show me' },
+  { target: 'nav-meds', title: 'The Meds tab', text: 'This is where you add and manage every medication — names, doses, schedules, and daily limits.', advanceOn: 'view:meds', wait: 'Tap Meds at the bottom to continue' },
+  { target: 'meds-add', title: 'Add your first medication', text: 'Tap the Add button to create your first medication.', advanceOn: 'medEditor:open', wait: 'Tap Add to continue' },
+  { target: 'med-editor', title: 'Fill in the details', text: 'Give it a name, then choose how it\u2019s taken. "As needed" uses a gap timer between doses (like Tylenol every 4 hours). "Scheduled" uses set time windows (like 8 AM every morning). You can also add dose buttons and a daily safety limit. Tap Add medication at the bottom when you\u2019re done.', advanceOn: 'med:saved', wait: 'Save the medication to continue' },
+  { target: 'nav-home', title: 'Nice work!', text: 'Your first medication is in — add the rest the same way any time. Now tap Home to see your daily view.', advanceOn: 'view:home', wait: 'Tap Home to continue' },
+  { target: 'quick-log', title: 'Logging doses', text: 'Every medication gets a card here. When a dose is given, tap its button to log it — ChemoWell tracks timing, gaps between doses, and daily limits, and flags anything missed.', next: 'Next' },
+  { target: 'nav-reports', title: 'Reports', text: 'The full history lives here — every dose, weight, temperature, and symptom, organized day by day.', next: 'Next' },
+  { target: 'nav-inpatient', title: 'In-Patient stays', text: 'Track hospital stays here. While a stay is active, home medication logging pauses, since the hospital handles meds.', next: 'Next' },
+  { target: 'nav-symptoms', title: 'Symptoms', text: 'Log symptoms like nausea, pain, or fever so you have a clear record to share with the care team.', next: 'Next' },
+  { target: null, title: 'You\u2019re ready!', text: 'That\u2019s the basics. You can re-run this guide any time by tapping the ? button at the top of the screen.', next: 'Finish' }
+];
+function startTour() { setState({ tourStep: 0 }); }
+function endTour() { setPrefsDB({ tourDone: true }); setState({ tourStep: null }); tourClearHighlight(); }
+function advanceTour() {
+  const n = (state.tourStep == null ? -1 : state.tourStep) + 1;
+  if (n >= TOUR_STEPS.length) { endTour(); } else { setState({ tourStep: n }); }
+}
+function tourEvent(name) {
+  if (state.tourStep == null) return;
+  const step = TOUR_STEPS[state.tourStep];
+  if (step && step.advanceOn === name) advanceTour();
+}
+function tourClearHighlight() {
+  if (window.__tourHighlighted) {
+    try { window.__tourHighlighted.style.outline = ''; window.__tourHighlighted.style.outlineOffset = ''; } catch (e) {}
+    window.__tourHighlighted = null;
+  }
+}
+function renderTourLayer() {
+  if (state.tourStep == null) return null;
+  const step = TOUR_STEPS[state.tourStep];
+  return h('div', { id: 'tour-layer', style: { position: 'fixed', inset: '0', zIndex: '80', pointerEvents: 'none' } },
+    h('div', { id: 'tour-card', style: { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 'min(88vw, 330px)', background: '#FFFFFF', borderRadius: '18px', padding: '18px', boxShadow: '0 18px 50px rgba(80,30,55,0.35)', pointerEvents: 'auto', border: '2px solid rgba(170,83,117,0.4)' } },
+      h('div', { style: { fontSize: '10.5px', fontWeight: '800', color: '#B295AA', letterSpacing: '0.07em', marginBottom: '6px' } }, 'GUIDE \u00b7 STEP ' + (state.tourStep + 1) + ' OF ' + TOUR_STEPS.length),
+      h('div', { style: { fontSize: '17px', fontWeight: '800', color: '#AA5375', letterSpacing: '-0.01em', marginBottom: '6px' } }, step.title),
+      h('div', { style: { fontSize: '13.5px', color: '#5A4552', lineHeight: '1.55' } }, step.text),
+      step.wait ? h('div', { style: { marginTop: '10px', fontSize: '12.5px', fontWeight: '800', color: '#C9648E' } }, '\ud83d\udc46 ' + step.wait) : null,
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px' } },
+        h('button', { onClick: endTour, style: { fontSize: '12.5px', fontWeight: '700', color: '#96808D', background: 'transparent', padding: '8px 8px 8px 0', cursor: 'pointer' } }, 'Skip guide'),
+        step.next ? h('button', { onClick: advanceTour, style: { minHeight: '40px', padding: '0 20px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '800', cursor: 'pointer', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, step.next) : null
+      )
+    )
+  );
+}
+let tourLastPositionedStep = null;
+function positionTour() {
+  tourClearHighlight();
+  if (state.tourStep == null) { tourLastPositionedStep = null; return; }
+  const step = TOUR_STEPS[state.tourStep];
+  const card = document.getElementById('tour-card');
+  if (!card) return;
+  const isNewStep = tourLastPositionedStep !== state.tourStep;
+  tourLastPositionedStep = state.tourStep;
+  if (!step.target) return; // centered
+  const el = document.querySelector('[data-tour="' + step.target + '"]');
+  if (!el) return; // target missing -> stay centered
+  el.style.outline = '3px solid #E0679A';
+  el.style.outlineOffset = '3px';
+  window.__tourHighlighted = el;
+  if (isNewStep) { try { el.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (e) {} }
+  const r = el.getBoundingClientRect();
+  const cardH = card.offsetHeight || 200;
+  const margin = 14;
+  let top;
+  if (r.top > cardH + margin + 8) top = r.top - cardH - margin;
+  else top = Math.min(window.innerHeight - cardH - 8, r.bottom + margin);
+  card.style.top = Math.max(8, top) + 'px';
+  card.style.transform = 'translateX(-50%)';
 }
 
 function render() {
@@ -1405,8 +1483,11 @@ function render() {
       )
     ) : null
   );
+  const tourLayer = renderTourLayer();
+  if (tourLayer) page.appendChild(tourLayer);
   root.innerHTML = '';
   root.appendChild(page);
+  positionTour();
 }
 
 // Short "Mon, Jul 20" label for a collapsed date-picker pill button (v70).
@@ -2098,7 +2179,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   const quickLogOpen = state.quickLogOpen !== false; // default open
   parts.push(h('section', null,
     h('div', { onClick: () => setState({ quickLogOpen: !quickLogOpen }), style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' } },
-      h('div', { style: { fontSize: '13px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A6479' } }, 'Quick log' + (quickLogOpen ? '' : ' (' + medCards.length + ')')),
+      h('div', { 'data-tour': 'quick-log', style: { fontSize: '13px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A6479' } }, 'Quick log' + (quickLogOpen ? '' : ' (' + medCards.length + ')')),
       h('span', { style: { fontSize: '10px', color: '#8A6479' } }, quickLogOpen ? '▲' : '▼')
     ),
     quickLogOpen ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: '8px', marginTop: '8px' } }, ...medCards) : null
@@ -2250,6 +2331,7 @@ function nextMedicationId(name, existingId) {
 
 function openMedicationEditor(med) {
   setState({ medEditor: { mode: med ? 'edit' : 'add', sourceId: med ? med.id : null, form: medicationFormFrom(med) }, confirmDeleteMed: null });
+  tourEvent('medEditor:open');
   window.scrollTo(0, 0);
 }
 
@@ -2292,6 +2374,7 @@ function saveMedicationEditor() {
   persistMedicationConfig(meds, state.archivedMeds);
   setState({ meds, medEditor: null, confirmDeleteMed: null });
   setToast(saved.name + (editor.mode === 'add' ? ' added to medication management.' : ' updated.'));
+  tourEvent('med:saved');
 }
 
 // Meds that render as their own standalone Quick Log card on Home (not folded into the Morning
@@ -2363,7 +2446,7 @@ function renderMedicationEditor() {
   const form = state.medEditor.form;
   const scheduled = form.type === 'win';
   const title = state.medEditor.mode === 'add' ? 'Add medication' : 'Edit medication';
-  return h('section', { style: { background: 'rgba(255,252,253,0.78)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(170,83,117,0.28)', borderRadius: '20px', padding: '16px', boxShadow: '0 10px 34px rgba(121,72,96,0.12), inset 0 1px 0 rgba(255,255,255,0.82)' } },
+  return h('section', { 'data-tour': 'med-editor', style: { background: 'rgba(255,252,253,0.78)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(170,83,117,0.28)', borderRadius: '20px', padding: '16px', boxShadow: '0 10px 34px rgba(121,72,96,0.12), inset 0 1px 0 rgba(255,255,255,0.82)' } },
     h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px' } },
       h('div', null,
         h('div', { style: { fontSize: '18px', fontWeight: '800', color: '#342530', letterSpacing: '-0.02em' } }, title),
@@ -2462,7 +2545,7 @@ function renderMedicationManager(now) {
         h('h1', { style: { fontSize: '24px', lineHeight: '1.05', color: '#342530', letterSpacing: '-0.035em', marginTop: '5px' } }, 'Meds'),
         h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px', maxWidth: '470px', lineHeight: '1.4' } }, 'Review, add, edit, or remove the active medication list. Configuration is stored on this device; dose history and live sync stay intact.')
       ),
-      h('button', { onClick: () => openMedicationEditor(null), style: { flexShrink: '0', minHeight: '40px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: '5px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '12.5px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, appIcon('plus', 16), 'Add')
+      h('button', { onClick: () => openMedicationEditor(null), 'data-tour': 'meds-add', style: { flexShrink: '0', minHeight: '40px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: '5px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '12.5px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, appIcon('plus', 16), 'Add')
     ),
     renderMedicationEditor(),
     homeOrderSection,
@@ -3128,6 +3211,7 @@ setInterval(() => {
   if (!state.timeModal && !isEditing) render();
   checkNotifications();
 }, 1000);
+if (!getPrefsDB().tourDone && (getPrefsDB().patientName || '').trim()) { state.tourStep = 0; }
 render();
 
 // Service worker registration
