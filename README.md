@@ -11,4 +11,5 @@ This is the native-app codebase (APP-BETA in the 4-target system). It was seeded
 
 | Version | Date | Changes |
 |---|---|---|
+| app-v2 | 2026-07-23 | Fresh-install fix: missed-dose tracking now starts at `installedAt` (stamped into prefs on first run) instead of a hardcoded past date — a new install no longer shows dozens of phantom "missed doses from previous days". |
 | app-v1 | 2026-07-23 | Seeded from chemowell-beta v71. Firebase/Firestore/FCM fully removed → on-device storage layer (entries + prefs in localStorage, same function names: subscribeEntries/addEntryDB/removeEntryDB/subscribePrefs/setPrefsDB). First-run welcome screen asks patient name (stored in prefs; no hardcoded Brandi). "Live sync" indicator → "On device". APP BETA badge/banner. SW cache chemowell-app-v1. Storage layer QA: 10/10 Node harness checks. |

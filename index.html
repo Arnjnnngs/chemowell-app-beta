@@ -420,7 +420,10 @@ function dexActiveOn(dayTs) { const o = chemoOffsetFor(dayTs); return o !== null
 function zofranBlockedOn(dayTs) { const o = chemoOffsetFor(dayTs); return o !== null && o >= 0 && o <= 2; }
 function dexWindowsForOffset(offset) { return offset === 1 ? [{ start: 8, end: 12, name: 'Morning' }] : [{ start: 8, end: 12, name: 'Morning' }, { start: 14, end: 18, name: 'Afternoon' }]; }
 
-const MISSED_TRACK_SINCE = new Date(2026, 6, 12).getTime(); // Jul 12, 2026 — no retroactive flags before this
+// Missed-dose tracking starts the day the app was first opened on this device — a fresh
+// install must never flag "missed" doses for days before the app existed. installedAt is
+// stamped into prefs on first run (see storage init below).
+let MISSED_TRACK_SINCE = Date.now();
 function missedDosesFor(dayTs, now) {
   const d0 = dayStart(dayTs);
   if (d0 < dayStart(MISSED_TRACK_SINCE)) return [];
@@ -3097,7 +3100,9 @@ function checkNotifications() {
 subscribePush();
 
 // Init
+if (!getPrefsDB().installedAt) { setPrefsDB({ installedAt: Date.now() }); }
 unsubPrefs = subscribePrefs((prefs) => {
+  if (prefs.installedAt) MISSED_TRACK_SINCE = prefs.installedAt;
   CONFIG.patientName = (prefs.patientName || '').trim();
   setState({ missedClearedAt: prefs.missedClearedAt || 0, dismissedMisses: prefs.dismissedMisses || [], patientName: CONFIG.patientName, prefsLoaded: true });
 });
