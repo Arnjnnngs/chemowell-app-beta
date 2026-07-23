@@ -126,6 +126,18 @@ async function clearMissedDoses() {
   }
 }
 
+// Full local wipe: profile, medication list, and every logged entry. Since everything lives on
+// this device only, this is the app's "start completely over" — after the reload the first-run
+// welcome + guide appear again, exactly like a brand-new install.
+function eraseAllAppData() {
+  try {
+    localStorage.removeItem(ENTRIES_KEY);
+    localStorage.removeItem(PREFS_KEY);
+    localStorage.removeItem(MED_CONFIG_STORAGE_KEY);
+  } catch (e) {}
+  location.reload();
+}
+
 // ---------- React via htm + preact-like approach using vanilla ----------
 // Using a minimal reactive approach with vanilla JS for zero build step
 
@@ -273,7 +285,7 @@ const CONFIG = { patientName: '', ceilingMg: 2500, tempUnit: 'Fahrenheit' };
 
 // State
 const initialMedicationConfig = loadMedicationConfig();
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: 'home', reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: 'home', reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -2549,7 +2561,16 @@ function renderMedicationManager(now) {
     ),
     renderMedicationEditor(),
     homeOrderSection,
-    h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards)
+    h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),
+    h('section', { style: { marginTop: '14px', background: 'rgba(192,69,59,0.05)', border: '1.5px solid rgba(192,69,59,0.22)', borderRadius: '17px', padding: '14px' } },
+      h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#A5443C' } }, 'Start over'),
+      h('div', { style: { fontSize: '12.5px', color: '#7A5450', marginTop: '5px', lineHeight: '1.45' } }, 'Erase everything stored on this device — patient name, medication list, and all logged history — and return to the welcome screen. Nothing is stored anywhere else, so this cannot be undone.'),
+      state.confirmEraseAll ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '12px', flexWrap: 'wrap' } },
+        h('span', { style: { flex: '1', minWidth: '160px', fontSize: '12.5px', fontWeight: '800', color: '#A5443C' } }, 'Erase everything? This is permanent.'),
+        h('button', { onClick: () => setState({ confirmEraseAll: false }), style: { minHeight: '40px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1px solid rgba(125,105,116,0.25)', color: '#5F4A56', fontSize: '13px', fontWeight: '800' } }, 'Cancel'),
+        h('button', { onClick: eraseAllAppData, style: { minHeight: '40px', padding: '0 14px', borderRadius: '11px', background: '#C0453B', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(140,40,32,0.4)' } }, 'Yes, erase everything')
+      ) : h('button', { onClick: () => setState({ confirmEraseAll: true }), style: { marginTop: '11px', minHeight: '40px', padding: '0 15px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1.5px solid rgba(192,69,59,0.45)', color: '#A5443C', fontSize: '13px', fontWeight: '800' } }, 'Erase all data\u2026')
+    )
   ];
 }
 
