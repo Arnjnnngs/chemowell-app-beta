@@ -32,15 +32,65 @@ input:focus{outline:2px solid #AA5375;outline-offset:0;border-color:#AA5375;}
 
 // ---------- On-device storage — no cloud, no accounts ----------
 // All data lives in this device's localStorage. Nothing is ever sent to a server.
-const TEST_MODE = true; // APP BETA — enables the date-override controls for testing
-const ENTRIES_KEY = 'chemowell-app-entries-v1';
-const PREFS_KEY = 'chemowell-app-prefs-v1';
+const TEST_MODE = true; // APP BETA — enables the date-override controls + simulated purchases
 
 function loadJSON(key, fallback) {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
   catch (e) { return fallback; }
 }
 function saveJSON(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
+
+// ---- Plans & licensing (Free / Plus / Pro) — device-wide, not per profile ----
+const LICENSE_KEY = 'chemowell-app-license-v1';
+function getLicense() { return loadJSON(LICENSE_KEY, { tier: 'free' }); }
+function setLicense(patch) { saveJSON(LICENSE_KEY, { ...getLicense(), ...patch }); }
+function tierLimit(tier) { return tier === 'pro' ? Infinity : tier === 'plus' ? 3 : 1; }
+function tierLabel(tier) { return tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Plus' : 'Free'; }
+
+// ---- Profiles: each patient gets fully separate on-device storage ----
+const PROFILES_KEY = 'chemowell-app-profiles-v1';
+(function initProfiles() {
+  if (loadJSON(PROFILES_KEY, null)) return;
+  const ps = { list: [{ id: 'p1', name: '', createdAt: Date.now() }], activeId: 'p1' };
+  // One-time migration of pre-profile (app-v1..v4) single-profile data into profile p1.
+  const legacy = [
+    ['chemowell-app-entries-v1', 'chemowell-app-p-p1-entries-v1'],
+    ['chemowell-app-prefs-v1', 'chemowell-app-p-p1-prefs-v1'],
+    ['chemowell-app-medication-config-v1', 'chemowell-app-p-p1-med-v1']
+  ];
+  for (const [oldKey, newKey] of legacy) {
+    const v = localStorage.getItem(oldKey);
+    if (v != null) { localStorage.setItem(newKey, v); localStorage.removeItem(oldKey); }
+  }
+  const migratedPrefs = loadJSON('chemowell-app-p-p1-prefs-v1', {});
+  if (migratedPrefs.patientName) ps.list[0].name = migratedPrefs.patientName;
+  saveJSON(PROFILES_KEY, ps);
+})();
+function profilesState() { return loadJSON(PROFILES_KEY, { list: [{ id: 'p1', name: '', createdAt: 0 }], activeId: 'p1' }); }
+const ACTIVE_PROFILE_ID = (function () { const ps = profilesState(); return ps.list.some(p => p.id === ps.activeId) ? ps.activeId : ps.list[0].id; })();
+let newProfileNameDraft = '';
+function createProfile(name) {
+  const ps = profilesState();
+  if (ps.list.length >= tierLimit(getLicense().tier)) return false;
+  const id = 'p' + Date.now().toString(36);
+  ps.list.push({ id: id, name: name, createdAt: Date.now() });
+  ps.activeId = id;
+  // Seed the new profile so it opens ready to use (no welcome screen / guide rerun).
+  saveJSON('chemowell-app-p-' + id + '-prefs-v1', { patientName: name, installedAt: Date.now(), tourDone: true });
+  saveJSON(PROFILES_KEY, ps);
+  location.reload();
+  return true;
+}
+function switchProfile(id) {
+  const ps = profilesState();
+  if (!ps.list.some(p => p.id === id) || id === ps.activeId) return;
+  ps.activeId = id;
+  saveJSON(PROFILES_KEY, ps);
+  location.reload();
+}
+
+const ENTRIES_KEY = 'chemowell-app-p-' + ACTIVE_PROFILE_ID + '-entries-v1';
+const PREFS_KEY = 'chemowell-app-p-' + ACTIVE_PROFILE_ID + '-prefs-v1';
 
 let entriesListener = null;
 let prefsListener = null;
@@ -131,9 +181,12 @@ async function clearMissedDoses() {
 // welcome + guide appear again, exactly like a brand-new install.
 function eraseAllAppData() {
   try {
-    localStorage.removeItem(ENTRIES_KEY);
-    localStorage.removeItem(PREFS_KEY);
-    localStorage.removeItem(MED_CONFIG_STORAGE_KEY);
+    const doomed = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf('chemowell-app-') === 0) doomed.push(k);
+    }
+    doomed.forEach(k => localStorage.removeItem(k));
   } catch (e) {}
   location.reload();
 }
@@ -171,7 +224,7 @@ const DEFAULT_MEDS = [
 
 // Medication configuration is intentionally browser-local for the testing app.
 // Dose-entry history remains in on-device storage; configuration changes do not touch it.
-const MED_CONFIG_STORAGE_KEY = 'chemowell-app-medication-config-v1';
+const MED_CONFIG_STORAGE_KEY = 'chemowell-app-p-' + ACTIVE_PROFILE_ID + '-med-v1';
 const DEFAULT_QUICK_LOG_IDS = ['dexamethasone', 'tylenol', 'tylenol-liquid', 'zofran', 'morphine', 'lidocaine', 'protonix', 'senokot', 'imodium'];
 const DEFAULT_EVENING_IDS = ['iron', 'compazine'];
 const DEFAULT_MORNING_IDS = ['buspirone', 'paroxetine'];
@@ -285,7 +338,7 @@ const CONFIG = { patientName: '', ceilingMg: 2500, tempUnit: 'Fahrenheit' };
 
 // State
 const initialMedicationConfig = loadMedicationConfig();
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: 'home', reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: 'home', reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -1358,6 +1411,9 @@ function completeSetup() {
   const name = setupNameDraft.trim();
   if (!name) { setToast('Enter the patient\u2019s name to get started'); return; }
   setPrefsDB({ patientName: name });
+  const ps = profilesState();
+  const ap = ps.list.find(p => p.id === ps.activeId);
+  if (ap) { ap.name = name; saveJSON(PROFILES_KEY, ps); }
   setToast('Welcome to ChemoWell');
   if (!getPrefsDB().tourDone) setState({ tourStep: 0 });
 }
@@ -1387,6 +1443,42 @@ function renderSetup() {
   root.replaceChildren(page);
 }
 
+
+
+// ---------- Plans / upgrade modal (beta: simulated purchases) ----------
+function renderUpgradeModal() {
+  if (!state.upgradeOpen) return null;
+  const lic = getLicense();
+  const planCard = (tier, title, price, features, accent) => {
+    const current = lic.tier === tier;
+    return h('div', { style: { border: '2px solid ' + (current ? '#2E7D4F' : accent ? 'rgba(170,83,117,0.45)' : 'rgba(125,105,116,0.2)'), borderRadius: '16px', padding: '14px', background: '#fff' } },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px' } },
+        h('div', { style: { fontSize: '16px', fontWeight: '800', color: '#342530' } }, title),
+        h('div', { style: { fontSize: '14px', fontWeight: '800', color: '#8E3D61' } }, price)
+      ),
+      h('ul', { style: { margin: '8px 0 0', padding: '0 0 0 18px', color: '#5A4552', fontSize: '12.5px', lineHeight: '1.6' } }, ...features.map(f => h('li', null, f))),
+      current
+        ? h('div', { style: { marginTop: '10px', fontSize: '12.5px', fontWeight: '800', color: '#2E7D4F' } }, '\u2713 Current plan')
+        : (tier === 'free' ? null : h('button', { onClick: () => { setLicense({ tier: tier, simulated: true, purchasedAt: Date.now() }); setToast(title + ' unlocked (simulated for beta)'); setState({}); }, style: { marginTop: '10px', width: '100%', minHeight: '42px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, TEST_MODE ? 'Simulate purchase (beta)' : 'Buy'))
+    );
+  };
+  return h('div', { style: { position: 'fixed', inset: '0', zIndex: '70', background: 'rgba(50,25,40,0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' } },
+    h('div', { style: { width: 'min(94vw, 440px)', maxHeight: '92vh', overflowY: 'auto', background: '#FFF7FA', borderRadius: '20px', padding: '18px', boxShadow: '0 20px 60px rgba(60,25,45,0.4)' } },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
+        h('div', { style: { fontSize: '19px', fontWeight: '800', color: '#AA5375', letterSpacing: '-0.01em' } }, 'ChemoWell plans'),
+        h('button', { onClick: () => setState({ upgradeOpen: false }), 'aria-label': 'Close plans', style: { width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(125,105,116,0.1)', color: '#5F4A56', fontSize: '15px', fontWeight: '800' } }, '\u2715')
+      ),
+      h('div', { style: { fontSize: '12.5px', color: '#6E5261', lineHeight: '1.5', marginBottom: '12px' } }, 'One-time purchases \u2014 no subscriptions. The free tracker is complete and stays free.'),
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
+        planCard('free', 'Free', '$0', ['1 patient profile', 'The complete tracker: meds, schedules, dose limits, missed doses, symptoms, reports', 'All safety features, always free']),
+        planCard('plus', 'Plus', '$4.99 one-time', ['Up to 3 patient profiles', 'PDF / CSV export for doctor visits (coming in beta)', 'Backup & transfer to a new phone (coming in beta)'], true),
+        planCard('pro', 'Pro', '$14.99 one-time', ['Unlimited patient profiles', 'Everything in Plus', 'Built for professional and multi-patient caregivers'], true)
+      ),
+      TEST_MODE ? h('button', { onClick: () => { setLicense({ tier: 'free', simulated: true }); setToast('License reset to Free (beta)'); setState({}); }, style: { marginTop: '12px', fontSize: '12px', fontWeight: '700', color: '#96808D', background: 'transparent', padding: '6px 0', cursor: 'pointer' } }, 'Reset to Free (beta testing)') : null,
+      h('div', { style: { marginTop: '10px', fontSize: '11px', color: '#B295AA', lineHeight: '1.5' } }, 'Beta build: purchases are simulated so upgrading can be tested end to end. The store version uses real App Store / Google Play purchases.')
+    )
+  );
+}
 
 // ---------- Interactive first-run walkthrough (coach marks) ----------
 // A step either waits for a real user action (advanceOn matches a tourEvent fired from the app's
@@ -1484,6 +1576,7 @@ function render() {
     // 340px)) so wrapped text still reads as a compact toast, not an edge-to-edge banner.
     state.toast ? h('div', { style: { position: 'fixed', bottom: 'calc(96px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(60,30,50,0.88)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(120,60,90,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word' } }, state.toast) : null,
     renderTimeModal(),
+    renderUpgradeModal(),
     (state.view === 'reports' && state.reportsView) ? h('div', { style: { position: 'fixed', zIndex: '34', left: '0', right: '0', bottom: 'calc(78px + env(safe-area-inset-bottom))', display: 'flex', justifyContent: 'center', pointerEvents: 'none' } },
       h('button', { onClick: () => setState({ reportsView: null }), style: { pointerEvents: 'auto', minHeight: '42px', padding: '0 18px', borderRadius: '99px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(60,30,50,0.88)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', fontSize: '13px', fontWeight: '800', boxShadow: '0 10px 28px rgba(120,60,90,0.22)' } }, '↩ Back')
     ) : null,
@@ -2562,6 +2655,29 @@ function renderMedicationManager(now) {
     renderMedicationEditor(),
     homeOrderSection,
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),
+    h('section', { style: { marginTop: '14px', background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(212,104,138,0.16)', borderRadius: '17px', padding: '14px' } },
+      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' } },
+        h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8E3D61' } }, 'Profiles'),
+        h('span', { style: { fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '99px', background: 'rgba(170,83,117,0.12)', color: '#8E3D61', border: '1px solid rgba(170,83,117,0.25)' } }, tierLabel(getLicense().tier) + ' plan')
+      ),
+      h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px', lineHeight: '1.45' } }, 'Each profile keeps its own medications and history, fully separate, on this device.'),
+      h('div', { style: { marginTop: '10px', borderRadius: '13px', overflow: 'hidden', border: '1px solid rgba(212,104,138,0.14)' } },
+        ...profilesState().list.map((p, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'rgba(255,255,255,0.6)', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.10)' : 'none' } },
+          h('span', { style: { flex: '1', minWidth: '0', fontSize: '14px', fontWeight: '700', color: '#342530' } }, p.name || 'Unnamed'),
+          p.id === ACTIVE_PROFILE_ID
+            ? h('span', { style: { fontSize: '11px', fontWeight: '800', color: '#2E7D4F', background: 'rgba(46,125,79,0.10)', padding: '3px 10px', borderRadius: '99px' } }, 'Active')
+            : h('button', { onClick: () => switchProfile(p.id), style: { minHeight: '34px', padding: '0 12px', borderRadius: '10px', background: 'rgba(170,83,117,0.10)', border: '1px solid rgba(170,83,117,0.22)', color: '#8E3D61', fontSize: '12px', fontWeight: '800' } }, 'Switch')
+        ))
+      ),
+      state.addingProfile ? h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
+        h('input', { value: newProfileNameDraft, placeholder: 'Patient name', onInput: (ev) => { newProfileNameDraft = ev.target.value; }, style: { flex: '1', minWidth: '150px', minHeight: '40px', border: '1px solid rgba(212,104,138,0.25)', borderRadius: '11px', padding: '0 11px', fontSize: '13.5px', background: '#FFF9FB' } }),
+        h('button', { onClick: () => { const n = newProfileNameDraft.trim(); if (!n) { setToast('Enter a name for the new profile'); return; } newProfileNameDraft = ''; createProfile(n); }, style: { minHeight: '40px', padding: '0 14px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13px', fontWeight: '800' } }, 'Create'),
+        h('button', { onClick: () => { newProfileNameDraft = ''; setState({ addingProfile: false }); }, style: { minHeight: '40px', padding: '0 12px', borderRadius: '11px', background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(125,105,116,0.2)', color: '#5F4A56', fontSize: '13px', fontWeight: '800' } }, 'Cancel')
+      ) : h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
+        h('button', { onClick: () => { if (profilesState().list.length >= tierLimit(getLicense().tier)) { setState({ upgradeOpen: true }); } else { setState({ addingProfile: true }); } }, style: { minHeight: '40px', padding: '0 15px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, '+ Add profile'),
+        h('button', { onClick: () => setState({ upgradeOpen: true }), style: { minHeight: '40px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.7)', border: '1.5px solid rgba(170,83,117,0.35)', color: '#8E3D61', fontSize: '13px', fontWeight: '800' } }, 'View plans')
+      )
+    ),
     h('section', { style: { marginTop: '14px', background: 'rgba(192,69,59,0.05)', border: '1.5px solid rgba(192,69,59,0.22)', borderRadius: '17px', padding: '14px' } },
       h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#A5443C' } }, 'Start over'),
       h('div', { style: { fontSize: '12.5px', color: '#7A5450', marginTop: '5px', lineHeight: '1.45' } }, 'Erase everything stored on this device — patient name, medication list, and all logged history — and return to the welcome screen. Nothing is stored anywhere else, so this cannot be undone.'),
