@@ -265,8 +265,18 @@ function normalizeMedication(raw, index) {
     gapH: type === 'gap' ? Math.max(0, Number(original.gapH) || 0) : 0,
     quickLog: typeof original.quickLog === 'boolean' ? original.quickLog : DEFAULT_QUICK_LOG_IDS.includes(id),
     groupedEvening: typeof original.groupedEvening === 'boolean' ? original.groupedEvening : DEFAULT_EVENING_IDS.includes(id),
-    groupedMorning: typeof original.groupedMorning === 'boolean' ? original.groupedMorning : DEFAULT_MORNING_IDS.includes(id)
+    groupedMorning: typeof original.groupedMorning === 'boolean' ? original.groupedMorning : DEFAULT_MORNING_IDS.includes(id),
+    groupedAfternoon: !!original.groupedAfternoon
   };
+  const sd = original.scheduleDays;
+  if (sd && sd.mode === 'weekly' && Array.isArray(sd.days)) {
+    const days = sd.days.map(Number).filter(d => d >= 0 && d <= 6);
+    if (days.length && days.length < 7) medication.scheduleDays = { mode: 'weekly', days: days }; else delete medication.scheduleDays;
+  } else if (sd && sd.mode === 'interval' && Number(sd.n) >= 2 && sd.anchor) {
+    medication.scheduleDays = { mode: 'interval', n: Math.round(Number(sd.n)), anchor: String(sd.anchor) };
+  } else {
+    delete medication.scheduleDays;
+  }
   if (doses && doses.length) medication.doses = doses; else delete medication.doses;
   if (type === 'win') medication.windows = windows.length ? windows : [{ start: 0, end: 24, name: 'Daily' }]; else delete medication.windows;
   return medication;
@@ -488,6 +498,29 @@ function dexWindowsForOffset(offset) { return offset === 1 ? [{ start: 8, end: 1
 // install must never flag "missed" doses for days before the app existed. installedAt is
 // stamped into prefs on first run (see storage init below).
 let MISSED_TRACK_SINCE = Date.now();
+// Which calendar days a medication is actually taken. No scheduleDays = every day.
+// weekly: {mode:'weekly', days:[0..6]} (JS getDay, Sun=0). interval: {mode:'interval', n:2, anchor:'YYYY-MM-DD'}.
+function medScheduledOn(med, dayTs) {
+  const sd = med.scheduleDays;
+  if (!sd) return true;
+  const d0 = dayStart(dayTs);
+  if (sd.mode === 'weekly') return Array.isArray(sd.days) && sd.days.indexOf(new Date(d0).getDay()) !== -1;
+  if (sd.mode === 'interval') {
+    const anchorTs = new Date(String(sd.anchor) + 'T12:00:00').getTime();
+    if (isNaN(anchorTs)) return true;
+    const diff = Math.round((d0 - dayStart(anchorTs)) / 86400000);
+    return diff >= 0 && diff % Math.max(2, Number(sd.n) || 2) === 0;
+  }
+  return true;
+}
+function scheduleDaysLabel(med) {
+  const sd = med.scheduleDays;
+  if (!sd) return 'Every day';
+  if (sd.mode === 'weekly') { const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; return (sd.days || []).map(d => names[d]).join(', ') || 'Every day'; }
+  if (sd.mode === 'interval') return sd.n === 2 ? 'Every other day' : 'Every ' + sd.n + ' days';
+  return 'Every day';
+}
+
 function missedDosesFor(dayTs, now) {
   const d0 = dayStart(dayTs);
   if (d0 < dayStart(MISSED_TRACK_SINCE)) return [];
@@ -495,6 +528,7 @@ function missedDosesFor(dayTs, now) {
   const out = [];
   state.meds.filter(m => m.alerts && m.windows).forEach(med => {
     if (med.chemoOnly && !dexActiveOn(d0)) return;
+    if (!medScheduledOn(med, d0)) return; // not taken on this calendar day — nothing to miss
     const windows = med.id === 'dexamethasone' ? dexWindowsForOffset(chemoOffsetFor(d0)) : med.windows;
     const dayEntries = entriesFor(med.id).filter(e => e.ts >= d0 && e.ts < d0 + 86400000).sort((a, b) => a.ts - b.ts);
     const used = new Set();
@@ -1353,7 +1387,7 @@ function renderBottomNav() {
 // (Buspirone/Paroxetine in the morning, Iron/Compazine in the evening).
 function renderGroupedMedsCard(title, meds, now) {
   const inpatientNow = isInpatientActiveNow();
-  const dueMeds = meds.filter(m => { const s = status(m); return !s.locked; });
+  const dueMeds = meds.filter(m => { if (!medScheduledOn(m, now)) return false; const s = status(m); return !s.locked; });
   return h('section', null,
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
       h('div', { style: { fontSize: '13px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A6479' } }, title),
@@ -1361,6 +1395,14 @@ function renderGroupedMedsCard(title, meds, now) {
     ),
     h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '18px', overflow: 'hidden', marginTop: '11px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
       ...meds.map((med, i) => {
+        if (!inpatientNow && !medScheduledOn(med, now)) {
+          return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none', opacity: '0.65' } },
+            h('div', { style: { flex: '1', minWidth: '0' } },
+              h('div', { style: { fontSize: '15px', fontWeight: '800', color: '#6E5261' } }, med.name),
+              h('div', { style: { fontSize: '11.5px', color: '#8A7580', marginTop: '2px' } }, 'Not scheduled today \u00b7 Taken: ' + scheduleDaysLabel(med))
+            )
+          );
+        }
         if (inpatientNow) {
           return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
             h('div', { style: { flex: '1', minWidth: '0' } },
@@ -2189,6 +2231,12 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         h('div', { style: { fontSize: '11.5px', color: '#704E22' } }, 'Given by hospital staff — not logged in this app')
       );
     }
+    if (!medScheduledOn(med, now)) {
+      return h('div', { style: { background: 'rgba(125,105,116,0.06)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1.5px dashed rgba(125,105,116,0.30)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
+        h('div', { style: { fontSize: '15px', fontWeight: '800', letterSpacing: '-0.01em', color: '#6E5261' } }, med.name + ' \u2014 Not scheduled today'),
+        h('div', { style: { fontSize: '11.5px', color: '#8A7580' } }, 'Taken: ' + scheduleDaysLabel(med))
+      );
+    }
     const st = status(med);
     const locked = !!st.locked;
     const last = latest(med.id);
@@ -2294,6 +2342,10 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   const morningMeds = state.meds.filter(med => med.groupedMorning);
   if (morningMeds.length) parts.push(renderGroupedMedsCard('Morning meds', morningMeds, now));
 
+  // Afternoon meds — grouped card
+  const afternoonMeds = state.meds.filter(med => med.groupedAfternoon);
+  if (afternoonMeds.length) parts.push(renderGroupedMedsCard('Afternoon meds', afternoonMeds, now));
+
   // Evening meds — grouped card (Iron, Compazine — Iron 2h after Protonix's evening dose)
   const eveningMeds = state.meds.filter(med => med.groupedEvening);
   if (eveningMeds.length) parts.push(renderGroupedMedsCard('Evening meds', eveningMeds, now));
@@ -2382,7 +2434,12 @@ function medicationFormFrom(med) {
     quickLog: typeof base.quickLog === 'boolean' ? base.quickLog : true,
     groupedEvening: !!base.groupedEvening,
     groupedMorning: !!base.groupedMorning,
-    chemoOnly: !!base.chemoOnly
+    groupedAfternoon: !!base.groupedAfternoon,
+    chemoOnly: !!base.chemoOnly,
+    scheduleMode: base.scheduleDays ? base.scheduleDays.mode : 'daily',
+    weekDays: base.scheduleDays && base.scheduleDays.mode === 'weekly' ? (base.scheduleDays.days || []).slice() : [],
+    intervalN: base.scheduleDays && base.scheduleDays.mode === 'interval' ? base.scheduleDays.n : 2,
+    intervalAnchor: base.scheduleDays && base.scheduleDays.mode === 'interval' ? base.scheduleDays.anchor : (function () { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })()
   };
 }
 
@@ -2450,6 +2507,16 @@ function saveMedicationEditor() {
   const gapH = Math.max(0, Number(form.gapH) || 0);
   const windows = type === 'win' ? parseScheduleWindows(form.windowsText) : [];
   if (type === 'win' && !windows.length) { setToast('Add at least one schedule window, for example 8 AM-12 PM Morning.'); return; }
+  let scheduleDays;
+  if (form.scheduleMode === 'weekly') {
+    const days = (form.weekDays || []).map(Number).filter(d => d >= 0 && d <= 6);
+    if (!days.length) { setToast('Pick at least one day of the week, or switch Days taken to Every day.'); return; }
+    if (days.length < 7) scheduleDays = { mode: 'weekly', days: days };
+  } else if (form.scheduleMode === 'interval') {
+    const n = Math.round(Number(form.intervalN) || 0);
+    if (n < 2) { setToast('Every-few-days schedules need a gap of at least 2 days.'); return; }
+    scheduleDays = { mode: 'interval', n: n, anchor: form.intervalAnchor || new Date().toISOString().slice(0, 10) };
+  }
   const dailyLimit = Number(form.dailyLimit) || 0;
   const original = editor.sourceId ? state.meds.find(med => med.id === editor.sourceId) : null;
   const id = nextMedicationId(name, editor.sourceId);
@@ -2466,12 +2533,15 @@ function saveMedicationEditor() {
     quickLog: !!form.quickLog,
     groupedEvening: !!form.groupedEvening,
     groupedMorning: !!form.groupedMorning,
+    groupedAfternoon: !!form.groupedAfternoon,
+    scheduleDays: scheduleDays,
     chemoOnly: !!form.chemoOnly,
     ceiling: dailyLimit > 0,
     ceilingMax: dailyLimit || undefined,
     ceilingUnit: form.dailyLimitUnit === 'mg' ? undefined : form.dailyLimitUnit
   };
   if (!candidate.doses.length) delete candidate.doses;
+  if (!candidate.scheduleDays) delete candidate.scheduleDays;
   if (type !== 'win') delete candidate.windows;
   if (!candidate.ceiling) { delete candidate.ceilingMax; delete candidate.ceilingUnit; }
   const saved = normalizeMedication(candidate, state.meds.length);
@@ -2487,7 +2557,7 @@ function saveMedicationEditor() {
 // state.meds.filter(m => m.quickLog && ...) draws from and renders in state.meds array order, so
 // reordering this subset is what actually changes the order those cards appear on Home.
 function reorderableHomeMeds() {
-  return state.meds.filter(med => med.quickLog && !med.groupedMorning && !med.groupedEvening);
+  return state.meds.filter(med => med.quickLog && !med.groupedMorning && !med.groupedEvening && !med.groupedAfternoon);
 }
 
 // Swaps two meds' positions directly within state.meds (by id), leaving every other medication's
@@ -2564,6 +2634,28 @@ function renderMedicationEditor() {
       h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, placeholder: 'Generic name', onInput: event => updateMedicationForm('sub', event.target.value) })),
       h('label', null, fieldLabel('Dosage options', 'Separate choices with commas.'), formInput({ value: form.dosesText, placeholder: '500 mg, 1000 mg', onInput: event => updateMedicationForm('dosesText', event.target.value) })),
       h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#342530' } }, h('option', { value: 'gap' }, 'As needed / gap-based'), h('option', { value: 'win' }, 'Scheduled window'))),
+      h('div', { style: { gridColumn: '1 / -1' } },
+        fieldLabel('Days taken', 'Not every medication is daily \u2014 pick which days this one is given.'),
+        h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
+          h('select', { value: form.scheduleMode, onChange: event => updateMedicationForm('scheduleMode', event.target.value, true), style: { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#342530' } },
+            h('option', { value: 'daily' }, 'Every day'),
+            h('option', { value: 'weekly' }, 'Specific days of the week'),
+            h('option', { value: 'interval' }, 'Every few days (e.g. every other day)')
+          ),
+          form.scheduleMode === 'interval' ? h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
+            h('span', { style: { fontSize: '12.5px', color: '#6E5261', fontWeight: '700' } }, 'every'),
+            formInput({ type: 'number', min: '2', step: '1', value: String(form.intervalN), onInput: event => updateMedicationForm('intervalN', event.target.value), style: { width: '70px' } }),
+            h('span', { style: { fontSize: '12.5px', color: '#6E5261', fontWeight: '700' } }, 'days, starting'),
+            formInput({ type: 'date', value: form.intervalAnchor, onInput: event => updateMedicationForm('intervalAnchor', event.target.value), style: { width: '165px' } })
+          ) : null
+        ),
+        form.scheduleMode === 'weekly' ? h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
+          ...['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayLabel, d) => {
+            const on = (form.weekDays || []).indexOf(d) !== -1;
+            return h('button', { type: 'button', onClick: () => { const cur = (form.weekDays || []).slice(); const at = cur.indexOf(d); if (at === -1) cur.push(d); else cur.splice(at, 1); updateMedicationForm('weekDays', cur.sort(), true); }, 'aria-pressed': on ? 'true' : 'false', style: { minWidth: '46px', minHeight: '38px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', background: on ? '#AA5375' : 'rgba(255,255,255,0.72)', color: on ? '#fff' : '#5F4A56', border: '1px solid ' + (on ? '#AA5375' : 'rgba(212,104,138,0.25)') } }, dayLabel);
+          })
+        ) : null
+      ),
       scheduled ? h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Schedule windows', 'e.g. 8 AM-12 PM Morning, 8 PM-10 PM Evening.'), formInput({ value: form.windowsText, placeholder: '8 AM-12 PM Morning, 8 PM-10 PM Evening', onInput: event => updateMedicationForm('windowsText', event.target.value) })) : h('label', null, fieldLabel('Minimum gap hours'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.gapH), onInput: event => updateMedicationForm('gapH', event.target.value) })),
       h('label', null, fieldLabel('Daily limit', 'Leave blank for none.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value) })),
       h('label', null, fieldLabel('Limit unit'), h('select', { value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#342530' } }, h('option', { value: 'mg' }, 'mg'), h('option', { value: 'pills' }, 'pills'), h('option', { value: 'applications' }, 'applications'))),
@@ -2572,6 +2664,7 @@ function renderMedicationEditor() {
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '12px' } },
       renderPillToggle('Show as its own Home card', !!form.quickLog, () => toggleMedicationForm('quickLog'), 'Gives this medication its own compact card in the Quick Log section on Home.'),
       renderPillToggle('Group with morning meds', !!form.groupedMorning, () => toggleMedicationForm('groupedMorning'), 'Lists it in the shared "Morning meds" card instead of its own Quick Log card — for meds taken alongside Protonix in the morning.'),
+      renderPillToggle('Group with afternoon meds', !!form.groupedAfternoon, () => toggleMedicationForm('groupedAfternoon'), 'Lists it in a shared "Afternoon meds" card on Home \u2014 for midday medications taken together.'),
       renderPillToggle('Group with evening meds', !!form.groupedEvening, () => toggleMedicationForm('groupedEvening'), 'Lists it in the shared "Evening meds" card instead of its own Quick Log card — for meds taken alongside Protonix at night.'),
       renderPillToggle('Chemo-day only', !!form.chemoOnly, () => toggleMedicationForm('chemoOnly'), 'Only appears on Home during the chemo-adjacent day window (day before through day after chemo) — hidden the rest of the time.')
     ),
@@ -2635,6 +2728,8 @@ function renderMedicationManager(now) {
         med.quickLog ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(170,83,117,0.11)', color: '#8E3D61', fontSize: '10px', fontWeight: '800' } }, 'Own Home card') : h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(125,105,116,0.10)', color: '#705B66', fontSize: '10px', fontWeight: '800' } }, 'Managed only (no Home card)'),
         med.groupedMorning ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(155,91,138,0.12)', color: '#7B3F6B', fontSize: '10px', fontWeight: '800' } }, 'Morning group') : null,
         med.groupedEvening ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(155,91,138,0.12)', color: '#7B3F6B', fontSize: '10px', fontWeight: '800' } }, 'Evening group') : null,
+        med.groupedAfternoon ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(155,91,138,0.12)', color: '#7B3F6B', fontSize: '10px', fontWeight: '800' } }, 'Afternoon group') : null,
+        med.scheduleDays ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(46,125,79,0.10)', color: '#2E7D4F', fontSize: '10px', fontWeight: '800' } }, scheduleDaysLabel(med)) : null,
         med.chemoOnly ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(192,69,59,0.10)', color: '#A15B56', fontSize: '10px', fontWeight: '800' } }, 'Chemo-day only') : null
       ),
       deleting ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', paddingTop: '9px', borderTop: '1px solid rgba(192,69,59,0.16)' } },
