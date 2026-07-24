@@ -1,0 +1,6 @@
+node_modules/
+
+# Native Android project is generated fresh by CI (npx cap add android) from package.json +
+# capacitor.config.ts + app-icons/ — not committed, so it never drifts from the pinned Capacitor
+# version. See .github/workflows/android-build.yml.
+android/

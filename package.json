@@ -1,0 +1,26 @@
+{
+  "name": "chemowell-app-beta",
+  "version": "1.0.0",
+  "description": "Private medication & symptom tracker for chemo patients and caregivers. **All data stays on the device — no cloud, no accounts, no tracking.**",
+  "main": "sw.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arnjnnngs/chemowell-app-beta.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Arnjnnngs/chemowell-app-beta/issues"
+  },
+  "homepage": "https://github.com/Arnjnnngs/chemowell-app-beta#readme",
+  "dependencies": {
+    "@capacitor/android": "8.4.2",
+    "@capacitor/cli": "8.4.2",
+    "@capacitor/core": "8.4.2",
+    "@capacitor/local-notifications": "8.2.1"
+  }
+}

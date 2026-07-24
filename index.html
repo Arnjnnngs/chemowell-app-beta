@@ -10,6 +10,12 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" type="image/png" href="icon-192.png">
 <title>ChemoWell</title>
+<!-- Capacitor bridge (native APK build only). On the web/PWA build these load a no-op JS-only
+     fallback (Capacitor.isNativePlatform() === false) so nothing here changes web behavior at all
+     — see isNativeApp() below. If blocked or offline, window.Capacitor stays undefined and every
+     call site already guards for that, so the app degrades to normal web behavior either way. -->
+<script src="https://cdn.jsdelivr.net/npm/@capacitor/core@8.4.2/dist/capacitor.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@capacitor/local-notifications@8.2.1/dist/plugin.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;overscroll-behavior-y:none;}
@@ -34,6 +40,15 @@ button:focus-visible, [role="button"]:focus-visible, select:focus-visible, a:foc
 // ---------- On-device storage — no cloud, no accounts ----------
 // All data lives in this device's localStorage. Nothing is ever sent to a server.
 const TEST_MODE = true; // APP BETA — enables the date-override controls + simulated purchases
+
+// True only inside the Capacitor native shell (android/), never in the installed PWA or a plain
+// browser tab. Gates every native-only code path (real local notifications) so the web build's
+// behavior is byte-for-byte unchanged. Wrapped in try/catch: if the CDN bridge script above is
+// blocked or hasn't loaded yet, this safely reports "not native" rather than throwing (v14).
+function isNativeApp() {
+  try { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
+  catch (e) { return false; }
+}
 
 function loadJSON(key, fallback) {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
@@ -153,8 +168,11 @@ window.addEventListener('storage', (ev) => {
   if (ev.key === PROFILES_KEY && profilesState().activeId !== ACTIVE_PROFILE_ID) location.reload();
 });
 
-// Native local notifications arrive with the Capacitor build; nothing to register here.
-async function subscribePush() {}
+// Requests notification permission (native prompt in the Capacitor build, browser prompt on the
+// web/PWA build once TEST_MODE is off for a real user). Safe to call every load — both permission
+// paths no-op once already granted or denied. Named subscribePush for historical reasons; there is
+// no server push involved, only local/on-device scheduling (v14).
+async function subscribePush() { requestNotifPermission(); }
 
 function missKey(e) { return e.medId + '|' + e.ts; }
 
@@ -3054,7 +3072,7 @@ function renderMedicationManager(now) {
 }
 
 
-const APP_VERSION = 'app-v13';
+const APP_VERSION = 'app-v14';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -3128,7 +3146,7 @@ function renderSettings(now) {
     // Notifications (native build)
     h('section', { style: secStyle },
       secLabel('Notifications'),
-      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, 'Dose reminders and missed-dose alerts arrive with the phone-app version (in progress). Your preferences will live here.')
+      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, isNativeApp() ? 'Dose reminders and missed-dose alerts are on for this app. Per-medication controls are coming soon.' : 'Dose reminders and missed-dose alerts arrive with the phone-app version (in progress). Your preferences will live here.')
     ),
     // Guide
     h('section', { style: secStyle },
@@ -3652,13 +3670,37 @@ function resetNotifTracking() {
   }
 }
 
-function requestNotifPermission() {
+async function requestNotifPermission() {
+  if (isNativeApp()) {
+    try {
+      const ln = window.Capacitor.Plugins.LocalNotifications;
+      const current = await ln.checkPermissions();
+      if (current.display !== 'granted') await ln.requestPermissions();
+    } catch (e) { /* plugin unavailable — reminders silently stay off, rest of the app unaffected */ }
+    return;
+  }
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
   }
 }
 
 function sendNotif(title, body, tag) {
+  if (isNativeApp()) {
+    try {
+      window.Capacitor.Plugins.LocalNotifications.schedule({
+        notifications: [{
+          // 31-bit int id required by Android; tag text is hashed in so repeat notifications for
+          // the same event (e.g. the same missed-dose window) reliably replace one another instead
+          // of stacking, matching the old web path's `tag` de-dupe behavior.
+          id: Math.abs([...tag].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7)) % 2147483647,
+          title, body,
+          schedule: { at: new Date(Date.now() + 300) },
+          smallIcon: 'ic_stat_chemowell'
+        }]
+      });
+    } catch (e) { /* native delivery failed silently — never blocks the app */ }
+    return;
+  }
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   try {
     new Notification(title, { body, icon: 'icon-192.png', tag, requireInteraction: false });
@@ -3673,8 +3715,11 @@ function sendNotif(title, body, tag) {
 }
 
 function checkNotifications() {
-  if (TEST_MODE) return; // no local reminders from the test app
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  // Web/PWA beta stays silent (TEST_MODE simulated dates make real-time reminders meaningless
+  // there); the native APK test build fires for real even under TEST_MODE, since that's the whole
+  // point of this build — see isNativeApp() above (v14).
+  if (TEST_MODE && !isNativeApp()) return;
+  if (!isNativeApp() && (!('Notification' in window) || Notification.permission !== 'granted')) return;
   if (!state.loaded || state.entries.length === 0 && !state.demo) return;
 
   resetNotifTracking();
@@ -3799,7 +3844,6 @@ function checkNotifications() {
   });
 }
 
-// Native local-notification registration arrives with the Capacitor build.
 subscribePush();
 
 // Init
