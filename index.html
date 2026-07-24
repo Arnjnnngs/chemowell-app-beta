@@ -2,26 +2,23 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#F8E8EE">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>ChemoWell</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;}
-body{-webkit-font-smoothing:antialiased;background:#FFF0F3;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#342530;}
+body{-webkit-font-smoothing:antialiased;background:#FFF0F3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',system-ui,sans-serif;color:#342530;}
 button{-webkit-tap-highlight-color:transparent;font-family:inherit;cursor:pointer;border:none;background:none;}
 button:active{transform:translateY(1px);}
 input{-webkit-tap-highlight-color:transparent;font-family:inherit;}
 input:focus{outline:2px solid #AA5375;outline-offset:0;border-color:#AA5375;}
 ::placeholder{color:#7D6974 !important;opacity:1;}
-.mono{font-family:'IBM Plex Mono',monospace;}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
 #root{min-height:100vh;}
 </style>
 </head>
@@ -81,6 +78,15 @@ function createProfile(name) {
   location.reload();
   return true;
 }
+function deleteProfile(id) {
+  const ps = profilesState();
+  if (id === ps.activeId || ps.list.length <= 1) return; // never delete the active profile
+  ps.list = ps.list.filter(p => p.id !== id);
+  saveJSON(PROFILES_KEY, ps);
+  ['-entries-v1', '-prefs-v1', '-med-v1'].forEach(sfx => { try { localStorage.removeItem('chemowell-app-p-' + id + sfx); } catch (e) {} });
+  setState({ confirmDeleteProfile: null });
+  setToast('Profile deleted');
+}
 function switchProfile(id) {
   const ps = profilesState();
   if (!ps.list.some(p => p.id === id) || id === ps.activeId) return;
@@ -139,6 +145,8 @@ async function setPrefsDB(patch) {
 window.addEventListener('storage', (ev) => {
   if (ev.key === ENTRIES_KEY) notifyEntries();
   if (ev.key === PREFS_KEY && prefsListener) prefsListener(getPrefsDB());
+  // If another tab switched profiles, this tab must never keep writing into the old one (audit 6.9)
+  if (ev.key === PROFILES_KEY && profilesState().activeId !== ACTIVE_PROFILE_ID) location.reload();
 });
 
 // Native local notifications arrive with the Capacitor build; nothing to register here.
@@ -194,40 +202,15 @@ function eraseAllAppData() {
 // ---------- React via htm + preact-like approach using vanilla ----------
 // Using a minimal reactive approach with vanilla JS for zero build step
 
-const DEFAULT_MEDS = [
-  { id:'dexamethasone', name:'Dexamethasone', sub:'Steroid · chemo premed', type:'win', alerts:true, chemoOnly:true, note:'2 tablets · 8 AM & 2 PM · day before chemo through day after',
-    doses:[{label:'2 tablets',pills:2,mg:0}],
-    windows:[{start:8,end:12,name:'Morning'},{start:14,end:18,name:'Afternoon'}] },
-  { id:'tylenol', name:'Tylenol', sub:'Acetaminophen', type:'gap', gapH:4, ceiling:true, ceilingGroup:'tylenol', painScale:true, note:'Min 4-hour gap',
-    doses:[{label:'500 mg',mg:500},{label:'1000 mg',mg:1000}] },
-  { id:'tylenol-liquid', name:'Tylenol Liquid', sub:'Acetaminophen · Oral suspension', type:'gap', gapH:6, ceiling:true, ceilingGroup:'tylenol', volumeCeilingMl:90, volumePerDoseMl:30, painScale:true, note:'Min 6-hour gap · shares daily limit with Tylenol · max 90 mL/24h',
-    doses:[{label:'30 mL (1000 mg)',mg:1000}] },
-  { id:'zofran', name:'Zofran', sub:'Ondansetron', type:'gap', gapH:0, note:'As needed — no gap timer' },
-  { id:'compazine', name:'Compazine', sub:'Prochlorperazine', type:'gap', gapH:6, note:'10 PM · earlier as needed · min 6h gap' },
-  { id:'morphine', name:'Morphine', sub:'Immediate release', type:'gap', gapH:4, ceiling:true, ceilingMax:15, rollingCeilingH:4, note:'Up to 15 mg per rolling 4-hour window', painScale:true,
-    doses:[{label:'½ tab · 7.5 mg',mg:7.5},{label:'Full · 15 mg',mg:15}] },
-  { id:'lidocaine', name:'Lidocaine', sub:'Topical cream', type:'gap', gapH:4, ceiling:true, ceilingMax:4, ceilingUnit:'applications', note:'Min 4-hour gap · max 4 applications/day',
-    doses:[{label:'Apply',pills:1,mg:0}] },
-  { id:'protonix', name:'Protonix', sub:'Pantoprazole', type:'win', alerts:true, note:'Twice daily · 8 AM & 8 PM',
-    windows:[{start:8,end:12,name:'Morning'},{start:20,end:22,name:'Evening'}] },
-  { id:'buspirone', name:'Buspirone', sub:'BuSpar', type:'win', alerts:true, morningLinkedToProtonix:true, note:'Once daily · with Protonix',
-    windows:[{start:10,end:24,name:'Morning'}] },
-  { id:'paroxetine', name:'Paroxetine', sub:'Paxil', type:'win', alerts:true, morningLinkedToProtonix:true, note:'Once daily · with Protonix',
-    windows:[{start:10,end:24,name:'Morning'}] },
-  { id:'iron', name:'Iron', sub:'Ferrous sulfate', type:'win', alerts:true, eveningLinkedToProtonix:true, note:'Once daily · with Protonix',
-    windows:[{start:22,end:24,name:'Night'}] },
-  { id:'senokot', name:'Senokot', sub:'Senna', type:'gap', gapH:0, note:'As needed · 1–2 pills',
-    doses:[{label:'1 pill',pills:1,mg:0},{label:'2 pills',pills:2,mg:0}] },
-  { id:'imodium', name:'Imodium', sub:'Loperamide', type:'gap', gapH:0, ceiling:true, ceilingMax:4, ceilingUnit:'pills', note:'Max 4 pills per day',
-    doses:[{label:'2 pills (onset)',pills:2,mg:0},{label:'1 pill',pills:1,mg:0}] },
-];
+// Legacy regimen data removed (audit 1.3) — fresh installs build their own med list.
+const DEFAULT_MEDS = [];
 
 // Medication configuration is intentionally browser-local for the testing app.
 // Dose-entry history remains in on-device storage; configuration changes do not touch it.
 const MED_CONFIG_STORAGE_KEY = 'chemowell-app-p-' + ACTIVE_PROFILE_ID + '-med-v1';
-const DEFAULT_QUICK_LOG_IDS = ['dexamethasone', 'tylenol', 'tylenol-liquid', 'zofran', 'morphine', 'lidocaine', 'protonix', 'senokot', 'imodium'];
-const DEFAULT_EVENING_IDS = ['iron', 'compazine'];
-const DEFAULT_MORNING_IDS = ['buspirone', 'paroxetine'];
+const DEFAULT_QUICK_LOG_IDS = [];
+const DEFAULT_EVENING_IDS = [];
+const DEFAULT_MORNING_IDS = [];
 
 function deepCopyMeds(meds) {
   return meds.map(med => ({
@@ -302,10 +285,7 @@ function defaultMedicationConfig() {
 // v37 one-shot migration: Senokot became plain as-needed with 1- or 2-pill options.
 // Saved device configs still carrying the old windowed Senokot get the fresh default;
 // fires only while the saved med is still type 'win', so later manual edits persist.
-function migrateSenokotV37(med) {
-  if (!med || med.id !== 'senokot' || med.type === 'gap') return med;
-  return normalizeMedication(deepCopyMeds(DEFAULT_MEDS.filter(m => m.id === 'senokot'))[0]);
-}
+function migrateSenokotV37(med) { return med; } // legacy migration retired (audit 1.3)
 
 // A saved device config is a point-in-time snapshot of the FULL med list — it does not automatically
 // pick up medications added to DEFAULT_MEDS after that snapshot was taken (e.g. Tylenol Liquid, added
@@ -345,11 +325,12 @@ function persistMedicationConfig(meds, archivedMeds) {
   }
 }
 
-const CONFIG = { patientName: '', ceilingMg: 2500, tempUnit: 'Fahrenheit' };
+const CONFIG = { patientName: '', ceilingMg: 2500, tempUnit: 'Fahrenheit', weightUnit: 'lbs' };
+function weightSuffix() { return CONFIG.weightUnit === 'kg' ? 'kg' : 'lbs'; }
 
 // State
 const initialMedicationConfig = loadMedicationConfig();
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: 'home', reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: 'home', reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -521,6 +502,10 @@ function scheduleDaysLabel(med) {
   return 'Every day';
 }
 
+// DST-safe helpers: calendar arithmetic instead of fixed 86400000 hops (audit 6.3)
+function hourTs(d0, hour) { const d = new Date(d0); d.setHours(hour, 0, 0, 0); return d.getTime(); }
+function nextDay(dayTs) { const d = new Date(dayStart(dayTs)); d.setDate(d.getDate() + 1); return d.getTime(); }
+
 function missedDosesFor(dayTs, now) {
   const d0 = dayStart(dayTs);
   if (d0 < dayStart(MISSED_TRACK_SINCE)) return [];
@@ -533,8 +518,8 @@ function missedDosesFor(dayTs, now) {
     const dayEntries = entriesFor(med.id).filter(e => e.ts >= d0 && e.ts < d0 + 86400000).sort((a, b) => a.ts - b.ts);
     const used = new Set();
     const wins = windows.map((w, i) => ({ w,
-      ws: d0 + w.start * 3600000, we: d0 + w.end * 3600000,
-      nextStart: i + 1 < windows.length ? d0 + windows[i + 1].start * 3600000 : d0 + 86400000,
+      ws: hourTs(d0, w.start), we: hourTs(d0, w.end),
+      nextStart: i + 1 < windows.length ? hourTs(d0, windows[i + 1].start) : nextDay(d0),
       covered: false }));
     // Single pass, processed in window order: each window gets first claim (before later windows
     // are considered) over any unused same-day dose logged before this window's cutoff (i.e. any
@@ -564,7 +549,7 @@ function missedDosesFor(dayTs, now) {
 function pastMissedCount(now) {
   const d0 = dayStart(now);
   let count = 0;
-  for (let d = dayStart(MISSED_TRACK_SINCE); d < d0; d += 86400000) {
+  for (let d = dayStart(MISSED_TRACK_SINCE); d < d0; d = nextDay(d)) {
     count += missedDosesFor(d, now).length;
   }
   return count;
@@ -814,13 +799,16 @@ async function confirmTimeAndLog() {
     setToast('Temperature ' + v + ' ' + suffix + ' logged at ' + fmtTime(ts));
   } else if (m.type === 'weight') {
     const v = m.weightValue;
-    const entry = { medId: 'weight', weight: v, dose: v + ' lbs', mg: 0, ts };
+    const entry = { medId: 'weight', weight: v, dose: v + ' ' + weightSuffix(), mg: 0, ts };
     setState({ weightInput: '', timeModal: null });
     await addEntryDB(entry);
-    setToast('Weight ' + v + ' lbs logged at ' + fmtTime(ts));
+    setToast('Weight ' + v + ' ' + weightSuffix() + ' logged at ' + fmtTime(ts));
   } else if (m.type === 'multi') {
-    const ids = m.medIds;
+    // Re-validate at confirm time — a med may have locked between opening and confirming (audit 6.5)
+    const ids = m.medIds.filter(id => { const md = state.meds.find(x => x.id === id); return md && !status(md).locked && medScheduledOn(md, ts); });
+    const skipped = m.medIds.length - ids.length;
     setState({ timeModal: null });
+    if (skipped > 0) setToast(skipped + ' medication' + (skipped > 1 ? 's' : '') + ' skipped (not currently due)');
     for (const id of ids) {
       const md = state.meds.find(x => x.id === id);
       const d0 = md && md.doses ? md.doses[0] : null;
@@ -884,25 +872,7 @@ async function removeEntry(id) {
 // clearAll removed - history must be preserved
 
 // Seed demo data
-async function seedDemo() {
-  const n = simNow(), H = 3600000, d0 = dayStart(n);
-  const y = d0 - 24 * H;
-  const seeds = [
-    { medId: 'tylenol', dose: '500 mg', mg: 500, ts: y + 9 * H },
-    { medId: 'temp', temp: 100.9, dose: '100.9 °F', mg: 0, ts: y + 9 * H },
-    { medId: 'zofran', dose: null, mg: 0, ts: y + 13 * H },
-    { medId: 'protonix', dose: null, mg: 0, ts: y + 19 * H },
-    { medId: 'tylenol', dose: '1000 mg', mg: 1000, ts: n - 2 * H },
-    { medId: 'tylenol', dose: '500 mg', mg: 500, ts: n - 6.5 * H },
-    { medId: 'zofran', dose: null, mg: 0, ts: n - 3.2 * H },
-    { medId: 'morphine', dose: 'Full · 15 mg', mg: 15, ts: n - 1.1 * H },
-    { medId: 'protonix', dose: null, mg: 0, ts: d0 + 8 * H },
-    { medId: 'iron', dose: null, mg: 0, ts: n - 5 * H },
-    { medId: 'temp', temp: 99.8, dose: '99.8 °F', mg: 0, ts: n - 1.5 * H },
-  ].filter(e => e.ts <= n);
-  for (const s of seeds) await addEntryDB(s);
-  setState({ demo: true });
-}
+async // seedDemo removed (audit 1.3) — no fake data paths ship in the app.
 
 // Lock SVG
 const lockSVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#7D6974" stroke-width="2.4"><rect x="4" y="10.5" width="16" height="10" rx="2"></rect><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"></path></svg>';
@@ -974,7 +944,26 @@ function yesterdayStart(now) { return dayStart(now) - 86400000; }
 // Shared "must be answered today" escalation rules — quiet reminder in the morning, firmer by
 // afternoon, urgent by evening. Used by the Daily Weight, Bowel Movement, and Appetite Home
 // alerts so all three escalate identically rather than each having its own copy of the logic.
+// Home screen & daily check-in preferences (audit §4). Vitals cards default ON; the daily
+// check-in alerts default OFF for a general audience — they were the original family's
+// care-team instruction, not a universal need. Cycle tracking is opt-in.
+const HOME_PREF_DEFAULTS = { showTemperature: true, showWeight: true, showChemoSchedule: true, dailyWeightCheckin: false, bowelCheckin: false, appetiteCheckin: false, cycleTracking: false };
+function homePref(key) {
+  const prefs = getPrefsDB();
+  const saved = prefs.homeCards || {};
+  return typeof saved[key] === 'boolean' ? saved[key] : HOME_PREF_DEFAULTS[key];
+}
+function setHomePref(key, value) {
+  const prefs = getPrefsDB();
+  const next = { ...(prefs.homeCards || {}) };
+  next[key] = value;
+  setPrefsDB({ homeCards: next });
+  setState({});
+}
+
 function dailyAlertLevel(now) {
+  // Never escalate on install day — a 7 PM install must not open to urgent red alerts (audit 2.1/2.2)
+  if (dayStart(now) === dayStart(MISSED_TRACK_SINCE)) return 0;
   const hourNow = new Date(now).getHours();
   return hourNow >= 18 ? 2 : hourNow >= 12 ? 1 : 0; // 0 quiet, 1 firm, 2 urgent
 }
@@ -1291,7 +1280,7 @@ function goToHistoryTop() {
 // stored in the same on-device prefs as that field.
 async function clearAllMissedInHistory(now) {
   const all = [];
-  for (let d = dayStart(MISSED_TRACK_SINCE); d <= dayStart(now); d += 86400000) {
+  for (let d = dayStart(MISSED_TRACK_SINCE); d <= dayStart(now); d = nextDay(d)) {
     missedDosesFor(d, now).forEach(m => all.push(missKey(m)));
   }
   if (!all.length) return;
@@ -1335,7 +1324,8 @@ function renderHeader(now) {
           appIcon('heart', 18),
           h('span', { style: { fontSize: '14px', fontWeight: '800', letterSpacing: '-0.01em' } }, 'ChemoWell'),
           TEST_MODE ? h('span', { style: { color: '#fff', background: '#C77800', border: '1px solid #A86400', borderRadius: '99px', padding: '4px 11px', fontSize: '11.5px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', boxShadow: '0 2px 6px rgba(199,120,0,0.4)' } }, 'APP BETA') : null,
-          h('button', { onClick: startTour, 'aria-label': 'Open the how-to guide', title: 'How-to guide', style: { width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(170,83,117,0.12)', color: '#AA5375', border: '1.5px solid rgba(170,83,117,0.35)', fontSize: '14px', fontWeight: '800', cursor: 'pointer' } }, '?')
+          h('button', { onClick: startTour, 'aria-label': 'Open the how-to guide', title: 'How-to guide', style: { width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(170,83,117,0.12)', color: '#AA5375', border: '1.5px solid rgba(170,83,117,0.35)', fontSize: '14px', fontWeight: '800', cursor: 'pointer' } }, '?'),
+          h('button', { onClick: () => navigateTo('settings'), 'aria-label': 'Settings', title: 'Settings', style: { width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(125,105,116,0.10)', color: '#5F4A56', border: '1.5px solid rgba(125,105,116,0.3)', fontSize: '13px', cursor: 'pointer' } }, '\u2699')
         ),
         h('div', { style: { fontSize: '22px', fontWeight: '800', letterSpacing: '-0.035em', color: '#342530', lineHeight: '1.05' } }, title),
         h('div', { style: { fontSize: '12px', color: '#6E5261', marginTop: '4px', fontWeight: '600' } }, dateLabel)
@@ -1446,6 +1436,7 @@ function renderGroupedMedsCard(title, meds, now) {
 
 function renderContent(now, mg, pct, tyColor, ceiling) {
   if (state.view === 'meds') return renderMedicationManager(now);
+  if (state.view === 'settings') return renderSettings(now);
   if (state.view === 'reports') return state.reportsView ? renderReportDetail(state.reportsView, now) : renderReportsMenu(now);
   if (state.view === 'inpatient') return renderInPatient(now);
   if (state.view === 'symptoms') return renderSymptoms(now);
@@ -1543,12 +1534,14 @@ const TOUR_STEPS = [
   { target: 'nav-symptoms', title: 'Symptoms', text: 'Log symptoms like nausea, pain, or fever so you have a clear record to share with the care team.', next: 'Next' },
   { target: null, title: 'You\u2019re ready!', text: 'That\u2019s the basics. You can re-run this guide any time by tapping the ? button at the top of the screen.', next: 'Finish' }
 ];
-function startTour() { setState({ tourStep: 0 }); }
-function endTour() { setPrefsDB({ tourDone: true }); setState({ tourStep: null }); tourClearHighlight(); }
+function startTour() { setPrefsDB({ tourStep: 0 }); setState({ tourStep: 0 }); }
+function endTour() { setPrefsDB({ tourDone: true, tourStep: null }); setState({ tourStep: null }); tourClearHighlight(); }
+function setTourStep(n) { setPrefsDB({ tourStep: n }); setState({ tourStep: n }); } // progress survives app restarts (audit 2.4)
 function advanceTour() {
   const n = (state.tourStep == null ? -1 : state.tourStep) + 1;
-  if (n >= TOUR_STEPS.length) { endTour(); } else { setState({ tourStep: n }); }
+  if (n >= TOUR_STEPS.length) { endTour(); } else { setTourStep(n); }
 }
+function backTour() { if (state.tourStep > 0) setTourStep(state.tourStep - 1); }
 function tourEvent(name) {
   if (state.tourStep == null) return;
   const step = TOUR_STEPS[state.tourStep];
@@ -1569,9 +1562,12 @@ function renderTourLayer() {
       h('div', { style: { fontSize: '17px', fontWeight: '800', color: '#AA5375', letterSpacing: '-0.01em', marginBottom: '6px' } }, step.title),
       h('div', { style: { fontSize: '13.5px', color: '#5A4552', lineHeight: '1.55' } }, step.text),
       step.wait ? h('div', { style: { marginTop: '10px', fontSize: '12.5px', fontWeight: '800', color: '#C9648E' } }, '\ud83d\udc46 ' + step.wait) : null,
-      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px' } },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', gap: '8px' } },
         h('button', { onClick: endTour, style: { fontSize: '12.5px', fontWeight: '700', color: '#96808D', background: 'transparent', padding: '8px 8px 8px 0', cursor: 'pointer' } }, 'Skip guide'),
-        step.next ? h('button', { onClick: advanceTour, style: { minHeight: '40px', padding: '0 20px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '800', cursor: 'pointer', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, step.next) : null
+        h('div', { style: { display: 'flex', gap: '8px' } },
+          state.tourStep > 0 ? h('button', { onClick: backTour, style: { minHeight: '40px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(170,83,117,0.3)', color: '#8E3D61', fontSize: '13px', fontWeight: '800', cursor: 'pointer' } }, 'Back') : null,
+          step.next ? h('button', { onClick: advanceTour, style: { minHeight: '40px', padding: '0 20px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '800', cursor: 'pointer', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, step.next) : null
+        )
       )
     )
   );
@@ -1708,7 +1704,7 @@ function renderTimeModal() {
   } else if (m.type === 'symptom') {
     title = (m.editId ? 'Edit ' : 'Log ') + (m.symptomType ? (SYMPTOM_TYPES[m.symptomType] || m.symptomType) : 'Symptom');
   } else {
-    title = 'Log Weight · ' + m.weightValue + ' lbs';
+    title = 'Log Weight · ' + m.weightValue + ' ' + weightSuffix();
   }
 
   const medForPain = m.type === 'med' ? state.meds.find(x => x.id === m.medId) : null;
@@ -1931,7 +1927,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   }
 
   // Menstrual Cycle active banner — non-dismissible, stays up until Period End is logged
-  if (cycleActive()) {
+  if (homePref('cycleTracking') && cycleActive()) {
     const cDayN = daysSinceCycleStart();
     parts.push(h('div', { style: { background: 'rgba(212,104,138,0.14)', border: '2px solid #AA5375', borderRadius: '16px', padding: '15px 16px', display: 'flex', gap: '12px', alignItems: 'center', boxShadow: '0 4px 24px rgba(212,104,138,0.2)' } },
       h('span', { style: { flexShrink: '0', width: '28px', height: '28px', borderRadius: '50%', background: '#AA5375', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, '●'),
@@ -1994,7 +1990,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   {
     const bmYStart = yesterdayStart(now);
     const bmYEntry = bowelMovementFor(bmYStart);
-    if (!bmYEntry && bmYStart >= dayStart(MISSED_TRACK_SINCE)) { // never ask about days before the app was installed
+    if (homePref('bowelCheckin') && !bmYEntry && bmYStart >= dayStart(MISSED_TRACK_SINCE)) { // never ask about days before the app was installed
       const level = dailyAlertLevel(now);
       const s = dailyAlertStyle(level);
       const bmYLabel = new Date(bmYStart).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
@@ -2028,7 +2024,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   {
     const apYStart = yesterdayStart(now);
     const apYEntry = appetiteFor(apYStart);
-    if (!apYEntry && apYStart >= dayStart(MISSED_TRACK_SINCE)) { // never ask about days before the app was installed
+    if (homePref('appetiteCheckin') && !apYEntry && apYStart >= dayStart(MISSED_TRACK_SINCE)) { // never ask about days before the app was installed
       const level = dailyAlertLevel(now);
       const s = dailyAlertStyle(level);
       const apYLabel = new Date(apYStart).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
@@ -2062,7 +2058,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // (Shares its escalation rules with the Bowel Movement and Appetite alerts above via
   // dailyAlertLevel()/dailyAlertStyle() — all three "must be answered" cards behave identically.)
   const weightLoggedToday = state.entries.some(e => e.medId === 'weight' && e.ts >= dayStart(now));
-  if (!weightLoggedToday) {
+  if (homePref('dailyWeightCheckin') && !weightLoggedToday) {
     const level = dailyAlertLevel(now);
     const s = dailyAlertStyle(level);
     const wMsg = level === 2 ? 'Still no weight logged today — please log it before the day ends.' : level === 1 ? 'No weight logged yet today. A daily reading helps track trends.' : 'Weight hasn’t been logged yet today.';
@@ -2163,10 +2159,10 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     )
   ));
 
-  // Temperature + Weight row
-  parts.push(h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: '12px' } },
+  // Temperature + Weight row (each card user-toggleable in Settings)
+  if (homePref('showTemperature') || homePref('showWeight')) parts.push(h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: '12px' } },
     // Temperature
-    h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+    !homePref('showTemperature') ? null : h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' } },
         h('div', null,
           h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Temperature'),
@@ -2180,22 +2176,22 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       )
     ),
     // Weight
-    h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+    !homePref('showWeight') ? null : h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' } },
         h('div', null,
           h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Weight'),
           h('div', { style: { fontSize: '11px', color: '#7D6974', marginTop: '2px' } }, weightSubLabel)
         ),
-        lastWeight ? h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '600', letterSpacing: '-0.02em', color: '#3D2B3A', whiteSpace: 'nowrap' } }, lastWeight.weight + ' lbs') : null
+        lastWeight ? h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '600', letterSpacing: '-0.02em', color: '#3D2B3A', whiteSpace: 'nowrap' } }, lastWeight.weight + ' ' + weightSuffix()) : null
       ),
       h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
-        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: weightDefault() || '150.0', value: state.weightInput, onInput: (e) => { state.weightInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } }),
+        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: weightDefault() || (CONFIG.weightUnit === 'kg' ? '68.0' : '150.0'), value: state.weightInput, onInput: (e) => { state.weightInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } }),
         h('button', { onClick: logWeight, style: { flexShrink: '0', minHeight: '38px', padding: '0 15px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
       )
     )
   ));
 
-  // Chemo schedule card
+  // Chemo schedule card (toggleable)
   const chemoTs = nextChemoTs();
   const daysUntil = chemoTs ? Math.round((dayStart(chemoTs) - dayStart(now)) / 86400000) : null;
   const chemoDateText = chemoTs === null ? 'No chemo date set' :
@@ -2203,10 +2199,10 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     daysUntil === 1 ? new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' }) + ' · TOMORROW' :
     daysUntil === 0 ? 'TODAY' :
     'Last chemo ' + new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' });
-  parts.push(h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+  if (homePref('showChemoSchedule')) parts.push(h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' } },
       h('div', null,
-        h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Chemo schedule'),
+        h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Treatment schedule'),
         h('div', { style: { fontSize: '15px', fontWeight: '800', marginTop: '3px', color: (daysUntil !== null && daysUntil >= 0 && daysUntil <= 1) ? '#C0453B' : '#3D2B3A' } }, chemoDateText)
       ),
       chemoTs ? (state.confirmClearChemo ? h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center', flexShrink: '0' } },
@@ -2230,6 +2226,14 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   ));
 
   // Quick Log section
+  const noMedsAtAll = state.meds.length === 0;
+  if (noMedsAtAll) {
+    parts.push(h('section', { style: { background: 'rgba(255,255,255,0.6)', border: '1.5px dashed rgba(170,83,117,0.35)', borderRadius: '18px', padding: '22px 18px', textAlign: 'center' } },
+      h('div', { style: { fontSize: '16px', fontWeight: '800', color: '#AA5375', marginBottom: '5px' } }, 'No medications yet'),
+      h('div', { style: { fontSize: '13px', color: '#6E5261', lineHeight: '1.5', marginBottom: '13px' } }, 'Add the first medication to start tracking doses, schedules, and safety limits.'),
+      h('button', { onClick: () => { navigateTo('meds'); openMedicationEditor(null); }, style: { minHeight: '44px', padding: '0 20px', borderRadius: '12px', background: '#AA5375', color: '#fff', fontSize: '14px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, '+ Add your first medication')
+    ));
+  }
   const medCards = state.meds.filter(m => m.quickLog && (!m.chemoOnly || (dexActiveOn(now) && !status(m).courseComplete))).map(med => {
     if (inpatientActiveNow) {
       return h('div', { style: { background: 'rgba(154,100,25,0.08)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1.5px dashed rgba(154,100,25,0.35)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
@@ -2336,7 +2340,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   });
 
   const quickLogOpen = state.quickLogOpen !== false; // default open
-  parts.push(h('section', null,
+  if (!noMedsAtAll) parts.push(h('section', null,
     h('div', { onClick: () => setState({ quickLogOpen: !quickLogOpen }), style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' } },
       h('div', { 'data-tour': 'quick-log', style: { fontSize: '13px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A6479' } }, 'Quick log' + (quickLogOpen ? '' : ' (' + medCards.length + ')')),
       h('span', { style: { fontSize: '10px', color: '#8A6479' } }, quickLogOpen ? '▲' : '▼')
@@ -2529,6 +2533,12 @@ function saveMedicationEditor() {
     scheduleDays = { mode: 'interval', n: n, anchor: form.intervalAnchor || new Date().toISOString().slice(0, 10) };
   }
   const dailyLimit = Number(form.dailyLimit) || 0;
+  if (dailyLimit > 0) {
+    const testDoses = parseDoseOptions(form.dosesText);
+    const unit = form.dailyLimitUnit;
+    const carries = unit === 'mg' ? testDoses.some(d => d.mg > 0) : testDoses.some(d => d.pills > 0);
+    if (!carries) { setToast('The daily limit is in ' + unit + ' but no dose option includes a ' + (unit === 'mg' ? 'mg amount (e.g. "500 mg")' : 'count (e.g. "1 pill")') + ' \u2014 the limit could never be enforced. Fix the dose options or clear the limit.'); return; }
+  }
   const original = editor.sourceId ? state.meds.find(med => med.id === editor.sourceId) : null;
   const id = nextMedicationId(name, editor.sourceId);
   const candidate = {
@@ -2674,9 +2684,9 @@ function renderMedicationEditor() {
     ),
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '12px' } },
       renderPillToggle('Show as its own Home card', !!form.quickLog, () => toggleMedicationForm('quickLog'), 'Gives this medication its own compact card in the Quick Log section on Home.'),
-      renderPillToggle('Group with morning meds', !!form.groupedMorning, () => toggleMedicationForm('groupedMorning'), 'Lists it in the shared "Morning meds" card instead of its own Quick Log card — for meds taken alongside Protonix in the morning.'),
+      renderPillToggle('Group with morning meds', !!form.groupedMorning, () => toggleMedicationForm('groupedMorning'), 'Lists it in the shared "Morning meds" card instead of its own Quick Log card — for medications always taken together in the morning.'),
       renderPillToggle('Group with afternoon meds', !!form.groupedAfternoon, () => toggleMedicationForm('groupedAfternoon'), 'Lists it in a shared "Afternoon meds" card on Home \u2014 for midday medications taken together.'),
-      renderPillToggle('Group with evening meds', !!form.groupedEvening, () => toggleMedicationForm('groupedEvening'), 'Lists it in the shared "Evening meds" card instead of its own Quick Log card — for meds taken alongside Protonix at night.'),
+      renderPillToggle('Group with evening meds', !!form.groupedEvening, () => toggleMedicationForm('groupedEvening'), 'Lists it in the shared "Evening meds" card instead of its own Quick Log card — for medications always taken together in the evening.'),
       renderPillToggle('Chemo-day only', !!form.chemoOnly, () => toggleMedicationForm('chemoOnly'), 'Only appears on Home during the chemo-adjacent day window (day before through day after chemo) — hidden the rest of the time.')
     ),
     h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '15px' } },
@@ -2761,44 +2771,114 @@ function renderMedicationManager(now) {
     renderMedicationEditor(),
     homeOrderSection,
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),
-    h('section', { style: { marginTop: '14px', background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(212,104,138,0.16)', borderRadius: '17px', padding: '14px' } },
+    h('div', { style: { marginTop: '10px', fontSize: '12px', color: '#8A7580', textAlign: 'center' } }, 'Profiles, plans, and app data controls now live in Settings (\u2699 top of screen).')
+  ];
+}
+
+
+const APP_VERSION = 'app-v8';
+function renderSettings(now) {
+  const lic = getLicense();
+  const ps = profilesState();
+  const secStyle = { background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(212,104,138,0.16)', borderRadius: '17px', padding: '14px' };
+  const secLabel = text => h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8E3D61' } }, text);
+  const selStyle = { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#342530' };
+  const toggle = (key, label, helper) => renderPillToggle(label, homePref(key), () => setHomePref(key, !homePref(key)), helper);
+  return [
+    h('section', null,
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#AA5375' } }, h('span', { style: { fontSize: '17px' } }, '\u2699'), h('span', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase' } }, 'Settings')),
+      h('h1', { style: { fontSize: '24px', lineHeight: '1.05', color: '#342530', letterSpacing: '-0.035em', marginTop: '5px' } }, 'Settings'),
+      h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px' } }, 'Profiles, plans, home screen, units, and app data \u2014 all stored on this device.')
+    ),
+    // Profiles
+    h('section', { style: secStyle },
       h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' } },
-        h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8E3D61' } }, 'Profiles'),
-        h('span', { style: { fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '99px', background: 'rgba(170,83,117,0.12)', color: '#8E3D61', border: '1px solid rgba(170,83,117,0.25)' } }, tierLabel(getLicense().tier) + ' plan')
+        secLabel('Profiles'),
+        h('span', { style: { fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '99px', background: 'rgba(170,83,117,0.12)', color: '#8E3D61', border: '1px solid rgba(170,83,117,0.25)' } }, tierLabel(lic.tier) + ' plan')
       ),
       h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px', lineHeight: '1.45' } }, 'Each profile keeps its own medications and history, fully separate, on this device.'),
       h('div', { style: { marginTop: '10px', borderRadius: '13px', overflow: 'hidden', border: '1px solid rgba(212,104,138,0.14)' } },
-        ...profilesState().list.map((p, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'rgba(255,255,255,0.6)', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.10)' : 'none' } },
-          h('span', { style: { flex: '1', minWidth: '0', fontSize: '14px', fontWeight: '700', color: '#342530' } }, p.name || 'Unnamed'),
+        ...ps.list.map((p, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', background: 'rgba(255,255,255,0.6)', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.10)' : 'none', flexWrap: 'wrap' } },
+          h('span', { style: { flex: '1', minWidth: '90px', fontSize: '14px', fontWeight: '700', color: '#342530' } }, p.name || 'Unnamed'),
           p.id === ACTIVE_PROFILE_ID
             ? h('span', { style: { fontSize: '11px', fontWeight: '800', color: '#2E7D4F', background: 'rgba(46,125,79,0.10)', padding: '3px 10px', borderRadius: '99px' } }, 'Active')
-            : h('button', { onClick: () => switchProfile(p.id), style: { minHeight: '34px', padding: '0 12px', borderRadius: '10px', background: 'rgba(170,83,117,0.10)', border: '1px solid rgba(170,83,117,0.22)', color: '#8E3D61', fontSize: '12px', fontWeight: '800' } }, 'Switch')
+            : state.confirmDeleteProfile === p.id
+              ? h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
+                  h('span', { style: { fontSize: '11.5px', fontWeight: '800', color: '#A5443C' } }, 'Delete forever?'),
+                  h('button', { onClick: () => deleteProfile(p.id), style: { minHeight: '34px', padding: '0 10px', borderRadius: '9px', background: '#C0453B', color: '#fff', fontSize: '12px', fontWeight: '800' } }, 'Delete'),
+                  h('button', { onClick: () => setState({ confirmDeleteProfile: null }), style: { minHeight: '34px', padding: '0 8px', color: '#745D69', fontSize: '12px', fontWeight: '800' } }, 'Keep'))
+              : h('div', { style: { display: 'flex', gap: '6px' } },
+                  h('button', { onClick: () => switchProfile(p.id), style: { minHeight: '34px', padding: '0 12px', borderRadius: '10px', background: 'rgba(170,83,117,0.10)', border: '1px solid rgba(170,83,117,0.22)', color: '#8E3D61', fontSize: '12px', fontWeight: '800' } }, 'Switch'),
+                  h('button', { onClick: () => setState({ confirmDeleteProfile: p.id }), 'aria-label': 'Delete ' + (p.name || 'profile'), style: { minHeight: '34px', padding: '0 10px', borderRadius: '10px', background: 'rgba(192,69,59,0.08)', border: '1px solid rgba(192,69,59,0.25)', color: '#A5443C', fontSize: '12px', fontWeight: '800' } }, 'Delete'))
         ))
       ),
       state.addingProfile ? h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
-        h('input', { value: newProfileNameDraft, placeholder: 'Patient name', onInput: (ev) => { newProfileNameDraft = ev.target.value; }, style: { flex: '1', minWidth: '150px', minHeight: '40px', border: '1px solid rgba(212,104,138,0.25)', borderRadius: '11px', padding: '0 11px', fontSize: '13.5px', background: '#FFF9FB' } }),
-        h('button', { onClick: () => { const n = newProfileNameDraft.trim(); if (!n) { setToast('Enter a name for the new profile'); return; } newProfileNameDraft = ''; createProfile(n); }, style: { minHeight: '40px', padding: '0 14px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13px', fontWeight: '800' } }, 'Create'),
-        h('button', { onClick: () => { newProfileNameDraft = ''; setState({ addingProfile: false }); }, style: { minHeight: '40px', padding: '0 12px', borderRadius: '11px', background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(125,105,116,0.2)', color: '#5F4A56', fontSize: '13px', fontWeight: '800' } }, 'Cancel')
+        h('input', { value: newProfileNameDraft, placeholder: 'Patient name', onInput: (ev) => { newProfileNameDraft = ev.target.value; }, style: { flex: '1', minWidth: '150px', minHeight: '44px', border: '1px solid rgba(212,104,138,0.25)', borderRadius: '11px', padding: '0 11px', fontSize: '13.5px', background: '#FFF9FB' } }),
+        h('button', { onClick: () => { const n = newProfileNameDraft.trim(); if (!n) { setToast('Enter a name for the new profile'); return; } newProfileNameDraft = ''; createProfile(n); }, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13px', fontWeight: '800' } }, 'Create'),
+        h('button', { onClick: () => { newProfileNameDraft = ''; setState({ addingProfile: false }); }, style: { minHeight: '44px', padding: '0 12px', borderRadius: '11px', background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(125,105,116,0.2)', color: '#5F4A56', fontSize: '13px', fontWeight: '800' } }, 'Cancel')
       ) : h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
-        h('button', { onClick: () => { if (profilesState().list.length >= tierLimit(getLicense().tier)) { setState({ upgradeOpen: true }); } else { setState({ addingProfile: true }); } }, style: { minHeight: '40px', padding: '0 15px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, '+ Add profile'),
-        h('button', { onClick: () => setState({ upgradeOpen: true }), style: { minHeight: '40px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.7)', border: '1.5px solid rgba(170,83,117,0.35)', color: '#8E3D61', fontSize: '13px', fontWeight: '800' } }, 'View plans')
+        h('button', { onClick: () => { if (profilesState().list.length >= tierLimit(getLicense().tier)) { setState({ upgradeOpen: true }); } else { setState({ addingProfile: true }); } }, style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, '+ Add profile'),
+        h('button', { onClick: () => setState({ upgradeOpen: true }), style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.7)', border: '1.5px solid rgba(170,83,117,0.35)', color: '#8E3D61', fontSize: '13px', fontWeight: '800' } }, 'View plans')
       )
     ),
-    h('section', { style: { marginTop: '14px', background: 'rgba(192,69,59,0.05)', border: '1.5px solid rgba(192,69,59,0.22)', borderRadius: '17px', padding: '14px' } },
+    // Home screen & daily check-ins
+    h('section', { style: secStyle },
+      secLabel('Home screen'),
+      h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px', lineHeight: '1.45' } }, 'Choose what appears on Home. Daily check-ins ask once a day and escalate if unanswered \u2014 turn on only what the care team wants tracked.'),
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '10px' } },
+        toggle('showTemperature', 'Temperature card', 'Quick temperature logging on Home.'),
+        toggle('showWeight', 'Weight card', 'Quick weight logging on Home.'),
+        toggle('showChemoSchedule', 'Treatment schedule card', 'Countdown and reminders around treatment dates.'),
+        toggle('dailyWeightCheckin', 'Daily weight check-in', 'Reminds every day until a weight is logged.'),
+        toggle('bowelCheckin', 'Bowel movement check-in', 'Asks about the previous day, once a day.'),
+        toggle('appetiteCheckin', 'Appetite check-in', 'Asks about the previous day, once a day.'),
+        toggle('cycleTracking', 'Menstrual cycle tracking', 'Period banner on Home and the Cycle report.')
+      )
+    ),
+    // Units
+    h('section', { style: secStyle },
+      secLabel('Units'),
+      h('div', { style: { display: 'flex', gap: '14px', marginTop: '10px', flexWrap: 'wrap' } },
+        h('label', { style: { display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '12px', fontWeight: '700', color: '#705462' } }, 'Temperature',
+          h('select', { value: CONFIG.tempUnit, onChange: ev => { setPrefsDB({ tempUnit: ev.target.value }); setState({}); }, style: selStyle }, h('option', { value: 'Fahrenheit' }, '\u00b0F (Fahrenheit)'), h('option', { value: 'Celsius' }, '\u00b0C (Celsius)'))),
+        h('label', { style: { display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '12px', fontWeight: '700', color: '#705462' } }, 'Weight',
+          h('select', { value: CONFIG.weightUnit, onChange: ev => { setPrefsDB({ weightUnit: ev.target.value }); setState({}); }, style: selStyle }, h('option', { value: 'lbs' }, 'Pounds (lbs)'), h('option', { value: 'kg' }, 'Kilograms (kg)')))
+      ),
+      h('div', { style: { fontSize: '11px', color: '#96808D', marginTop: '8px', lineHeight: '1.4' } }, 'Units label new readings \u2014 existing readings keep the numbers you entered.')
+    ),
+    // Notifications (native build)
+    h('section', { style: secStyle },
+      secLabel('Notifications'),
+      h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px', lineHeight: '1.45' } }, 'Dose reminders and missed-dose alerts arrive with the phone-app version (in progress). Your preferences will live here.')
+    ),
+    // Guide
+    h('section', { style: secStyle },
+      secLabel('How-to guide'),
+      h('button', { onClick: () => { navigateTo('home'); startTour(); }, style: { marginTop: '10px', minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'rgba(170,83,117,0.10)', border: '1px solid rgba(170,83,117,0.25)', color: '#8E3D61', fontSize: '13px', fontWeight: '800' } }, 'Replay the walkthrough')
+    ),
+    // About & legal
+    h('section', { style: secStyle },
+      secLabel('About & legal'),
+      h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '8px', lineHeight: '1.55' } }, 'ChemoWell ' + APP_VERSION + ' (beta). All data stays on this device \u2014 no cloud, no accounts, no tracking, and the app never sends your information anywhere.'),
+      h('div', { style: { fontSize: '12px', fontWeight: '800', color: '#8E3D61', marginTop: '12px', letterSpacing: '0.03em', textTransform: 'uppercase' } }, 'Medical disclaimer'),
+      h('div', { style: { fontSize: '12px', color: '#6E5261', marginTop: '4px', lineHeight: '1.55' } }, 'ChemoWell is a record-keeping tool, not medical advice. Medication schedules, limits, and alerts only reflect what you entered \u2014 always follow the care team\u2019s instructions, confirm doses with a doctor or pharmacist, and never delay care because of anything shown in this app. If this is an emergency, call your local emergency number.')
+    ),
+    // Start over (moved from Meds)
+    h('section', { style: { marginTop: '2px', background: 'rgba(192,69,59,0.05)', border: '1.5px solid rgba(192,69,59,0.22)', borderRadius: '17px', padding: '14px' } },
       h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#A5443C' } }, 'Start over'),
-      h('div', { style: { fontSize: '12.5px', color: '#7A5450', marginTop: '5px', lineHeight: '1.45' } }, 'Erase everything stored on this device — patient name, medication list, and all logged history — and return to the welcome screen. Nothing is stored anywhere else, so this cannot be undone. Purchased plans are kept.'),
+      h('div', { style: { fontSize: '12.5px', color: '#7A5450', marginTop: '5px', lineHeight: '1.45' } }, 'Erase everything stored on this device \u2014 patient name, medication list, and all logged history \u2014 and return to the welcome screen. Nothing is stored anywhere else, so this cannot be undone. Purchased plans are kept.'),
       state.confirmEraseAll ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '12px', flexWrap: 'wrap' } },
         h('span', { style: { flex: '1', minWidth: '160px', fontSize: '12.5px', fontWeight: '800', color: '#A5443C' } }, 'Erase everything? This is permanent.'),
-        h('button', { onClick: () => setState({ confirmEraseAll: false }), style: { minHeight: '40px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1px solid rgba(125,105,116,0.25)', color: '#5F4A56', fontSize: '13px', fontWeight: '800' } }, 'Cancel'),
-        h('button', { onClick: eraseAllAppData, style: { minHeight: '40px', padding: '0 14px', borderRadius: '11px', background: '#C0453B', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(140,40,32,0.4)' } }, 'Yes, erase everything')
-      ) : h('button', { onClick: () => setState({ confirmEraseAll: true }), style: { marginTop: '11px', minHeight: '40px', padding: '0 15px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1.5px solid rgba(192,69,59,0.45)', color: '#A5443C', fontSize: '13px', fontWeight: '800' } }, 'Erase all data\u2026')
+        h('button', { onClick: () => setState({ confirmEraseAll: false }), style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1px solid rgba(125,105,116,0.25)', color: '#5F4A56', fontSize: '13px', fontWeight: '800' } }, 'Cancel'),
+        h('button', { onClick: eraseAllAppData, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: '#C0453B', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(140,40,32,0.4)' } }, 'Yes, erase everything')
+      ) : h('button', { onClick: () => setState({ confirmEraseAll: true }), style: { marginTop: '11px', minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1.5px solid rgba(192,69,59,0.45)', color: '#A5443C', fontSize: '13px', fontWeight: '800' } }, 'Erase all data\u2026')
     )
   ];
 }
 
 function reportDescriptor(type, now) {
   if (type === 'history') return { label: 'History', icon: 'history', description: 'Review dose, symptom, and vital logs by day.', meta: state.entries.length + ' recorded entries' };
-  if (type === 'weight') { const latestWeight = latest('weight'); return { label: 'Weight', icon: 'chart', description: 'Explore weight readings, trends, and recent changes.', meta: latestWeight ? (latestWeight.weight + ' lbs latest') : 'No readings yet' }; }
+  if (type === 'weight') { const latestWeight = latest('weight'); return { label: 'Weight', icon: 'chart', description: 'Explore weight readings, trends, and recent changes.', meta: latestWeight ? (latestWeight.weight + ' ' + weightSuffix() + ' latest') : 'No readings yet' }; }
   if (type === 'cycle') {
     const active = cycleActive();
     const day = daysSinceCycleStart();
@@ -2815,7 +2895,7 @@ function reportDescriptor(type, now) {
 }
 
 function renderReportsMenu(now) {
-  const reportTypes = ['history', 'weight', 'cycle', 'bowel_movement', 'appetite'];
+  const reportTypes = ['history', 'weight', 'cycle', 'bowel_movement', 'appetite'].filter(t => t !== 'cycle' || homePref('cycleTracking'));
   return [
     h('section', null,
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#AA5375' } }, appIcon('chart', 19), h('span', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase' } }, 'Care reports')),
@@ -3181,7 +3261,7 @@ function renderWeightTrend(now) {
   const latest = points[points.length - 1];
   const first = points[0];
   const change = latest.weight - first.weight;
-  const changeLabel = (change >= 0 ? '+' : '') + change.toFixed(1) + ' lbs';
+  const changeLabel = (change >= 0 ? '+' : '') + change.toFixed(1) + ' ' + weightSuffix();
   const changeColor = Math.abs(change) < 0.5 ? '#8A6479' : change > 0 ? '#9A6419' : '#AA5375';
   const avg = (weights.reduce((s, w) => s + w, 0) / weights.length).toFixed(1);
 
@@ -3190,11 +3270,11 @@ function renderWeightTrend(now) {
   // Grid lines
   yLabels.forEach(yl => {
     svg += '<line x1="' + pad.left + '" y1="' + yl.py.toFixed(1) + '" x2="' + (W - pad.right) + '" y2="' + yl.py.toFixed(1) + '" stroke="rgba(212,104,138,0.10)" stroke-width="1"/>';
-    svg += '<text x="' + (pad.left - 10) + '" y="' + (yl.py + 4).toFixed(1) + '" fill="#7D6974" font-size="11" font-family="IBM Plex Mono,monospace" text-anchor="end">' + yl.val + '</text>';
+    svg += '<text x="' + (pad.left - 10) + '" y="' + (yl.py + 4).toFixed(1) + '" fill="#7D6974" font-size="11" font-family="ui-monospace,Menlo,monospace" text-anchor="end">' + yl.val + '</text>';
   });
   // X labels
   xLabels.forEach(xl => {
-    svg += '<text x="' + xl.px.toFixed(1) + '" y="' + (H - 10) + '" fill="#7D6974" font-size="11" font-family="IBM Plex Mono,monospace" text-anchor="middle">' + xl.label + '</text>';
+    svg += '<text x="' + xl.px.toFixed(1) + '" y="' + (H - 10) + '" fill="#7D6974" font-size="11" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">' + xl.label + '</text>';
   });
   // Area gradient
   svg += '<defs><linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(155,91,138,0.25)"/><stop offset="100%" stop-color="rgba(155,91,138,0)"/></linearGradient></defs>';
@@ -3207,7 +3287,7 @@ function renderWeightTrend(now) {
     svg += '<circle cx="' + d.x.toFixed(1) + '" cy="' + d.y.toFixed(1) + '" r="' + (isLast ? 5 : 3.5) + '" fill="' + (isLast ? '#9B5B8A' : '#7B3F6B') + '" stroke="' + (isLast ? '#AA5375' : '#9B5B8A') + '" stroke-width="' + (isLast ? 2 : 1.5) + '"/>';
     // Value label on last dot
     if (isLast) {
-      svg += '<text x="' + d.x.toFixed(1) + '" y="' + (d.y - 12).toFixed(1) + '" fill="#7B3F6B" font-size="13" font-weight="700" font-family="IBM Plex Mono,monospace" text-anchor="middle">' + d.w + '</text>';
+      svg += '<text x="' + d.x.toFixed(1) + '" y="' + (d.y - 12).toFixed(1) + '" fill="#7B3F6B" font-size="13" font-weight="700" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">' + d.w + '</text>';
     }
   });
   svg += '</svg>';
@@ -3219,7 +3299,7 @@ function renderWeightTrend(now) {
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Weight Trend'),
         h('div', { style: { fontSize: '12.5px', color: '#7D6974', marginTop: '3px' } }, range === 'weeks' ? 'Last 4 weeks' : 'Last 3 months')
       ),
-      h('div', { className: 'mono', style: { fontSize: '24px', fontWeight: '700', color: '#7B3F6B', letterSpacing: '-0.02em' } }, latest.weight + ' lbs')
+      h('div', { className: 'mono', style: { fontSize: '24px', fontWeight: '700', color: '#7B3F6B', letterSpacing: '-0.02em' } }, latest.weight + ' ' + weightSuffix())
     ),
     h('div', { innerHTML: svg })
   );
@@ -3250,7 +3330,7 @@ function renderWeightTrend(now) {
         h('div', { style: { fontSize: '14px', fontWeight: '700' } }, day),
         h('div', { style: { fontSize: '12px', color: '#7D6974' } }, time)
       ),
-      h('div', { className: 'mono', style: { fontSize: '16px', fontWeight: '600', color: '#7B3F6B' } }, p.weight + ' lbs')
+      h('div', { className: 'mono', style: { fontSize: '16px', fontWeight: '600', color: '#7B3F6B' } }, p.weight + ' ' + weightSuffix())
     );
   });
 
@@ -3422,13 +3502,15 @@ function checkNotifications() {
   });
 }
 
-// Request push notification permission and subscribe to FCM
+// Native local-notification registration arrives with the Capacitor build.
 subscribePush();
 
 // Init
 if (!getPrefsDB().installedAt) { setPrefsDB({ installedAt: Date.now() }); }
 unsubPrefs = subscribePrefs((prefs) => {
   if (prefs.installedAt) MISSED_TRACK_SINCE = prefs.installedAt;
+  CONFIG.tempUnit = prefs.tempUnit === 'Celsius' ? 'Celsius' : 'Fahrenheit';
+  CONFIG.weightUnit = prefs.weightUnit === 'kg' ? 'kg' : 'lbs';
   CONFIG.patientName = (prefs.patientName || '').trim();
   setState({ missedClearedAt: prefs.missedClearedAt || 0, dismissedMisses: prefs.dismissedMisses || [], patientName: CONFIG.patientName, prefsLoaded: true });
 });
@@ -3441,10 +3523,7 @@ unsub = subscribeEntries((entries) => {
     return;
   }
   setState({ entries, loaded: true });
-  // If first load and no entries, offer to seed demo data
-  if (false && wasEmpty && entries.length === 0) {
-    seedDemo();
-  }
+
 });
 
 setInterval(() => {
@@ -3454,7 +3533,7 @@ setInterval(() => {
   if (!state.timeModal && !isEditing) render();
   checkNotifications();
 }, 1000);
-if (!getPrefsDB().tourDone && (getPrefsDB().patientName || '').trim()) { state.tourStep = 0; }
+if (!getPrefsDB().tourDone && (getPrefsDB().patientName || '').trim()) { const savedStep = getPrefsDB().tourStep; state.tourStep = (typeof savedStep === 'number' && savedStep >= 0 && savedStep < TOUR_STEPS.length) ? savedStep : 0; }
 render();
 
 // Service worker registration
