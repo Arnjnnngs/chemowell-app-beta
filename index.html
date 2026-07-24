@@ -12,7 +12,7 @@
 <title>ChemoWell</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-html,body{height:100%;}
+html,body{height:100%;overscroll-behavior-y:none;}
 body{-webkit-font-smoothing:antialiased;background:#FAF7F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',system-ui,sans-serif;color:#2A2127;}
 button{-webkit-tap-highlight-color:transparent;font-family:inherit;cursor:pointer;border:none;background:none;}
 button:active{transform:translateY(1px);}
@@ -200,6 +200,10 @@ function eraseAllAppData() {
     }
     doomed.forEach(k => localStorage.removeItem(k));
   } catch (e) {}
+  // Factory reset must boot exactly like a brand-new install — including landing on Home, not on
+  // the Settings tab the erase button lives in (v11). UI_VIEW_KEY is declared later in the file,
+  // but that's safe: this function only runs on user action, long after module evaluation (P3-3).
+  try { sessionStorage.removeItem(UI_VIEW_KEY); } catch (e) {}
   location.reload();
 }
 
@@ -336,7 +340,19 @@ function weightSuffix() { return CONFIG.weightUnit === 'kg' ? 'kg' : 'lbs'; }
 
 // State
 const initialMedicationConfig = loadMedicationConfig();
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: 'home', reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null };
+// Active-tab persistence (v11): a page reload (browser pull-to-refresh, SW-update reload, profile
+// switch) used to always boot to Home, dumping the user out of whatever tab they were on. The
+// current view is ephemeral UI state — not health data — so it lives in sessionStorage, restored
+// through a strict whitelist (anything unexpected falls back to 'home'). Deliberately NOT
+// persisted: reportsView, open modals, drafts, confirms, and the TEST_MODE date offset.
+const UI_VIEW_KEY = 'chemowell-app-ui-view';
+const VALID_VIEWS = ['home', 'meds', 'reports', 'inpatient', 'symptoms', 'settings'];
+function restoreView() {
+  try { const v = sessionStorage.getItem(UI_VIEW_KEY); return VALID_VIEWS.indexOf(v) >= 0 ? v : 'home'; }
+  catch (e) { return 'home'; }
+}
+function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -1306,12 +1322,14 @@ function appIcon(name, size, style) {
 function navigateTo(view) {
   const next = { view, reportsView: view === 'reports' ? null : state.reportsView, medEditor: view === 'meds' ? state.medEditor : null, confirmDeleteMed: null };
   setState(next);
+  persistView(view);
   window.scrollTo(0, 0);
   tourEvent('view:' + view);
 }
 
 function openReport(report) {
   setState({ view: 'reports', reportsView: report });
+  persistView('reports');
   window.scrollTo(0, 0);
 }
 
@@ -1559,8 +1577,14 @@ function renderSetup() {
 // ---------- Plans / upgrade bottom sheet (beta: simulated purchases) ----------
 // Design batch 3, item 12: mobile bottom sheet replacing the centered dialog. All handlers
 // (simulate-purchase, reset-to-free, close) and TEST_MODE labels are unchanged.
+// Animate-once guard (v11): the sheetUp entry animation should play when the sheet OPENS, not on
+// every re-render while it sits open (toast show/clear alone re-renders twice after "Simulate
+// purchase", each replay = a visible flicker). Reset on close so the next open animates again.
+let upgradeSheetAnimated = false;
 function renderUpgradeModal() {
-  if (!state.upgradeOpen) return null;
+  if (!state.upgradeOpen) { upgradeSheetAnimated = false; return null; }
+  const animateIn = !upgradeSheetAnimated;
+  upgradeSheetAnimated = true;
   const lic = getLicense();
   // priceValue/priceSuffix split the old single "$4.99 one-time" string into value + caption.
   // variant: 'free' (compact single row), 'plus' (featured), 'pro' (outlined).
@@ -1600,7 +1624,7 @@ function renderUpgradeModal() {
     );
   };
   return h('div', { onClick: (e) => { if (e.target === e.currentTarget) setState({ upgradeOpen: false }); }, style: { position: 'fixed', inset: '0', zIndex: '70', background: 'rgba(50,25,40,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '0' } },
-    h('div', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'ChemoWell plans', style: { width: '100%', maxWidth: '720px', maxHeight: '88vh', overflowY: 'auto', background: '#FFFFFF', borderRadius: '22px 22px 0 0', padding: '8px 20px calc(20px + env(safe-area-inset-bottom))', boxShadow: '0 -12px 48px rgba(60,25,45,0.30)', animation: 'sheetUp .32s cubic-bezier(0.32,0.72,0,1)' } },
+    h('div', { id: 'plans-sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'ChemoWell plans', style: { width: '100%', maxWidth: '720px', maxHeight: '88vh', overflowY: 'auto', background: '#FFFFFF', borderRadius: '22px 22px 0 0', padding: '8px 20px calc(20px + env(safe-area-inset-bottom))', boxShadow: '0 -12px 48px rgba(60,25,45,0.30)', ...(animateIn ? { animation: 'sheetUp .32s cubic-bezier(0.32,0.72,0,1)' } : {}) } },
       // Decorative drag handle \u2014 no drag logic; tap scrim or \u2715 to dismiss
       h('div', { 'aria-hidden': 'true', style: { width: '36px', height: '4px', borderRadius: '99px', background: '#DCCFD4', margin: '4px auto 14px' } }),
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
@@ -1731,8 +1755,14 @@ function render() {
   );
   const tourLayer = renderTourLayer();
   if (tourLayer) page.appendChild(tourLayer);
+  // Preserve the plans sheet's internal scroll across interaction re-renders (v11): the rebuild
+  // creates a fresh sheet element at scrollTop 0, which visibly yanked the sheet back to the top
+  // after any tap inside it. Re-query by id both times — never cache the node (stale-ref landmine).
+  const prevSheet = document.getElementById('plans-sheet');
+  const sheetScroll = prevSheet ? prevSheet.scrollTop : 0;
   root.innerHTML = '';
   root.appendChild(page);
+  if (sheetScroll > 0) { const freshSheet = document.getElementById('plans-sheet'); if (freshSheet) freshSheet.scrollTop = sheetScroll; }
   positionTour();
 }
 
@@ -2907,7 +2937,7 @@ function renderMedicationManager(now) {
 }
 
 
-const APP_VERSION = 'app-v10';
+const APP_VERSION = 'app-v11';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -3677,7 +3707,10 @@ setInterval(() => {
   state.now = simNow();
   const activeTag = document.activeElement && document.activeElement.tagName;
   const isEditing = activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA';
-  if (!state.timeModal && !isEditing) render();
+  // upgradeOpen joins timeModal in the tick guard (v11): rebuilding the plans sheet every second
+  // replayed its 320ms sheetUp entry animation and reset its internal scroll — the "flickering,
+  // adjusting popup" Aaron saw on his phone. Interaction re-renders still repaint it instantly.
+  if (!state.timeModal && !state.upgradeOpen && !isEditing) render();
   checkNotifications();
 }, 1000);
 if (!getPrefsDB().tourDone && (getPrefsDB().patientName || '').trim()) { const savedStep = getPrefsDB().tourStep; state.tourStep = (typeof savedStep === 'number' && savedStep >= 0 && savedStep < TOUR_STEPS.length) ? savedStep : 0; }
