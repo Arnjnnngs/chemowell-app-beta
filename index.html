@@ -184,7 +184,7 @@ function eraseAllAppData() {
     const doomed = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && k.indexOf('chemowell-app-') === 0) doomed.push(k);
+      if (k && k.indexOf('chemowell-app-') === 0 && k !== LICENSE_KEY) doomed.push(k); // purchases survive a data wipe
     }
     doomed.forEach(k => localStorage.removeItem(k));
   } catch (e) {}
@@ -255,7 +255,7 @@ function normalizeMedication(raw, index) {
     start: Math.max(0, Math.min(23, Number(window.start) || 0)),
     end: Math.max(1, Math.min(24, Number(window.end) || 24)),
     name: String(window.name || ('Window ' + (windowIndex + 1)))
-  })).filter(window => window.end > window.start) : [];
+  })).filter(window => window.end > window.start).sort((a, b) => a.start - b.start) : [];
   const medication = {
     ...original,
     id,
@@ -263,6 +263,7 @@ function normalizeMedication(raw, index) {
     sub: String(original.sub || '').trim(),
     type,
     gapH: type === 'gap' ? Math.max(0, Number(original.gapH) || 0) : 0,
+    alerts: type === 'win', // every scheduled-window med gets missed-dose tracking (audit P0-1)
     quickLog: typeof original.quickLog === 'boolean' ? original.quickLog : DEFAULT_QUICK_LOG_IDS.includes(id),
     groupedEvening: typeof original.groupedEvening === 'boolean' ? original.groupedEvening : DEFAULT_EVENING_IDS.includes(id),
     groupedMorning: typeof original.groupedMorning === 'boolean' ? original.groupedMorning : DEFAULT_MORNING_IDS.includes(id),
@@ -458,8 +459,7 @@ function medicationCeilingMax(med) {
   if (!med || !med.ceiling) return null;
   const configured = Number(med.ceilingMax);
   if (configured > 0) return configured;
-  if (med.id === 'tylenol' || med.ceilingGroup === 'tylenol') return CONFIG.ceilingMg;
-  return null;
+  return null; // no silent fallback ceiling — only limits the user actually configured
 }
 function dailyCeiling(med) {
   if (!med || !med.ceiling) return null;
@@ -709,8 +709,8 @@ function afterLog(entry) {
   if (entry.medId === 'tylenol' || entry.medId === 'tylenol-liquid') {
     const mg = tylenolMg();
     const tylenol = state.meds.find(med => med.id === 'tylenol');
-    const limit = medicationCeilingMax(tylenol) || CONFIG.ceilingMg;
-    const mgOver = mg > limit;
+    const limit = medicationCeilingMax(tylenol) || 0;
+    const mgOver = limit > 0 && mg > limit;
     let volOver = false, vol = 0, liquidMed = null;
     if (entry.medId === 'tylenol-liquid') {
       liquidMed = state.meds.find(med => med.id === 'tylenol-liquid');
@@ -1045,7 +1045,7 @@ async function submitBowelMovement(dayStartTs) {
     setState({ bowelInput: undefined });
     setToast('Bowel movement logged — ' + (BOWEL_MOVEMENT_LABELS[v] || v));
   } catch (e) {
-    setToast('Could not save — check connection and try again');
+    setToast('Could not save — please try again');
   }
 }
 // Quick-update from the pinned "Bowel Issue Active" banner (mirrors submitBowelMovement, but
@@ -1063,7 +1063,7 @@ async function submitBowelBannerUpdate() {
     setState({ bowelBannerInput: undefined });
     setToast('Bowel movement updated — ' + (BOWEL_MOVEMENT_LABELS[v] || v));
   } catch (e) {
-    setToast('Could not save — check connection and try again');
+    setToast('Could not save — please try again');
   }
 }
 
@@ -1100,7 +1100,7 @@ async function submitAppetite(dayStartTs) {
     setState({ appetiteInput: undefined, appetiteNoteInput: undefined });
     setToast('Appetite logged — ' + (APPETITE_LABELS[v] || v));
   } catch (e) {
-    setToast('Could not save — check connection and try again');
+    setToast('Could not save — please try again');
   }
 }
 
@@ -1300,7 +1300,7 @@ async function clearAllMissedInHistory(now) {
     await setPrefsDB({ dismissedMisses: next });
     setToast(all.length + ' missed dose' + (all.length > 1 ? 's' : '') + ' cleared');
   } catch (err) {
-    setToast('Could not save — check connection and try again');
+    setToast('Could not save — please try again');
   }
 }
 
@@ -1475,7 +1475,7 @@ function renderSetup() {
       h('label', { style: { display: 'block', textAlign: 'left', fontSize: '12.5px', fontWeight: '700', color: '#8A6B82', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' } }, 'Patient name'),
       h('input', {
         value: setupNameDraft,
-        placeholder: 'For example, Brandi',
+        placeholder: 'For example, Mom',
         onInput: (ev) => { setupNameDraft = ev.target.value; },
         onKeyDown: (ev) => { if (ev.key === 'Enter') completeSetup(); },
         style: { width: '100%', boxSizing: 'border-box', padding: '13px 14px', fontSize: '16px', border: '1.5px solid #E5C9D6', borderRadius: '12px', outline: 'none', marginBottom: '18px', background: '#FFF9FB' }
@@ -1607,7 +1607,7 @@ function render() {
   if (state.prefsLoaded && !(CONFIG.patientName || '').trim()) { renderSetup(); return; }
   const now = state.now;
   const tylenolMedication = state.meds.find(med => med.id === 'tylenol');
-  const ceiling = medicationCeilingMax(tylenolMedication) || CONFIG.ceilingMg;
+  const ceiling = medicationCeilingMax(tylenolMedication) || 0;
   const mg = tylenolMg();
   const pct = ceiling > 0 ? Math.min(100, mg / ceiling * 100) : 0;
   const tyColor = mg >= ceiling ? '#C0453B' : pct >= 90 ? '#C0453B' : pct >= 60 ? '#9A6419' : '#AA5375';
@@ -1631,7 +1631,7 @@ function render() {
     !state.loaded ? h('div', { style: { position: 'fixed', inset: '0', background: 'rgba(255,240,243,0.95)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '100' } },
       h('div', { style: { textAlign: 'center' } },
         h('div', { style: { fontSize: '24px', fontWeight: '800', color: '#AA5375', marginBottom: '8px' } }, 'ChemoWell'),
-        h('div', { style: { fontSize: '14px', color: '#7D6974' } }, 'Connecting...')
+        h('div', { style: { fontSize: '14px', color: '#7D6974' } }, 'Loading\u2026')
       )
     ) : null
   );
@@ -1902,12 +1902,13 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   if (chemoOffNow !== null && chemoOffNow >= -2 && chemoOffNow <= 1) {
     const cLabel = new Date(dayStart(nextChemoTs())).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' });
     let cTitle = '', cBody = '';
-    if (chemoOffNow === -2) { cTitle = 'Chemo ' + cLabel; cBody = 'Steroids start TOMORROW — Dexamethasone 2 tablets at 8 AM & 2 PM, for 3 days. Zofran will be restricted on chemo days.'; }
-    else if (chemoOffNow === -1) { cTitle = 'Chemo tomorrow — ' + cLabel; cBody = 'Steroids start TODAY (day 1 of 3): Dexamethasone 2 tablets at 8 AM & 2 PM. Zofran will be restricted tomorrow and the day after.'; }
-    else if (chemoOffNow === 0) { cTitle = 'Chemo TODAY'; cBody = 'Dexamethasone day 2 of 3 — 2 tablets at 8 AM & 2 PM.'; }
-    else { cTitle = 'Day after chemo'; cBody = 'Dexamethasone day 3 of 3 (final day) — 2 tablets at 8 AM only. Zofran remains restricted through tomorrow.'; }
-    const dexDueToday = dexActiveOn(now);
-    const zofranRestrictedToday = zofranBlockedOn(now);
+    if (chemoOffNow === -2) { cTitle = 'Chemo ' + cLabel; cBody = 'Treatment session is in two days. If the care team prescribed pre-treatment medications, they may need to start the day before \u2014 follow the care team\u2019s plan.'; }
+    else if (chemoOffNow === -1) { cTitle = 'Chemo tomorrow \u2014 ' + cLabel; cBody = 'Treatment session is tomorrow. Follow the care team\u2019s instructions for any pre-treatment medications.'; }
+    else if (chemoOffNow === 0) { cTitle = 'Chemo TODAY'; cBody = 'Treatment day. Log doses and symptoms as they happen \u2014 the care team will want the record.'; }
+    else { cTitle = 'Day after chemo'; cBody = 'Recovery day. Keep logging symptoms, appetite, and any as-needed medications.'; }
+    // Legacy regimen chips only appear if those exact meds exist in THIS profile's list
+    const dexDueToday = dexActiveOn(now) && state.meds.some(m => m.id === 'dexamethasone');
+    const zofranRestrictedToday = zofranBlockedOn(now) && state.meds.some(m => m.id === 'zofran');
     parts.push(h('div', { style: { background: 'rgba(192,69,59,0.14)', border: '2px solid #C0453B', borderRadius: '16px', padding: '15px 16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 4px 24px rgba(192,69,59,0.2)' } },
       h('div', { style: { display: 'flex', gap: '12px', alignItems: 'flex-start' } },
         h('span', { style: { flexShrink: '0', width: '28px', height: '28px', borderRadius: '50%', background: '#C0453B', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, 'Rx'),
@@ -1993,7 +1994,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   {
     const bmYStart = yesterdayStart(now);
     const bmYEntry = bowelMovementFor(bmYStart);
-    if (!bmYEntry) {
+    if (!bmYEntry && bmYStart >= dayStart(MISSED_TRACK_SINCE)) { // never ask about days before the app was installed
       const level = dailyAlertLevel(now);
       const s = dailyAlertStyle(level);
       const bmYLabel = new Date(bmYStart).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
@@ -2027,7 +2028,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   {
     const apYStart = yesterdayStart(now);
     const apYEntry = appetiteFor(apYStart);
-    if (!apYEntry) {
+    if (!apYEntry && apYStart >= dayStart(MISSED_TRACK_SINCE)) { // never ask about days before the app was installed
       const level = dailyAlertLevel(now);
       const s = dailyAlertStyle(level);
       const apYLabel = new Date(apYStart).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
@@ -2188,7 +2189,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         lastWeight ? h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '600', letterSpacing: '-0.02em', color: '#3D2B3A', whiteSpace: 'nowrap' } }, lastWeight.weight + ' lbs') : null
       ),
       h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
-        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: weightDefault() || '156.0', value: state.weightInput, onInput: (e) => { state.weightInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } }),
+        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: weightDefault() || '150.0', value: state.weightInput, onInput: (e) => { state.weightInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } }),
         h('button', { onClick: logWeight, style: { flexShrink: '0', minHeight: '38px', padding: '0 15px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
       )
     )
@@ -2268,7 +2269,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     let subStatus = '';
     const dc = med.ceiling ? dailyCeiling(med) : null;
     if (st.ceilingHit) {
-      subStatus = st.rollingCeiling ? ((dc ? dc.label : '15 mg') + ' reached in the last ' + med.rollingCeilingH + 'h') : ('Daily limit reached (' + (dc ? dc.label : CONFIG.ceilingMg.toLocaleString() + ' mg') + ')');
+      subStatus = st.rollingCeiling ? ((dc ? dc.label : 'Limit') + ' reached in the last ' + med.rollingCeilingH + 'h') : ('Daily limit reached' + (dc ? ' (' + dc.label + ')' : ''));
     } else if (st.windowName) {
       subStatus = st.windowName + ' window open';
     }
@@ -2296,7 +2297,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       buttonArea = h('div', { style: { background: 'rgba(192,69,59,0.12)', border: '1px solid rgba(192,69,59,0.25)', borderRadius: '13px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '7px' } },
         h('div', { style: { fontSize: '11.5px', color: '#A15B56', fontWeight: '600', lineHeight: '1.35', display: 'flex', alignItems: 'center', gap: '7px' } },
           h('span', { style: { flexShrink: '0', width: '18px', height: '18px', borderRadius: '50%', background: '#C0453B', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '12px' } }, '!'),
-          st.ceilingHit ? ((med.rollingCeilingH ? '' : 'Daily ') + (dc ? dc.label : CONFIG.ceilingMg.toLocaleString() + ' mg') + ' ceiling reached. Log more anyway?') : st.chemoBlock ? 'Care team said no Zofran on chemo days. Log it anyway?' : ('Closed — opens in ' + countdownLabel + '. Log it early anyway?')
+          st.ceilingHit ? ((med.rollingCeilingH ? '' : 'Daily ') + (dc ? dc.label + ' ' : '') + 'ceiling reached. Log more anyway?') : st.chemoBlock ? 'Care team said no Zofran on chemo days. Log it anyway?' : ('Closed — opens in ' + countdownLabel + '. Log it early anyway?')
         ),
         h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
           ...doseList.map(d => doseBlocked(d) ? blockedBtn(d) : h('button', { onClick: () => logMed(med.id, d.single ? null : d, { force: true }), style: { flex: '0 0 auto', minWidth: '0', minHeight: '34px', padding: '0 13px', borderRadius: '999px', background: '#C0453B', color: '#fff', fontSize: '12.5px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(120,40,34,0.4)' } }, d.single ? 'Override — log now' : ('Log ' + d.label + ' now'))),
@@ -2486,13 +2487,18 @@ function parseScheduleWindows(text) {
   return windows;
 }
 
+// Legacy ids from the original single-family app still key special-case logic (chemo lockouts,
+// linked windows, fixed ceilings). User-created meds must NEVER receive these ids, or a stranger's
+// "Zofran" would inherit another patient's regimen rules (audit P0-2).
+const RESERVED_LEGACY_MED_IDS = new Set(['dexamethasone', 'zofran', 'protonix', 'tylenol', 'tylenol-liquid', 'iron', 'compazine', 'buspirone', 'paroxetine', 'morphine', 'senokot', 'imodium', 'lidocaine']);
 function nextMedicationId(name, existingId) {
   const base = safeMedicationId(name, 'medication');
   if (existingId) return existingId;
   const ids = new Set(state.meds.map(med => med.id));
-  if (!ids.has(base)) return base;
+  const taken = id => ids.has(id) || RESERVED_LEGACY_MED_IDS.has(id);
+  if (!taken(base)) return base;
   let suffix = 2;
-  while (ids.has(base + '-' + suffix)) suffix += 1;
+  while (taken(base + '-' + suffix)) suffix += 1;
   return base + '-' + suffix;
 }
 
@@ -2748,7 +2754,7 @@ function renderMedicationManager(now) {
       h('div', null,
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#AA5375' } }, appIcon('pill', 19), h('span', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase' } }, 'Medication management')),
         h('h1', { style: { fontSize: '24px', lineHeight: '1.05', color: '#342530', letterSpacing: '-0.035em', marginTop: '5px' } }, 'Meds'),
-        h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px', maxWidth: '470px', lineHeight: '1.4' } }, 'Review, add, edit, or remove the active medication list. Configuration is stored on this device; dose history and live sync stay intact.')
+        h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px', maxWidth: '470px', lineHeight: '1.4' } }, 'Review, add, edit, or remove the active medication list. Configuration is stored on this device; dose history stays intact.')
       ),
       h('button', { onClick: () => openMedicationEditor(null), 'data-tour': 'meds-add', style: { flexShrink: '0', minHeight: '40px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: '5px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '12.5px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, appIcon('plus', 16), 'Add')
     ),
@@ -2780,7 +2786,7 @@ function renderMedicationManager(now) {
     ),
     h('section', { style: { marginTop: '14px', background: 'rgba(192,69,59,0.05)', border: '1.5px solid rgba(192,69,59,0.22)', borderRadius: '17px', padding: '14px' } },
       h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#A5443C' } }, 'Start over'),
-      h('div', { style: { fontSize: '12.5px', color: '#7A5450', marginTop: '5px', lineHeight: '1.45' } }, 'Erase everything stored on this device — patient name, medication list, and all logged history — and return to the welcome screen. Nothing is stored anywhere else, so this cannot be undone.'),
+      h('div', { style: { fontSize: '12.5px', color: '#7A5450', marginTop: '5px', lineHeight: '1.45' } }, 'Erase everything stored on this device — patient name, medication list, and all logged history — and return to the welcome screen. Nothing is stored anywhere else, so this cannot be undone. Purchased plans are kept.'),
       state.confirmEraseAll ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '12px', flexWrap: 'wrap' } },
         h('span', { style: { flex: '1', minWidth: '160px', fontSize: '12.5px', fontWeight: '800', color: '#A5443C' } }, 'Erase everything? This is permanent.'),
         h('button', { onClick: () => setState({ confirmEraseAll: false }), style: { minHeight: '40px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1px solid rgba(125,105,116,0.25)', color: '#5F4A56', fontSize: '13px', fontWeight: '800' } }, 'Cancel'),
