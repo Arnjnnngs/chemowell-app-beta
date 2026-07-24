@@ -12,12 +12,12 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;}
-body{-webkit-font-smoothing:antialiased;background:#FFF0F3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',system-ui,sans-serif;color:#342530;}
+body{-webkit-font-smoothing:antialiased;background:#FAF7F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',system-ui,sans-serif;color:#2A2127;}
 button{-webkit-tap-highlight-color:transparent;font-family:inherit;cursor:pointer;border:none;background:none;}
 button:active{transform:translateY(1px);}
 input{-webkit-tap-highlight-color:transparent;font-family:inherit;}
-input:focus{outline:2px solid #AA5375;outline-offset:0;border-color:#AA5375;}
-::placeholder{color:#7D6974 !important;opacity:1;}
+input:focus{outline:2px solid #A24C71;outline-offset:0;border-color:#A24C71;}
+::placeholder{color:#7A6E76 !important;opacity:1;}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
 #root{min-height:100vh;}
 </style>
@@ -246,7 +246,7 @@ function normalizeMedication(raw, index) {
     sub: String(original.sub || '').trim(),
     type,
     gapH: type === 'gap' ? Math.max(0, Number(original.gapH) || 0) : 0,
-    alerts: type === 'win', // every scheduled-window med gets missed-dose tracking (audit P0-1)
+    alerts: type === 'win' && !(original.scheduleDays && original.scheduleDays.mode === 'asneeded'), // scheduled meds get missed-dose tracking; as-needed meds don't
     quickLog: typeof original.quickLog === 'boolean' ? original.quickLog : DEFAULT_QUICK_LOG_IDS.includes(id),
     groupedEvening: typeof original.groupedEvening === 'boolean' ? original.groupedEvening : DEFAULT_EVENING_IDS.includes(id),
     groupedMorning: typeof original.groupedMorning === 'boolean' ? original.groupedMorning : DEFAULT_MORNING_IDS.includes(id),
@@ -256,6 +256,8 @@ function normalizeMedication(raw, index) {
   if (sd && sd.mode === 'weekly' && Array.isArray(sd.days)) {
     const days = sd.days.map(Number).filter(d => d >= 0 && d <= 6);
     if (days.length && days.length < 7) medication.scheduleDays = { mode: 'weekly', days: days }; else delete medication.scheduleDays;
+  } else if (sd && sd.mode === 'asneeded') {
+    medication.scheduleDays = { mode: 'asneeded' };
   } else if (sd && sd.mode === 'interval' && Number(sd.n) >= 2 && sd.anchor) {
     medication.scheduleDays = { mode: 'interval', n: Math.round(Number(sd.n)), anchor: String(sd.anchor) };
   } else {
@@ -485,6 +487,7 @@ function medScheduledOn(med, dayTs) {
   const sd = med.scheduleDays;
   if (!sd) return true;
   const d0 = dayStart(dayTs);
+  if (sd.mode === 'asneeded') return true; // available any day, just never 'due'
   if (sd.mode === 'weekly') return Array.isArray(sd.days) && sd.days.indexOf(new Date(d0).getDay()) !== -1;
   if (sd.mode === 'interval') {
     const anchorTs = new Date(String(sd.anchor) + 'T12:00:00').getTime();
@@ -497,6 +500,7 @@ function medScheduledOn(med, dayTs) {
 function scheduleDaysLabel(med) {
   const sd = med.scheduleDays;
   if (!sd) return 'Every day';
+  if (sd.mode === 'asneeded') return 'As needed';
   if (sd.mode === 'weekly') { const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; return (sd.days || []).map(d => names[d]).join(', ') || 'Every day'; }
   if (sd.mode === 'interval') return sd.n === 2 ? 'Every other day' : 'Every ' + sd.n + ' days';
   return 'Every day';
@@ -752,7 +756,7 @@ async function setChemoDate() {
   const p = raw.split('-').map(Number);
   const ts = new Date(p[0], p[1] - 1, p[2]).getTime();
   if (isNaN(ts)) { setToast('Invalid date'); return; }
-  await addEntryDB({ medId: 'chemo_date', dose: 'Chemo scheduled', mg: 0, ts, loggedAt: Date.now() });
+  await addEntryDB({ medId: 'chemo_date', dose: 'Treatment scheduled', mg: 0, ts, loggedAt: Date.now() });
   setState({ chemoInput: '' });
   setToast('Chemo date set — ' + new Date(ts).toLocaleDateString());
 }
@@ -884,7 +888,7 @@ async function removeEntry(id) {
 // seedDemo removed (audit 1.3) — no fake data paths ship in the app.
 
 // Lock SVG
-const lockSVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#7D6974" stroke-width="2.4"><rect x="4" y="10.5" width="16" height="10" rx="2"></rect><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"></path></svg>';
+const lockSVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#7A6E76" stroke-width="2.4"><rect x="4" y="10.5" width="16" height="10" rx="2"></rect><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"></path></svg>';
 const clockSVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#8C5900" stroke-width="2.4"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3.5 2"></path></svg>';
 
 // ---- Menstrual cycle tracking ----
@@ -1313,7 +1317,7 @@ function renderTestingControls() {
       h('span', { style: { fontSize: '10px' } }, isOpen ? '▲' : '▼')
     ),
     isOpen ? h('div', { style: { padding: '0 0 12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' } },
-      h('input', { type: 'date', value: dateValue, onInput: (event) => setSimDate(event.target.value), className: 'mono', style: { minHeight: '34px', border: '1px solid rgba(199,120,0,0.35)', borderRadius: '9px', padding: '0 8px', fontSize: '13px', background: 'rgba(255,255,255,0.7)', color: '#3D2B3A', colorScheme: 'light' } }),
+      h('input', { type: 'date', value: dateValue, onInput: (event) => setSimDate(event.target.value), className: 'mono', style: { minHeight: '34px', border: '1px solid rgba(199,120,0,0.35)', borderRadius: '9px', padding: '0 8px', fontSize: '13px', background: 'rgba(255,255,255,0.7)', color: '#2A2127', colorScheme: 'light' } }),
       h('button', { onClick: () => shiftSimDate(-1), style: { minHeight: '34px', padding: '0 11px', borderRadius: '9px', background: 'rgba(255,255,255,0.68)', border: '1px solid rgba(199,120,0,0.35)', color: '#704B12', fontSize: '12px', fontWeight: '700' } }, '− 1 Day'),
       h('button', { onClick: () => shiftSimDate(1), style: { minHeight: '34px', padding: '0 11px', borderRadius: '9px', background: 'rgba(255,255,255,0.68)', border: '1px solid rgba(199,120,0,0.35)', color: '#704B12', fontSize: '12px', fontWeight: '700' } }, '+ 1 Day'),
       (state.dateOffsetDays || 0) !== 0 ? h('button', { onClick: resetSimDate, style: { minHeight: '34px', padding: '0 11px', borderRadius: '9px', background: '#C77800', color: '#fff', fontSize: '12px', fontWeight: '700' } }, 'Reset') : null
@@ -1326,25 +1330,22 @@ function renderHeader(now) {
   const title = name ? (name + '’s Meds') : 'ChemoWell';
   const dateLabel = new Date(now).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
   const pastMissed = pastMissedCount(now);
-  return h('header', { style: { position: 'sticky', top: '0', zIndex: '20', background: 'rgba(255,240,243,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderBottom: '1px solid rgba(212,104,138,0.16)', padding: '12px 16px', boxShadow: '0 4px 22px rgba(180,130,150,0.10)' } },
+  return h('header', { style: { position: 'sticky', top: '0', zIndex: '20', background: 'rgba(255,240,243,0.88)', borderBottom: '1px solid #EBE3E4', padding: '12px 16px', boxShadow: '0 4px 22px rgba(180,130,150,0.10)' } },
     h('div', { style: { maxWidth: '720px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '14px' } },
       h('div', { style: { minWidth: '0', flex: '1' } },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', color: '#AA5375', marginBottom: '4px' } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', color: '#A24C71', marginBottom: '4px' } },
           appIcon('heart', 18),
           h('span', { style: { fontSize: '14px', fontWeight: '800', letterSpacing: '-0.01em' } }, 'ChemoWell'),
           TEST_MODE ? h('span', { style: { color: '#fff', background: '#C77800', border: '1px solid #A86400', borderRadius: '99px', padding: '4px 11px', fontSize: '11.5px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', boxShadow: '0 2px 6px rgba(199,120,0,0.4)' } }, 'APP BETA') : null,
-          h('button', { onClick: startTour, 'aria-label': 'Open the how-to guide', title: 'How-to guide', style: { width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(170,83,117,0.12)', color: '#AA5375', border: '1.5px solid rgba(170,83,117,0.35)', fontSize: '14px', fontWeight: '800', cursor: 'pointer' } }, '?'),
+          h('button', { onClick: startTour, 'aria-label': 'Open the how-to guide', title: 'How-to guide', style: { width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(170,83,117,0.12)', color: '#A24C71', border: '1.5px solid rgba(170,83,117,0.35)', fontSize: '14px', fontWeight: '800', cursor: 'pointer' } }, '?'),
           h('button', { onClick: () => navigateTo('settings'), 'aria-label': 'Settings', title: 'Settings', style: { width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(125,105,116,0.10)', color: '#5F4A56', border: '1.5px solid rgba(125,105,116,0.3)', fontSize: '13px', cursor: 'pointer' } }, '\u2699')
         ),
-        h('div', { style: { fontSize: '22px', fontWeight: '800', letterSpacing: '-0.035em', color: '#342530', lineHeight: '1.05' } }, title),
-        h('div', { style: { fontSize: '12px', color: '#6E5261', marginTop: '4px', fontWeight: '600' } }, dateLabel)
+        h('div', { style: { fontSize: '22px', fontWeight: '800', letterSpacing: '-0.035em', color: '#2A2127', lineHeight: '1.05' } }, title),
+        h('div', { style: { fontSize: '12px', color: '#554A52', marginTop: '4px', fontWeight: '600' } }, dateLabel)
       ),
       h('div', { style: { textAlign: 'right', flexShrink: '0' } },
-        h('div', { className: 'mono', style: { fontSize: '20px', fontWeight: '600', lineHeight: '1', color: '#342530', letterSpacing: '-0.02em' } }, fmtTime(now)),
-        h('div', { style: { fontSize: '10.5px', color: '#8E3D61', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px', marginTop: '6px', fontWeight: '700' } },
-          h('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#AA5375', display: 'inline-block', boxShadow: '0 0 0 3px rgba(212,104,138,0.14)' } }),
-          'On device'
-        )
+        h('div', { className: 'mono', style: { fontSize: '20px', fontWeight: '600', lineHeight: '1', color: '#2A2127', letterSpacing: '-0.02em' } }, fmtTime(now)),
+        null
       )
     ),
     TEST_MODE ? h('div', { style: { maxWidth: '720px', margin: '10px auto 0', background: '#C77800', color: '#fff', borderRadius: '10px', padding: '6px 12px', fontSize: '11.5px', fontWeight: '800', letterSpacing: '0.03em', textAlign: 'center' } }, 'APP BETA — all data stays on this device') : null,
@@ -1372,11 +1373,11 @@ function renderBottomNav() {
     { key: 'inpatient', label: 'In-Patient', icon: 'hospital' },
     { key: 'symptoms', label: 'Symptoms', icon: 'notes' }
   ];
-  return h('nav', { 'aria-label': 'Primary navigation', style: { position: 'fixed', zIndex: '35', left: '0', right: '0', bottom: '0', background: 'rgba(255,249,251,0.92)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderTop: '1px solid rgba(212,104,138,0.18)', boxShadow: '0 -8px 30px rgba(121,72,96,0.10)', padding: '8px 10px calc(8px + env(safe-area-inset-bottom))' } },
+  return h('nav', { 'aria-label': 'Primary navigation', style: { position: 'fixed', zIndex: '35', left: '0', right: '0', bottom: '0', background: 'rgba(255,249,251,0.92)', borderTop: '1px solid #EBE3E4', boxShadow: '0 -8px 30px rgba(121,72,96,0.10)', padding: '8px 10px calc(8px + env(safe-area-inset-bottom))' } },
     h('div', { style: { maxWidth: '720px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '4px' } },
       ...items.map(item => {
         const active = state.view === item.key;
-        return h('button', { onClick: () => navigateTo(item.key), 'data-tour': 'nav-' + item.key, 'aria-label': item.label, 'aria-current': active ? 'page' : 'false', style: { minHeight: '54px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', borderRadius: '14px', color: active ? '#AA5375' : '#705B66', background: active ? 'rgba(170,83,117,0.13)' : 'transparent', fontSize: '10.5px', fontWeight: active ? '800' : '700', transition: 'background .18s ease, color .18s ease' } },
+        return h('button', { onClick: () => navigateTo(item.key), 'data-tour': 'nav-' + item.key, 'aria-label': item.label, 'aria-current': active ? 'page' : 'false', style: { minHeight: '54px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', borderRadius: '14px', color: active ? '#A24C71' : '#705B66', background: active ? 'rgba(170,83,117,0.13)' : 'transparent', fontSize: '10.5px', fontWeight: active ? '800' : '700', transition: 'background .18s ease, color .18s ease' } },
           appIcon(item.icon, 21),
           h('span', null, item.label)
         );
@@ -1395,14 +1396,14 @@ function renderGroupedMedsCard(title, meds, now) {
   return h('section', null,
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
       h('div', { style: { fontSize: '13px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A6479' } }, title),
-      (dueMeds.length >= 2 && !inpatientNow) ? h('button', { onClick: () => setState({ timeModal: { type: 'multi', medIds: dueMeds.map(m => m.id), timeValue: nowLocalISO() } }), style: { minHeight: '40px', padding: '0 16px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(150,60,90,0.35)' } }, 'Take all (' + dueMeds.length + ')') : null
+      (dueMeds.length >= 2 && !inpatientNow) ? h('button', { onClick: () => setState({ timeModal: { type: 'multi', medIds: dueMeds.map(m => m.id), timeValue: nowLocalISO() } }), style: { minHeight: '40px', padding: '0 16px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, 'Take all (' + dueMeds.length + ')') : null
     ),
-    h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '18px', overflow: 'hidden', marginTop: '11px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+    h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '18px', overflow: 'hidden', marginTop: '11px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
       ...meds.map((med, i) => {
         if (!inpatientNow && !medScheduledOn(med, now)) {
           return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none', opacity: '0.65' } },
             h('div', { style: { flex: '1', minWidth: '0' } },
-              h('div', { style: { fontSize: '15px', fontWeight: '800', color: '#6E5261' } }, med.name),
+              h('div', { style: { fontSize: '15px', fontWeight: '800', color: '#554A52' } }, med.name),
               h('div', { style: { fontSize: '11.5px', color: '#8A7580', marginTop: '2px' } }, 'Not scheduled today \u00b7 Taken: ' + scheduleDaysLabel(med))
             )
           );
@@ -1423,17 +1424,17 @@ function renderGroupedMedsCard(title, meds, now) {
         if (isOv) {
           right = h('div', { style: { display: 'flex', gap: '7px', flexShrink: '0' } },
             h('button', { onClick: () => logMed(med.id, med.doses ? med.doses[0] : null, { force: true }), style: { minHeight: '42px', padding: '0 13px', borderRadius: '11px', background: '#C0453B', color: '#fff', fontSize: '13px', fontWeight: '700' } }, 'Log early'),
-            h('button', { onClick: () => setState({ override: null }), style: { minHeight: '42px', padding: '0 11px', borderRadius: '11px', background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(212,104,138,0.15)', color: '#7D6974', fontSize: '13px', fontWeight: '600' } }, 'Cancel')
+            h('button', { onClick: () => setState({ override: null }), style: { minHeight: '42px', padding: '0 11px', borderRadius: '11px', background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(212,104,138,0.15)', color: '#7A6E76', fontSize: '13px', fontWeight: '600' } }, 'Cancel')
           );
         } else if (!st.locked) {
-          right = h('button', { onClick: () => logMed(med.id, med.doses ? med.doses[0] : null), style: { minHeight: '44px', padding: '0 20px', borderRadius: '12px', background: '#AA5375', color: '#fff', fontSize: '14px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(150,60,90,0.35)', flexShrink: '0' } }, 'Log');
+          right = h('button', { onClick: () => logMed(med.id, med.doses ? med.doses[0] : null), style: { minHeight: '44px', padding: '0 20px', borderRadius: '12px', background: '#A24C71', color: '#fff', fontSize: '14px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)', flexShrink: '0' } }, 'Log');
         } else {
           right = h('button', { onClick: () => setState({ override: { medId: med.id } }), className: 'mono', style: { minHeight: '38px', padding: '0 12px', borderRadius: '99px', background: 'rgba(255,255,255,0.4)', border: '1px solid rgba(212,104,138,0.15)', color: '#5C6662', fontSize: '12.5px', fontWeight: '600', flexShrink: '0' } }, 'Opens ' + fmtTime(st.availableAt));
         }
         return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
           h('div', { style: { flex: '1', minWidth: '0' } },
             h('div', { style: { fontSize: '15.5px', fontWeight: '800', letterSpacing: '-0.01em' } }, med.name),
-            h('div', { style: { fontSize: '12px', color: '#7D6974' } }, med.sub + (med.note ? (' · ' + med.note) : '')),
+            h('div', { style: { fontSize: '12px', color: '#7A6E76' } }, med.sub + (med.note ? (' · ' + med.note) : '')),
             lastToday ? h('div', { style: { fontSize: '12.5px', color: '#0C7F57', fontWeight: '700', marginTop: '2px' } }, '✓ Logged ' + fmtTime(lastToday.ts)) : null
           ),
           right
@@ -1466,10 +1467,10 @@ function completeSetup() {
 }
 function renderSetup() {
   const root = document.getElementById('root');
-  const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(145deg, #FFF5F7 0%, #FFF0F3 30%, #FDE4EC 60%, #FFF0F3 80%, #FFF5F7 100%)', color: '#3D2B3A', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' } },
+  const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(180deg, #FBF0F2 0%, #FAF7F6 260px)', color: '#2A2127', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' } },
     h('div', { style: { maxWidth: '420px', width: '100%', background: '#FFFFFF', borderRadius: '22px', padding: '32px 26px', boxShadow: '0 18px 50px rgba(170,83,117,0.18)', textAlign: 'center' } },
       h('div', { style: { fontSize: '40px', marginBottom: '10px' } }, '\u2764\uFE0F'),
-      h('div', { style: { fontSize: '26px', fontWeight: '800', color: '#AA5375', letterSpacing: '-0.02em', marginBottom: '6px' } }, 'Welcome to ChemoWell'),
+      h('div', { style: { fontSize: '26px', fontWeight: '800', color: '#A24C71', letterSpacing: '-0.02em', marginBottom: '6px' } }, 'Welcome to ChemoWell'),
       h('div', { style: { fontSize: '14px', color: '#7A5E74', lineHeight: '1.55', marginBottom: '22px' } },
         'A private medication and symptom tracker for chemo patients and their caregivers. Everything you log stays on this device \u2014 nothing is sent to the cloud.'),
       h('label', { style: { display: 'block', textAlign: 'left', fontSize: '12.5px', fontWeight: '700', color: '#8A6B82', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' } }, 'Patient name'),
@@ -1482,7 +1483,7 @@ function renderSetup() {
       }),
       h('button', {
         onClick: completeSetup,
-        style: { width: '100%', padding: '14px', fontSize: '16px', fontWeight: '800', color: '#FFFFFF', background: 'linear-gradient(135deg, #C9648E 0%, #AA5375 100%)', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 8px 22px rgba(170,83,117,0.35)' } }, 'Get started'),
+        style: { width: '100%', padding: '14px', fontSize: '16px', fontWeight: '800', color: '#FFFFFF', background: 'linear-gradient(135deg, #A24C71 0%, #8E3D61 100%)', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 8px 22px rgba(170,83,117,0.35)' } }, 'Get started'),
       h('div', { style: { fontSize: '11.5px', color: '#B295AA', marginTop: '16px', lineHeight: '1.5' } },
         'After this, a short interactive guide will walk you through adding your medications and using the app.')
     )
@@ -1500,22 +1501,22 @@ function renderUpgradeModal() {
     const current = lic.tier === tier;
     return h('div', { style: { border: '2px solid ' + (current ? '#2E7D4F' : accent ? 'rgba(170,83,117,0.45)' : 'rgba(125,105,116,0.2)'), borderRadius: '16px', padding: '14px', background: '#fff' } },
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px' } },
-        h('div', { style: { fontSize: '16px', fontWeight: '800', color: '#342530' } }, title),
+        h('div', { style: { fontSize: '16px', fontWeight: '800', color: '#2A2127' } }, title),
         h('div', { style: { fontSize: '14px', fontWeight: '800', color: '#8E3D61' } }, price)
       ),
       h('ul', { style: { margin: '8px 0 0', padding: '0 0 0 18px', color: '#5A4552', fontSize: '12.5px', lineHeight: '1.6' } }, ...features.map(f => h('li', null, f))),
       current
         ? h('div', { style: { marginTop: '10px', fontSize: '12.5px', fontWeight: '800', color: '#2E7D4F' } }, '\u2713 Current plan')
-        : (tier === 'free' ? null : h('button', { onClick: () => { setLicense({ tier: tier, simulated: true, purchasedAt: Date.now() }); setToast(title + ' unlocked (simulated for beta)'); setState({}); }, style: { marginTop: '10px', width: '100%', minHeight: '42px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, TEST_MODE ? 'Simulate purchase (beta)' : 'Buy'))
+        : (tier === 'free' ? null : h('button', { onClick: () => { setLicense({ tier: tier, simulated: true, purchasedAt: Date.now() }); setToast(title + ' unlocked (simulated for beta)'); setState({}); }, style: { marginTop: '10px', width: '100%', minHeight: '42px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13.5px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, TEST_MODE ? 'Simulate purchase (beta)' : 'Buy'))
     );
   };
-  return h('div', { style: { position: 'fixed', inset: '0', zIndex: '70', background: 'rgba(50,25,40,0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' } },
+  return h('div', { style: { position: 'fixed', inset: '0', zIndex: '70', background: 'rgba(50,25,40,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' } },
     h('div', { style: { width: 'min(94vw, 440px)', maxHeight: '92vh', overflowY: 'auto', background: '#FFF7FA', borderRadius: '20px', padding: '18px', boxShadow: '0 20px 60px rgba(60,25,45,0.4)' } },
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
-        h('div', { style: { fontSize: '19px', fontWeight: '800', color: '#AA5375', letterSpacing: '-0.01em' } }, 'ChemoWell plans'),
+        h('div', { style: { fontSize: '19px', fontWeight: '800', color: '#A24C71', letterSpacing: '-0.01em' } }, 'ChemoWell plans'),
         h('button', { onClick: () => setState({ upgradeOpen: false }), 'aria-label': 'Close plans', style: { width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(125,105,116,0.1)', color: '#5F4A56', fontSize: '15px', fontWeight: '800' } }, '\u2715')
       ),
-      h('div', { style: { fontSize: '12.5px', color: '#6E5261', lineHeight: '1.5', marginBottom: '12px' } }, 'One-time purchases \u2014 no subscriptions. The free tracker is complete and stays free.'),
+      h('div', { style: { fontSize: '12.5px', color: '#554A52', lineHeight: '1.5', marginBottom: '12px' } }, 'One-time purchases \u2014 no subscriptions. The free tracker is complete and stays free.'),
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
         planCard('free', 'Free', '$0', ['1 patient profile', 'The complete tracker: meds, schedules, dose limits, missed doses, symptoms, reports', 'All safety features, always free']),
         planCard('plus', 'Plus', '$4.99 one-time', ['Up to 3 patient profiles', 'PDF / CSV export for doctor visits (coming in beta)', 'Backup & transfer to a new phone (coming in beta)'], true),
@@ -1568,14 +1569,14 @@ function renderTourLayer() {
   return h('div', { id: 'tour-layer', style: { position: 'fixed', inset: '0', zIndex: '80', pointerEvents: 'none' } },
     h('div', { id: 'tour-card', style: { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 'min(88vw, 330px)', background: '#FFFFFF', borderRadius: '18px', padding: '18px', boxShadow: '0 18px 50px rgba(80,30,55,0.35)', pointerEvents: 'auto', border: '2px solid rgba(170,83,117,0.4)' } },
       h('div', { style: { fontSize: '10.5px', fontWeight: '800', color: '#B295AA', letterSpacing: '0.07em', marginBottom: '6px' } }, 'GUIDE \u00b7 STEP ' + (state.tourStep + 1) + ' OF ' + TOUR_STEPS.length),
-      h('div', { style: { fontSize: '17px', fontWeight: '800', color: '#AA5375', letterSpacing: '-0.01em', marginBottom: '6px' } }, step.title),
+      h('div', { style: { fontSize: '17px', fontWeight: '800', color: '#A24C71', letterSpacing: '-0.01em', marginBottom: '6px' } }, step.title),
       h('div', { style: { fontSize: '13.5px', color: '#5A4552', lineHeight: '1.55' } }, step.text),
       step.wait ? h('div', { style: { marginTop: '10px', fontSize: '12.5px', fontWeight: '800', color: '#C9648E' } }, '\ud83d\udc46 ' + step.wait) : null,
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', gap: '8px' } },
         h('button', { onClick: endTour, style: { fontSize: '12.5px', fontWeight: '700', color: '#96808D', background: 'transparent', padding: '8px 8px 8px 0', cursor: 'pointer' } }, 'Skip guide'),
         h('div', { style: { display: 'flex', gap: '8px' } },
           state.tourStep > 0 ? h('button', { onClick: backTour, style: { minHeight: '40px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(170,83,117,0.3)', color: '#8E3D61', fontSize: '13px', fontWeight: '800', cursor: 'pointer' } }, 'Back') : null,
-          step.next ? h('button', { onClick: advanceTour, style: { minHeight: '40px', padding: '0 20px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '800', cursor: 'pointer', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, step.next) : null
+          step.next ? h('button', { onClick: advanceTour, style: { minHeight: '40px', padding: '0 20px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13.5px', fontWeight: '800', cursor: 'pointer', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, step.next) : null
         )
       )
     )
@@ -1615,28 +1616,25 @@ function render() {
   const ceiling = medicationCeilingMax(tylenolMedication) || 0;
   const mg = tylenolMg();
   const pct = ceiling > 0 ? Math.min(100, mg / ceiling * 100) : 0;
-  const tyColor = mg >= ceiling ? '#C0453B' : pct >= 90 ? '#C0453B' : pct >= 60 ? '#9A6419' : '#AA5375';
-  const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(145deg, #FFF5F7 0%, #FFF0F3 30%, #FDE4EC 60%, #FFF0F3 80%, #FFF5F7 100%)', color: '#3D2B3A', paddingBottom: 'calc(90px + env(safe-area-inset-bottom))', position: 'relative' } },
-    h('div', { style: { position: 'fixed', top: '-120px', right: '-80px', width: '360px', height: '360px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(212,104,138,0.18) 0%, transparent 70%)', pointerEvents: 'none', zIndex: '0' } }),
-    h('div', { style: { position: 'fixed', bottom: '-100px', left: '-60px', width: '300px', height: '300px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(180,120,200,0.12) 0%, transparent 70%)', pointerEvents: 'none', zIndex: '0' } }),
-    h('div', { style: { position: 'fixed', top: '40%', left: '50%', width: '400px', height: '400px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,150,180,0.10) 0%, transparent 70%)', pointerEvents: 'none', zIndex: '0', transform: 'translateX(-50%)' } }),
+  const tyColor = mg >= ceiling ? '#C0453B' : pct >= 90 ? '#C0453B' : pct >= 60 ? '#9A6419' : '#A24C71';
+  const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(180deg, #FBF0F2 0%, #FAF7F6 260px)', color: '#2A2127', paddingBottom: 'calc(90px + env(safe-area-inset-bottom))', position: 'relative' } },
     renderHeader(now),
     h('main', { style: { position: 'relative', zIndex: '1', maxWidth: '720px', margin: '0 auto', padding: '16px 16px 20px', display: 'flex', flexDirection: 'column', gap: '18px' } }, ...renderContent(now, mg, pct, tyColor, ceiling)),
     // v70: toast now wraps onto multiple lines instead of forcing a single nowrap line -- long
     // messages (e.g. "Dexamethasone marked as skipped for Afternoon window") were overflowing
     // past the edges of the pill instead of fitting inside it. Width is capped tighter (min(90vw,
     // 340px)) so wrapped text still reads as a compact toast, not an edge-to-edge banner.
-    state.toast ? h('div', { style: { position: 'fixed', bottom: 'calc(96px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(60,30,50,0.88)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(120,60,90,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word' } }, state.toast) : null,
+    state.toast ? h('div', { style: { position: 'fixed', bottom: 'calc(96px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(60,30,50,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(120,60,90,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word' } }, state.toast) : null,
     renderTimeModal(),
     renderUpgradeModal(),
     (state.view === 'reports' && state.reportsView) ? h('div', { style: { position: 'fixed', zIndex: '34', left: '0', right: '0', bottom: 'calc(78px + env(safe-area-inset-bottom))', display: 'flex', justifyContent: 'center', pointerEvents: 'none' } },
-      h('button', { onClick: () => setState({ reportsView: null }), style: { pointerEvents: 'auto', minHeight: '42px', padding: '0 18px', borderRadius: '99px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(60,30,50,0.88)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', fontSize: '13px', fontWeight: '800', boxShadow: '0 10px 28px rgba(120,60,90,0.22)' } }, '↩ Back')
+      h('button', { onClick: () => setState({ reportsView: null }), style: { pointerEvents: 'auto', minHeight: '42px', padding: '0 18px', borderRadius: '99px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(60,30,50,0.88)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', fontSize: '13px', fontWeight: '800', boxShadow: '0 10px 28px rgba(120,60,90,0.22)' } }, '↩ Back')
     ) : null,
     renderBottomNav(),
-    !state.loaded ? h('div', { style: { position: 'fixed', inset: '0', background: 'rgba(255,240,243,0.95)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '100' } },
+    !state.loaded ? h('div', { style: { position: 'fixed', inset: '0', background: 'rgba(255,240,243,0.95)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '100' } },
       h('div', { style: { textAlign: 'center' } },
-        h('div', { style: { fontSize: '24px', fontWeight: '800', color: '#AA5375', marginBottom: '8px' } }, 'ChemoWell'),
-        h('div', { style: { fontSize: '14px', color: '#7D6974' } }, 'Loading\u2026')
+        h('div', { style: { fontSize: '24px', fontWeight: '800', color: '#A24C71', marginBottom: '8px' } }, 'ChemoWell'),
+        h('div', { style: { fontSize: '14px', color: '#7A6E76' } }, 'Loading\u2026')
       )
     ) : null
   );
@@ -1676,11 +1674,11 @@ function renderCalendar(dateStr, cursorStr, onPick, onNav) {
   for (let i = 0; i < startWeekday; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   const dstr = (d) => cy + '-' + String(cm).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-  return h('div', { style: { background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '13px', padding: '10px 10px 6px' } },
+  return h('div', { style: { background: 'rgba(255,255,255,0.5)', border: '1px solid #EBE3E4', borderRadius: '13px', padding: '10px 10px 6px' } },
     h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' } },
-      h('button', { onClick: () => onNav(-1), style: { minHeight: '30px', minWidth: '30px', borderRadius: '8px', background: 'rgba(212,104,138,0.1)', color: '#AA5375', fontSize: '16px', fontWeight: '700' } }, '\u2039'),
-      h('div', { style: { fontSize: '13.5px', fontWeight: '800', color: '#3D2B3A' } }, monthLabel),
-      h('button', { onClick: () => onNav(1), style: { minHeight: '30px', minWidth: '30px', borderRadius: '8px', background: 'rgba(212,104,138,0.1)', color: '#AA5375', fontSize: '16px', fontWeight: '700' } }, '\u203a')
+      h('button', { onClick: () => onNav(-1), style: { minHeight: '30px', minWidth: '30px', borderRadius: '8px', background: 'rgba(212,104,138,0.1)', color: '#A24C71', fontSize: '16px', fontWeight: '700' } }, '\u2039'),
+      h('div', { style: { fontSize: '13.5px', fontWeight: '800', color: '#2A2127' } }, monthLabel),
+      h('button', { onClick: () => onNav(1), style: { minHeight: '30px', minWidth: '30px', borderRadius: '8px', background: 'rgba(212,104,138,0.1)', color: '#A24C71', fontSize: '16px', fontWeight: '700' } }, '\u203a')
     ),
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', marginBottom: '2px' } },
       ...['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(l => h('div', { style: { textAlign: 'center', fontSize: '10px', fontWeight: '700', color: '#8A6479', padding: '2px 0' } }, l))
@@ -1691,7 +1689,7 @@ function renderCalendar(dateStr, cursorStr, onPick, onNav) {
         const ds = dstr(d);
         const isSel = ds === dateStr;
         const isToday = ds === todayStr;
-        return h('button', { onClick: () => onPick(ds), style: { minHeight: '32px', borderRadius: '9px', fontSize: '13px', fontWeight: isSel ? '800' : '600', background: isSel ? '#AA5375' : (isToday ? 'rgba(212,104,138,0.14)' : 'transparent'), color: isSel ? '#fff' : '#3D2B3A', border: isToday && !isSel ? '1px solid rgba(212,104,138,0.45)' : '1px solid transparent' } }, String(d));
+        return h('button', { onClick: () => onPick(ds), style: { minHeight: '32px', borderRadius: '9px', fontSize: '13px', fontWeight: isSel ? '800' : '600', background: isSel ? '#A24C71' : (isToday ? 'rgba(212,104,138,0.14)' : 'transparent'), color: isSel ? '#fff' : '#2A2127', border: isToday && !isSel ? '1px solid rgba(212,104,138,0.45)' : '1px solid transparent' } }, String(d));
       })
     )
   );
@@ -1725,12 +1723,12 @@ function renderTimeModal() {
   // Cancel/Confirm buttons below the visible viewport with no way to reach them. The date
   // pickers below are also now collapsible (calPillLabel()) so the common case doesn't need
   // the scroll at all -- both fixes address the same "doesn't fit on screen" report.
-  return h('div', { style: { position: 'fixed', inset: '0', background: 'rgba(60,30,50,0.4)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '60', padding: '20px' }, onClick: (e) => { if (e.target === e.currentTarget) setState({ timeModal: null }); } },
-    h('div', { style: { background: 'rgba(255,245,248,0.96)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '22px', padding: '24px 22px', width: '320px', maxWidth: '100%', maxHeight: '100%', overflowY: 'auto', boxShadow: '0 24px 64px rgba(120,60,90,0.18), 0 0 0 1px rgba(255,255,255,0.5), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+  return h('div', { style: { position: 'fixed', inset: '0', background: 'rgba(60,30,50,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '60', padding: '20px' }, onClick: (e) => { if (e.target === e.currentTarget) setState({ timeModal: null }); } },
+    h('div', { style: { background: 'rgba(255,245,248,0.96)', border: '1px solid #EBE3E4', borderRadius: '22px', padding: '24px 22px', width: '320px', maxWidth: '100%', maxHeight: '100%', overflowY: 'auto', boxShadow: '0 24px 64px rgba(120,60,90,0.18), 0 0 0 1px rgba(255,255,255,0.5), inset 0 1px 0 rgba(255,255,255,0.7)' } },
       h('div', { style: { fontSize: '16px', fontWeight: '800', marginBottom: '22px', textAlign: 'center', letterSpacing: '-0.01em' } }, title),
       m.type === 'symptom' ? h('div', { style: { marginBottom: '16px' } },
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', color: '#8A6479', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '8px' } }, 'Symptom'),
-        h('select', { value: m.symptomType || '', onChange: (e) => { state.timeModal.symptomType = e.target.value; setState({ timeModal: state.timeModal }); }, className: 'mono', style: { width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } },
+        h('select', { value: m.symptomType || '', onChange: (e) => { state.timeModal.symptomType = e.target.value; setState({ timeModal: state.timeModal }); }, className: 'mono', style: { width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } },
           h('option', { value: '' }, 'Select...'),
           h('option', { value: 'nausea' }, 'Nausea'),
           h('option', { value: 'vomiting' }, 'Vomiting'),
@@ -1745,14 +1743,14 @@ function renderTimeModal() {
       ) : null,
       m.type === 'symptom' ? h('div', { style: { marginBottom: '16px' } },
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', color: '#8A6479', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '8px' } }, m.symptomType === 'other' ? 'Describe it (required)' : 'Note (optional)'),
-        h('textarea', { value: m.note || '', onInput: (e) => { state.timeModal.note = e.target.value; }, rows: 3, placeholder: m.symptomType === 'other' ? 'What symptom, when, anything else...' : 'What was noticed, when, anything else...', style: { width: '100%', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '10px 14px', fontSize: '14px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A', resize: 'vertical', fontFamily: 'inherit' } })
+        h('textarea', { value: m.note || '', onInput: (e) => { state.timeModal.note = e.target.value; }, rows: 3, placeholder: m.symptomType === 'other' ? 'What symptom, when, anything else...' : 'What was noticed, when, anything else...', style: { width: '100%', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '10px 14px', fontSize: '14px', background: '#FFFFFF', color: '#2A2127', resize: 'vertical', fontFamily: 'inherit' } })
       ) : null,
       m.type === 'period' ? h('div', null,
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', color: '#8A6479', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '8px' } }, 'Start'),
         // v70: calendars are collapsed behind a date pill by default -- Start and End are never both
         // expanded at once (opening one collapses the other), which is what keeps this modal short
         // enough to fit a phone screen even with two dates in play.
-        h('button', { onClick: () => { state.timeModal.startCalOpen = !state.timeModal.startCalOpen; state.timeModal.endCalOpen = false; setState({ timeModal: state.timeModal }); }, className: 'mono', style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } },
+        h('button', { onClick: () => { state.timeModal.startCalOpen = !state.timeModal.startCalOpen; state.timeModal.endCalOpen = false; setState({ timeModal: state.timeModal }); }, className: 'mono', style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' } },
           h('span', null, calPillLabel(m.startValue.slice(0, 10))),
           h('span', { style: { fontSize: '10px', color: '#8A6479' } }, m.startCalOpen ? '▲' : '▼')
         ),
@@ -1762,14 +1760,14 @@ function renderTimeModal() {
             (delta) => { const cur = state.timeModal.startCalCursor || state.timeModal.startValue.slice(0, 7); state.timeModal.startCalCursor = calShift(cur, delta); setState({ timeModal: state.timeModal }); }
           )
         ) : null,
-        h('input', { type: 'time', value: m.startValue.slice(11), onInput: (e) => { state.timeModal.startValue = state.timeModal.startValue.slice(0, 10) + 'T' + e.target.value; }, className: 'mono', style: { width: '100%', minHeight: '44px', marginTop: '8px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A', colorScheme: 'light' } }),
+        h('input', { type: 'time', value: m.startValue.slice(11), onInput: (e) => { state.timeModal.startValue = state.timeModal.startValue.slice(0, 10) + 'T' + e.target.value; }, className: 'mono', style: { width: '100%', minHeight: '44px', marginTop: '8px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127', colorScheme: 'light' } }),
         h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '14px', fontSize: '13px', fontWeight: '600', color: '#5A4652', cursor: 'pointer' } },
           h('input', { type: 'checkbox', checked: !!m.ongoing, onChange: (e) => { state.timeModal.ongoing = e.target.checked; setState({ timeModal: state.timeModal }); } }),
           'Still ongoing (no end yet)'
         ),
         !m.ongoing ? h('div', { style: { marginTop: '14px' } },
           h('div', { style: { fontSize: '11.5px', fontWeight: '700', color: '#8A6479', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '8px' } }, 'End'),
-          h('button', { onClick: () => { state.timeModal.endCalOpen = !state.timeModal.endCalOpen; state.timeModal.startCalOpen = false; setState({ timeModal: state.timeModal }); }, className: 'mono', style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } },
+          h('button', { onClick: () => { state.timeModal.endCalOpen = !state.timeModal.endCalOpen; state.timeModal.startCalOpen = false; setState({ timeModal: state.timeModal }); }, className: 'mono', style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' } },
             h('span', null, calPillLabel(m.endValue.slice(0, 10))),
             h('span', { style: { fontSize: '10px', color: '#8A6479' } }, m.endCalOpen ? '▲' : '▼')
           ),
@@ -1779,14 +1777,14 @@ function renderTimeModal() {
               (delta) => { const cur = state.timeModal.endCalCursor || state.timeModal.endValue.slice(0, 7); state.timeModal.endCalCursor = calShift(cur, delta); setState({ timeModal: state.timeModal }); }
             )
           ) : null,
-          h('input', { type: 'time', value: m.endValue.slice(11), onInput: (e) => { state.timeModal.endValue = state.timeModal.endValue.slice(0, 10) + 'T' + e.target.value; }, className: 'mono', style: { width: '100%', minHeight: '44px', marginTop: '8px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A', colorScheme: 'light' } })
-        ) : h('div', { style: { fontSize: '12px', color: '#7D6974', marginTop: '10px', lineHeight: '1.4' } }, 'Only a Start will be logged \u2014 add the End later from the card once this stay is over.')
+          h('input', { type: 'time', value: m.endValue.slice(11), onInput: (e) => { state.timeModal.endValue = state.timeModal.endValue.slice(0, 10) + 'T' + e.target.value; }, className: 'mono', style: { width: '100%', minHeight: '44px', marginTop: '8px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127', colorScheme: 'light' } })
+        ) : h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '10px', lineHeight: '1.4' } }, 'Only a Start will be logged \u2014 add the End later from the card once this stay is over.')
       ) : h('div', null,
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', color: '#8A6479', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '8px' } }, 'Date'),
         // v70: collapsed behind a date pill by default (same pattern as the period Start/End
         // pickers above) -- this is what was overflowing the Symptom modal, which also carries a
         // dropdown + note textarea above this and had no way to scroll to reach Cancel/Confirm.
-        h('button', { onClick: () => { state.timeModal.calOpen = !state.timeModal.calOpen; setState({ timeModal: state.timeModal }); }, className: 'mono', style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } },
+        h('button', { onClick: () => { state.timeModal.calOpen = !state.timeModal.calOpen; setState({ timeModal: state.timeModal }); }, className: 'mono', style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' } },
           h('span', null, calPillLabel(m.timeValue.slice(0, 10))),
           h('span', { style: { fontSize: '10px', color: '#8A6479' } }, m.calOpen ? '▲' : '▼')
         ),
@@ -1797,12 +1795,12 @@ function renderTimeModal() {
           )
         ) : null,
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', color: '#8A6479', letterSpacing: '0.05em', textTransform: 'uppercase', margin: '14px 0 8px' } }, 'Time'),
-        h('input', { type: 'time', value: m.timeValue.slice(11), onInput: (e) => { state.timeModal.timeValue = state.timeModal.timeValue.slice(0, 10) + 'T' + e.target.value; }, className: 'mono', style: { width: '100%', minHeight: '48px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A', colorScheme: 'light' } }),
-        h('div', { style: { fontSize: '12px', color: '#7D6974', marginTop: '6px' } }, 'Defaults to now — edit if logging a past time')
+        h('input', { type: 'time', value: m.timeValue.slice(11), onInput: (e) => { state.timeModal.timeValue = state.timeModal.timeValue.slice(0, 10) + 'T' + e.target.value; }, className: 'mono', style: { width: '100%', minHeight: '48px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127', colorScheme: 'light' } }),
+        h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '6px' } }, 'Defaults to now — edit if logging a past time')
       ),
       showPainScale ? h('div', { style: { marginTop: '16px' } },
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', color: '#8A6479', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '8px' } }, 'Pain level (1–10)'),
-        h('select', { value: m.painLevel || '', onChange: (e) => { state.timeModal.painLevel = e.target.value ? Number(e.target.value) : null; }, className: 'mono', style: { width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } },
+        h('select', { value: m.painLevel || '', onChange: (e) => { state.timeModal.painLevel = e.target.value ? Number(e.target.value) : null; }, className: 'mono', style: { width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } },
           h('option', { value: '' }, 'Not recorded'),
           ...Array.from({ length: 10 }, (_, i) => i + 1).map(n => h('option', { value: String(n) }, String(n) + (n === 1 ? ' — mild' : n === 5 ? ' — moderate' : n === 10 ? ' — worst' : '')))
         )
@@ -1810,7 +1808,7 @@ function renderTimeModal() {
       m.futureOk ? h('div', { style: { marginTop: '14px', background: 'rgba(181,118,30,0.12)', border: '1px solid rgba(181,118,30,0.3)', borderRadius: '12px', padding: '11px 13px', fontSize: '13px', lineHeight: '1.45', color: '#9A6419', fontWeight: '600' } }, '⚠ This time is in the future. Press Confirm again to log it anyway.') : null,
       h('div', { style: { display: 'flex', gap: '10px', marginTop: '22px' } },
         h('button', { onClick: () => setState({ timeModal: null }), style: { flex: '1', minHeight: '50px', borderRadius: '13px', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.06)', color: '#8A6479', fontSize: '15px', fontWeight: '700' } }, 'Cancel'),
-        h('button', { onClick: confirmTimeAndLog, style: { flex: '1', minHeight: '50px', borderRadius: '13px', background: '#AA5375', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(150,60,90,0.35)' } }, 'Confirm')
+        h('button', { onClick: confirmTimeAndLog, style: { flex: '1', minHeight: '50px', borderRadius: '13px', background: '#A24C71', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, 'Confirm')
       )
     )
   );
@@ -1851,7 +1849,7 @@ function removeBtn(e) {
   if (state.confirmRemove === e.id) {
     return h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center', flexShrink: '0' } },
       h('button', { onClick: () => { setState({ confirmRemove: null }); removeEntry(e.id); }, style: { color: '#fff', background: '#C0453B', fontSize: '12.5px', fontWeight: '700', padding: '8px 12px', borderRadius: '9px' } }, 'Delete'),
-      h('button', { onClick: () => setState({ confirmRemove: null }), style: { color: '#7D6974', fontSize: '12.5px', padding: '8px 6px', fontWeight: '600' } }, 'Keep')
+      h('button', { onClick: () => setState({ confirmRemove: null }), style: { color: '#7A6E76', fontSize: '12.5px', padding: '8px 6px', fontWeight: '600' } }, 'Keep')
     );
   }
   return h('button', { onClick: () => { setState({ confirmRemove: e.id }); setTimeout(() => { if (state.confirmRemove === e.id) setState({ confirmRemove: null }); }, 6000); }, style: { color: '#A15B56', fontSize: '12.5px', padding: '6px' } }, 'Remove');
@@ -1870,7 +1868,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         h('div', { style: { fontWeight: '800', color: '#9A6419', fontSize: '15.5px', letterSpacing: '0.02em', marginBottom: '4px', textTransform: 'uppercase' } }, 'In-Patient Active'),
         h('div', { style: { color: '#7A5313', fontSize: '14px', fontWeight: '600', lineHeight: '1.5' } }, (ipDayN !== null ? ('Day ' + ipDayN + ' — ') : '') + 'meds below show as Restricted')
       ),
-      h('button', { onClick: logInpatientEnd, style: { flexShrink: '0', minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: '#9A6419', color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(110,70,10,0.35)' } }, 'Log In-Patient End')
+      h('button', { onClick: logInpatientEnd, style: { flexShrink: '0', minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: '#9A6419', color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)' } }, 'Log In-Patient End')
     ));
   }
 
@@ -1938,13 +1936,13 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // Menstrual Cycle active banner — non-dismissible, stays up until Period End is logged
   if (homePref('cycleTracking') && cycleActive()) {
     const cDayN = daysSinceCycleStart();
-    parts.push(h('div', { style: { background: 'rgba(212,104,138,0.14)', border: '2px solid #AA5375', borderRadius: '16px', padding: '15px 16px', display: 'flex', gap: '12px', alignItems: 'center', boxShadow: '0 4px 24px rgba(212,104,138,0.2)' } },
-      h('span', { style: { flexShrink: '0', width: '28px', height: '28px', borderRadius: '50%', background: '#AA5375', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, '●'),
+    parts.push(h('div', { style: { background: 'rgba(212,104,138,0.14)', border: '2px solid #A24C71', borderRadius: '16px', padding: '15px 16px', display: 'flex', gap: '12px', alignItems: 'center', boxShadow: '0 4px 24px rgba(212,104,138,0.2)' } },
+      h('span', { style: { flexShrink: '0', width: '28px', height: '28px', borderRadius: '50%', background: '#A24C71', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, '●'),
       h('div', { style: { flex: '1' } },
-        h('div', { style: { fontWeight: '800', color: '#AA5375', fontSize: '15.5px', letterSpacing: '0.02em', marginBottom: '4px', textTransform: 'uppercase' } }, 'Period Active'),
+        h('div', { style: { fontWeight: '800', color: '#A24C71', fontSize: '15.5px', letterSpacing: '0.02em', marginBottom: '4px', textTransform: 'uppercase' } }, 'Period Active'),
         h('div', { style: { color: '#8A3D66', fontSize: '14px', fontWeight: '600', lineHeight: '1.5' } }, cDayN !== null ? ('Day ' + cDayN + ' since period start') : 'Period in progress')
       ),
-      h('button', { onClick: logCycleEnd, style: { flexShrink: '0', minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(150,60,90,0.35)' } }, 'Log Period End')
+      h('button', { onClick: logCycleEnd, style: { flexShrink: '0', minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, 'Log Period End')
     ));
   }
 
@@ -1978,14 +1976,14 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
         h('div', { style: { color: '#8A4540', fontSize: '11.5px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em' } }, 'Update status for ' + bannerDayLabel),
         h('div', { style: { display: 'flex', gap: '8px' } },
-          h('select', { value: bBannerValue, onChange: (e) => { state.bowelBannerInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '42px', border: '1px solid rgba(161,91,86,0.3)', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: 'rgba(255,255,255,0.7)', color: '#3D2B3A' } },
+          h('select', { value: bBannerValue, onChange: (e) => { state.bowelBannerInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '42px', border: '1px solid rgba(161,91,86,0.3)', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: 'rgba(255,255,255,0.7)', color: '#2A2127' } },
             h('option', { value: '' }, 'Update status if back to normal...'),
             h('option', { value: 'normal' }, 'Normal'),
             h('option', { value: 'very_little' }, 'Very little'),
             h('option', { value: 'none' }, 'None'),
             h('option', { value: 'diarrhea' }, 'Diarrhea')
           ),
-          h('button', { onClick: submitBowelBannerUpdate, style: { flexShrink: '0', minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: '#A15B56', color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(120,60,55,0.35)' } }, 'Update')
+          h('button', { onClick: submitBowelBannerUpdate, style: { flexShrink: '0', minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: '#A15B56', color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)' } }, 'Update')
         )
       )
     ));
@@ -2011,18 +2009,18 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
           h('span', { style: { flexShrink: '0', width: '26px', height: '26px', borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '13px' } }, 'B'),
           h('div', { style: { flex: '1' } },
             h('div', { style: { fontWeight: '800', color: s.color, fontSize: '14px', letterSpacing: '0.02em', marginBottom: '2px', textTransform: 'uppercase' } }, 'Bowel Movement'),
-            h('div', { style: { color: s.color, fontSize: '13.5px', fontWeight: '600', lineHeight: '1.5' } }, bmMsgPre, h('span', { style: { fontWeight: '800', fontSize: '14.5px', color: '#3D2B3A', background: 'rgba(255,255,255,0.55)', padding: '1px 7px', borderRadius: '7px', whiteSpace: 'nowrap' } }, bmYLabel), bmMsgPost)
+            h('div', { style: { color: s.color, fontSize: '13.5px', fontWeight: '600', lineHeight: '1.5' } }, bmMsgPre, h('span', { style: { fontWeight: '800', fontSize: '14.5px', color: '#2A2127', background: '#FFFFFF', padding: '1px 7px', borderRadius: '7px', whiteSpace: 'nowrap' } }, bmYLabel), bmMsgPost)
           )
         ),
         h('div', { style: { display: 'flex', gap: '8px' } },
-          h('select', { value: bmSelectValue, onChange: (e) => { state.bowelInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '42px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: 'rgba(255,255,255,0.7)', color: '#3D2B3A' } },
+          h('select', { value: bmSelectValue, onChange: (e) => { state.bowelInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '42px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: 'rgba(255,255,255,0.7)', color: '#2A2127' } },
             h('option', { value: '' }, 'Select...'),
             h('option', { value: 'normal' }, 'Normal'),
             h('option', { value: 'very_little' }, 'Very little'),
             h('option', { value: 'none' }, 'None'),
             h('option', { value: 'diarrhea' }, 'Diarrhea')
           ),
-          h('button', { onClick: () => submitBowelMovement(bmYStart), style: { flexShrink: '0', minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: s.color, color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.15)' } }, 'Log')
+          h('button', { onClick: () => submitBowelMovement(bmYStart), style: { flexShrink: '0', minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: s.color, color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)' } }, 'Log')
         )
       ));
     }
@@ -2047,19 +2045,19 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
           h('span', { style: { flexShrink: '0', width: '26px', height: '26px', borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '13px' } }, 'A'),
           h('div', { style: { flex: '1' } },
             h('div', { style: { fontWeight: '800', color: s.color, fontSize: '14px', letterSpacing: '0.02em', marginBottom: '2px', textTransform: 'uppercase' } }, 'Appetite'),
-            h('div', { style: { color: s.color, fontSize: '13.5px', fontWeight: '600', lineHeight: '1.5' } }, apMsgPre, h('span', { style: { fontWeight: '800', fontSize: '14.5px', color: '#3D2B3A', background: 'rgba(255,255,255,0.55)', padding: '1px 7px', borderRadius: '7px', whiteSpace: 'nowrap' } }, apYLabel), apMsgPost)
+            h('div', { style: { color: s.color, fontSize: '13.5px', fontWeight: '600', lineHeight: '1.5' } }, apMsgPre, h('span', { style: { fontWeight: '800', fontSize: '14.5px', color: '#2A2127', background: '#FFFFFF', padding: '1px 7px', borderRadius: '7px', whiteSpace: 'nowrap' } }, apYLabel), apMsgPost)
           )
         ),
         h('div', { style: { display: 'flex', gap: '8px' } },
-          h('select', { value: apSelectValue, onChange: (e) => { state.appetiteInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '42px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: 'rgba(255,255,255,0.7)', color: '#3D2B3A' } },
+          h('select', { value: apSelectValue, onChange: (e) => { state.appetiteInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '42px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: 'rgba(255,255,255,0.7)', color: '#2A2127' } },
             h('option', { value: '' }, 'Select...'),
             h('option', { value: 'normal' }, 'Normal'),
             h('option', { value: 'little' }, 'Little to none'),
             h('option', { value: 'none' }, 'No Appetite')
           ),
-          h('button', { onClick: () => submitAppetite(apYStart), style: { flexShrink: '0', minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: s.color, color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.15)' } }, 'Log')
+          h('button', { onClick: () => submitAppetite(apYStart), style: { flexShrink: '0', minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: s.color, color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)' } }, 'Log')
         ),
-        h('textarea', { value: apNoteValue, onInput: (e) => { state.appetiteNoteInput = e.target.value; }, rows: 2, placeholder: 'Reason (optional)', style: { width: '100%', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '9px 10px', fontSize: '13.5px', background: 'rgba(255,255,255,0.7)', color: '#3D2B3A', resize: 'vertical', fontFamily: 'inherit' } })
+        h('textarea', { value: apNoteValue, onInput: (e) => { state.appetiteNoteInput = e.target.value; }, rows: 2, placeholder: 'Reason (optional)', style: { width: '100%', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '9px 10px', fontSize: '13.5px', background: 'rgba(255,255,255,0.7)', color: '#2A2127', resize: 'vertical', fontFamily: 'inherit' } })
       ));
     }
   }
@@ -2084,7 +2082,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
 
   // Demo banner
   if (state.demo) {
-    parts.push(h('div', { style: { background: 'rgba(212,104,138,0.08)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '16px', padding: '12px 14px', display: 'flex', gap: '12px', alignItems: 'center', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5)' } },
+    parts.push(h('div', { style: { background: 'rgba(212,104,138,0.08)', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '12px 14px', display: 'flex', gap: '12px', alignItems: 'center', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5)' } },
       h('div', { style: { flex: '1', color: '#8A6479', fontSize: '13px', lineHeight: '1.45' } }, 'Showing sample data so you can see the tracker in action. Log a real dose or clear it to start fresh.')
     ));
   }
@@ -2105,25 +2103,25 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
 
   // Summary row
   const lastTemp = latest('temp');
-  let tempColor = '#3D2B3A';
+  let tempColor = '#2A2127';
   if (lastTemp) { if (lastTemp.temp >= tempHigh()) tempColor = '#C0453B'; else if (lastTemp.temp >= tempFever()) tempColor = '#9A6419'; }
   const tempSubLabel = lastTemp ? ('Last reading ' + fmtTime(lastTemp.ts)) : 'No readings yet';
   const lastWeight = latest('weight');
   const weightSubLabel = lastWeight ? ('Last reading ' + fmtTime(lastWeight.ts)) : 'No readings yet';
 
   // Acetaminophen meter (full width) — shown only when Tylenol used in last 7 days
-  if (usedRecently('tylenol')) parts.push(h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+  if (usedRecently('tylenol')) parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '12px' } },
       h('div', null,
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Acetaminophen · today'),
-        h('div', { style: { fontSize: '12.5px', color: '#7D6974', marginTop: '3px' } }, Math.max(0, ceiling - mg).toLocaleString() + ' mg left before ceiling')
+        h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } }, Math.max(0, ceiling - mg).toLocaleString() + ' mg left before ceiling')
       ),
       h('div', { className: 'mono', style: { fontSize: '20px', fontWeight: '600', letterSpacing: '-0.02em', whiteSpace: 'nowrap' } },
         mg.toLocaleString(),
-        h('span', { style: { color: '#7D6974', fontSize: '13px', fontWeight: '400' } }, ' / ' + ceiling.toLocaleString() + ' mg')
+        h('span', { style: { color: '#7A6E76', fontSize: '13px', fontWeight: '400' } }, ' / ' + ceiling.toLocaleString() + ' mg')
       )
     ),
-    h('div', { style: { height: '12px', background: 'rgba(212,104,138,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px', border: '1px solid rgba(212,104,138,0.12)' } },
+    h('div', { style: { height: '12px', background: 'rgba(212,104,138,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px', border: '1px solid #EBE3E4' } },
       h('div', { style: { height: '100%', width: Math.round(pct) + '%', background: tyColor, borderRadius: '99px', transition: 'width .45s ease, background .3s' } })
     )
   ));
@@ -2132,19 +2130,19 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   const imoPills = dailyPills('imodium');
   const imoMax = 4;
   const imoPct = Math.min(100, imoPills / imoMax * 100);
-  const imoColor = imoPills >= imoMax ? '#C0453B' : imoPills >= 3 ? '#9A6419' : '#AA5375';
-  if (usedRecently('imodium')) parts.push(h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+  const imoColor = imoPills >= imoMax ? '#C0453B' : imoPills >= 3 ? '#9A6419' : '#A24C71';
+  if (usedRecently('imodium')) parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '12px' } },
       h('div', null,
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Imodium · today'),
-        h('div', { style: { fontSize: '12.5px', color: '#7D6974', marginTop: '3px' } }, Math.max(0, imoMax - imoPills) + ' pill' + (Math.max(0, imoMax - imoPills) === 1 ? '' : 's') + ' left before limit')
+        h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } }, Math.max(0, imoMax - imoPills) + ' pill' + (Math.max(0, imoMax - imoPills) === 1 ? '' : 's') + ' left before limit')
       ),
       h('div', { className: 'mono', style: { fontSize: '20px', fontWeight: '600', letterSpacing: '-0.02em', whiteSpace: 'nowrap' } },
         String(imoPills),
-        h('span', { style: { color: '#7D6974', fontSize: '13px', fontWeight: '400' } }, ' / ' + imoMax + ' pills')
+        h('span', { style: { color: '#7A6E76', fontSize: '13px', fontWeight: '400' } }, ' / ' + imoMax + ' pills')
       )
     ),
-    h('div', { style: { height: '12px', background: 'rgba(212,104,138,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px', border: '1px solid rgba(212,104,138,0.12)' } },
+    h('div', { style: { height: '12px', background: 'rgba(212,104,138,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px', border: '1px solid #EBE3E4' } },
       h('div', { style: { height: '100%', width: Math.round(imoPct) + '%', background: imoColor, borderRadius: '99px', transition: 'width .45s ease, background .3s' } })
     )
   ));
@@ -2153,19 +2151,19 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   const lidoApps = dailyPills('lidocaine');
   const lidoMax = 4;
   const lidoPct = Math.min(100, lidoApps / lidoMax * 100);
-  const lidoColor = lidoApps >= lidoMax ? '#C0453B' : lidoApps >= 3 ? '#9A6419' : '#AA5375';
-  if (usedRecently('lidocaine')) parts.push(h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+  const lidoColor = lidoApps >= lidoMax ? '#C0453B' : lidoApps >= 3 ? '#9A6419' : '#A24C71';
+  if (usedRecently('lidocaine')) parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '12px' } },
       h('div', null,
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Lidocaine · today'),
-        h('div', { style: { fontSize: '12.5px', color: '#7D6974', marginTop: '3px' } }, Math.max(0, lidoMax - lidoApps) + ' application' + (Math.max(0, lidoMax - lidoApps) === 1 ? '' : 's') + ' left before limit')
+        h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } }, Math.max(0, lidoMax - lidoApps) + ' application' + (Math.max(0, lidoMax - lidoApps) === 1 ? '' : 's') + ' left before limit')
       ),
       h('div', { className: 'mono', style: { fontSize: '20px', fontWeight: '600', letterSpacing: '-0.02em', whiteSpace: 'nowrap' } },
         String(lidoApps),
-        h('span', { style: { color: '#7D6974', fontSize: '13px', fontWeight: '400' } }, ' / ' + lidoMax)
+        h('span', { style: { color: '#7A6E76', fontSize: '13px', fontWeight: '400' } }, ' / ' + lidoMax)
       )
     ),
-    h('div', { style: { height: '12px', background: 'rgba(212,104,138,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px', border: '1px solid rgba(212,104,138,0.12)' } },
+    h('div', { style: { height: '12px', background: 'rgba(212,104,138,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px', border: '1px solid #EBE3E4' } },
       h('div', { style: { height: '100%', width: Math.round(lidoPct) + '%', background: lidoColor, borderRadius: '99px', transition: 'width .45s ease, background .3s' } })
     )
   ));
@@ -2173,46 +2171,46 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // Temperature + Weight row (each card user-toggleable in Settings)
   if (homePref('showTemperature') || homePref('showWeight')) parts.push(h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: '12px' } },
     // Temperature
-    !homePref('showTemperature') ? null : h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+    !homePref('showTemperature') ? null : h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' } },
         h('div', null,
           h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Temperature'),
-          h('div', { style: { fontSize: '11px', color: '#7D6974', marginTop: '2px' } }, tempSubLabel)
+          h('div', { style: { fontSize: '11px', color: '#7A6E76', marginTop: '2px' } }, tempSubLabel)
         ),
         lastTemp ? h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '600', letterSpacing: '-0.02em', color: tempColor, whiteSpace: 'nowrap' } }, lastTemp.temp + tempSuffix()) : null
       ),
       h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
-        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: tempDefault(), value: state.tempInput, onInput: (e) => { state.tempInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } }),
-        h('button', { onClick: logTemp, style: { flexShrink: '0', minHeight: '38px', padding: '0 15px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
+        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: tempDefault(), value: state.tempInput, onInput: (e) => { state.tempInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: '#FFFFFF', color: '#2A2127' } }),
+        h('button', { onClick: logTemp, style: { flexShrink: '0', minHeight: '38px', padding: '0 15px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
       )
     ),
     // Weight
-    !homePref('showWeight') ? null : h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+    !homePref('showWeight') ? null : h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' } },
         h('div', null,
           h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Weight'),
-          h('div', { style: { fontSize: '11px', color: '#7D6974', marginTop: '2px' } }, weightSubLabel)
+          h('div', { style: { fontSize: '11px', color: '#7A6E76', marginTop: '2px' } }, weightSubLabel)
         ),
-        lastWeight ? h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '600', letterSpacing: '-0.02em', color: '#3D2B3A', whiteSpace: 'nowrap' } }, lastWeight.weight + ' ' + weightSuffix()) : null
+        lastWeight ? h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '600', letterSpacing: '-0.02em', color: '#2A2127', whiteSpace: 'nowrap' } }, lastWeight.weight + ' ' + weightSuffix()) : null
       ),
       h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
-        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: weightDefault() || (CONFIG.weightUnit === 'kg' ? '68.0' : '150.0'), value: state.weightInput, onInput: (e) => { state.weightInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } }),
-        h('button', { onClick: logWeight, style: { flexShrink: '0', minHeight: '38px', padding: '0 15px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
+        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: weightDefault() || (CONFIG.weightUnit === 'kg' ? '68.0' : '150.0'), value: state.weightInput, onInput: (e) => { state.weightInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: '#FFFFFF', color: '#2A2127' } }),
+        h('button', { onClick: logWeight, style: { flexShrink: '0', minHeight: '38px', padding: '0 15px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
       )
     )
 ,
-    !homePref('showBloodPressure') ? null : h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+    !homePref('showBloodPressure') ? null : h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' } },
         h('div', null,
           h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Blood pressure'),
-          h('div', { style: { fontSize: '11px', color: '#7D6974', marginTop: '2px' } }, (function () { const bp = state.entries.filter(e => e.medId === 'blood_pressure').sort((a, b) => b.ts - a.ts)[0]; return bp ? ('Last ' + bp.sys + '/' + bp.dia + ' · ' + fmtTime(bp.ts)) : 'No readings yet'; })())
+          h('div', { style: { fontSize: '11px', color: '#7A6E76', marginTop: '2px' } }, (function () { const bp = state.entries.filter(e => e.medId === 'blood_pressure').sort((a, b) => b.ts - a.ts)[0]; return bp ? ('Last ' + bp.sys + '/' + bp.dia + ' · ' + fmtTime(bp.ts)) : 'No readings yet'; })())
         )
       ),
       h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px', alignItems: 'center' } },
-        h('input', { type: 'number', inputMode: 'numeric', placeholder: '120', value: state.bpSysInput, onInput: (e) => { state.bpSysInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } }),
+        h('input', { type: 'number', inputMode: 'numeric', placeholder: '120', value: state.bpSysInput, onInput: (e) => { state.bpSysInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: '#FFFFFF', color: '#2A2127' } }),
         h('span', { style: { color: '#8A6479', fontWeight: '800' } }, '/'),
-        h('input', { type: 'number', inputMode: 'numeric', placeholder: '80', value: state.bpDiaInput, onInput: (e) => { state.bpDiaInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } }),
-        h('button', { onClick: logBloodPressure, style: { flexShrink: '0', minHeight: '38px', padding: '0 15px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
+        h('input', { type: 'number', inputMode: 'numeric', placeholder: '80', value: state.bpDiaInput, onInput: (e) => { state.bpDiaInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: '#FFFFFF', color: '#2A2127' } }),
+        h('button', { onClick: logBloodPressure, style: { flexShrink: '0', minHeight: '38px', padding: '0 15px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
       )
     )
   ));
@@ -2220,24 +2218,24 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // Chemo schedule card (toggleable)
   const chemoTs = nextChemoTs();
   const daysUntil = chemoTs ? Math.round((dayStart(chemoTs) - dayStart(now)) / 86400000) : null;
-  const chemoDateText = chemoTs === null ? 'No chemo date set' :
+  const chemoDateText = chemoTs === null ? 'No chemo/radiation date set' :
     daysUntil > 1 ? new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' }) + ' · in ' + daysUntil + ' days' :
     daysUntil === 1 ? new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' }) + ' · TOMORROW' :
     daysUntil === 0 ? 'TODAY' :
     'Last chemo ' + new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' });
-  if (homePref('showChemoSchedule')) parts.push(h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+  if (homePref('showChemoSchedule')) parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' } },
       h('div', null,
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Treatment schedule'),
-        h('div', { style: { fontSize: '15px', fontWeight: '800', marginTop: '3px', color: (daysUntil !== null && daysUntil >= 0 && daysUntil <= 1) ? '#C0453B' : '#3D2B3A' } }, chemoDateText)
+        h('div', { style: { fontSize: '15px', fontWeight: '800', marginTop: '3px', color: (daysUntil !== null && daysUntil >= 0 && daysUntil <= 1) ? '#C0453B' : '#2A2127' } }, chemoDateText)
       ),
       chemoTs ? (state.confirmClearChemo ? h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center', flexShrink: '0' } },
         h('button', { onClick: async () => { setState({ confirmClearChemo: false }); await addEntryDB({ medId: 'chemo_date', dose: 'Chemo date cleared', mg: 0, ts: 0, loggedAt: Date.now() }); setToast('Chemo date cleared'); }, style: { color: '#fff', background: '#C0453B', fontSize: '12.5px', fontWeight: '700', padding: '8px 12px', borderRadius: '9px' } }, 'Confirm clear'),
-        h('button', { onClick: () => setState({ confirmClearChemo: false }), style: { color: '#7D6974', fontSize: '12.5px', padding: '8px 6px', fontWeight: '600' } }, 'Keep')
+        h('button', { onClick: () => setState({ confirmClearChemo: false }), style: { color: '#7A6E76', fontSize: '12.5px', padding: '8px 6px', fontWeight: '600' } }, 'Keep')
       ) : h('button', { onClick: () => { setState({ confirmClearChemo: true }); setTimeout(() => { if (state.confirmClearChemo) setState({ confirmClearChemo: false }); }, 6000); }, style: { color: '#8A6479', fontSize: '12.5px', padding: '6px', fontWeight: '600' } }, 'Clear')) : null
     ),
     h('div', null,
-      h('button', { onClick: () => setState({ chemoCalOpen: !state.chemoCalOpen }), style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '38px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 12px', fontSize: '14px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } },
+      h('button', { onClick: () => setState({ chemoCalOpen: !state.chemoCalOpen }), style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '38px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 12px', fontSize: '14px', background: '#FFFFFF', color: '#2A2127' } },
         h('span', { className: 'mono' }, state.chemoInput ? new Date(state.chemoInput + 'T00:00').toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Pick a date'),
         h('span', { style: { fontSize: '10px', color: '#8A6479' } }, state.chemoCalOpen ? '\u25b2' : '\u25bc')
       ),
@@ -2246,7 +2244,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
           (ds) => { setState({ chemoInput: ds, chemoCalCursor: ds.slice(0, 7) }); },
           (delta) => { const cur = state.chemoCalCursor || (state.chemoInput ? state.chemoInput.slice(0, 7) : toLocalISO(simNow()).slice(0, 7)); setState({ chemoCalCursor: calShift(cur, delta) }); }
         ),
-        h('button', { onClick: () => { setChemoDate(); setState({ chemoCalOpen: false }); }, style: { width: '100%', marginTop: '8px', minHeight: '38px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13px', fontWeight: '700' } }, chemoTs ? 'Update' : 'Set date')
+        h('button', { onClick: () => { setChemoDate(); setState({ chemoCalOpen: false }); }, style: { width: '100%', marginTop: '8px', minHeight: '38px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '700' } }, chemoTs ? 'Update' : 'Set date')
       ) : null
     )
   ));
@@ -2254,22 +2252,22 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // Quick Log section
   const noMedsAtAll = state.meds.length === 0;
   if (noMedsAtAll) {
-    parts.push(h('section', { style: { background: 'rgba(255,255,255,0.6)', border: '1.5px dashed rgba(170,83,117,0.35)', borderRadius: '18px', padding: '22px 18px', textAlign: 'center' } },
-      h('div', { style: { fontSize: '16px', fontWeight: '800', color: '#AA5375', marginBottom: '5px' } }, 'No medications yet'),
-      h('div', { style: { fontSize: '13px', color: '#6E5261', lineHeight: '1.5', marginBottom: '13px' } }, 'Add the first medication to start tracking doses, schedules, and safety limits.'),
-      h('button', { onClick: () => { navigateTo('meds'); openMedicationEditor(null); }, style: { minHeight: '44px', padding: '0 20px', borderRadius: '12px', background: '#AA5375', color: '#fff', fontSize: '14px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, '+ Add your first medication')
+    parts.push(h('section', { style: { background: '#FFFFFF', border: '1.5px dashed rgba(170,83,117,0.35)', borderRadius: '18px', padding: '22px 18px', textAlign: 'center' } },
+      h('div', { style: { fontSize: '16px', fontWeight: '800', color: '#A24C71', marginBottom: '5px' } }, 'No medications yet'),
+      h('div', { style: { fontSize: '13px', color: '#554A52', lineHeight: '1.5', marginBottom: '13px' } }, 'Add the first medication to start tracking doses, schedules, and safety limits.'),
+      h('button', { onClick: () => { navigateTo('meds'); openMedicationEditor(null); }, style: { minHeight: '44px', padding: '0 20px', borderRadius: '12px', background: '#A24C71', color: '#fff', fontSize: '14px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, '+ Add your first medication')
     ));
   }
   const medCards = state.meds.filter(m => m.quickLog && (!m.chemoOnly || (dexActiveOn(now) && !status(m).courseComplete))).map(med => {
     if (inpatientActiveNow) {
-      return h('div', { style: { background: 'rgba(154,100,25,0.08)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1.5px dashed rgba(154,100,25,0.35)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
+      return h('div', { style: { background: 'rgba(154,100,25,0.08)', border: '1.5px dashed rgba(154,100,25,0.35)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
         h('div', { style: { fontSize: '15px', fontWeight: '800', letterSpacing: '-0.01em', color: '#8B5715' } }, med.name + ' - In-Patient (Restricted)'),
         h('div', { style: { fontSize: '11.5px', color: '#704E22' } }, 'Given by hospital staff — not logged in this app')
       );
     }
     if (!medScheduledOn(med, now)) {
-      return h('div', { style: { background: 'rgba(125,105,116,0.06)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1.5px dashed rgba(125,105,116,0.30)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
-        h('div', { style: { fontSize: '15px', fontWeight: '800', letterSpacing: '-0.01em', color: '#6E5261' } }, med.name + ' \u2014 Not scheduled today'),
+      return h('div', { style: { background: 'rgba(125,105,116,0.06)', border: '1.5px dashed rgba(125,105,116,0.30)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
+        h('div', { style: { fontSize: '15px', fontWeight: '800', letterSpacing: '-0.01em', color: '#554A52' } }, med.name + ' \u2014 Not scheduled today'),
         h('div', { style: { fontSize: '11.5px', color: '#8A7580' } }, 'Taken: ' + scheduleDaysLabel(med))
       );
     }
@@ -2317,7 +2315,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     let buttonArea;
     if (!locked) {
       buttonArea = h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
-        ...doseList.map(d => doseBlocked(d) ? blockedBtn(d) : h('button', { onClick: () => logMed(med.id, d.single ? null : d), style: { flex: '0 0 auto', minWidth: '0', minHeight: '32px', padding: '0 13px', borderRadius: '999px', background: '#AA5375', color: '#fff', fontSize: '12.5px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(150,60,90,0.35)' } }, d.single ? ('Log ' + med.name) : d.label))
+        ...doseList.map(d => doseBlocked(d) ? blockedBtn(d) : h('button', { onClick: () => logMed(med.id, d.single ? null : d), style: { flex: '0 0 auto', minWidth: '0', minHeight: '32px', padding: '0 13px', borderRadius: '999px', background: '#A24C71', color: '#fff', fontSize: '12.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, d.single ? ('Log ' + med.name) : d.label))
       );
     } else if (!isOverriding) {
       buttonArea = h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
@@ -2330,17 +2328,17 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
           st.ceilingHit ? ((med.rollingCeilingH ? '' : 'Daily ') + (dc ? dc.label + ' ' : '') + 'ceiling reached. Log more anyway?') : st.chemoBlock ? 'Care team said no Zofran on chemo days. Log it anyway?' : ('Closed — opens in ' + countdownLabel + '. Log it early anyway?')
         ),
         h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
-          ...doseList.map(d => doseBlocked(d) ? blockedBtn(d) : h('button', { onClick: () => logMed(med.id, d.single ? null : d, { force: true }), style: { flex: '0 0 auto', minWidth: '0', minHeight: '34px', padding: '0 13px', borderRadius: '999px', background: '#C0453B', color: '#fff', fontSize: '12.5px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(120,40,34,0.4)' } }, d.single ? 'Override — log now' : ('Log ' + d.label + ' now'))),
+          ...doseList.map(d => doseBlocked(d) ? blockedBtn(d) : h('button', { onClick: () => logMed(med.id, d.single ? null : d, { force: true }), style: { flex: '0 0 auto', minWidth: '0', minHeight: '34px', padding: '0 13px', borderRadius: '999px', background: '#C0453B', color: '#fff', fontSize: '12.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)' } }, d.single ? 'Override — log now' : ('Log ' + d.label + ' now'))),
           h('button', { onClick: () => setState({ override: null }), style: { flexShrink: '0', minHeight: '34px', padding: '0 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '999px', background: 'rgba(255,255,255,0.5)', color: '#A15B56', fontSize: '12.5px', fontWeight: '600' } }, 'Cancel')
         )
       );
     }
 
-    return h('div', { style: { background: st.chemoBlock ? 'rgba(192,69,59,0.09)' : 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid ' + (st.chemoBlock ? 'rgba(192,69,59,0.3)' : 'rgba(212,104,138,0.12)'), borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+    return h('div', { style: { background: st.chemoBlock ? 'rgba(192,69,59,0.09)' : 'rgba(255,255,255,0.55)', border: '1px solid ' + (st.chemoBlock ? 'rgba(192,69,59,0.3)' : 'rgba(212,104,138,0.12)'), borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
       // Header row
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' } },
         h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '4px', minWidth: '0', flex: '1', flexWrap: 'wrap' } },
-          h('div', { style: { fontSize: '15.5px', fontWeight: '800', letterSpacing: '-0.01em', color: '#342530', whiteSpace: 'nowrap' } }, med.name),
+          h('div', { style: { fontSize: '15.5px', fontWeight: '800', letterSpacing: '-0.01em', color: '#2A2127', whiteSpace: 'nowrap' } }, med.name),
           h('div', { style: { fontSize: '11.5px', color: '#664F5D', fontWeight: '600', whiteSpace: 'nowrap' } }, med.sub)
         ),
         locked ?
@@ -2357,7 +2355,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('div', { style: { fontSize: '11px', color: '#584350', display: 'flex', alignItems: 'center', gap: '4px', minWidth: '0', lineHeight: '1.3' } },
         h('span', { style: { flex: '1', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, lastLabel),
         locked ? h('span', { style: { flexShrink: '0', color: (st.ceilingHit || st.chemoBlock) ? '#A15B56' : '#96631C', fontWeight: '700', fontSize: '11px', whiteSpace: 'nowrap' } }, nextDoseLabel) : null,
-        subStatus ? h('span', { style: { display: 'none', color: '#7D6974' } }, subStatus) : null,
+        subStatus ? h('span', { style: { display: 'none', color: '#7A6E76' } }, subStatus) : null,
         h('span', { style: { display: 'none', color: '#7D6A74', fontSize: '11.5px' } }, med.note)
       ),
       // Buttons
@@ -2403,24 +2401,24 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     journalGroups.length > 0 ?
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '11px' } },
         ...journalGroups.map(g => h('div', null,
-          h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#7D6974', marginBottom: '8px' } }, g.label),
-          h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+          h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#7A6E76', marginBottom: '8px' } }, g.label),
+          h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
             ...g.items.map((e, i) => e.missed ? missedRow(e, i) : h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
               h('div', { className: 'mono', style: { fontSize: '13px', color: '#8A6479', minWidth: '66px' } }, fmtTime(e.ts)),
               h('div', { style: { flex: '1' } },
                 h('div', { style: { fontSize: '15px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' } },
                   nameOf(e.medId),
                   e.override ? h('span', { style: { fontSize: '10.5px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A15B56', background: 'rgba(192,69,59,0.15)', border: '1px solid rgba(192,69,59,0.3)', borderRadius: '6px', padding: '1px 6px' } }, 'Early') : null,
-                  e.skipped ? h('span', { style: { fontSize: '10.5px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#7D6974', background: 'rgba(125,105,116,0.14)', border: '1px solid rgba(125,105,116,0.3)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
+                  e.skipped ? h('span', { style: { fontSize: '10.5px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#7A6E76', background: 'rgba(125,105,116,0.14)', border: '1px solid rgba(125,105,116,0.3)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
                 ),
-                e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#7D6974', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, e.dose + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, 'Pain ' + e.painLevel + '/10') : null)
+                e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, e.dose + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, 'Pain ' + e.painLevel + '/10') : null)
               ),
               removeBtn(e)
             ))
           )
         ))
       ) :
-      h('div', { style: { background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7D6974', fontSize: '14px', marginTop: '11px', lineHeight: '1.5' } }, 'No doses logged yet today.\nUse the buttons above to log the first one.')
+      h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', marginTop: '11px', lineHeight: '1.5' } }, 'No doses logged yet today.\nUse the buttons above to log the first one.')
   ));
 
   return parts;
@@ -2549,7 +2547,9 @@ function saveMedicationEditor() {
   const windows = type === 'win' ? parseScheduleWindows(form.windowsText) : [];
   if (type === 'win' && !windows.length) { setToast('Add at least one schedule window, for example 8 AM-12 PM Morning.'); return; }
   let scheduleDays;
-  if (form.scheduleMode === 'weekly') {
+  if (form.scheduleMode === 'asneeded') {
+    scheduleDays = { mode: 'asneeded' };
+  } else if (form.scheduleMode === 'weekly') {
     const days = (form.weekDays || []).map(Number).filter(d => d >= 0 && d <= 6);
     if (!days.length) { setToast('Pick at least one day of the week, or switch Days taken to Every day.'); return; }
     if (days.length < 7) scheduleDays = { mode: 'weekly', days: days };
@@ -2649,7 +2649,7 @@ function renderPillToggle(label, enabled, onClick, helper) {
       h('span', { style: { display: 'block', fontSize: '12.5px', fontWeight: '800' } }, label),
       helper ? h('span', { style: { display: 'block', fontSize: '10.5px', lineHeight: '1.25', color: '#745D69', marginTop: '1px', fontWeight: '600' } }, helper) : null
     ),
-    h('span', { style: { width: '34px', height: '20px', borderRadius: '99px', background: enabled ? '#AA5375' : 'rgba(125,105,116,0.30)', padding: '2px', display: 'inline-flex', justifyContent: enabled ? 'flex-end' : 'flex-start', transition: 'all .18s ease', flexShrink: '0' } },
+    h('span', { style: { width: '34px', height: '20px', borderRadius: '99px', background: enabled ? '#A24C71' : 'rgba(125,105,116,0.30)', padding: '2px', display: 'inline-flex', justifyContent: enabled ? 'flex-end' : 'flex-start', transition: 'all .18s ease', flexShrink: '0' } },
       h('span', { style: { width: '16px', height: '16px', borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(60,30,50,0.25)' } })
     )
   );
@@ -2660,7 +2660,7 @@ function fieldLabel(text, helper) {
 }
 
 function formInput(attrs) {
-  return h('input', { ...attrs, style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 11px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#342530', ...(attrs.style || {}) } });
+  return h('input', { ...attrs, style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 11px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', ...(attrs.style || {}) } });
 }
 
 function renderMedicationEditor() {
@@ -2668,45 +2668,46 @@ function renderMedicationEditor() {
   const form = state.medEditor.form;
   const scheduled = form.type === 'win';
   const title = state.medEditor.mode === 'add' ? 'Add medication' : 'Edit medication';
-  return h('section', { 'data-tour': 'med-editor', style: { background: 'rgba(255,252,253,0.78)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(170,83,117,0.28)', borderRadius: '20px', padding: '16px', boxShadow: '0 10px 34px rgba(121,72,96,0.12), inset 0 1px 0 rgba(255,255,255,0.82)' } },
+  return h('section', { 'data-tour': 'med-editor', style: { background: 'rgba(255,252,253,0.78)', border: '1px solid rgba(170,83,117,0.28)', borderRadius: '20px', padding: '16px', boxShadow: '0 10px 34px rgba(121,72,96,0.12), inset 0 1px 0 rgba(255,255,255,0.82)' } },
     h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px' } },
       h('div', null,
-        h('div', { style: { fontSize: '18px', fontWeight: '800', color: '#342530', letterSpacing: '-0.02em' } }, title),
+        h('div', { style: { fontSize: '18px', fontWeight: '800', color: '#2A2127', letterSpacing: '-0.02em' } }, title),
         h('div', { style: { fontSize: '11.5px', color: '#745D69', marginTop: '2px', fontWeight: '600' } }, 'Changes are stored on this device; dose history remains unchanged.')
       ),
-      h('button', { onClick: () => setState({ medEditor: null }), style: { minHeight: '34px', padding: '0 10px', borderRadius: '9px', background: 'rgba(255,255,255,0.62)', border: '1px solid rgba(212,104,138,0.18)', color: '#745D69', fontSize: '12px', fontWeight: '800' } }, 'Cancel')
+      h('button', { onClick: () => setState({ medEditor: null }), style: { minHeight: '34px', padding: '0 10px', borderRadius: '9px', background: 'rgba(255,255,255,0.62)', border: '1px solid #EBE3E4', color: '#745D69', fontSize: '12px', fontWeight: '800' } }, 'Cancel')
     ),
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: '11px' } },
       h('label', null, fieldLabel('Medication name'), formInput({ value: form.name, placeholder: 'Medication name', onInput: event => updateMedicationForm('name', event.target.value) })),
       h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, placeholder: 'Generic name', onInput: event => updateMedicationForm('sub', event.target.value) })),
       h('label', null, fieldLabel('Dosage options', 'Separate choices with commas.'), formInput({ value: form.dosesText, placeholder: '500 mg, 1000 mg', onInput: event => updateMedicationForm('dosesText', event.target.value) })),
-      h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#342530' } }, h('option', { value: 'gap' }, 'As needed / gap-based'), h('option', { value: 'win' }, 'Scheduled window'))),
+      h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, h('option', { value: 'gap' }, 'As needed / gap-based'), h('option', { value: 'win' }, 'Scheduled window'))),
       h('div', { style: { gridColumn: '1 / -1' } },
         fieldLabel('Days taken', 'Not every medication is daily \u2014 pick which days this one is given.'),
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
-          h('select', { value: form.scheduleMode, onChange: event => updateMedicationForm('scheduleMode', event.target.value, true), style: { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#342530' } },
+          h('select', { value: form.scheduleMode, onChange: event => updateMedicationForm('scheduleMode', event.target.value, true), style: { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } },
             h('option', { value: 'daily' }, 'Every day'),
+            h('option', { value: 'asneeded' }, 'As needed (no set days)'),
             h('option', { value: 'weekly' }, 'Specific days of the week'),
             h('option', { value: 'interval' }, 'Every few days (e.g. every other day)')
           ),
           form.scheduleMode === 'interval' ? h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
-            h('span', { style: { fontSize: '12.5px', color: '#6E5261', fontWeight: '700' } }, 'every'),
+            h('span', { style: { fontSize: '12.5px', color: '#554A52', fontWeight: '700' } }, 'every'),
             formInput({ type: 'number', min: '2', step: '1', value: String(form.intervalN), onInput: event => updateMedicationForm('intervalN', event.target.value), style: { width: '70px' } }),
-            h('span', { style: { fontSize: '12.5px', color: '#6E5261', fontWeight: '700' } }, 'days, starting'),
+            h('span', { style: { fontSize: '12.5px', color: '#554A52', fontWeight: '700' } }, 'days, starting'),
             formInput({ type: 'date', value: form.intervalAnchor, onInput: event => updateMedicationForm('intervalAnchor', event.target.value), style: { width: '165px' } })
           ) : null
         ),
         form.scheduleMode === 'weekly' ? h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
           ...['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayLabel, d) => {
             const on = (form.weekDays || []).indexOf(d) !== -1;
-            return h('button', { type: 'button', onClick: () => { const cur = (form.weekDays || []).slice(); const at = cur.indexOf(d); if (at === -1) cur.push(d); else cur.splice(at, 1); updateMedicationForm('weekDays', cur.sort(), true); }, 'aria-pressed': on ? 'true' : 'false', style: { minWidth: '46px', minHeight: '38px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', background: on ? '#AA5375' : 'rgba(255,255,255,0.72)', color: on ? '#fff' : '#5F4A56', border: '1px solid ' + (on ? '#AA5375' : 'rgba(212,104,138,0.25)') } }, dayLabel);
+            return h('button', { type: 'button', onClick: () => { const cur = (form.weekDays || []).slice(); const at = cur.indexOf(d); if (at === -1) cur.push(d); else cur.splice(at, 1); updateMedicationForm('weekDays', cur.sort(), true); }, 'aria-pressed': on ? 'true' : 'false', style: { minWidth: '46px', minHeight: '38px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', background: on ? '#A24C71' : 'rgba(255,255,255,0.72)', color: on ? '#fff' : '#5F4A56', border: '1px solid ' + (on ? '#A24C71' : 'rgba(212,104,138,0.25)') } }, dayLabel);
           })
         ) : null
       ),
       scheduled ? h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Schedule windows', 'e.g. 8 AM-12 PM Morning, 8 PM-10 PM Evening.'), formInput({ value: form.windowsText, placeholder: '8 AM-12 PM Morning, 8 PM-10 PM Evening', onInput: event => updateMedicationForm('windowsText', event.target.value) })) : h('label', null, fieldLabel('Minimum gap hours'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.gapH), onInput: event => updateMedicationForm('gapH', event.target.value) })),
       h('label', null, fieldLabel('Daily limit', 'Leave blank for none.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value) })),
-      h('label', null, fieldLabel('Limit unit'), h('select', { value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#342530' } }, h('option', { value: 'mg' }, 'mg'), h('option', { value: 'pills' }, 'pills'), h('option', { value: 'applications' }, 'applications'))),
-      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Frequency / rule note'), h('textarea', { placeholder: 'For example: Min 4-hour gap or Once nightly', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#342530' } }, form.note))
+      h('label', null, fieldLabel('Limit unit'), h('select', { value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, h('option', { value: 'mg' }, 'mg'), h('option', { value: 'pills' }, 'pills'), h('option', { value: 'applications' }, 'applications'))),
+      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Frequency / rule note'), h('textarea', { placeholder: 'For example: Min 4-hour gap or Once nightly', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, form.note))
     ),
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '12px' } },
       renderPillToggle('Show as its own Home card', !!form.quickLog, () => toggleMedicationForm('quickLog'), 'Gives this medication its own compact card in the Quick Log section on Home.'),
@@ -2716,8 +2717,8 @@ function renderMedicationEditor() {
       renderPillToggle('Chemo-day only', !!form.chemoOnly, () => toggleMedicationForm('chemoOnly'), 'Only appears on Home during the chemo-adjacent day window (day before through day after chemo) — hidden the rest of the time.')
     ),
     h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '15px' } },
-      h('button', { onClick: () => setState({ medEditor: null }), style: { minHeight: '42px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.65)', border: '1px solid rgba(212,104,138,0.18)', color: '#6E5261', fontSize: '13px', fontWeight: '800' } }, 'Discard'),
-      h('button', { onClick: saveMedicationEditor, style: { minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, state.medEditor.mode === 'add' ? 'Add medication' : 'Save changes')
+      h('button', { onClick: () => setState({ medEditor: null }), style: { minHeight: '42px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.65)', border: '1px solid #EBE3E4', color: '#554A52', fontSize: '13px', fontWeight: '800' } }, 'Discard'),
+      h('button', { onClick: saveMedicationEditor, style: { minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, state.medEditor.mode === 'add' ? 'Add medication' : 'Save changes')
     )
   );
 }
@@ -2730,9 +2731,9 @@ function renderMedicationManager(now) {
   const homeOrderSection = reorderable.length > 1 ? h('section', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } },
     h('div', null,
       h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8E3D61' } }, 'Home screen order'),
-      h('div', { style: { fontSize: '11.5px', color: '#6E5261', marginTop: '3px', lineHeight: '1.35' } }, 'Sets the order these individual medication cards appear in Home’s Quick Log grid. Grouped Morning/Evening meds aren’t included here.')
+      h('div', { style: { fontSize: '11.5px', color: '#554A52', marginTop: '3px', lineHeight: '1.35' } }, 'Sets the order these individual medication cards appear in Home’s Quick Log grid. Grouped Morning/Evening meds aren’t included here.')
     ),
-    h('div', { style: { background: 'rgba(255,255,255,0.60)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.16)', borderRadius: '17px', overflow: 'hidden', boxShadow: '0 3px 16px rgba(180,130,150,0.09), inset 0 1px 0 rgba(255,255,255,0.75)' } },
+    h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '17px', overflow: 'hidden', boxShadow: '0 3px 16px rgba(180,130,150,0.09), inset 0 1px 0 rgba(255,255,255,0.75)' } },
       ...reorderable.map((med, i) => {
         // h() falls back to el.setAttribute(k, v) for unrecognized attrs, and setAttribute('disabled',
         // false) still sets the attribute (browsers treat any presence of `disabled` as disabled,
@@ -2746,7 +2747,7 @@ function renderMedicationManager(now) {
           style: { width: '32px', height: '32px', borderRadius: '9px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: isDisabled ? 'rgba(125,105,116,0.06)' : 'rgba(170,83,117,0.10)', color: isDisabled ? '#C4B4BE' : '#8E3D61', border: '1px solid ' + (isDisabled ? 'rgba(125,105,116,0.10)' : 'rgba(170,83,117,0.18)'), fontSize: '13px', fontWeight: '800', cursor: isDisabled ? 'default' : 'pointer' }
         }, glyph);
         return h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 13px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.10)' : 'none' } },
-          h('span', { style: { flex: '1', minWidth: '0', fontSize: '14px', fontWeight: '700', color: '#342530' } }, med.name),
+          h('span', { style: { flex: '1', minWidth: '0', fontSize: '14px', fontWeight: '700', color: '#2A2127' } }, med.name),
           arrowBtn(-1, atTop, 'Move up', '▲'),
           arrowBtn(1, atBottom, 'Move down', '▼')
         );
@@ -2755,11 +2756,11 @@ function renderMedicationManager(now) {
   ) : null;
   const cards = sortedMeds.map(med => {
     const deleting = state.confirmDeleteMed === med.id;
-    return h('article', { style: { background: 'rgba(255,255,255,0.60)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.16)', borderRadius: '17px', padding: '13px', boxShadow: '0 3px 16px rgba(180,130,150,0.09), inset 0 1px 0 rgba(255,255,255,0.75)' } },
+    return h('article', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '17px', padding: '13px', boxShadow: '0 3px 16px rgba(180,130,150,0.09), inset 0 1px 0 rgba(255,255,255,0.75)' } },
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' } },
         h('div', { style: { minWidth: '0', flex: '1' } },
-          h('div', { style: { fontSize: '16px', fontWeight: '800', color: '#342530', letterSpacing: '-0.015em' } }, med.name),
-          h('div', { style: { fontSize: '12px', color: '#6E5261', fontWeight: '600', marginTop: '1px' } }, med.sub || 'No generic name')
+          h('div', { style: { fontSize: '16px', fontWeight: '800', color: '#2A2127', letterSpacing: '-0.015em' } }, med.name),
+          h('div', { style: { fontSize: '12px', color: '#554A52', fontWeight: '600', marginTop: '1px' } }, med.sub || 'No generic name')
         ),
         h('div', { style: { display: 'flex', gap: '5px', flexShrink: '0' } },
           h('button', { onClick: () => openMedicationEditor(med), 'aria-label': 'Edit ' + med.name, style: { width: '34px', height: '34px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(170,83,117,0.10)', color: '#8E3D61', border: '1px solid rgba(170,83,117,0.18)' } }, appIcon('edit', 16)),
@@ -2788,11 +2789,11 @@ function renderMedicationManager(now) {
   return [
     h('section', { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px' } },
       h('div', null,
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#AA5375' } }, appIcon('pill', 19), h('span', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase' } }, 'Medication management')),
-        h('h1', { style: { fontSize: '24px', lineHeight: '1.05', color: '#342530', letterSpacing: '-0.035em', marginTop: '5px' } }, 'Meds'),
-        h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px', maxWidth: '470px', lineHeight: '1.4' } }, 'Review, add, edit, or remove the active medication list. Configuration is stored on this device; dose history stays intact.')
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#A24C71' } }, appIcon('pill', 19), h('span', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase' } }, 'Medication management')),
+        h('h1', { style: { fontSize: '24px', lineHeight: '1.05', color: '#2A2127', letterSpacing: '-0.035em', marginTop: '5px' } }, 'Meds'),
+        h('div', { style: { fontSize: '12.5px', color: '#554A52', marginTop: '5px', maxWidth: '470px', lineHeight: '1.4' } }, 'Review, add, edit, or remove the active medication list. Configuration is stored on this device; dose history stays intact.')
       ),
-      h('button', { onClick: () => openMedicationEditor(null), 'data-tour': 'meds-add', style: { flexShrink: '0', minHeight: '40px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: '5px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '12.5px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, appIcon('plus', 16), 'Add')
+      h('button', { onClick: () => openMedicationEditor(null), 'data-tour': 'meds-add', style: { flexShrink: '0', minHeight: '40px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: '5px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '12.5px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, appIcon('plus', 16), 'Add')
     ),
     renderMedicationEditor(),
     homeOrderSection,
@@ -2802,19 +2803,19 @@ function renderMedicationManager(now) {
 }
 
 
-const APP_VERSION = 'app-v8';
+const APP_VERSION = 'app-v9';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
-  const secStyle = { background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(212,104,138,0.16)', borderRadius: '17px', padding: '14px' };
+  const secStyle = { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '17px', padding: '14px' };
   const secLabel = text => h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8E3D61' } }, text);
-  const selStyle = { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#342530' };
+  const selStyle = { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' };
   const toggle = (key, label, helper) => renderPillToggle(label, homePref(key), () => setHomePref(key, !homePref(key)), helper);
   return [
     h('section', null,
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#AA5375' } }, h('span', { style: { fontSize: '17px' } }, '\u2699'), h('span', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase' } }, 'Settings')),
-      h('h1', { style: { fontSize: '24px', lineHeight: '1.05', color: '#342530', letterSpacing: '-0.035em', marginTop: '5px' } }, 'Settings'),
-      h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px' } }, 'Profiles, plans, home screen, units, and app data \u2014 all stored on this device.')
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#A24C71' } }, h('span', { style: { fontSize: '17px' } }, '\u2699'), h('span', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase' } }, 'Settings')),
+      h('h1', { style: { fontSize: '24px', lineHeight: '1.05', color: '#2A2127', letterSpacing: '-0.035em', marginTop: '5px' } }, 'Settings'),
+      h('div', { style: { fontSize: '12.5px', color: '#554A52', marginTop: '5px' } }, 'Profiles, plans, home screen, units, and app data \u2014 all stored on this device.')
     ),
     // Profiles
     h('section', { style: secStyle },
@@ -2822,10 +2823,10 @@ function renderSettings(now) {
         secLabel('Profiles'),
         h('span', { style: { fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '99px', background: 'rgba(170,83,117,0.12)', color: '#8E3D61', border: '1px solid rgba(170,83,117,0.25)' } }, tierLabel(lic.tier) + ' plan')
       ),
-      h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px', lineHeight: '1.45' } }, 'Each profile keeps its own medications and history, fully separate, on this device.'),
-      h('div', { style: { marginTop: '10px', borderRadius: '13px', overflow: 'hidden', border: '1px solid rgba(212,104,138,0.14)' } },
-        ...ps.list.map((p, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', background: 'rgba(255,255,255,0.6)', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.10)' : 'none', flexWrap: 'wrap' } },
-          h('span', { style: { flex: '1', minWidth: '90px', fontSize: '14px', fontWeight: '700', color: '#342530' } }, p.name || 'Unnamed'),
+      h('div', { style: { fontSize: '12.5px', color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, 'Each profile keeps its own medications and history, fully separate, on this device.'),
+      h('div', { style: { marginTop: '10px', borderRadius: '13px', overflow: 'hidden', border: '1px solid #EBE3E4' } },
+        ...ps.list.map((p, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', background: '#FFFFFF', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.10)' : 'none', flexWrap: 'wrap' } },
+          h('span', { style: { flex: '1', minWidth: '90px', fontSize: '14px', fontWeight: '700', color: '#2A2127' } }, p.name || 'Unnamed'),
           p.id === ACTIVE_PROFILE_ID
             ? h('span', { style: { fontSize: '11px', fontWeight: '800', color: '#2E7D4F', background: 'rgba(46,125,79,0.10)', padding: '3px 10px', borderRadius: '99px' } }, 'Active')
             : state.confirmDeleteProfile === p.id
@@ -2840,17 +2841,17 @@ function renderSettings(now) {
       ),
       state.addingProfile ? h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
         h('input', { value: newProfileNameDraft, placeholder: 'Patient name', onInput: (ev) => { newProfileNameDraft = ev.target.value; }, style: { flex: '1', minWidth: '150px', minHeight: '44px', border: '1px solid rgba(212,104,138,0.25)', borderRadius: '11px', padding: '0 11px', fontSize: '13.5px', background: '#FFF9FB' } }),
-        h('button', { onClick: () => { const n = newProfileNameDraft.trim(); if (!n) { setToast('Enter a name for the new profile'); return; } newProfileNameDraft = ''; createProfile(n); }, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13px', fontWeight: '800' } }, 'Create'),
+        h('button', { onClick: () => { const n = newProfileNameDraft.trim(); if (!n) { setToast('Enter a name for the new profile'); return; } newProfileNameDraft = ''; createProfile(n); }, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800' } }, 'Create'),
         h('button', { onClick: () => { newProfileNameDraft = ''; setState({ addingProfile: false }); }, style: { minHeight: '44px', padding: '0 12px', borderRadius: '11px', background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(125,105,116,0.2)', color: '#5F4A56', fontSize: '13px', fontWeight: '800' } }, 'Cancel')
       ) : h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
-        h('button', { onClick: () => { if (profilesState().list.length >= tierLimit(getLicense().tier)) { setState({ upgradeOpen: true }); } else { setState({ addingProfile: true }); } }, style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(121,57,84,0.35)' } }, '+ Add profile'),
+        h('button', { onClick: () => { if (profilesState().list.length >= tierLimit(getLicense().tier)) { setState({ upgradeOpen: true }); } else { setState({ addingProfile: true }); } }, style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, '+ Add profile'),
         h('button', { onClick: () => setState({ upgradeOpen: true }), style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.7)', border: '1.5px solid rgba(170,83,117,0.35)', color: '#8E3D61', fontSize: '13px', fontWeight: '800' } }, 'View plans')
       )
     ),
     // Home screen & daily check-ins
     h('section', { style: secStyle },
       secLabel('Home screen'),
-      h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px', lineHeight: '1.45' } }, 'Choose what appears on Home. Daily check-ins ask once a day and escalate if unanswered \u2014 turn on only what the care team wants tracked.'),
+      h('div', { style: { fontSize: '12.5px', color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, 'Choose what appears on Home. Daily check-ins ask once a day and escalate if unanswered \u2014 turn on only what the care team wants tracked.'),
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '10px' } },
         toggle('showTemperature', 'Temperature card', 'Quick temperature logging on Home.'),
         toggle('showWeight', 'Weight card', 'Quick weight logging on Home.'),
@@ -2876,7 +2877,7 @@ function renderSettings(now) {
     // Notifications (native build)
     h('section', { style: secStyle },
       secLabel('Notifications'),
-      h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px', lineHeight: '1.45' } }, 'Dose reminders and missed-dose alerts arrive with the phone-app version (in progress). Your preferences will live here.')
+      h('div', { style: { fontSize: '12.5px', color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, 'Dose reminders and missed-dose alerts arrive with the phone-app version (in progress). Your preferences will live here.')
     ),
     // Guide
     h('section', { style: secStyle },
@@ -2886,9 +2887,9 @@ function renderSettings(now) {
     // About & legal
     h('section', { style: secStyle },
       secLabel('About & legal'),
-      h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '8px', lineHeight: '1.55' } }, 'ChemoWell ' + APP_VERSION + ' (beta). All data stays on this device \u2014 no cloud, no accounts, no tracking, and the app never sends your information anywhere.'),
+      h('div', { style: { fontSize: '12.5px', color: '#554A52', marginTop: '8px', lineHeight: '1.55' } }, 'ChemoWell ' + APP_VERSION + ' (beta). All data stays on this device \u2014 no cloud, no accounts, no tracking, and the app never sends your information anywhere.'),
       h('div', { style: { fontSize: '12px', fontWeight: '800', color: '#8E3D61', marginTop: '12px', letterSpacing: '0.03em', textTransform: 'uppercase' } }, 'Medical disclaimer'),
-      h('div', { style: { fontSize: '12px', color: '#6E5261', marginTop: '4px', lineHeight: '1.55' } }, 'ChemoWell is a record-keeping tool, not medical advice. Medication schedules, limits, and alerts only reflect what you entered \u2014 always follow the care team\u2019s instructions, confirm doses with a doctor or pharmacist, and never delay care because of anything shown in this app. If this is an emergency, call your local emergency number.')
+      h('div', { style: { fontSize: '12px', color: '#554A52', marginTop: '4px', lineHeight: '1.55' } }, 'ChemoWell is a record-keeping tool, not medical advice. Medication schedules, limits, and alerts only reflect what you entered \u2014 always follow the care team\u2019s instructions, confirm doses with a doctor or pharmacist, and never delay care because of anything shown in this app. If this is an emergency, call your local emergency number.')
     ),
     // Start over (moved from Meds)
     h('section', { style: { marginTop: '2px', background: 'rgba(192,69,59,0.05)', border: '1.5px solid rgba(192,69,59,0.22)', borderRadius: '17px', padding: '14px' } },
@@ -2897,7 +2898,7 @@ function renderSettings(now) {
       state.confirmEraseAll ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '12px', flexWrap: 'wrap' } },
         h('span', { style: { flex: '1', minWidth: '160px', fontSize: '12.5px', fontWeight: '800', color: '#A5443C' } }, 'Erase everything? This is permanent.'),
         h('button', { onClick: () => setState({ confirmEraseAll: false }), style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1px solid rgba(125,105,116,0.25)', color: '#5F4A56', fontSize: '13px', fontWeight: '800' } }, 'Cancel'),
-        h('button', { onClick: eraseAllAppData, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: '#C0453B', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: 'inset 0 -2px 0 rgba(140,40,32,0.4)' } }, 'Yes, erase everything')
+        h('button', { onClick: eraseAllAppData, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: '#C0453B', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, 'Yes, erase everything')
       ) : h('button', { onClick: () => setState({ confirmEraseAll: true }), style: { marginTop: '11px', minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1.5px solid rgba(192,69,59,0.45)', color: '#A5443C', fontSize: '13px', fontWeight: '800' } }, 'Erase all data\u2026')
     )
   ];
@@ -2905,12 +2906,12 @@ function renderSettings(now) {
 
 function renderBloodPressureReport(now) {
   const list = state.entries.filter(e => e.medId === 'blood_pressure').sort((a, b) => b.ts - a.ts);
-  if (!list.length) return h('div', { style: { background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '22px 16px', textAlign: 'center', color: '#6E5261', fontSize: '13px' } }, 'No blood pressure readings yet. Log them from the Home screen card.');
-  return h('div', { style: { background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', overflow: 'hidden' } },
+  if (!list.length) return h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '22px 16px', textAlign: 'center', color: '#554A52', fontSize: '13px' } }, 'No blood pressure readings yet. Log them from the Home screen card.');
+  return h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', overflow: 'hidden' } },
     ...list.map((e, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 14px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
       h('div', { style: { flex: '1', minWidth: '0' } },
         h('div', { className: 'mono', style: { fontSize: '16px', fontWeight: '700', color: '#7B3F6B' } }, e.sys + '/' + e.dia + ' mmHg'),
-        h('div', { style: { fontSize: '11px', color: '#7D6974', marginTop: '1px' } }, new Date(e.ts).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + fmtTime(e.ts))
+        h('div', { style: { fontSize: '11px', color: '#7A6E76', marginTop: '1px' } }, new Date(e.ts).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + fmtTime(e.ts))
       ),
       h('button', { onClick: () => removeEntryDB(e.id), style: { minHeight: '34px', padding: '0 10px', borderRadius: '9px', background: 'rgba(192,69,59,0.08)', border: '1px solid rgba(192,69,59,0.2)', color: '#A5443C', fontSize: '11.5px', fontWeight: '800' } }, 'Remove')
     ))
@@ -2940,21 +2941,21 @@ function renderReportsMenu(now) {
   const reportTypes = ['history', 'weight', 'blood_pressure', 'cycle', 'bowel_movement', 'appetite'].filter(t => t !== 'cycle' || homePref('cycleTracking'));
   return [
     h('section', null,
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#AA5375' } }, appIcon('chart', 19), h('span', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase' } }, 'Care reports')),
-      h('h1', { style: { fontSize: '24px', lineHeight: '1.05', color: '#342530', letterSpacing: '-0.035em', marginTop: '5px' } }, 'Reports'),
-      h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px' } }, 'Choose a report to review details without leaving the app.')
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#A24C71' } }, appIcon('chart', 19), h('span', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase' } }, 'Care reports')),
+      h('h1', { style: { fontSize: '24px', lineHeight: '1.05', color: '#2A2127', letterSpacing: '-0.035em', marginTop: '5px' } }, 'Reports'),
+      h('div', { style: { fontSize: '12.5px', color: '#554A52', marginTop: '5px' } }, 'Choose a report to review details without leaving the app.')
     ),
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
       ...reportTypes.map(type => {
         const report = reportDescriptor(type, now);
-        return h('button', { onClick: () => openReport(type), style: { width: '100%', minHeight: '92px', display: 'flex', alignItems: 'center', gap: '13px', padding: '14px', textAlign: 'left', borderRadius: '18px', background: 'rgba(255,255,255,0.63)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.16)', color: '#342530', boxShadow: '0 4px 18px rgba(180,130,150,0.09), inset 0 1px 0 rgba(255,255,255,0.75)' } },
-          h('span', { style: { width: '44px', height: '44px', borderRadius: '14px', background: 'rgba(170,83,117,0.12)', color: '#AA5375', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: '0' } }, appIcon(report.icon, 22)),
+        return h('button', { onClick: () => openReport(type), style: { width: '100%', minHeight: '92px', display: 'flex', alignItems: 'center', gap: '13px', padding: '14px', textAlign: 'left', borderRadius: '18px', background: '#FFFFFF', border: '1px solid #EBE3E4', color: '#2A2127', boxShadow: '0 4px 18px rgba(180,130,150,0.09), inset 0 1px 0 rgba(255,255,255,0.75)' } },
+          h('span', { style: { width: '44px', height: '44px', borderRadius: '14px', background: 'rgba(170,83,117,0.12)', color: '#A24C71', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: '0' } }, appIcon(report.icon, 22)),
           h('span', { style: { display: 'block', flex: '1', minWidth: '0' } },
             h('span', { style: { display: 'block', fontSize: '16px', fontWeight: '800', letterSpacing: '-0.015em' } }, report.label),
-            h('span', { style: { display: 'block', fontSize: '12px', color: '#6E5261', lineHeight: '1.35', marginTop: '2px' } }, report.description),
+            h('span', { style: { display: 'block', fontSize: '12px', color: '#554A52', lineHeight: '1.35', marginTop: '2px' } }, report.description),
             h('span', { className: 'mono', style: { display: 'block', fontSize: '10.5px', color: '#8E3D61', fontWeight: '700', marginTop: '5px' } }, report.meta)
           ),
-          h('span', { style: { color: '#AA5375', display: 'inline-flex' } }, appIcon('chevron', 19))
+          h('span', { style: { color: '#A24C71', display: 'inline-flex' } }, appIcon('chevron', 19))
         );
       })
     )
@@ -2968,8 +2969,8 @@ function renderReportDetail(type, now) {
     h('section', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' } },
       h('div', null,
         h('div', { style: { fontSize: '11px', color: '#8E3D61', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase' } }, 'Reports'),
-        h('h1', { style: { fontSize: '24px', lineHeight: '1.05', color: '#342530', letterSpacing: '-0.035em', marginTop: '5px' } }, report.label),
-        h('div', { style: { fontSize: '12.5px', color: '#6E5261', marginTop: '5px', lineHeight: '1.35' } }, report.description)
+        h('h1', { style: { fontSize: '24px', lineHeight: '1.05', color: '#2A2127', letterSpacing: '-0.035em', marginTop: '5px' } }, report.label),
+        h('div', { style: { fontSize: '12.5px', color: '#554A52', marginTop: '5px', lineHeight: '1.35' } }, report.description)
       )
     ),
     ...content
@@ -3016,15 +3017,15 @@ function renderHistory(now) {
 
   const toggleBar = h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' } },
     h('div', { style: { display: 'inline-flex', background: 'rgba(212,104,138,0.10)', borderRadius: '11px', padding: '3px', gap: '2px' } },
-      h('button', { onClick: () => setState({ historyMissedOnly: true }), style: { minHeight: '34px', padding: '0 13px', borderRadius: '9px', background: missedOnly ? '#C0453B' : 'transparent', color: missedOnly ? '#fff' : '#7D6974', fontSize: '12.5px', fontWeight: '800' } }, 'Missed Doses' + (totalMissed ? ' (' + totalMissed + ')' : '')),
-      h('button', { onClick: () => setState({ historyMissedOnly: false }), style: { minHeight: '34px', padding: '0 13px', borderRadius: '9px', background: !missedOnly ? '#AA5375' : 'transparent', color: !missedOnly ? '#fff' : '#7D6974', fontSize: '12.5px', fontWeight: '800' } }, 'Show all')
+      h('button', { onClick: () => setState({ historyMissedOnly: true }), style: { minHeight: '34px', padding: '0 13px', borderRadius: '9px', background: missedOnly ? '#C0453B' : 'transparent', color: missedOnly ? '#fff' : '#7A6E76', fontSize: '12.5px', fontWeight: '800' } }, 'Missed Doses' + (totalMissed ? ' (' + totalMissed + ')' : '')),
+      h('button', { onClick: () => setState({ historyMissedOnly: false }), style: { minHeight: '34px', padding: '0 13px', borderRadius: '9px', background: !missedOnly ? '#A24C71' : 'transparent', color: !missedOnly ? '#fff' : '#7A6E76', fontSize: '12.5px', fontWeight: '800' } }, 'Show all')
     ),
     missedOnly && totalMissed ? h('button', { onClick: () => clearAllMissedInHistory(now), style: { minHeight: '34px', padding: '0 14px', borderRadius: '9px', background: 'rgba(192,69,59,0.14)', border: '1px solid rgba(192,69,59,0.4)', color: '#A13830', fontSize: '12.5px', fontWeight: '800' } }, 'Clear all') : null
   );
 
   if (historyDays.length === 0) {
     const emptyMsg = missedOnly ? 'No missed doses to review — you\'re all caught up!' : 'No history yet.';
-    return [toggleBar, h('div', { style: { background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7D6974', fontSize: '14px', lineHeight: '1.5' } }, emptyMsg)];
+    return [toggleBar, h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, emptyMsg)];
   }
 
   return [toggleBar, h('div', { style: { display: 'flex', flexDirection: 'column', gap: '16px' } },
@@ -3034,16 +3035,16 @@ function renderHistory(now) {
           h('div', { style: { fontSize: '13px', fontWeight: '800', letterSpacing: '0.03em', textTransform: 'uppercase', color: '#8A6479' } }, d.label),
           isInpatientDay(d.key) ? h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#9A6419', color: '#fff', borderRadius: '99px', padding: '2px 9px', fontSize: '10px', fontWeight: '800', letterSpacing: '0.05em', textTransform: 'uppercase' } }, appIcon('hospital', 11), 'In-Patient') : null
         ),
-        h('div', { className: 'mono', style: { fontSize: '12px', color: d.summary.includes('MISSED') ? '#C0453B' : '#7D6974', fontWeight: d.summary.includes('MISSED') ? '700' : '400' } }, d.summary)
+        h('div', { className: 'mono', style: { fontSize: '12px', color: d.summary.includes('MISSED') ? '#C0453B' : '#7A6E76', fontWeight: d.summary.includes('MISSED') ? '700' : '400' } }, d.summary)
       ),
-      h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+      h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
         ...(() => {
           const rows = [];
           d.items.forEach((e, i) => {
             const bk = timeBucket(e.ts);
             const newGroup = i === 0 || timeBucket(d.items[i - 1].ts) !== bk;
             if (newGroup) {
-              rows.push(h('div', { style: { padding: '8px 14px 4px', fontSize: '10.5px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#7D6974', background: 'rgba(212,104,138,0.06)', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } }, bk));
+              rows.push(h('div', { style: { padding: '8px 14px 4px', fontSize: '10.5px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#7A6E76', background: 'rgba(212,104,138,0.06)', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } }, bk));
             }
             if (e.missed) { rows.push(missedRow(e, newGroup ? 0 : 1)); return; }
             rows.push(h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderTop: newGroup ? 'none' : '1px solid rgba(212,104,138,0.08)' } },
@@ -3052,9 +3053,9 @@ function renderHistory(now) {
                 h('div', { style: { fontSize: '15px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' } },
                   nameOf(e.medId),
                   e.override ? h('span', { style: { fontSize: '10.5px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A15B56', background: 'rgba(192,69,59,0.15)', border: '1px solid rgba(192,69,59,0.3)', borderRadius: '6px', padding: '1px 6px' } }, 'Early') : null,
-                  e.skipped ? h('span', { style: { fontSize: '10.5px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#7D6974', background: 'rgba(125,105,116,0.14)', border: '1px solid rgba(125,105,116,0.3)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
+                  e.skipped ? h('span', { style: { fontSize: '10.5px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#7A6E76', background: 'rgba(125,105,116,0.14)', border: '1px solid rgba(125,105,116,0.3)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
                 ),
-                e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#7D6974', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, e.dose + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, 'Pain ' + e.painLevel + '/10') : null)
+                e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, e.dose + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, 'Pain ' + e.painLevel + '/10') : null)
               ),
               removeBtn(e)
             ));
@@ -3069,20 +3070,20 @@ function renderHistory(now) {
 function renderCycle(now) {
   const cycleActiveNow = cycleActive();
   const cycleDayN = daysSinceCycleStart();
-  const card = h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+  const card = h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' } },
       h('div', null,
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Menstrual Cycle'),
-        h('div', { style: { fontSize: '12.5px', color: '#7D6974', marginTop: '3px' } }, cycleDayN !== null ? ('Day ' + cycleDayN + ' since last period start') : 'No period logged yet')
+        h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } }, cycleDayN !== null ? ('Day ' + cycleDayN + ' since last period start') : 'No period logged yet')
       ),
-      cycleActiveNow ? h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(212,104,138,0.12)', color: '#AA5375', border: '1px solid rgba(212,104,138,0.25)', borderRadius: '99px', padding: '5px 11px', fontSize: '12.5px', fontWeight: '700', flexShrink: '0' } },
-        h('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#AA5375', display: 'inline-block' } }),
+      cycleActiveNow ? h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(212,104,138,0.12)', color: '#A24C71', border: '1px solid rgba(212,104,138,0.25)', borderRadius: '99px', padding: '5px 11px', fontSize: '12.5px', fontWeight: '700', flexShrink: '0' } },
+        h('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#A24C71', display: 'inline-block' } }),
         'Active'
       ) : null
     ),
     h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } },
-      h('button', { onClick: cycleActiveNow ? logCycleEnd : logCycleStart, style: { flex: '1', minHeight: '52px', borderRadius: '13px', background: cycleActiveNow ? '#9B5B8A' : '#AA5375', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(150,60,90,0.35)' } }, cycleActiveNow ? 'Log Period End' : 'Log Period Start'),
-      h('button', { onClick: () => logPeriodForDay('cycle_start', 'cycle_end', 'Period'), title: 'Log a past period (Start + End)', style: { flexShrink: '0', minHeight: '52px', width: '52px', borderRadius: '13px', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(212,104,138,0.3)', color: '#AA5375', fontSize: '20px', fontWeight: '700' } }, '+')
+      h('button', { onClick: cycleActiveNow ? logCycleEnd : logCycleStart, style: { flex: '1', minHeight: '52px', borderRadius: '13px', background: cycleActiveNow ? '#9B5B8A' : '#A24C71', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, cycleActiveNow ? 'Log Period End' : 'Log Period Start'),
+      h('button', { onClick: () => logPeriodForDay('cycle_start', 'cycle_end', 'Period'), title: 'Log a past period (Start + End)', style: { flexShrink: '0', minHeight: '52px', width: '52px', borderRadius: '13px', background: '#FFFFFF', border: '1px solid rgba(212,104,138,0.3)', color: '#A24C71', fontSize: '20px', fontWeight: '700' } }, '+')
     )
   );
 
@@ -3090,11 +3091,11 @@ function renderCycle(now) {
   const history = h('section', null,
     h('div', { style: { fontSize: '13px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A6479', marginBottom: '10px' } }, 'Cycle History'),
     periods.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-      ...periods.map(p => h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '15px 16px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
-        h('span', { style: { flexShrink: '0', width: '10px', height: '10px', borderRadius: '50%', background: p.end === null ? '#AA5375' : '#9B5B8A', display: 'inline-block' } }),
-        h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#3D2B3A' } }, fmtCyclePeriod(p))
+      ...periods.map(p => h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '15px 16px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+        h('span', { style: { flexShrink: '0', width: '10px', height: '10px', borderRadius: '50%', background: p.end === null ? '#A24C71' : '#9B5B8A', display: 'inline-block' } }),
+        h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#2A2127' } }, fmtCyclePeriod(p))
       ))
-    ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7D6974', fontSize: '14px', lineHeight: '1.5' } }, 'No periods logged yet.')
+    ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No periods logged yet.')
   );
 
   return [card, history];
@@ -3109,15 +3110,15 @@ function renderAppetite(now) {
   const history = h('section', null,
     h('div', { style: { fontSize: '13px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A6479', marginBottom: '10px' } }, 'Appetite History'),
     entries.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-      ...entries.map(e => h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '13px 15px', display: 'flex', alignItems: 'flex-start', gap: '12px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+      ...entries.map(e => h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '13px 15px', display: 'flex', alignItems: 'flex-start', gap: '12px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
         h('span', { style: { flexShrink: '0', width: '10px', height: '10px', marginTop: '6px', borderRadius: '50%', background: e.value === 'normal' ? '#0F9D6B' : e.value === 'little' ? '#C77800' : '#C0453B', display: 'inline-block' } }),
         h('div', { style: { flex: '1', minWidth: '0' } },
-          h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#3D2B3A' } }, new Date(e.ts).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ' — ' + (APPETITE_LABELS[e.value] || e.value)),
-          e.note ? h('div', { style: { fontSize: '12.5px', color: '#7D6974', marginTop: '3px', lineHeight: '1.4' } }, e.note) : null
+          h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#2A2127' } }, new Date(e.ts).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ' — ' + (APPETITE_LABELS[e.value] || e.value)),
+          e.note ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px', lineHeight: '1.4' } }, e.note) : null
         ),
         removeBtn(e)
       ))
-    ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7D6974', fontSize: '14px', lineHeight: '1.5' } }, 'No appetite entries logged yet.')
+    ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No appetite entries logged yet.')
   );
 
   return [history];
@@ -3130,14 +3131,14 @@ function renderBowelMovementReport(now) {
   const history = h('section', null,
     h('div', { style: { fontSize: '13px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A6479', marginBottom: '10px' } }, 'Bowel Movement History'),
     entries.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-      ...entries.map(e => h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '13px 15px', display: 'flex', alignItems: 'flex-start', gap: '12px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+      ...entries.map(e => h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '13px 15px', display: 'flex', alignItems: 'flex-start', gap: '12px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
         h('span', { style: { flexShrink: '0', width: '10px', height: '10px', marginTop: '6px', borderRadius: '50%', background: BOWEL_ISSUE_VALUES.has(e.value) ? '#C0453B' : e.value === 'very_little' ? '#C77800' : '#0F9D6B', display: 'inline-block' } }),
         h('div', { style: { flex: '1', minWidth: '0' } },
-          h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#3D2B3A' } }, new Date(e.ts).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ' — ' + (BOWEL_MOVEMENT_LABELS[e.value] || e.value))
+          h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#2A2127' } }, new Date(e.ts).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ' — ' + (BOWEL_MOVEMENT_LABELS[e.value] || e.value))
         ),
         removeBtn(e)
       ))
-    ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7D6974', fontSize: '14px', lineHeight: '1.5' } }, 'No bowel movement entries logged yet.')
+    ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No bowel movement entries logged yet.')
   );
 
   return [history];
@@ -3148,11 +3149,11 @@ function renderInPatient(now) {
   const ipDayN = daysSinceInpatientStart();
   const cur = currentInpatientPeriod();
   const confirming = !!state.confirmUndoInpatient;
-  const card = h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(154,100,25,0.25)', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+  const card = h('section', { style: { background: '#FFFFFF', border: '1px solid rgba(154,100,25,0.25)', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' } },
       h('div', null,
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'In-Patient Status'),
-        h('div', { style: { fontSize: '12.5px', color: '#7D6974', marginTop: '3px' } }, activeNow ? ((ipDayN !== null ? ('Day ' + ipDayN + ' — ') : '') + 'since ' + fmtInpatientDateTime(cur.start)) : 'Not currently in-patient')
+        h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } }, activeNow ? ((ipDayN !== null ? ('Day ' + ipDayN + ' — ') : '') + 'since ' + fmtInpatientDateTime(cur.start)) : 'Not currently in-patient')
       ),
       activeNow ? h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(154,100,25,0.14)', color: '#9A6419', border: '1px solid rgba(154,100,25,0.3)', borderRadius: '99px', padding: '5px 11px', fontSize: '12.5px', fontWeight: '700', flexShrink: '0' } },
         h('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#9A6419', display: 'inline-block' } }),
@@ -3160,12 +3161,12 @@ function renderInPatient(now) {
       ) : null
     ),
     activeNow ? h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } },
-      h('button', { onClick: logInpatientEnd, style: { flex: '1', minHeight: '52px', borderRadius: '13px', background: '#9A6419', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(110,70,10,0.35)' } }, 'Log In-Patient End'),
-      h('button', { onClick: () => logPeriodForDay('inpatient_start', 'inpatient_end', 'In-Patient'), title: 'Log a past stay (Start + End)', style: { flexShrink: '0', minHeight: '52px', width: '52px', borderRadius: '13px', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(154,100,25,0.3)', color: '#9A6419', fontSize: '20px', fontWeight: '700' } }, '+'),
+      h('button', { onClick: logInpatientEnd, style: { flex: '1', minHeight: '52px', borderRadius: '13px', background: '#9A6419', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)' } }, 'Log In-Patient End'),
+      h('button', { onClick: () => logPeriodForDay('inpatient_start', 'inpatient_end', 'In-Patient'), title: 'Log a past stay (Start + End)', style: { flexShrink: '0', minHeight: '52px', width: '52px', borderRadius: '13px', background: '#FFFFFF', border: '1px solid rgba(154,100,25,0.3)', color: '#9A6419', fontSize: '20px', fontWeight: '700' } }, '+'),
       h('button', { onClick: undoInpatientStart, style: { flexShrink: '0', minHeight: '52px', padding: '0 16px', borderRadius: '13px', background: confirming ? '#C0453B' : 'rgba(255,255,255,0.6)', border: '1px solid ' + (confirming ? '#C0453B' : 'rgba(154,100,25,0.3)'), color: confirming ? '#fff' : '#9A6419', fontSize: '13.5px', fontWeight: '700' } }, confirming ? 'Tap to confirm' : 'Undo')
     ) : h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } },
-      h('button', { onClick: logInpatientStart, style: { flex: '1', minHeight: '52px', borderRadius: '13px', background: '#9A6419', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: 'inset 0 -2px 0 rgba(110,70,10,0.35)' } }, 'Log In-Patient Start'),
-      h('button', { onClick: () => logPeriodForDay('inpatient_start', 'inpatient_end', 'In-Patient'), title: 'Log a past stay (Start + End)', style: { flexShrink: '0', minHeight: '52px', width: '52px', borderRadius: '13px', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(154,100,25,0.3)', color: '#9A6419', fontSize: '20px', fontWeight: '700' } }, '+')
+      h('button', { onClick: logInpatientStart, style: { flex: '1', minHeight: '52px', borderRadius: '13px', background: '#9A6419', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)' } }, 'Log In-Patient Start'),
+      h('button', { onClick: () => logPeriodForDay('inpatient_start', 'inpatient_end', 'In-Patient'), title: 'Log a past stay (Start + End)', style: { flexShrink: '0', minHeight: '52px', width: '52px', borderRadius: '13px', background: '#FFFFFF', border: '1px solid rgba(154,100,25,0.3)', color: '#9A6419', fontSize: '20px', fontWeight: '700' } }, '+')
     )
   );
 
@@ -3173,22 +3174,22 @@ function renderInPatient(now) {
   const history = h('section', null,
     h('div', { style: { fontSize: '13px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A6479', marginBottom: '10px' } }, 'In-Patient History'),
     periods.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-      ...periods.map(p => h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(154,100,25,0.25)', borderRadius: '16px', padding: '15px 16px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+      ...periods.map(p => h('div', { style: { background: '#FFFFFF', border: '1px solid rgba(154,100,25,0.25)', borderRadius: '16px', padding: '15px 16px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
         h('span', { style: { flexShrink: '0', width: '10px', height: '10px', borderRadius: '50%', background: p.end === null ? '#9A6419' : '#B08A50', display: 'inline-block' } }),
-        h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#3D2B3A' } }, fmtInpatientPeriod(p))
+        h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#2A2127' } }, fmtInpatientPeriod(p))
       ))
-    ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7D6974', fontSize: '14px', lineHeight: '1.5' } }, 'No in-patient stays logged yet.')
+    ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No in-patient stays logged yet.')
   );
 
   return [card, history];
 }
 
-const SYMPTOM_COLORS = { nausea: '#9A6419', vomiting: '#C0453B', fatigue: '#8A6479', mouth_sores: '#C0453B', neuropathy: '#8E5FA8', headache: '#AA5375', dizziness: '#8E5FA8', skin_reaction: '#C77800', diarrhea: '#C0453B', constipation: '#8E5FA8' };
+const SYMPTOM_COLORS = { nausea: '#9A6419', vomiting: '#C0453B', fatigue: '#8A6479', mouth_sores: '#C0453B', neuropathy: '#8E5FA8', headache: '#A24C71', dizziness: '#8E5FA8', skin_reaction: '#C77800', diarrhea: '#C0453B', constipation: '#8E5FA8' };
 
 function symptomRow(e) {
-  const color = SYMPTOM_COLORS[e.symptomType] || '#AA5375';
+  const color = SYMPTOM_COLORS[e.symptomType] || '#A24C71';
   const editing = false;
-  return h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.16)', borderRadius: '16px', padding: '13px 15px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+  return h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '13px 15px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' } },
       h('div', { style: { minWidth: '0', flex: '1' } },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
@@ -3210,14 +3211,14 @@ function renderSymptoms(now) {
   const entries = symptomEntries();
   const header = h('section', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' } },
     h('div', null,
-      h('div', { style: { fontSize: '19px', fontWeight: '800', letterSpacing: '-0.02em', color: '#342530' } }, 'Symptoms & Reactions'),
-      h('div', { style: { fontSize: '12.5px', color: '#7D6974', marginTop: '3px', lineHeight: '1.4' } }, 'Nausea, fatigue, mouth sores, and other reactions noticed during or after treatment — for bowel changes, use the Bowel Movement tracker on Home')
+      h('div', { style: { fontSize: '19px', fontWeight: '800', letterSpacing: '-0.02em', color: '#2A2127' } }, 'Symptoms & Reactions'),
+      h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px', lineHeight: '1.4' } }, 'Nausea, fatigue, mouth sores, and other reactions noticed during or after treatment — for bowel changes, use the Bowel Movement tracker on Home')
     ),
-    h('button', { onClick: () => openSymptomModal(null), style: { flexShrink: '0', minHeight: '44px', width: '44px', borderRadius: '13px', background: '#AA5375', color: '#fff', fontSize: '22px', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 -2px 0 rgba(150,60,90,0.35)' } }, '+')
+    h('button', { onClick: () => openSymptomModal(null), style: { flexShrink: '0', minHeight: '44px', width: '44px', borderRadius: '13px', background: '#A24C71', color: '#fff', fontSize: '22px', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, '+')
   );
   const list = entries.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
     ...entries.map(e => symptomRow(e))
-  ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7D6974', fontSize: '14px', lineHeight: '1.5' } }, 'No symptoms or reactions logged yet.\nTap + to add one.');
+  ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No symptoms or reactions logged yet.\nTap + to add one.');
   return [header, list];
 }
 
@@ -3227,15 +3228,15 @@ function renderWeightTrend(now) {
   const DAY = 86400000;
 
   // Range toggle
-  const toggle = h('div', { style: { display: 'flex', gap: '5px', background: 'rgba(255,255,255,0.45)', borderRadius: '10px', padding: '3px', border: '1px solid rgba(212,104,138,0.12)', alignSelf: 'flex-start' } },
-    h('button', { onClick: () => setState({ weightRange: 'weeks' }), style: { padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', background: range === 'weeks' ? '#9B5B8A' : 'transparent', color: range === 'weeks' ? '#fff' : '#7D6974' } }, 'Weeks'),
-    h('button', { onClick: () => setState({ weightRange: 'months' }), style: { padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', background: range === 'months' ? '#9B5B8A' : 'transparent', color: range === 'months' ? '#fff' : '#7D6974' } }, 'Months')
+  const toggle = h('div', { style: { display: 'flex', gap: '5px', background: 'rgba(255,255,255,0.45)', borderRadius: '10px', padding: '3px', border: '1px solid #EBE3E4', alignSelf: 'flex-start' } },
+    h('button', { onClick: () => setState({ weightRange: 'weeks' }), style: { padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', background: range === 'weeks' ? '#9B5B8A' : 'transparent', color: range === 'weeks' ? '#fff' : '#7A6E76' } }, 'Weeks'),
+    h('button', { onClick: () => setState({ weightRange: 'months' }), style: { padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', background: range === 'months' ? '#9B5B8A' : 'transparent', color: range === 'months' ? '#fff' : '#7A6E76' } }, 'Months')
   );
 
   if (weightEntries.length === 0) {
     return [
       toggle,
-      h('div', { style: { background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px', padding: '40px', textAlign: 'center', color: '#7D6974', fontSize: '14px', lineHeight: '1.5' } }, 'No weight readings logged yet.\nLog your first weight on the Today tab.')
+      h('div', { style: { background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px', padding: '40px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No weight readings logged yet.\nLog your first weight on the Today tab.')
     ];
   }
 
@@ -3246,7 +3247,7 @@ function renderWeightTrend(now) {
   const points = filtered.length > 0 ? filtered : weightEntries.slice(-2);
 
   if (points.length === 0) {
-    return [toggle, h('div', { style: { color: '#7D6974', fontSize: '14px', textAlign: 'center', padding: '40px' } }, 'No data in this range.')];
+    return [toggle, h('div', { style: { color: '#7A6E76', fontSize: '14px', textAlign: 'center', padding: '40px' } }, 'No data in this range.')];
   }
 
   // Calculate bounds
@@ -3304,7 +3305,7 @@ function renderWeightTrend(now) {
   const first = points[0];
   const change = latest.weight - first.weight;
   const changeLabel = (change >= 0 ? '+' : '') + change.toFixed(1) + ' ' + weightSuffix();
-  const changeColor = Math.abs(change) < 0.5 ? '#8A6479' : change > 0 ? '#9A6419' : '#AA5375';
+  const changeColor = Math.abs(change) < 0.5 ? '#8A6479' : change > 0 ? '#9A6419' : '#A24C71';
   const avg = (weights.reduce((s, w) => s + w, 0) / weights.length).toFixed(1);
 
   // Build SVG as string
@@ -3312,11 +3313,11 @@ function renderWeightTrend(now) {
   // Grid lines
   yLabels.forEach(yl => {
     svg += '<line x1="' + pad.left + '" y1="' + yl.py.toFixed(1) + '" x2="' + (W - pad.right) + '" y2="' + yl.py.toFixed(1) + '" stroke="rgba(212,104,138,0.10)" stroke-width="1"/>';
-    svg += '<text x="' + (pad.left - 10) + '" y="' + (yl.py + 4).toFixed(1) + '" fill="#7D6974" font-size="11" font-family="ui-monospace,Menlo,monospace" text-anchor="end">' + yl.val + '</text>';
+    svg += '<text x="' + (pad.left - 10) + '" y="' + (yl.py + 4).toFixed(1) + '" fill="#7A6E76" font-size="11" font-family="ui-monospace,Menlo,monospace" text-anchor="end">' + yl.val + '</text>';
   });
   // X labels
   xLabels.forEach(xl => {
-    svg += '<text x="' + xl.px.toFixed(1) + '" y="' + (H - 10) + '" fill="#7D6974" font-size="11" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">' + xl.label + '</text>';
+    svg += '<text x="' + xl.px.toFixed(1) + '" y="' + (H - 10) + '" fill="#7A6E76" font-size="11" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">' + xl.label + '</text>';
   });
   // Area gradient
   svg += '<defs><linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(155,91,138,0.25)"/><stop offset="100%" stop-color="rgba(155,91,138,0)"/></linearGradient></defs>';
@@ -3326,7 +3327,7 @@ function renderWeightTrend(now) {
   // Dots
   dots.forEach((d, i) => {
     const isLast = i === dots.length - 1;
-    svg += '<circle cx="' + d.x.toFixed(1) + '" cy="' + d.y.toFixed(1) + '" r="' + (isLast ? 5 : 3.5) + '" fill="' + (isLast ? '#9B5B8A' : '#7B3F6B') + '" stroke="' + (isLast ? '#AA5375' : '#9B5B8A') + '" stroke-width="' + (isLast ? 2 : 1.5) + '"/>';
+    svg += '<circle cx="' + d.x.toFixed(1) + '" cy="' + d.y.toFixed(1) + '" r="' + (isLast ? 5 : 3.5) + '" fill="' + (isLast ? '#9B5B8A' : '#7B3F6B') + '" stroke="' + (isLast ? '#A24C71' : '#9B5B8A') + '" stroke-width="' + (isLast ? 2 : 1.5) + '"/>';
     // Value label on last dot
     if (isLast) {
       svg += '<text x="' + d.x.toFixed(1) + '" y="' + (d.y - 12).toFixed(1) + '" fill="#7B3F6B" font-size="13" font-weight="700" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">' + d.w + '</text>';
@@ -3335,11 +3336,11 @@ function renderWeightTrend(now) {
   svg += '</svg>';
 
   // Chart card
-  const chart = h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '18px', padding: '20px 16px 12px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+  const chart = h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '18px', padding: '20px 16px 12px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' } },
       h('div', null,
         h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Weight Trend'),
-        h('div', { style: { fontSize: '12.5px', color: '#7D6974', marginTop: '3px' } }, range === 'weeks' ? 'Last 4 weeks' : 'Last 3 months')
+        h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } }, range === 'weeks' ? 'Last 4 weeks' : 'Last 3 months')
       ),
       h('div', { className: 'mono', style: { fontSize: '24px', fontWeight: '700', color: '#7B3F6B', letterSpacing: '-0.02em' } }, latest.weight + ' ' + weightSuffix())
     ),
@@ -3348,16 +3349,16 @@ function renderWeightTrend(now) {
 
   // Stats row
   const stats = h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '10px' } },
-    h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '14px', padding: '14px', textAlign: 'center', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
-      h('div', { style: { fontSize: '11px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#7D6974', marginBottom: '6px' } }, 'Current'),
-      h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '700', color: '#3D2B3A' } }, latest.weight + '')
+    h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '14px', padding: '14px', textAlign: 'center', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+      h('div', { style: { fontSize: '11px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#7A6E76', marginBottom: '6px' } }, 'Current'),
+      h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '700', color: '#2A2127' } }, latest.weight + '')
     ),
-    h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '14px', padding: '14px', textAlign: 'center', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
-      h('div', { style: { fontSize: '11px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#7D6974', marginBottom: '6px' } }, 'Average'),
-      h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '700', color: '#3D2B3A' } }, avg)
+    h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '14px', padding: '14px', textAlign: 'center', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+      h('div', { style: { fontSize: '11px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#7A6E76', marginBottom: '6px' } }, 'Average'),
+      h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '700', color: '#2A2127' } }, avg)
     ),
-    h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '14px', padding: '14px', textAlign: 'center', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
-      h('div', { style: { fontSize: '11px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#7D6974', marginBottom: '6px' } }, 'Change'),
+    h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '14px', padding: '14px', textAlign: 'center', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+      h('div', { style: { fontSize: '11px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#7A6E76', marginBottom: '6px' } }, 'Change'),
       h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '700', color: changeColor } }, changeLabel)
     )
   );
@@ -3370,7 +3371,7 @@ function renderWeightTrend(now) {
     return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 14px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
       h('div', { style: { flex: '1' } },
         h('div', { style: { fontSize: '14px', fontWeight: '700' } }, day),
-        h('div', { style: { fontSize: '12px', color: '#7D6974' } }, time)
+        h('div', { style: { fontSize: '12px', color: '#7A6E76' } }, time)
       ),
       h('div', { className: 'mono', style: { fontSize: '16px', fontWeight: '600', color: '#7B3F6B' } }, p.weight + ' ' + weightSuffix())
     );
@@ -3378,7 +3379,7 @@ function renderWeightTrend(now) {
 
   const readings = h('section', null,
     h('div', { style: { fontSize: '13px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A6479', marginBottom: '10px' } }, 'All Readings'),
-    h('div', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+    h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(180,130,150,0.10), inset 0 1px 0 rgba(255,255,255,0.7)' } },
       ...readingsItems
     )
   );
