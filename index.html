@@ -404,6 +404,39 @@ function latest(id) { const es = entriesFor(id); return es.length ? es.reduce((a
 function tempSuffix() { return CONFIG.tempUnit === 'Celsius' ? '°C' : '°F'; }
 function tempFever() { return CONFIG.tempUnit === 'Celsius' ? 38.0 : 100.4; }
 function tempHigh() { return CONFIG.tempUnit === 'Celsius' ? 39.4 : 103; }
+// ---- Unit-safe reading display (v12b, QA blocker 1) ----
+// Readings are stored exactly as typed, with the unit stamped at log time. Older entries have no
+// unit field; their unit is inferred from the frozen `dose` string every entry carries (reliable —
+// every temp/weight write path has always stamped a suffix). Display ALWAYS converts to the
+// current setting, and fever/high styling compares the rounded DISPLAYED value against the
+// threshold in the DISPLAY unit — so the color can never contradict the number on screen.
+// 38.0°C == 100.4°F exactly, so the fever boundary is identical in both modes. Stored numbers are
+// never rewritten: converting on read from the untouched value avoids rounding drift.
+function round1(x) { return Math.round(x * 10) / 10; }
+function entryTempUnit(e) { return e.unit || (e.dose && String(e.dose).indexOf('°C') !== -1 ? 'Celsius' : 'Fahrenheit'); }
+function entryWeightUnit(e) { return e.unit || (e.dose && /kg\s*$/.test(String(e.dose)) ? 'kg' : 'lbs'); }
+function dispTemp(e) {
+  if (!e || typeof e.temp !== 'number') return null;
+  const from = entryTempUnit(e);
+  if (from === CONFIG.tempUnit) return round1(e.temp);
+  return round1(from === 'Celsius' ? e.temp * 9 / 5 + 32 : (e.temp - 32) * 5 / 9);
+}
+function dispWeight(e) {
+  if (!e || typeof e.weight !== 'number') return null;
+  const from = entryWeightUnit(e);
+  if (from === CONFIG.weightUnit) return round1(e.weight);
+  return round1(from === 'kg' ? e.weight / 0.45359237 : e.weight * 0.45359237);
+}
+// Canonical accessor for the fever-alert roadmap: a reading's temperature in Celsius regardless of
+// how it was entered or displayed.
+function tempAsC(e) { return entryTempUnit(e) === 'Celsius' ? e.temp : (e.temp - 32) * 5 / 9; }
+// Journal/history rows: temp & weight entries display converted to the CURRENT unit (one reading,
+// one unit, everywhere); all other entries keep their frozen dose string.
+function entryDoseLabel(e) {
+  if (e.medId === 'temp' && typeof e.temp === 'number') return dispTemp(e) + ' ' + tempSuffix();
+  if (e.medId === 'weight' && typeof e.weight === 'number') return dispWeight(e) + ' ' + weightSuffix();
+  return e.dose;
+}
 function tylenolMg() {
   const med = state.meds.find(m => m.id === 'tylenol');
   return med && med.ceilingGroup ? dailyGroupMg(med) : dailyDoseMg('tylenol');
@@ -783,7 +816,8 @@ function tempDefault() { return CONFIG.tempUnit === 'Celsius' ? '36.9' : '98.5';
 async function logTemp() {
   const raw = (state.tempInput || '').trim();
   const v = parseFloat(raw);
-  if (!raw || isNaN(v) || v <= 0 || v > 120) { setToast('Enter a valid temperature'); return; }
+  const tempOk = CONFIG.tempUnit === 'Celsius' ? (v >= 30 && v <= 45) : (v >= 86 && v <= 113);
+  if (!raw || isNaN(v) || !tempOk) { setToast(CONFIG.tempUnit === 'Celsius' ? 'Enter a valid temperature in °C (30–45)' : 'Enter a valid temperature in °F (86–113)'); return; }
   setState({ timeModal: { type: 'temp', tempValue: v, timeValue: nowLocalISO() } });
 }
 
@@ -798,7 +832,7 @@ async function setChemoDate() {
   setToast('Chemo date set — ' + new Date(ts).toLocaleDateString());
 }
 
-function weightDefault() { const lw = latest('weight'); return lw ? String(lw.weight) : ''; }
+function weightDefault() { const lw = latest('weight'); return lw ? String(dispWeight(lw)) : ''; } // v12b: converted to current unit
 async function logBloodPressure() {
   const sys = Math.round(Number(state.bpSysInput));
   const dia = Math.round(Number(state.bpDiaInput));
@@ -844,13 +878,13 @@ async function confirmTimeAndLog() {
   } else if (m.type === 'temp') {
     const v = m.tempValue;
     const suffix = tempSuffix();
-    const entry = { medId: 'temp', temp: v, dose: v + ' ' + suffix, mg: 0, ts };
+    const entry = { medId: 'temp', temp: v, unit: CONFIG.tempUnit, dose: v + ' ' + suffix, mg: 0, ts };
     setState({ tempInput: '', timeModal: null });
     await addEntryDB(entry);
     setToast('Temperature ' + v + ' ' + suffix + ' logged at ' + fmtTime(ts));
   } else if (m.type === 'weight') {
     const v = m.weightValue;
-    const entry = { medId: 'weight', weight: v, dose: v + ' ' + weightSuffix(), mg: 0, ts };
+    const entry = { medId: 'weight', weight: v, unit: CONFIG.weightUnit, dose: v + ' ' + weightSuffix(), mg: 0, ts };
     setState({ weightInput: '', timeModal: null });
     await addEntryDB(entry);
     setToast('Weight ' + v + ' ' + weightSuffix() + ' logged at ' + fmtTime(ts));
@@ -1320,10 +1354,12 @@ function appIcon(name, size, style) {
 }
 
 function navigateTo(view) {
+  const editorClosing = !!state.medEditor && view !== 'meds'; // audit v12 P3-1: nav-away also closes the editor
   const next = { view, reportsView: view === 'reports' ? null : state.reportsView, medEditor: view === 'meds' ? state.medEditor : null, confirmDeleteMed: null };
   setState(next);
   persistView(view);
   window.scrollTo(0, 0);
+  if (editorClosing) tourEvent('medEditor:closed'); // step the tour back BEFORE the view event so it re-points at Add
   tourEvent('view:' + view);
 }
 
@@ -1649,19 +1685,23 @@ function renderUpgradeModal() {
 // positionTour(), since render() rebuilds the whole DOM each pass.
 const TOUR_STEPS = [
   { target: null, title: 'Welcome — let\u2019s set up together', text: 'ChemoWell works best once your medications are in. This quick guide walks you through adding your first medication and shows you where everything lives. It takes about two minutes.', next: 'Show me' },
-  { target: 'nav-meds', title: 'The Meds tab', text: 'This is where you add and manage every medication — names, doses, schedules, and daily limits.', advanceOn: 'view:meds', wait: 'Tap Meds at the bottom to continue' },
-  { target: 'meds-add', title: 'Add your first medication', text: 'Tap the Add button to create your first medication.', advanceOn: 'medEditor:open', wait: 'Tap Add to continue' },
-  { target: 'med-editor', title: 'Fill in the details', text: 'Give it a name, then choose how it\u2019s taken. "As needed" uses a gap timer between doses (like Tylenol every 4 hours). "Scheduled" uses set time windows (like 8 AM every morning). You can also add dose buttons and a daily safety limit. Tap Add medication at the bottom when you\u2019re done.', advanceOn: 'med:saved', wait: 'Save the medication to continue' },
-  { target: 'nav-home', title: 'Nice work!', text: 'Your first medication is in — add the rest the same way any time. Now tap Home to see your daily view.', advanceOn: 'view:home', wait: 'Tap Home to continue' },
+  { target: 'nav-meds', title: 'The Meds tab', text: 'This is where you add and manage every medication — names, doses, schedules, and daily limits.', short: 'Tap Meds at the bottom of the screen.', advanceOn: 'view:meds', wait: 'Tap Meds at the bottom to continue' },
+  { target: 'meds-add', title: 'Add your first medication', text: 'Tap the Add button to create your first medication.', short: 'Tap Add to create your first medication.', advanceOn: 'medEditor:open', wait: 'Tap Add to continue' },
+  { target: 'med-editor', title: 'Fill in the details', text: 'Give it a name, then choose how it\u2019s taken. "As needed" uses a gap timer between doses (like Tylenol every 4 hours). "Scheduled" uses set time windows (like 8 AM every morning). You can also add dose buttons and a daily safety limit. Tap Add medication at the bottom when you\u2019re done.', short: 'Fill out the form, then tap Add medication at the bottom.', advanceOn: 'med:saved', backOn: 'medEditor:closed', wait: 'Save the medication to continue' },
+  { target: 'nav-home', title: 'Nice work!', text: 'Your first medication is in — add the rest the same way any time. Now tap Home to see your daily view.', short: 'Medication saved! Now tap Home at the bottom.', advanceOn: 'view:home', wait: 'Tap Home to continue' },
   { target: 'quick-log', title: 'Logging doses', text: 'Every medication gets a card here. When a dose is given, tap its button to log it — ChemoWell tracks timing, gaps between doses, and daily limits, and flags anything missed.', next: 'Next' },
   { target: 'nav-reports', title: 'Reports', text: 'The full history lives here — every dose, weight, temperature, and symptom, organized day by day.', next: 'Next' },
   { target: 'nav-inpatient', title: 'In-Patient stays', text: 'Track hospital stays here. While a stay is active, home medication logging pauses, since the hospital handles meds.', next: 'Next' },
   { target: 'nav-symptoms', title: 'Symptoms', text: 'Log symptoms like nausea, pain, or fever so you have a clear record to share with the care team.', next: 'Next' },
   { target: null, title: 'You\u2019re ready!', text: 'That\u2019s the basics. You can re-run this guide any time by tapping the ? button at the top of the screen.', next: 'Finish' }
 ];
-function startTour() { setPrefsDB({ tourStep: 0 }); setState({ tourStep: 0 }); }
-function endTour() { setPrefsDB({ tourDone: true, tourStep: null }); setState({ tourStep: null }); tourClearHighlight(); }
-function setTourStep(n) { setPrefsDB({ tourStep: n }); setState({ tourStep: n }); } // progress survives app restarts (audit 2.4)
+// v12: on form-filling steps the tour renders as a slim banner (see renderTourLayer). tourExpanded
+// tracks the user tapping "More" for the full card; deliberately NOT persisted and reset on every
+// step change so each step starts in its designed default state.
+let tourExpanded = false;
+function startTour() { tourExpanded = false; setPrefsDB({ tourStep: 0 }); setState({ tourStep: 0 }); }
+function endTour() { tourExpanded = false; setPrefsDB({ tourDone: true, tourStep: null }); setState({ tourStep: null }); tourClearHighlight(); }
+function setTourStep(n) { tourExpanded = false; setPrefsDB({ tourStep: n }); setState({ tourStep: n }); } // progress survives app restarts (audit 2.4)
 function advanceTour() {
   const n = (state.tourStep == null ? -1 : state.tourStep) + 1;
   if (n >= TOUR_STEPS.length) { endTour(); } else { setTourStep(n); }
@@ -1670,7 +1710,11 @@ function backTour() { if (state.tourStep > 0) setTourStep(state.tourStep - 1); }
 function tourEvent(name) {
   if (state.tourStep == null) return;
   const step = TOUR_STEPS[state.tourStep];
-  if (step && step.advanceOn === name) advanceTour();
+  if (!step) return;
+  if (step.advanceOn === name) { advanceTour(); return; }
+  // v12: discarding the med editor mid-"Fill in the details" used to strand the tour ("Save the
+  // medication to continue" with no editor open) — step back to the Add step instead.
+  if (step.backOn === name) backTour();
 }
 function tourClearHighlight() {
   if (window.__tourHighlighted) {
@@ -1681,6 +1725,23 @@ function tourClearHighlight() {
 function renderTourLayer() {
   if (state.tourStep == null) return null;
   const step = TOUR_STEPS[state.tourStep];
+  const formStep = !!step.short; // action steps: the user must touch the app while the tour is up
+  // v12 MOBILE FIRST: on steps that wait for a real tap (Meds tab, Add button, the whole med form,
+  // Home tab) the big centered card covered the very element the user had to touch — verified by
+  // real hit-target clicks, not just screenshots (Owner-reported on the form step). Those steps
+  // render a slim banner docked under the header instead; "More" temporarily expands the full card.
+  if (formStep && !tourExpanded) {
+    return h('div', { id: 'tour-layer', style: { position: 'fixed', inset: '0', zIndex: '80', pointerEvents: 'none' } },
+      h('div', { id: 'tour-banner', role: 'status', 'aria-label': 'Guide: ' + step.title, style: { position: 'fixed', top: '8px', left: '50%', transform: 'translateX(-50%)', width: 'min(94vw, 720px)', background: '#FFFFFF', border: '2px solid rgba(170,83,117,0.4)', borderRadius: '14px', padding: '6px 6px 6px 12px', boxShadow: '0 8px 24px rgba(80,30,55,0.22)', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '8px' } },
+        h('div', { style: { flex: '1', minWidth: '0' } },
+          h('div', { style: { fontSize: '12px', fontWeight: '700', color: '#8E3D61', letterSpacing: '0.06em' } }, 'GUIDE · ' + (state.tourStep + 1) + ' OF ' + TOUR_STEPS.length),
+          h('div', { style: { fontSize: '13px', fontWeight: '600', color: '#2A2127', lineHeight: '1.3' } }, step.short)
+        ),
+        h('button', { onClick: () => { tourExpanded = true; setState({}); }, 'aria-label': 'Show the full guide step', style: { flexShrink: '0', minHeight: '44px', padding: '0 12px', borderRadius: '11px', background: 'rgba(162,76,113,0.10)', color: '#8E3D61', fontSize: '12.5px', fontWeight: '800' } }, 'More'),
+        h('button', { onClick: endTour, 'aria-label': 'Skip guide', style: { flexShrink: '0', minHeight: '44px', padding: '0 10px', borderRadius: '11px', background: 'transparent', color: '#6E5A64', fontSize: '12.5px', fontWeight: '700' } }, 'Skip')
+      )
+    );
+  }
   return h('div', { id: 'tour-layer', style: { position: 'fixed', inset: '0', zIndex: '80', pointerEvents: 'none' } },
     h('div', { id: 'tour-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': step.title, style: { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 'min(88vw, 330px)', background: '#FFFFFF', borderRadius: '18px', padding: '18px', boxShadow: '0 18px 50px rgba(80,30,55,0.35)', pointerEvents: 'auto', border: '2px solid rgba(170,83,117,0.4)' } },
       h('div', { style: { fontSize: '12px', fontWeight: '700', color: '#7A6E76', letterSpacing: '0.07em', marginBottom: '6px' } }, 'GUIDE \u00b7 STEP ' + (state.tourStep + 1) + ' OF ' + TOUR_STEPS.length),
@@ -1688,10 +1749,11 @@ function renderTourLayer() {
       h('div', { style: { ...TYPE.body, color: '#5A4552' } }, step.text),
       step.wait ? h('div', { style: { marginTop: '10px', fontSize: '12.5px', fontWeight: '800', color: '#8E3D61' } }, '\ud83d\udc46 ' + step.wait) : null,
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', gap: '8px' } },
-        h('button', { onClick: endTour, style: { fontSize: '12.5px', fontWeight: '700', color: '#6E5A64', background: 'transparent', padding: '8px 8px 8px 0', cursor: 'pointer' } }, 'Skip guide'),
+        h('button', { onClick: endTour, style: { fontSize: '12.5px', fontWeight: '700', color: '#6E5A64', background: 'transparent', padding: '8px 8px 8px 0', minHeight: '44px', cursor: 'pointer' } }, 'Skip guide'),
         h('div', { style: { display: 'flex', gap: '8px' } },
-          state.tourStep > 0 ? h('button', { onClick: backTour, style: { minHeight: '40px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(170,83,117,0.3)', color: '#8E3D61', fontSize: '13px', fontWeight: '800', cursor: 'pointer' } }, 'Back') : null,
-          step.next ? h('button', { onClick: advanceTour, style: { minHeight: '40px', padding: '0 20px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13.5px', fontWeight: '800', cursor: 'pointer', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, step.next) : null
+          state.tourStep > 0 ? h('button', { onClick: backTour, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(170,83,117,0.3)', color: '#8E3D61', fontSize: '13px', fontWeight: '800', cursor: 'pointer' } }, 'Back') : null,
+          formStep ? h('button', { onClick: () => { tourExpanded = false; setState({}); }, style: { minHeight: '44px', padding: '0 20px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13.5px', fontWeight: '800', cursor: 'pointer', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, 'Got it') : null,
+          step.next ? h('button', { onClick: advanceTour, style: { minHeight: '44px', padding: '0 20px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13.5px', fontWeight: '800', cursor: 'pointer', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, step.next) : null
         )
       )
     )
@@ -1703,9 +1765,20 @@ function positionTour() {
   if (state.tourStep == null) { tourLastPositionedStep = null; return; }
   const step = TOUR_STEPS[state.tourStep];
   const card = document.getElementById('tour-card');
-  if (!card) return;
+  const banner = document.getElementById('tour-banner');
+  if (!card && !banner) return;
   const isNewStep = tourLastPositionedStep !== state.tourStep;
   tourLastPositionedStep = state.tourStep;
+  if (banner) {
+    // v12: slim banner mode — stays pinned at the very top, deliberately overlapping the header's
+    // brand row (not needed mid-step) so it NEVER covers page content the user must touch. No
+    // repositioning, no scrollIntoView: the page content scrolls freely beneath the sticky header.
+    if (step.target) {
+      const targetEl = document.querySelector('[data-tour="' + step.target + '"]');
+      if (targetEl) { targetEl.style.outline = '3px solid #E0679A'; targetEl.style.outlineOffset = '3px'; window.__tourHighlighted = targetEl; }
+    }
+    return;
+  }
   if (!step.target) return; // centered
   const el = document.querySelector('[data-tour="' + step.target + '"]');
   if (!el) return; // target missing -> stay centered
@@ -2237,7 +2310,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // Summary row
   const lastTemp = latest('temp');
   let tempColor = '#2A2127';
-  if (lastTemp) { if (lastTemp.temp >= tempHigh()) tempColor = '#C0453B'; else if (lastTemp.temp >= tempFever()) tempColor = '#9A6419'; }
+  if (lastTemp) { const dt = dispTemp(lastTemp); if (dt >= tempHigh()) tempColor = '#C0453B'; else if (dt >= tempFever()) tempColor = '#9A6419'; } // v12b: threshold vs DISPLAYED value
   const tempSubLabel = lastTemp ? ('Last reading ' + fmtTime(lastTemp.ts)) : 'No readings yet';
   const lastWeight = latest('weight');
   const weightSubLabel = lastWeight ? ('Last reading ' + fmtTime(lastWeight.ts)) : 'No readings yet';
@@ -2310,7 +2383,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
           h('div', { style: { ...TYPE.label, color: '#8A6479' } }, 'Temperature'),
           h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px' } }, tempSubLabel)
         ),
-        lastTemp ? h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '600', letterSpacing: '-0.02em', color: tempColor, whiteSpace: 'nowrap' } }, lastTemp.temp + tempSuffix()) : null
+        lastTemp ? h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '600', letterSpacing: '-0.02em', color: tempColor, whiteSpace: 'nowrap' } }, dispTemp(lastTemp) + tempSuffix()) : null
       ),
       h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
         h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: tempDefault(), value: state.tempInput, onInput: (e) => { state.tempInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: '#FFFFFF', color: '#2A2127' } }),
@@ -2324,7 +2397,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
           h('div', { style: { ...TYPE.label, color: '#8A6479' } }, 'Weight'),
           h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px' } }, weightSubLabel)
         ),
-        lastWeight ? h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '600', letterSpacing: '-0.02em', color: '#2A2127', whiteSpace: 'nowrap' } }, lastWeight.weight + ' ' + weightSuffix()) : null
+        lastWeight ? h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '600', letterSpacing: '-0.02em', color: '#2A2127', whiteSpace: 'nowrap' } }, dispWeight(lastWeight) + ' ' + weightSuffix()) : null
       ),
       h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
         h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: weightDefault() || (CONFIG.weightUnit === 'kg' ? '68.0' : '150.0'), value: state.weightInput, onInput: (e) => { state.weightInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: '#FFFFFF', color: '#2A2127' } }),
@@ -2488,9 +2561,9 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       // Meta lines
       h('div', { style: { ...TYPE.caption, color: '#584350', display: 'flex', alignItems: 'center', gap: '4px', minWidth: '0' } },
         h('span', { style: { flex: '1', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, lastLabel),
-        locked ? h('span', { style: { flexShrink: '0', color: (st.ceilingHit || st.chemoBlock) ? '#A5443C' : '#96631C', fontWeight: '700', whiteSpace: 'nowrap' } }, nextDoseLabel) : null,
-        subStatus ? h('span', { style: { display: 'none', color: '#7A6E76' } }, subStatus) : null,
-        h('span', { style: { display: 'none', color: '#7D6A74', fontSize: '12px' } }, med.note)
+        locked ? h('span', { style: { flexShrink: '0', color: (st.ceilingHit || st.chemoBlock) ? '#A5443C' : '#96631C', fontWeight: '700', whiteSpace: 'nowrap' } }, nextDoseLabel) : null
+        // v12 redundancy cut: two permanently display:none spans (subStatus, med.note) deleted —
+        // dead weight built on every card every second by the render loop.
       ),
       // Buttons
       buttonArea
@@ -2545,7 +2618,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
                   e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, 'Early') : null,
                   e.skipped ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#7A6E76', background: 'rgba(125,105,116,0.14)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
                 ),
-                e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, e.dose + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, 'Pain ' + e.painLevel + '/10') : null)
+                e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, entryDoseLabel(e) + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, 'Pain ' + e.painLevel + '/10') : null)
               ),
               removeBtn(e)
             ))
@@ -2594,7 +2667,7 @@ function medicationFormFrom(med) {
     sub: base.sub || '',
     note: base.note || '',
     type: base.type === 'win' ? 'win' : 'gap',
-    gapH: base.gapH || 0,
+    gapH: base.gapH || '', // v12: empty (grey placeholder 0) — no more delete-the-0-before-typing; empty still saves as 0/As needed
     dosesText: base.doses && base.doses.length ? base.doses.map(dose => dose.label).join(', ') : '',
     windowsText: base.windows && base.windows.length ? base.windows.map(window => formatHour(window.start) + '-' + formatHour(window.end) + ' ' + (window.name || '')).join(', ') : '8 AM-8 PM Daily',
     dailyLimit: max || '',
@@ -2804,11 +2877,9 @@ function renderMedicationEditor() {
   const title = state.medEditor.mode === 'add' ? 'Add medication' : 'Edit medication';
   return h('section', { 'data-tour': 'med-editor', style: { background: 'rgba(255,252,253,0.78)', border: '1px solid rgba(170,83,117,0.28)', borderRadius: '20px', padding: '16px', boxShadow: '0 10px 34px rgba(121,72,96,0.12), inset 0 1px 0 rgba(255,255,255,0.82)' } },
     h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px' } },
-      h('div', null,
-        h('div', { style: { fontSize: '18px', fontWeight: '800', color: '#2A2127', letterSpacing: '-0.02em' } }, title),
-        h('div', { style: { fontSize: '12px', color: '#745D69', marginTop: '2px', fontWeight: '600' } }, 'Changes are stored on this device; dose history remains unchanged.')
-      ),
-      h('button', { onClick: () => setState({ medEditor: null }), style: { minHeight: '34px', padding: '0 10px', borderRadius: '9px', background: 'rgba(255,255,255,0.62)', border: '1px solid #EBE3E4', color: '#745D69', fontSize: '12px', fontWeight: '800' } }, 'Cancel')
+      // v12 redundancy cut: header sub-copy (repeated the Meds-page description) and the duplicate
+      // header Cancel button removed — Discard at the bottom is the single close action.
+      h('div', { style: { ...TYPE.title, color: '#2A2127' } }, title)
     ),
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: '11px' } },
       h('label', null, fieldLabel('Medication name'), formInput({ value: form.name, placeholder: 'Medication name', onInput: event => updateMedicationForm('name', event.target.value) })),
@@ -2838,7 +2909,7 @@ function renderMedicationEditor() {
           })
         ) : null
       ),
-      scheduled ? h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Schedule windows', 'e.g. 8 AM-12 PM Morning, 8 PM-10 PM Evening.'), formInput({ value: form.windowsText, placeholder: '8 AM-12 PM Morning, 8 PM-10 PM Evening', onInput: event => updateMedicationForm('windowsText', event.target.value) })) : h('label', null, fieldLabel('Minimum gap hours'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.gapH), onInput: event => updateMedicationForm('gapH', event.target.value) })),
+      scheduled ? h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Schedule windows', 'e.g. 8 AM-12 PM Morning, 8 PM-10 PM Evening.'), formInput({ value: form.windowsText, placeholder: '8 AM-12 PM Morning, 8 PM-10 PM Evening', onInput: event => updateMedicationForm('windowsText', event.target.value) })) : h('label', null, fieldLabel('Minimum gap hours', 'Leave blank for no minimum gap.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: '0', onInput: event => updateMedicationForm('gapH', event.target.value) })),
       h('label', null, fieldLabel('Daily limit', 'Leave blank for none.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value) })),
       h('label', null, fieldLabel('Limit unit'), h('select', { value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, h('option', { value: 'mg' }, 'mg'), h('option', { value: 'pills' }, 'pills'), h('option', { value: 'applications' }, 'applications'))),
       h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Frequency / rule note'), h('textarea', { placeholder: 'For example: Min 4-hour gap or Once nightly', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, form.note))
@@ -2851,8 +2922,8 @@ function renderMedicationEditor() {
       renderPillToggle('Chemo-day only', !!form.chemoOnly, () => toggleMedicationForm('chemoOnly'), 'Only appears on Home during the chemo-adjacent day window (day before through day after chemo) — hidden the rest of the time.')
     ),
     h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '15px' } },
-      h('button', { onClick: () => setState({ medEditor: null }), style: { minHeight: '42px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.65)', border: '1px solid #EBE3E4', color: '#554A52', fontSize: '13px', fontWeight: '800' } }, 'Discard'),
-      h('button', { onClick: saveMedicationEditor, style: { minHeight: '42px', padding: '0 16px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, state.medEditor.mode === 'add' ? 'Add medication' : 'Save changes')
+      h('button', { onClick: () => { setState({ medEditor: null }); tourEvent('medEditor:closed'); }, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.65)', border: '1px solid #EBE3E4', color: '#554A52', fontSize: '13px', fontWeight: '800' } }, 'Discard'),
+      h('button', { onClick: saveMedicationEditor, style: { minHeight: '44px', padding: '0 16px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, state.medEditor.mode === 'add' ? 'Add medication' : 'Save changes')
     )
   );
 }
@@ -2927,17 +2998,17 @@ function renderMedicationManager(now) {
         h('h1', { style: { ...TYPE.display, color: '#2A2127', marginTop: '5px' } }, 'Meds'),
         h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', maxWidth: '470px', lineHeight: '1.4' } }, 'Review, add, edit, or remove the active medication list. Configuration is stored on this device; dose history stays intact.')
       ),
-      h('button', { onClick: () => openMedicationEditor(null), 'data-tour': 'meds-add', style: { flexShrink: '0', minHeight: '40px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: '5px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '12.5px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, appIcon('plus', 16), 'Add')
+      h('button', { onClick: () => openMedicationEditor(null), 'data-tour': 'meds-add', style: { flexShrink: '0', minHeight: '44px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: '5px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '12.5px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, appIcon('plus', 16), 'Add')
     ),
     renderMedicationEditor(),
     homeOrderSection,
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),
-    h('div', { style: { marginTop: '10px', fontSize: '12px', color: '#7A6E76', textAlign: 'center' } }, 'Profiles, plans, and app data controls now live in Settings (\u2699 top of screen).')
+    null // v12 redundancy cut: stale "now live in Settings" breadcrumb removed
   ];
 }
 
 
-const APP_VERSION = 'app-v11';
+const APP_VERSION = 'app-v12';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -3006,7 +3077,7 @@ function renderSettings(now) {
         h('label', { style: { display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '12px', fontWeight: '700', color: '#705462' } }, 'Weight',
           h('select', { value: CONFIG.weightUnit, onChange: ev => { setPrefsDB({ weightUnit: ev.target.value }); setState({}); }, style: selStyle }, h('option', { value: 'lbs' }, 'Pounds (lbs)'), h('option', { value: 'kg' }, 'Kilograms (kg)')))
       ),
-      h('div', { style: { fontSize: '12px', color: '#6E5A64', marginTop: '8px', lineHeight: '1.4' } }, 'Units label new readings \u2014 existing readings keep the numbers you entered.')
+      h('div', { style: { fontSize: '12px', color: '#6E5A64', marginTop: '8px', lineHeight: '1.4' } }, 'Readings are shown in your chosen units everywhere \u2014 stored values are never changed, just converted for display.')
     ),
     // Notifications (native build)
     h('section', { style: secStyle },
@@ -3055,7 +3126,7 @@ function renderBloodPressureReport(now) {
 function reportDescriptor(type, now) {
   if (type === 'blood_pressure') { const bp = state.entries.filter(e => e.medId === 'blood_pressure').sort((a, b) => b.ts - a.ts)[0]; return { label: 'Blood Pressure', icon: 'chart', description: 'Review blood pressure readings over time.', meta: bp ? (bp.sys + '/' + bp.dia + ' mmHg latest') : 'No readings yet' }; }
   if (type === 'history') return { label: 'History', icon: 'history', description: 'Review dose, symptom, and vital logs by day.', meta: state.entries.length + ' recorded entries' };
-  if (type === 'weight') { const latestWeight = latest('weight'); return { label: 'Weight', icon: 'chart', description: 'Explore weight readings, trends, and recent changes.', meta: latestWeight ? (latestWeight.weight + ' ' + weightSuffix() + ' latest') : 'No readings yet' }; }
+  if (type === 'weight') { const latestWeight = latest('weight'); return { label: 'Weight', icon: 'chart', description: 'Explore weight readings, trends, and recent changes.', meta: latestWeight ? (dispWeight(latestWeight) + ' ' + weightSuffix() + ' latest') : 'No readings yet' }; }
   if (type === 'cycle') {
     const active = cycleActive();
     const day = daysSinceCycleStart();
@@ -3189,7 +3260,7 @@ function renderHistory(now) {
                   e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, 'Early') : null,
                   e.skipped ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#7A6E76', background: 'rgba(125,105,116,0.14)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
                 ),
-                e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, e.dose + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, 'Pain ' + e.painLevel + '/10') : null)
+                e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, entryDoseLabel(e) + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, 'Pain ' + e.painLevel + '/10') : null)
               ),
               removeBtn(e)
             ));
@@ -3357,7 +3428,10 @@ function renderSymptoms(now) {
 }
 
 function renderWeightTrend(now) {
-  const weightEntries = state.entries.filter(e => e.medId === 'weight' && e.weight).sort((a, b) => a.ts - b.ts);
+  // v12b: convert every reading to the current display unit ONCE at ingestion — bounds, axis,
+  // stats, dot labels, and the readings list below all inherit converted values, so mixed-unit
+  // history (logged in lbs, viewed in kg, or vice versa) charts correctly on one axis.
+  const weightEntries = state.entries.filter(e => e.medId === 'weight' && e.weight).sort((a, b) => a.ts - b.ts).map(e => ({ ...e, weight: dispWeight(e) }));
   const range = state.weightRange;
   const DAY = 86400000;
 

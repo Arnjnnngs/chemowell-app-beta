@@ -10,7 +10,7 @@ This file is binding on every AI agent working in this project. The Lead Develop
 
 ChemoWell is used by chemotherapy patients and their caregivers to manage medications with real safety implications: dose ceilings, minimum gaps between doses, missed-dose tracking. The people using it are sick, exhausted, and stressed. They will not double-check our math, notice a broken button, or forgive a crash at 3 AM when they're trying to log a pain med. An error that would be a minor annoyance in another app can cause a missed medication or a double dose here.
 
-That is why every deliverable passes through **seven roles before the Owner sees it**, and why every checker has their own checker. Single-review processes fail because reviewers share the author's blind spots and assumptions. This chain is built on one rule: **work is not done when it's written — it's done when it has survived everyone whose job is to break it.**
+That is why every deliverable passes through **eight roles before the Owner sees it**, and why every checker has their own checker. Single-review processes fail because reviewers share the author's blind spots and assumptions. This chain is built on one rule: **work is not done when it's written — it's done when it has survived everyone whose job is to break it.**
 
 We have already proven the need the hard way: a dangling `async` keyword once shipped a completely blank app to production because syntax checking passed and nobody smoke-tested the live build (v8b incident). A silently-missed copy replacement shipped in v9 and had to be caught by hand a version later. Both failures would have been caught by this chain.
 
@@ -74,7 +74,21 @@ The Lead Designer reviews the Designer's review:
 
 **Why this role matters:** reviewers miss things at a predictable rate, and a missed visual defect at this stage becomes the Owner's problem two stages later. The Lead Designer exists because "who checks the checker" is not a rhetorical question in this process — it has an answer, and this is it.
 
-### 5. Auditor — code and behavior audit
+### 5. QA Tester ("User Zero") — the fresh phone user, every release
+
+**Added by the Lead Developer 2026-07-24 after the Owner personally caught a first-run flaw (tour card burying the med-add form on phones) that four review stages missed. Root cause: every stage reviewed the CHANGE; nobody's job was to experience the WHOLE app as a real new user on a real phone.**
+
+The QA Tester runs the full product as "User Zero" on every release, regardless of what changed:
+
+- Wipe storage and run the complete first-run experience — welcome, name, the entire guided tour step by step, first medication added THROUGH the tour, first dose logged — exactly as a brand-new user would, never skipping the tour, never seeding state to jump past onboarding.
+- Then run the core daily loops: log doses, check-ins, view reports, open every modal and sheet, hit Settings, switch tabs.
+- MOBILE FIRST, always: 360x740 and 390x844 viewports are the primary test surface; ALSO re-test every form-bearing screen at keyboard-open heights (~360x400, 390x480) — an on-screen keyboard eats ~40% of a phone screen and is where occlusion bugs live. Desktop is checked last and only for layout sanity.
+- The core question at every step: "can I see what I need, reach what I need, and tell what to do next — with only what's on this phone screen?" Any interactive element that cannot be seen AND tapped is a FAIL, full stop.
+- Deliver a written pass/fail walkthrough with screenshots of every step.
+
+**Why this role matters:** scoped reviews are structurally blind to defects that live outside the diff — this release proved it. The QA Tester is the one role whose scope is always the entire product through a first-time user's eyes and thumbs. The Owner should never again be the first person to experience the app's front door.
+
+### 6. Auditor — code and behavior audit
 
 **Audits the whole written code and deep user-testing cases and functionality.**
 
@@ -86,7 +100,7 @@ The Auditor attacks the build as a skeptic, across two fronts:
 
 **Why this role matters:** the Auditor is the only role whose entire job is to assume the work is broken and prove it. Design review catches what looks wrong; the audit catches what IS wrong but looks fine — which in a medication tracker is precisely the class of bug that hurts someone.
 
-### 6. Lead Auditor — checks the Auditor
+### 7. Lead Auditor — checks the Auditor
 
 **Checks the Auditor's work for accuracy, to see if anything was missed.**
 
@@ -99,7 +113,7 @@ The Lead Auditor reviews the audit itself:
 
 **Why this role matters:** an audit creates confidence, and unverified confidence is more dangerous than known uncertainty — it's what lets a team ship a blank app while pointing at a green checkmark. The Lead Auditor makes the audit itself earn trust.
 
-### 7. Project Manager — final internal gate
+### 8. Project Manager — final internal gate
 
 **Checks ALL Auditors' work and the Developers' for accuracy.**
 
@@ -113,7 +127,7 @@ The Project Manager is the last stop before the Owner, reviewing the entire chai
 
 **Why this role matters:** every other role checks a piece; the Project Manager checks the WHOLE. Cracks form between stages — a fix applied after the audit, a sign-off that never happened, a requirement everyone assumed someone else covered. The PM's job is the seams. Nothing reaches Aaron that the PM has not personally confirmed complete.
 
-### 8. Owner (Aaron) — acceptance
+### 9. Owner (Aaron) — acceptance
 
 **Once all the above is completed, then it is passed off to the Owner as completed.**
 
@@ -136,4 +150,5 @@ This is deliberately expensive. The cost of re-running the chain is the incentiv
 - Spawn each role as a separate fresh agent. A role must never review its own work; the Lead Developer must never play Designer/Auditor/PM for code they wrote.
 - Every role's report/sign-off is committed to `outputs/` in the repo — reports that live only in a chat session die with the session (we lost the original DESIGN_SPEC this way; never again).
 - Scale depth to the change, never skip stages: a one-line copy fix still walks the whole chain — the stages just run faster. "Too small to audit" is how small things break big things.
+- MOBILE FIRST is binding on EVERY role that looks at the product (Lead Developer smoke tests, Designer, Lead Designer, QA Tester, Auditor, Lead Auditor): phone viewports (360/390 wide) are the primary surface, keyboard-open heights must be tested on every form, and desktop is secondary. A check that only ran in a desktop-shaped window does not count as done.
 - All existing hard rules stand: APP_CLAUDE.md (no cloud, target routing, TEST_MODE, Chrome-based push for BETA repos only) and the per-push QA ritual (harness → version/cache bump → README row → live smoke with cache-buster).
