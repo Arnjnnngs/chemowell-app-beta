@@ -16,6 +16,11 @@ We have already proven the need the hard way: a dangling `async` keyword once sh
 
 ---
 
+## Owner amendments (2026-07-24)
+
+- **Fail-fast:** if any stage finds a MAJOR defect, the chain STOPS immediately and the work returns to the Developer — remaining stages do not run on work that is already going back. Minor exact-value items (a px value, a label) are fixed by the Lead Developer and re-verified by the stage that found them, without a full restart.
+- **Lean mode:** the Owner may authorize a lean run (budget/time pressure): the Lead Developer implements from an existing brief and ONE combined verification pass covers design + QA + audit concerns mobile-first, with the PM checklist run by the Lead Developer and honestly labeled a lean run in the release notes. Full chains remain the default for new features and safety-adjacent work.
+
 ## The chain, in order
 
 Work flows DOWN this list. It only moves to the next stage when the current stage passes. It never skips a stage.

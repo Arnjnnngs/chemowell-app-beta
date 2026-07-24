@@ -2676,6 +2676,10 @@ function medicationFormFrom(med) {
     groupedEvening: !!base.groupedEvening,
     groupedMorning: !!base.groupedMorning,
     groupedAfternoon: !!base.groupedAfternoon,
+    // v13: snapshot of the loaded placement so a non-canonical multi-group combo (legal in older
+    // versions) can be preserved exactly via the "Custom" picker option — editing an unrelated
+    // field must never silently rewrite a patient's Home layout.
+    _origPlacement: { quickLog: typeof base.quickLog === 'boolean' ? base.quickLog : true, groupedMorning: !!base.groupedMorning, groupedAfternoon: !!base.groupedAfternoon, groupedEvening: !!base.groupedEvening },
     chemoOnly: !!base.chemoOnly,
     scheduleMode: base.scheduleDays ? base.scheduleDays.mode : 'daily',
     weekDays: base.scheduleDays && base.scheduleDays.mode === 'weekly' ? (base.scheduleDays.days || []).slice() : [],
@@ -2850,6 +2854,39 @@ function toggleMedicationForm(field) {
   updateMedicationForm(field, !state.medEditor.form[field], true);
 }
 
+// v13 (R5): the four additive placement toggles are now ONE single-choice picker. The picker's
+// value is DERIVED from the same four stored booleans each render — no new stored field, no
+// save-path change, so the save round-trip invariant holds by construction.
+function placementOf(form) {
+  const q = !!form.quickLog, m = !!form.groupedMorning, a = !!form.groupedAfternoon, e = !!form.groupedEvening;
+  if (q && !m && !a && !e) return 'own';
+  if (!q && m && !a && !e) return 'morning';
+  if (!q && !m && a && !e) return 'afternoon';
+  if (!q && !m && !a && e) return 'evening';
+  if (!q && !m && !a && !e) return 'none';
+  return 'custom';
+}
+function setPlacement(key) {
+  if (!state.medEditor) return;
+  const f = state.medEditor.form;
+  if (key === 'custom') {
+    const o = f._origPlacement || {};
+    f.quickLog = !!o.quickLog; f.groupedMorning = !!o.groupedMorning; f.groupedAfternoon = !!o.groupedAfternoon; f.groupedEvening = !!o.groupedEvening;
+  } else {
+    f.quickLog = key === 'own';
+    f.groupedMorning = key === 'morning';
+    f.groupedAfternoon = key === 'afternoon';
+    f.groupedEvening = key === 'evening';
+  }
+  setState({ medEditor: state.medEditor });
+}
+const PLACEMENT_OPTIONS = [
+  { key: 'own', label: 'Own Home card', helper: 'Its own compact card in Quick Log on Home.' },
+  { key: 'morning', label: 'Morning meds group', helper: 'Listed in the shared "Morning meds" card.' },
+  { key: 'afternoon', label: 'Afternoon meds group', helper: 'Listed in the shared "Afternoon meds" card.' },
+  { key: 'evening', label: 'Evening meds group', helper: 'Listed in the shared "Evening meds" card.' },
+  { key: 'none', label: 'No Home card', helper: 'Managed from the Meds tab only — no logging card on Home.' }
+];
 function renderPillToggle(label, enabled, onClick, helper) {
   return h('button', { type: 'button', onClick, 'aria-pressed': enabled ? 'true' : 'false', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%', minHeight: '44px', borderRadius: '12px', padding: '0 12px', background: enabled ? 'rgba(170,83,117,0.13)' : 'rgba(255,255,255,0.48)', border: '1px solid ' + (enabled ? 'rgba(170,83,117,0.30)' : 'rgba(212,104,138,0.18)'), color: enabled ? '#8E3D61' : '#5F4A56', textAlign: 'left' } },
     h('span', null,
@@ -2885,13 +2922,13 @@ function renderMedicationEditor() {
       h('label', null, fieldLabel('Medication name'), formInput({ value: form.name, placeholder: 'Medication name', onInput: event => updateMedicationForm('name', event.target.value) })),
       h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, placeholder: 'Generic name', onInput: event => updateMedicationForm('sub', event.target.value) })),
       h('label', null, fieldLabel('Dosage options', 'Separate choices with commas.'), formInput({ value: form.dosesText, placeholder: '500 mg, 1000 mg', onInput: event => updateMedicationForm('dosesText', event.target.value) })),
-      h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, h('option', { value: 'gap' }, 'As needed / gap-based'), h('option', { value: 'win' }, 'Scheduled window'))),
+      h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, h('option', { value: 'gap' }, 'As needed \u2014 gap timer between doses'), h('option', { value: 'win' }, 'Scheduled \u2014 set time windows'))),
       h('div', { style: { gridColumn: '1 / -1' } },
         fieldLabel('Days taken', 'Not every medication is daily \u2014 pick which days this one is given.'),
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
           h('select', { value: form.scheduleMode, onChange: event => updateMedicationForm('scheduleMode', event.target.value, true), style: { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } },
             h('option', { value: 'daily' }, 'Every day'),
-            h('option', { value: 'asneeded' }, 'As needed (no set days)'),
+            h('option', { value: 'asneeded' }, form.type === 'win' ? 'As needed \u2014 don\u2019t flag missed doses' : 'No set days'),
             h('option', { value: 'weekly' }, 'Specific days of the week'),
             h('option', { value: 'interval' }, 'Every few days (e.g. every other day)')
           ),
@@ -2902,6 +2939,7 @@ function renderMedicationEditor() {
             formInput({ type: 'date', value: form.intervalAnchor, onInput: event => updateMedicationForm('intervalAnchor', event.target.value), style: { width: '165px' } })
           ) : null
         ),
+        form.scheduleMode === 'asneeded' ? h('div', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76', marginTop: '6px', lineHeight: '1.4' } }, form.type === 'win' ? 'Available any day \u2014 missed doses are never flagged for this medication.' : 'Available any day, governed only by the gap timer.') : null,
         form.scheduleMode === 'weekly' ? h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
           ...['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayLabel, d) => {
             const on = (form.weekDays || []).indexOf(d) !== -1;
@@ -2912,13 +2950,21 @@ function renderMedicationEditor() {
       scheduled ? h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Schedule windows', 'e.g. 8 AM-12 PM Morning, 8 PM-10 PM Evening.'), formInput({ value: form.windowsText, placeholder: '8 AM-12 PM Morning, 8 PM-10 PM Evening', onInput: event => updateMedicationForm('windowsText', event.target.value) })) : h('label', null, fieldLabel('Minimum gap hours', 'Leave blank for no minimum gap.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: '0', onInput: event => updateMedicationForm('gapH', event.target.value) })),
       h('label', null, fieldLabel('Daily limit', 'Leave blank for none.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value) })),
       h('label', null, fieldLabel('Limit unit'), h('select', { value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, h('option', { value: 'mg' }, 'mg'), h('option', { value: 'pills' }, 'pills'), h('option', { value: 'applications' }, 'applications'))),
-      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Frequency / rule note'), h('textarea', { placeholder: 'For example: Min 4-hour gap or Once nightly', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, form.note))
+      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Notes'), h('textarea', { placeholder: 'e.g. Take with food \u00b7 From Dr. Kim \u00b7 Crush if needed', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, form.note))
     ),
-    h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '12px' } },
-      renderPillToggle('Show as its own Home card', !!form.quickLog, () => toggleMedicationForm('quickLog'), 'Gives this medication its own compact card in the Quick Log section on Home.'),
-      renderPillToggle('Group with morning meds', !!form.groupedMorning, () => toggleMedicationForm('groupedMorning'), 'Lists it in the shared "Morning meds" card instead of its own Quick Log card — for medications always taken together in the morning.'),
-      renderPillToggle('Group with afternoon meds', !!form.groupedAfternoon, () => toggleMedicationForm('groupedAfternoon'), 'Lists it in a shared "Afternoon meds" card on Home \u2014 for midday medications taken together.'),
-      renderPillToggle('Group with evening meds', !!form.groupedEvening, () => toggleMedicationForm('groupedEvening'), 'Lists it in the shared "Evening meds" card instead of its own Quick Log card — for medications always taken together in the evening.'),
+    h('div', { style: { marginTop: '12px' } },
+      fieldLabel('Home screen placement', 'Where this medication\u2019s logging buttons live.'),
+      h('div', { role: 'radiogroup', 'aria-label': 'Home screen placement', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px' } },
+        ...PLACEMENT_OPTIONS.concat(placementOf(form._origPlacement || {}) === 'custom' ? [{ key: 'custom', label: 'Custom (current mix)', helper: (function () { const o = form._origPlacement || {}; const parts = []; if (o.quickLog) parts.push('Own card'); if (o.groupedMorning) parts.push('Morning group'); if (o.groupedAfternoon) parts.push('Afternoon group'); if (o.groupedEvening) parts.push('Evening group'); return 'Keeps the existing layout: ' + (parts.join(' + ') || 'no Home card') + '.'; })() }] : []).map(opt => {
+          const on = placementOf(form) === opt.key;
+          return h('button', { type: 'button', role: 'radio', 'aria-checked': on ? 'true' : 'false', onClick: () => setPlacement(opt.key), style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', width: '100%', minHeight: '44px', borderRadius: '12px', padding: '9px 12px', background: on ? 'rgba(170,83,117,0.13)' : 'rgba(255,255,255,0.48)', border: '1px solid ' + (on ? 'rgba(170,83,117,0.30)' : 'rgba(212,104,138,0.18)'), color: on ? '#8E3D61' : '#5F4A56', textAlign: 'left' } },
+            h('span', { style: { fontSize: '13px', fontWeight: '800' } }, (on ? '\u25C9 ' : '\u25CB ') + opt.label),
+            h('span', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76', lineHeight: '1.35' } }, opt.helper)
+          );
+        })
+      )
+    ),
+    h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '10px' } },
       renderPillToggle('Chemo-day only', !!form.chemoOnly, () => toggleMedicationForm('chemoOnly'), 'Only appears on Home during the chemo-adjacent day window (day before through day after chemo) — hidden the rest of the time.')
     ),
     h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '15px' } },
@@ -3008,7 +3054,7 @@ function renderMedicationManager(now) {
 }
 
 
-const APP_VERSION = 'app-v12';
+const APP_VERSION = 'app-v13';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
