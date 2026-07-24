@@ -330,7 +330,7 @@ function weightSuffix() { return CONFIG.weightUnit === 'kg' ? 'kg' : 'lbs'; }
 
 // State
 const initialMedicationConfig = loadMedicationConfig();
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: 'home', reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: 'home', reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -563,7 +563,7 @@ function fmtCountdown(ms) {
   if (m >= 1) { if (m < 5) { const s = Math.floor((ms % 60000) / 1000); return m + 'm ' + s + 's'; } return m + 'm'; }
   return Math.max(1, Math.floor(ms / 1000)) + 's';
 }
-function nameOf(id) { if (id === 'temp') return 'Temperature'; if (id === 'weight') return 'Weight'; if (id === 'cycle_start') return 'Period Start'; if (id === 'cycle_end') return 'Period End'; if (id === 'inpatient') return 'In-Patient Day'; if (id === 'inpatient_start') return 'In-Patient Start'; if (id === 'inpatient_end') return 'In-Patient End'; if (id === 'bowel_movement') return 'Bowel Movement'; if (id === 'appetite') return 'Appetite'; if (id && id.indexOf('symptom_') === 0) return SYMPTOM_TYPES[id.slice(8)] || id.slice(8); const m = state.meds.find(x => x.id === id); const archived = state.archivedMeds && state.archivedMeds[id]; return m ? m.name : (archived ? archived.name : id); }
+function nameOf(id) { if (id === 'temp') return 'Temperature'; if (id === 'blood_pressure') return 'Blood Pressure'; if (id === 'weight') return 'Weight'; if (id === 'cycle_start') return 'Period Start'; if (id === 'cycle_end') return 'Period End'; if (id === 'inpatient') return 'In-Patient Day'; if (id === 'inpatient_start') return 'In-Patient Start'; if (id === 'inpatient_end') return 'In-Patient End'; if (id === 'bowel_movement') return 'Bowel Movement'; if (id === 'appetite') return 'Appetite'; if (id && id.indexOf('symptom_') === 0) return SYMPTOM_TYPES[id.slice(8)] || id.slice(8); const m = state.meds.find(x => x.id === id); const archived = state.archivedMeds && state.archivedMeds[id]; return m ? m.name : (archived ? archived.name : id); }
 function nowLocalISO() { return toLocalISO(simNow()); }
 function toLocalISO(ts) {
   const d = new Date(ts);
@@ -758,6 +758,16 @@ async function setChemoDate() {
 }
 
 function weightDefault() { const lw = latest('weight'); return lw ? String(lw.weight) : ''; }
+async function logBloodPressure() {
+  const sys = Math.round(Number(state.bpSysInput));
+  const dia = Math.round(Number(state.bpDiaInput));
+  if (!(sys >= 40 && sys <= 300) || !(dia >= 20 && dia <= 200)) { setToast('Enter a valid reading, e.g. 120 over 80.'); return; }
+  const ts = state.now;
+  await addEntryDB({ medId: 'blood_pressure', sys: sys, dia: dia, dose: sys + '/' + dia + ' mmHg', mg: 0, ts: ts });
+  state.bpSysInput = ''; state.bpDiaInput = '';
+  setToast('Blood pressure ' + sys + '/' + dia + ' logged at ' + fmtTime(ts));
+}
+
 async function logWeight() {
   const raw = (state.weightInput || '').trim();
   const v = parseFloat(raw);
@@ -938,7 +948,7 @@ function fmtCyclePeriod(p) {
 // (a Diarrhea/Constipation entry there can start/continue this same tracker, but only a genuine
 // daily answer of normal/very_little can end it).
 const BOWEL_ISSUE_VALUES = new Set(['none', 'diarrhea']);
-const BOWEL_MOVEMENT_LABELS = { normal: 'Normal', very_little: 'Very little', none: 'None', diarrhea: 'Diarrhea' };
+const BOWEL_MOVEMENT_LABELS = { normal: 'Normal', very_little: 'Very little', none: 'None', loose: 'Loose', diarrhea: 'Diarrhea' };
 function yesterdayStart(now) { return dayStart(now) - 86400000; }
 // Shared "must be answered today" escalation rules — quiet reminder in the morning, firmer by
 // afternoon, urgent by evening. Used by the Daily Weight, Bowel Movement, and Appetite Home
@@ -946,7 +956,7 @@ function yesterdayStart(now) { return dayStart(now) - 86400000; }
 // Home screen & daily check-in preferences (audit §4). Vitals cards default ON; the daily
 // check-in alerts default OFF for a general audience — they were the original family's
 // care-team instruction, not a universal need. Cycle tracking is opt-in.
-const HOME_PREF_DEFAULTS = { showTemperature: true, showWeight: true, showChemoSchedule: true, dailyWeightCheckin: false, bowelCheckin: false, appetiteCheckin: false, cycleTracking: false };
+const HOME_PREF_DEFAULTS = { showTemperature: true, showWeight: true, showBloodPressure: true, showChemoSchedule: true, dailyWeightCheckin: false, bowelCheckin: false, appetiteCheckin: false, cycleTracking: false };
 function homePref(key) {
   const prefs = getPrefsDB();
   const saved = prefs.homeCards || {};
@@ -1465,7 +1475,7 @@ function renderSetup() {
       h('label', { style: { display: 'block', textAlign: 'left', fontSize: '12.5px', fontWeight: '700', color: '#8A6B82', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' } }, 'Patient name'),
       h('input', {
         value: setupNameDraft,
-        placeholder: 'For example, Mom',
+        placeholder: 'Enter patient name',
         onInput: (ev) => { setupNameDraft = ev.target.value; },
         onKeyDown: (ev) => { if (ev.key === 'Enter') completeSetup(); },
         style: { width: '100%', boxSizing: 'border-box', padding: '13px 14px', fontSize: '16px', border: '1.5px solid #E5C9D6', borderRadius: '12px', outline: 'none', marginBottom: '18px', background: '#FFF9FB' }
@@ -1993,14 +2003,15 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       const level = dailyAlertLevel(now);
       const s = dailyAlertStyle(level);
       const bmYLabel = new Date(bmYStart).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
-      const bmMsg = level === 2 ? ('Still not logged for ' + bmYLabel + ' — please answer before the day ends.') : level === 1 ? ('No bowel movement status logged for ' + bmYLabel + ' yet.') : (bmYLabel + '’s bowel movement hasn’t been logged yet.');
+      const bmMsgPre = level === 2 ? 'Still not logged for ' : level === 1 ? 'No bowel movement status logged for ' : '';
+      const bmMsgPost = level === 2 ? ' — please answer before the day ends.' : level === 1 ? ' yet.' : '’s bowel movement hasn’t been logged yet.';
       const bmSelectValue = state.bowelInput !== undefined ? state.bowelInput : '';
       parts.push(h('div', { style: { background: s.bg, border: s.border, borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', boxShadow: s.shadow } },
         h('div', { style: { display: 'flex', gap: '12px', alignItems: 'center' } },
           h('span', { style: { flexShrink: '0', width: '26px', height: '26px', borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '13px' } }, 'B'),
           h('div', { style: { flex: '1' } },
             h('div', { style: { fontWeight: '800', color: s.color, fontSize: '14px', letterSpacing: '0.02em', marginBottom: '2px', textTransform: 'uppercase' } }, 'Bowel Movement'),
-            h('div', { style: { color: s.color, fontSize: '13.5px', fontWeight: '600', lineHeight: '1.4' } }, bmMsg)
+            h('div', { style: { color: s.color, fontSize: '13.5px', fontWeight: '600', lineHeight: '1.5' } }, bmMsgPre, h('span', { style: { fontWeight: '800', fontSize: '14.5px', color: '#3D2B3A', background: 'rgba(255,255,255,0.55)', padding: '1px 7px', borderRadius: '7px', whiteSpace: 'nowrap' } }, bmYLabel), bmMsgPost)
           )
         ),
         h('div', { style: { display: 'flex', gap: '8px' } },
@@ -2027,7 +2038,8 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       const level = dailyAlertLevel(now);
       const s = dailyAlertStyle(level);
       const apYLabel = new Date(apYStart).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
-      const apMsg = level === 2 ? ('Still not logged for ' + apYLabel + ' — please answer before the day ends.') : level === 1 ? ('No appetite status logged for ' + apYLabel + ' yet.') : (apYLabel + '’s appetite hasn’t been logged yet.');
+      const apMsgPre = level === 2 ? 'Still not logged for ' : level === 1 ? 'No appetite status logged for ' : '';
+      const apMsgPost = level === 2 ? ' — please answer before the day ends.' : level === 1 ? ' yet.' : '’s appetite hasn’t been logged yet.';
       const apSelectValue = state.appetiteInput !== undefined ? state.appetiteInput : '';
       const apNoteValue = state.appetiteNoteInput !== undefined ? state.appetiteNoteInput : '';
       parts.push(h('div', { style: { background: s.bg, border: s.border, borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', boxShadow: s.shadow } },
@@ -2035,7 +2047,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
           h('span', { style: { flexShrink: '0', width: '26px', height: '26px', borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '13px' } }, 'A'),
           h('div', { style: { flex: '1' } },
             h('div', { style: { fontWeight: '800', color: s.color, fontSize: '14px', letterSpacing: '0.02em', marginBottom: '2px', textTransform: 'uppercase' } }, 'Appetite'),
-            h('div', { style: { color: s.color, fontSize: '13.5px', fontWeight: '600', lineHeight: '1.4' } }, apMsg)
+            h('div', { style: { color: s.color, fontSize: '13.5px', fontWeight: '600', lineHeight: '1.5' } }, apMsgPre, h('span', { style: { fontWeight: '800', fontSize: '14.5px', color: '#3D2B3A', background: 'rgba(255,255,255,0.55)', padding: '1px 7px', borderRadius: '7px', whiteSpace: 'nowrap' } }, apYLabel), apMsgPost)
           )
         ),
         h('div', { style: { display: 'flex', gap: '8px' } },
@@ -2186,6 +2198,21 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
         h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: weightDefault() || (CONFIG.weightUnit === 'kg' ? '68.0' : '150.0'), value: state.weightInput, onInput: (e) => { state.weightInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } }),
         h('button', { onClick: logWeight, style: { flexShrink: '0', minHeight: '38px', padding: '0 15px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
+      )
+    )
+,
+    !homePref('showBloodPressure') ? null : h('section', { style: { background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06), inset 0 1px 0 rgba(255,255,255,0.7)' } },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' } },
+        h('div', null,
+          h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6479' } }, 'Blood pressure'),
+          h('div', { style: { fontSize: '11px', color: '#7D6974', marginTop: '2px' } }, (function () { const bp = state.entries.filter(e => e.medId === 'blood_pressure').sort((a, b) => b.ts - a.ts)[0]; return bp ? ('Last ' + bp.sys + '/' + bp.dia + ' · ' + fmtTime(bp.ts)) : 'No readings yet'; })())
+        )
+      ),
+      h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px', alignItems: 'center' } },
+        h('input', { type: 'number', inputMode: 'numeric', placeholder: '120', value: state.bpSysInput, onInput: (e) => { state.bpSysInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } }),
+        h('span', { style: { color: '#8A6479', fontWeight: '800' } }, '/'),
+        h('input', { type: 'number', inputMode: 'numeric', placeholder: '80', value: state.bpDiaInput, onInput: (e) => { state.bpDiaInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '38px', border: '1px solid rgba(212,104,138,0.18)', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: 'rgba(255,255,255,0.6)', color: '#3D2B3A' } }),
+        h('button', { onClick: logBloodPressure, style: { flexShrink: '0', minHeight: '38px', padding: '0 15px', borderRadius: '11px', background: '#AA5375', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
       )
     )
   ));
@@ -2827,6 +2854,7 @@ function renderSettings(now) {
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '10px' } },
         toggle('showTemperature', 'Temperature card', 'Quick temperature logging on Home.'),
         toggle('showWeight', 'Weight card', 'Quick weight logging on Home.'),
+        toggle('showBloodPressure', 'Blood pressure card', 'Quick BP logging on Home; readings appear in Reports.'),
         toggle('showChemoSchedule', 'Treatment schedule card', 'Countdown and reminders around treatment dates.'),
         toggle('dailyWeightCheckin', 'Daily weight check-in', 'Reminds every day until a weight is logged.'),
         toggle('bowelCheckin', 'Bowel movement check-in', 'Asks about the previous day, once a day.'),
@@ -2875,7 +2903,22 @@ function renderSettings(now) {
   ];
 }
 
+function renderBloodPressureReport(now) {
+  const list = state.entries.filter(e => e.medId === 'blood_pressure').sort((a, b) => b.ts - a.ts);
+  if (!list.length) return h('div', { style: { background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', padding: '22px 16px', textAlign: 'center', color: '#6E5261', fontSize: '13px' } }, 'No blood pressure readings yet. Log them from the Home screen card.');
+  return h('div', { style: { background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(212,104,138,0.12)', borderRadius: '16px', overflow: 'hidden' } },
+    ...list.map((e, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 14px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
+      h('div', { style: { flex: '1', minWidth: '0' } },
+        h('div', { className: 'mono', style: { fontSize: '16px', fontWeight: '700', color: '#7B3F6B' } }, e.sys + '/' + e.dia + ' mmHg'),
+        h('div', { style: { fontSize: '11px', color: '#7D6974', marginTop: '1px' } }, new Date(e.ts).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + fmtTime(e.ts))
+      ),
+      h('button', { onClick: () => removeEntryDB(e.id), style: { minHeight: '34px', padding: '0 10px', borderRadius: '9px', background: 'rgba(192,69,59,0.08)', border: '1px solid rgba(192,69,59,0.2)', color: '#A5443C', fontSize: '11.5px', fontWeight: '800' } }, 'Remove')
+    ))
+  );
+}
+
 function reportDescriptor(type, now) {
+  if (type === 'blood_pressure') { const bp = state.entries.filter(e => e.medId === 'blood_pressure').sort((a, b) => b.ts - a.ts)[0]; return { label: 'Blood Pressure', icon: 'chart', description: 'Review blood pressure readings over time.', meta: bp ? (bp.sys + '/' + bp.dia + ' mmHg latest') : 'No readings yet' }; }
   if (type === 'history') return { label: 'History', icon: 'history', description: 'Review dose, symptom, and vital logs by day.', meta: state.entries.length + ' recorded entries' };
   if (type === 'weight') { const latestWeight = latest('weight'); return { label: 'Weight', icon: 'chart', description: 'Explore weight readings, trends, and recent changes.', meta: latestWeight ? (latestWeight.weight + ' ' + weightSuffix() + ' latest') : 'No readings yet' }; }
   if (type === 'cycle') {
@@ -2894,7 +2937,7 @@ function reportDescriptor(type, now) {
 }
 
 function renderReportsMenu(now) {
-  const reportTypes = ['history', 'weight', 'cycle', 'bowel_movement', 'appetite'].filter(t => t !== 'cycle' || homePref('cycleTracking'));
+  const reportTypes = ['history', 'weight', 'blood_pressure', 'cycle', 'bowel_movement', 'appetite'].filter(t => t !== 'cycle' || homePref('cycleTracking'));
   return [
     h('section', null,
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#AA5375' } }, appIcon('chart', 19), h('span', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase' } }, 'Care reports')),
@@ -2920,7 +2963,7 @@ function renderReportsMenu(now) {
 
 function renderReportDetail(type, now) {
   const report = reportDescriptor(type, now);
-  const content = type === 'history' ? renderHistory(now) : type === 'weight' ? renderWeightTrend(now) : type === 'cycle' ? renderCycle(now) : type === 'bowel_movement' ? renderBowelMovementReport(now) : renderAppetite(now);
+  const content = type === 'history' ? renderHistory(now) : type === 'weight' ? renderWeightTrend(now) : type === 'blood_pressure' ? renderBloodPressureReport(now) : type === 'cycle' ? renderCycle(now) : type === 'bowel_movement' ? renderBowelMovementReport(now) : renderAppetite(now);
   return [
     h('section', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' } },
       h('div', null,
