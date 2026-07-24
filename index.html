@@ -16,10 +16,11 @@
      call site already guards for that, so the app degrades to normal web behavior either way. -->
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/core@8.4.2/dist/capacitor.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/local-notifications@8.2.1/dist/plugin.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@capacitor/status-bar@8.0.3/dist/plugin.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;overscroll-behavior-y:none;}
-body{-webkit-font-smoothing:antialiased;background:#FAF7F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',system-ui,sans-serif;color:#2A2127;}
+body{-webkit-font-smoothing:antialiased;background:#FAF7F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',system-ui,sans-serif;color:#2A2127;padding-top:env(safe-area-inset-top, 0px);}
 button{-webkit-tap-highlight-color:transparent;font-family:inherit;cursor:pointer;border:none;background:none;}
 button:active{transform:translateY(1px);}
 input{-webkit-tap-highlight-color:transparent;font-family:inherit;}
@@ -48,6 +49,20 @@ const TEST_MODE = true; // APP BETA — enables the date-override controls + sim
 function isNativeApp() {
   try { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
   catch (e) { return false; }
+}
+
+// v15 fix — Aaron caught this on-device: unlike a browser tab, the native WebView has no chrome
+// of its own pushing content down, so the app header (and especially the tour banner) rendered
+// underneath the phone's status bar instead of below it. capacitor.config.ts already sets
+// StatusBar.overlaysWebView=false at native launch (before any JS runs, so no flash on cold start)
+// — this call is a redundant safety net in case that static config isn't honored by this plugin
+// version. Runs as early as possible, before first render. No-ops completely on web/PWA.
+if (isNativeApp()) {
+  try {
+    const sb = window.Capacitor.Plugins.StatusBar;
+    sb.setOverlaysWebView({ overlay: false });
+    sb.setBackgroundColor({ color: '#F8E8EE' });
+  } catch (e) { /* status bar plugin unavailable — cosmetic only, rest of the app is unaffected */ }
 }
 
 function loadJSON(key, fallback) {
@@ -1750,7 +1765,7 @@ function renderTourLayer() {
   // render a slim banner docked under the header instead; "More" temporarily expands the full card.
   if (formStep && !tourExpanded) {
     return h('div', { id: 'tour-layer', style: { position: 'fixed', inset: '0', zIndex: '80', pointerEvents: 'none' } },
-      h('div', { id: 'tour-banner', role: 'status', 'aria-label': 'Guide: ' + step.title, style: { position: 'fixed', top: '8px', left: '50%', transform: 'translateX(-50%)', width: 'min(94vw, 720px)', background: '#FFFFFF', border: '2px solid rgba(170,83,117,0.4)', borderRadius: '14px', padding: '6px 6px 6px 12px', boxShadow: '0 8px 24px rgba(80,30,55,0.22)', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '8px' } },
+      h('div', { id: 'tour-banner', role: 'status', 'aria-label': 'Guide: ' + step.title, style: { position: 'fixed', top: 'calc(env(safe-area-inset-top, 0px) + 8px)', left: '50%', transform: 'translateX(-50%)', width: 'min(94vw, 720px)', background: '#FFFFFF', border: '2px solid rgba(170,83,117,0.4)', borderRadius: '14px', padding: '6px 6px 6px 12px', boxShadow: '0 8px 24px rgba(80,30,55,0.22)', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '8px' } },
         h('div', { style: { flex: '1', minWidth: '0' } },
           h('div', { style: { fontSize: '12px', fontWeight: '700', color: '#8E3D61', letterSpacing: '0.06em' } }, 'GUIDE · ' + (state.tourStep + 1) + ' OF ' + TOUR_STEPS.length),
           h('div', { style: { fontSize: '13px', fontWeight: '600', color: '#2A2127', lineHeight: '1.3' } }, step.short)
@@ -3072,7 +3087,7 @@ function renderMedicationManager(now) {
 }
 
 
-const APP_VERSION = 'app-v14';
+const APP_VERSION = 'app-v15';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
