@@ -23,6 +23,9 @@ on:
       - '.github/workflows/android-build.yml'
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -77,9 +80,24 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Upload APK (workflow artifact, requires GitHub login to fetch)
         uses: actions/upload-artifact@v4
         with:
           name: chemowell-app-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      # Actions artifacts require an authenticated GitHub session to download — fine for browsing
+      # github.com, but not fetchable with a plain curl from the sandbox this project is otherwise
+      # developed in (or from Aaron's phone). A Release asset on a public repo has a stable,
+      # unauthenticated URL instead, so this is the actual hand-off point to get the APK off GitHub
+      # entirely. Same moving tag every run — this always reflects the latest main, not a numbered
+      # release history (that's what README.md's version table is for).
+      - name: Publish debug APK as a GitHub Release asset (stable public download URL)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-v14-native-test
+          name: "ChemoWell native test build (app-v14)"
+          body: "Debug APK for on-device testing (real notifications + native look/feel) before store submission. Sideload only — not for distribution. Rebuilt on every relevant push to main; this release always reflects the current app-icons/, capacitor.config.ts, index.html, and www/."
+          prerelease: true
+          files: android/app/build/outputs/apk/debug/app-debug.apk
