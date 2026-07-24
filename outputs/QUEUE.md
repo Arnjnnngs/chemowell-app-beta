@@ -30,6 +30,25 @@ Scope note for whoever picks this up: this touches `renderTourLayer()` / `positi
 visual change, plus a QA pass confirming the emphasis doesn't itself cause new occlusion on small
 viewports (the exact bug class app-v12 fixed).
 
+### iOS test build (.ipa)
+Raised 2026-07-24, explicitly deferred by Aaron ("no need to do anything further with that part
+yet"). His phone is Android — the app-v14 APK covers his own device testing now — but he wants an
+iPhone build to test on eventually too.
+
+What's different from the Android path, so whoever picks this up isn't surprised:
+- No free sideload path exists on iOS the way Android's "allow unknown sources" works. Apple
+  requires a paid Apple Developer account ($99/year) to install any test build on a real iPhone,
+  even just for personal testing. The only free alternative is plugging the phone into a Mac via
+  Xcode with a personal-team signature, which expires and needs re-signing every 7 days — not a
+  realistic ongoing test loop.
+- The build itself can still be automated the same way as Android (this sandbox has no route to
+  Apple's build tooling either) — GitHub Actions has macOS runners with Xcode preinstalled, so the
+  same CI pattern applies. What's blocking is the Apple Developer account and signing setup, not
+  the build mechanics.
+- Before starting: confirm Aaron has (or is willing to set up) an Apple Developer account, and
+  decide the distribution path — TestFlight (still needs the paid account, and external testing
+  needs a review pass; internal testing doesn't) vs. ad hoc / direct install.
+
 ## Carried over from prior releases (see README v12/v13 rows and CHEMOWELL_PROJECT_STATE.md for full detail)
 
 1. Tour replay flow (D1-D4 + LA-P4-5).
