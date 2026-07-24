@@ -1,0 +1,85 @@
+name: Build Android debug APK
+
+# Builds the ChemoWell native shell into a sideloadable debug APK. Runs on GitHub's runners because
+# the cloud sandbox this project is otherwise developed in has no route to Google's Maven/Gradle
+# Plugin Portal — this workflow IS the build environment for anything native, not a convenience.
+#
+# The android/ native project is NOT committed to this repo — it's regenerated fresh here on every
+# run via `npx cap add android`, deterministic from the pinned Capacitor versions in package.json.
+# That keeps the repo's source of truth small (this file, capacitor.config.ts, www/, app-icons/)
+# instead of a huge generated/binary tree that would drift from whatever Capacitor version is
+# pinned. Our real (non-default) app icon and notification icon live in app-icons/ as flat,
+# uniquely-named files and get copied into their correct nested Android resource paths below.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app-icons/**'
+      - 'capacitor.config.ts'
+      - 'index.html'
+      - 'www/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/android-build.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate native Android project
+        run: npx cap add android
+
+      - name: Install our real app icon + notification icon (replaces Capacitor's default)
+        run: |
+          set -e
+          RES=android/app/src/main/res
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            # drawable-<density> (as opposed to plain drawable/) only exists once something is
+            # placed in it — a fresh `cap add android` project doesn't create these, so make sure
+            # they exist before copying the notification icon in (caught by a local dry run before
+            # this ever hit CI: the first version of this step failed here).
+            mkdir -p "$RES/drawable-${d}"
+            cp "app-icons/launcher-${d}.png"       "$RES/mipmap-${d}/ic_launcher.png"
+            cp "app-icons/launcher-round-${d}.png"  "$RES/mipmap-${d}/ic_launcher_round.png"
+            cp "app-icons/launcher-fg-${d}.png"     "$RES/mipmap-${d}/ic_launcher_foreground.png"
+            cp "app-icons/notif-${d}.png"           "$RES/drawable-${d}/ic_stat_chemowell.png"
+          done
+          # Adaptive-icon background: brand background color instead of Capacitor's default white.
+          cat > "$RES/values/ic_launcher_background.xml" <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_launcher_background">#EEF1F0</color>
+          </resources>
+          XML
+
+      - name: Sync Capacitor config + plugins into the native project
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: chemowell-app-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
