@@ -297,8 +297,15 @@ function normalizeMedication(raw, index) {
     quickLog: typeof original.quickLog === 'boolean' ? original.quickLog : DEFAULT_QUICK_LOG_IDS.includes(id),
     groupedEvening: typeof original.groupedEvening === 'boolean' ? original.groupedEvening : DEFAULT_EVENING_IDS.includes(id),
     groupedMorning: typeof original.groupedMorning === 'boolean' ? original.groupedMorning : DEFAULT_MORNING_IDS.includes(id),
-    groupedAfternoon: !!original.groupedAfternoon
+    groupedAfternoon: !!original.groupedAfternoon,
+    // v16 migration: chemoOnly (fixed +-1 day window, "Chemo-day only") -> treatmentOnly with a
+    // per-medication configurable day range. A device with an existing chemoOnly:true medication and
+    // no explicit day fields keeps behaving identically (+-1) until the user edits it.
+    treatmentOnly: typeof original.treatmentOnly === 'boolean' ? original.treatmentOnly : !!original.chemoOnly,
+    treatmentDaysBefore: Number.isFinite(original.treatmentDaysBefore) ? Math.max(0, Math.round(original.treatmentDaysBefore)) : 1,
+    treatmentDaysAfter: Number.isFinite(original.treatmentDaysAfter) ? Math.max(0, Math.round(original.treatmentDaysAfter)) : 1
   };
+  delete medication.chemoOnly;
   const sd = original.scheduleDays;
   if (sd && sd.mode === 'weekly' && Array.isArray(sd.days)) {
     const days = sd.days.map(Number).filter(d => d >= 0 && d <= 6);
@@ -562,6 +569,18 @@ function chemoOffsetFor(dayTs) {
   return Math.round((dayStart(dayTs) - dayStart(c)) / 86400000);
 }
 function dexActiveOn(dayTs) { const o = chemoOffsetFor(dayTs); return o !== null && o >= -1 && o <= 1; }
+// Generic version of dexActiveOn for the per-medication "treatment day" toggle (v16). dexActiveOn's
+// hardcoded -1..+1 window only ever applied to the legacy 'dexamethasone' id, which no user-created
+// medication can ever take (see RESERVED_LEGACY_MED_IDS) -- so every real medication that turned the
+// toggle on silently inherited that fixed window regardless of its actual regimen. treatmentDaysBefore
+// /After are per-medication (editable in the med editor, default 1/1 = today's old fixed behavior).
+function treatmentActiveOn(med, dayTs) {
+  const o = chemoOffsetFor(dayTs);
+  if (o === null) return false;
+  const before = Number.isFinite(med.treatmentDaysBefore) ? med.treatmentDaysBefore : 1;
+  const after = Number.isFinite(med.treatmentDaysAfter) ? med.treatmentDaysAfter : 1;
+  return o >= -before && o <= after;
+}
 // Zofran is blocked for 3 days: chemo day itself plus the 2 days after (e.g. chemo Thursday ->
 // blocked Thu/Fri/Sat, opens Sunday). Confirmed by Aaron as the original, correct spec — v61/v62
 // of this file incorrectly "fixed" this to a 2-day block based on stale documentation elsewhere in
@@ -608,7 +627,7 @@ function missedDosesFor(dayTs, now) {
   if (isInpatientDay(d0)) return []; // meds given by hospital staff that day — not tracked here
   const out = [];
   state.meds.filter(m => m.alerts && m.windows).forEach(med => {
-    if (med.chemoOnly && !dexActiveOn(d0)) return;
+    if (med.treatmentOnly && !treatmentActiveOn(med, d0)) return;
     if (!medScheduledOn(med, d0)) return; // not taken on this calendar day — nothing to miss
     const windows = med.id === 'dexamethasone' ? dexWindowsForOffset(chemoOffsetFor(d0)) : med.windows;
     const dayEntries = entriesFor(med.id).filter(e => e.ts >= d0 && e.ts < d0 + 86400000).sort((a, b) => a.ts - b.ts);
@@ -647,7 +666,7 @@ function doseProgressToday(now) {
   let scheduled = 0, taken = 0;
   state.meds.filter(m => m.windows && m.windows.length && medScheduledOn(m, now))
     .forEach(med => {
-      if (med.chemoOnly && !dexActiveOn(now)) return;
+      if (med.treatmentOnly && !treatmentActiveOn(med, now)) return;
       const windows = med.id === 'dexamethasone' ? dexWindowsForOffset(chemoOffsetFor(d0)) : med.windows;
       scheduled += windows.length;
       const logs = entriesFor(med.id).filter(e => e.ts >= d0 && e.ts < nextDay(d0)).length; // skipped entries count as handled
@@ -782,7 +801,7 @@ function status(med) {
     if (now < ws) return { locked: true, availableAt: ws, windowName: w.name };
     if (now >= ws && now < we) return { locked: false, windowName: w.name };
   }
-  const chemoOver = med.chemoOnly && !dexActiveOn(d0 + 86400000);
+  const chemoOver = med.treatmentOnly && !treatmentActiveOn(med, d0 + 86400000);
   if (chemoOver) {
     return { locked: true, courseComplete: true };
   }
@@ -868,7 +887,7 @@ async function setChemoDate() {
   if (isNaN(ts)) { setToast('Invalid date'); return; }
   await addEntryDB({ medId: 'chemo_date', dose: 'Treatment scheduled', mg: 0, ts, loggedAt: Date.now() });
   setState({ chemoInput: '' });
-  setToast('Chemo date set — ' + new Date(ts).toLocaleDateString());
+  setToast('Treatment date set — ' + new Date(ts).toLocaleDateString());
 }
 
 function weightDefault() { const lw = latest('weight'); return lw ? String(dispWeight(lw)) : ''; } // v12b: converted to current unit
@@ -2463,11 +2482,11 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // Chemo schedule card (toggleable)
   const chemoTs = nextChemoTs();
   const daysUntil = chemoTs ? Math.round((dayStart(chemoTs) - dayStart(now)) / 86400000) : null;
-  const chemoDateText = chemoTs === null ? 'No chemo/radiation date set' :
+  const chemoDateText = chemoTs === null ? 'No treatment date set' :
     daysUntil > 1 ? new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' }) + ' · in ' + daysUntil + ' days' :
     daysUntil === 1 ? new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' }) + ' · TOMORROW' :
     daysUntil === 0 ? 'TODAY' :
-    'Last chemo ' + new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' });
+    'Last treatment ' + new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' });
   if (homePref('showChemoSchedule')) parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' } },
       h('div', null,
@@ -2475,7 +2494,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         h('div', { style: { ...TYPE.bodyBold, marginTop: '3px', color: (daysUntil !== null && daysUntil >= 0 && daysUntil <= 1) ? '#C0453B' : '#2A2127' } }, chemoDateText)
       ),
       chemoTs ? (state.confirmClearChemo ? h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center', flexShrink: '0' } },
-        h('button', { onClick: async () => { setState({ confirmClearChemo: false }); await addEntryDB({ medId: 'chemo_date', dose: 'Chemo date cleared', mg: 0, ts: 0, loggedAt: Date.now() }); setToast('Chemo date cleared'); }, style: { color: '#fff', background: '#C0453B', fontSize: '12.5px', fontWeight: '700', padding: '8px 12px', borderRadius: '9px' } }, 'Confirm clear'),
+        h('button', { onClick: async () => { setState({ confirmClearChemo: false }); await addEntryDB({ medId: 'chemo_date', dose: 'Treatment date cleared', mg: 0, ts: 0, loggedAt: Date.now() }); setToast('Treatment date cleared'); }, style: { color: '#fff', background: '#C0453B', fontSize: '12.5px', fontWeight: '700', padding: '8px 12px', borderRadius: '9px' } }, 'Confirm clear'),
         h('button', { onClick: () => setState({ confirmClearChemo: false }), style: { color: '#7A6E76', fontSize: '12.5px', padding: '8px 6px', fontWeight: '600' } }, 'Keep')
       ) : h('button', { onClick: () => { setState({ confirmClearChemo: true }); setTimeout(() => { if (state.confirmClearChemo) setState({ confirmClearChemo: false }); }, 6000); }, style: { color: '#8A6479', fontSize: '12.5px', padding: '6px', fontWeight: '600' } }, 'Clear')) : null
     ),
@@ -2503,7 +2522,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('button', { onClick: () => { navigateTo('meds'); openMedicationEditor(null); }, style: { minHeight: '44px', padding: '0 20px', borderRadius: '12px', background: '#A24C71', color: '#fff', fontSize: '14px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, '+ Add your first medication')
     ));
   }
-  const medCards = state.meds.filter(m => m.quickLog && (!m.chemoOnly || (dexActiveOn(now) && !status(m).courseComplete))).map(med => {
+  const medCards = state.meds.filter(m => m.quickLog && (!m.treatmentOnly || (treatmentActiveOn(m, now) && !status(m).courseComplete))).map(med => {
     if (inpatientActiveNow) {
       return h('div', { style: { background: 'rgba(154,100,25,0.08)', border: '1.5px dashed rgba(154,100,25,0.35)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
         h('div', { style: { ...TYPE.title, color: '#8B5715' } }, med.name + ' - In-Patient (Restricted)'),
@@ -2719,7 +2738,9 @@ function medicationFormFrom(med) {
     // versions) can be preserved exactly via the "Custom" picker option — editing an unrelated
     // field must never silently rewrite a patient's Home layout.
     _origPlacement: { quickLog: typeof base.quickLog === 'boolean' ? base.quickLog : true, groupedMorning: !!base.groupedMorning, groupedAfternoon: !!base.groupedAfternoon, groupedEvening: !!base.groupedEvening },
-    chemoOnly: !!base.chemoOnly,
+    treatmentOnly: !!base.treatmentOnly,
+    treatmentDaysBefore: Number.isFinite(base.treatmentDaysBefore) ? base.treatmentDaysBefore : 1,
+    treatmentDaysAfter: Number.isFinite(base.treatmentDaysAfter) ? base.treatmentDaysAfter : 1,
     scheduleMode: base.scheduleDays ? base.scheduleDays.mode : 'daily',
     weekDays: base.scheduleDays && base.scheduleDays.mode === 'weekly' ? (base.scheduleDays.days || []).slice() : [],
     intervalN: base.scheduleDays && base.scheduleDays.mode === 'interval' ? base.scheduleDays.n : 2,
@@ -2786,6 +2807,16 @@ function openMedicationEditor(med) {
   window.scrollTo(0, 0);
 }
 
+// Clamp a treatment-window day-count input to a non-negative integer, falling back to 1 (the old
+// fixed +-1 day behavior) for blank/invalid input rather than silently collapsing to 0. Blank/
+// whitespace must be checked BEFORE Number() coercion -- Number('') and Number('   ') are both 0,
+// a legitimate value, so a cleared field would otherwise silently save as "treatment day only"
+// instead of falling back (audit v16 finding #1).
+function clampTreatmentDays(value) {
+  if (value === '' || value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return 1;
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) && n >= 0 ? n : 1;
+}
 function saveMedicationEditor() {
   if (!state.medEditor) return;
   const editor = state.medEditor;
@@ -2832,7 +2863,9 @@ function saveMedicationEditor() {
     groupedMorning: !!form.groupedMorning,
     groupedAfternoon: !!form.groupedAfternoon,
     scheduleDays: scheduleDays,
-    chemoOnly: !!form.chemoOnly,
+    treatmentOnly: !!form.treatmentOnly,
+    treatmentDaysBefore: clampTreatmentDays(form.treatmentDaysBefore),
+    treatmentDaysAfter: clampTreatmentDays(form.treatmentDaysAfter),
     ceiling: dailyLimit > 0,
     ceilingMax: dailyLimit || undefined,
     ceilingUnit: form.dailyLimitUnit === 'mg' ? undefined : form.dailyLimitUnit
@@ -3004,8 +3037,15 @@ function renderMedicationEditor() {
       )
     ),
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '10px' } },
-      renderPillToggle('Chemo-day only', !!form.chemoOnly, () => toggleMedicationForm('chemoOnly'), 'Only appears on Home during the chemo-adjacent day window (day before through day after chemo) — hidden the rest of the time.')
+      renderPillToggle('Treatment-day medication', !!form.treatmentOnly, () => toggleMedicationForm('treatmentOnly'), 'Only appears on Home for a window of days around your treatment date — hidden the rest of the time. Set your own range below (every regimen is different).')
     ),
+    form.treatmentOnly ? h('div', { style: { marginTop: '8px' } },
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: '8px' } },
+        h('label', null, fieldLabel('Days before treatment', 'Becomes active this many days before treatment day (0 = starts on treatment day itself).'), formInput({ type: 'number', min: '0', step: '1', value: String(form.treatmentDaysBefore), onInput: event => updateMedicationForm('treatmentDaysBefore', event.target.value, true) })),
+        h('label', null, fieldLabel('Days after treatment', 'Stays active through this many days after treatment day (0 = treatment day only).'), formInput({ type: 'number', min: '0', step: '1', value: String(form.treatmentDaysAfter), onInput: event => updateMedicationForm('treatmentDaysAfter', event.target.value, true) }))
+      ),
+      h('div', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76', marginTop: '6px', lineHeight: '1.4' } }, 'Active window: ' + clampTreatmentDays(form.treatmentDaysBefore) + ' day' + (clampTreatmentDays(form.treatmentDaysBefore) === 1 ? '' : 's') + ' before through ' + clampTreatmentDays(form.treatmentDaysAfter) + ' day' + (clampTreatmentDays(form.treatmentDaysAfter) === 1 ? '' : 's') + ' after treatment day.')
+    ) : null,
     h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '15px' } },
       h('button', { onClick: () => { setState({ medEditor: null }); tourEvent('medEditor:closed'); }, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.65)', border: '1px solid #EBE3E4', color: '#554A52', fontSize: '13px', fontWeight: '800' } }, 'Discard'),
       h('button', { onClick: saveMedicationEditor, style: { minHeight: '44px', padding: '0 16px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, state.medEditor.mode === 'add' ? 'Add medication' : 'Save changes')
@@ -3068,7 +3108,7 @@ function renderMedicationManager(now) {
         med.groupedEvening ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(155,91,138,0.12)', color: '#7B3F6B', fontSize: '12px', fontWeight: '700' } }, 'Evening group') : null,
         med.groupedAfternoon ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(155,91,138,0.12)', color: '#7B3F6B', fontSize: '12px', fontWeight: '700' } }, 'Afternoon group') : null,
         med.scheduleDays ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(46,125,79,0.10)', color: '#2E7D4F', fontSize: '12px', fontWeight: '700' } }, scheduleDaysLabel(med)) : null,
-        med.chemoOnly ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(192,69,59,0.10)', color: '#A15B56', fontSize: '12px', fontWeight: '700' } }, 'Chemo-day only') : null
+        med.treatmentOnly ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(192,69,59,0.10)', color: '#A15B56', fontSize: '12px', fontWeight: '700' } }, 'Treatment day −' + clampTreatmentDays(med.treatmentDaysBefore) + '/+' + clampTreatmentDays(med.treatmentDaysAfter)) : null
       ),
       deleting ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', paddingTop: '9px', borderTop: '1px solid rgba(192,69,59,0.16)' } },
         h('span', { style: { flex: '1', fontSize: '12px', color: '#A15B56', fontWeight: '700', lineHeight: '1.35' } }, 'Existing dose history will remain visible.'),
@@ -3093,7 +3133,7 @@ function renderMedicationManager(now) {
 }
 
 
-const APP_VERSION = 'app-v14';
+const APP_VERSION = 'app-v16';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -3735,6 +3775,42 @@ function sendNotif(title, body, tag) {
   }
 }
 
+// Generic per-medication dose reminders (v16). Reminders used to fire on a hardcoded clock schedule
+// for five hardcoded legacy medication ids (protonix/iron/compazine/buspirone/paroxetine) — ids no
+// real user-created medication can ever have (RESERVED_LEGACY_MED_IDS exists specifically to stop a
+// new medication from inheriting another patient's rules), so every branch was unreachable dead code
+// for every real install: there was no way to get a reminder for a medication you actually added. This
+// replaces that with a med-agnostic reminder driven by the exact same source of truth the passive
+// missed-dose banner already uses (missedDosesFor): a medication's own `windows` (from the "Schedule
+// windows" editor field) and its auto-derived `alerts` flag. Pulled out as a pure function (like
+// doseProgressToday) so it's unit-testable via a Node harness even though checkNotifications() itself
+// only actually fires in the native APK build or a non-TEST_MODE web install (see below).
+function dueRemindersAt(nowDate) {
+  const nowTs = nowDate.getTime();
+  const h = nowDate.getHours(), m = nowDate.getMinutes();
+  const d0 = dayStart(nowTs);
+  const due = [];
+  if (h >= 22 || h < 8) return due; // quiet hours: no notifications 10 PM-8 AM
+  state.meds.filter(med => med.alerts && med.windows && med.windows.length).forEach(med => {
+    if (!medScheduledOn(med, nowTs)) return; // off-day for this medication's own schedule
+    if (med.treatmentOnly && !treatmentActiveOn(med, nowTs)) return; // outside its treatment-day window
+    med.windows.forEach(w => {
+      if (h !== w.start || m >= 5) return; // fire only in the window's first 5 minutes
+      // Key includes both start AND end hour, not just start (audit v16 finding #2): two windows
+      // that happen to open at the same hour (e.g. "8-9 AM dose 1" + "8-20 AM dose 2") would
+      // otherwise collide on a start-hour-only key and silently suppress the second window's
+      // reminder every single day.
+      const key = 'win-' + med.id + '-' + w.start + '-' + w.end + '-' + d0;
+      if (notifSentToday[key]) return;
+      notifSentToday[key] = true; // mark now so this window is never re-checked again today
+      const ws = d0 + w.start * 3600000, we = d0 + w.end * 3600000;
+      const taken = entriesFor(med.id).some(e => e.ts >= ws && e.ts < we);
+      if (!taken) due.push({ med, window: w });
+    });
+  });
+  return due;
+}
+
 function checkNotifications() {
   // Web/PWA beta stays silent (TEST_MODE simulated dates make real-time reminders meaningless
   // there); the native APK test build fires for real even under TEST_MODE, since that's the whole
@@ -3744,124 +3820,8 @@ function checkNotifications() {
   if (!state.loaded || state.entries.length === 0 && !state.demo) return;
 
   resetNotifTracking();
-  const now = new Date();
-  const h = now.getHours();
-  const m = now.getMinutes();
-  const nowTs = now.getTime();
-
-  // Quiet hours: no notifications between 10 PM (22) and 8 AM (8)
-  if (h >= 22 || h < 8) return;
-
-  // --- SCHEDULED REMINDERS ---
-
-  // 8:00 PM reminder (20:00) - evening meds
-  // Fire between 8:00 PM and 8:05 PM
-  if (h === 20 && m < 5 && !notifSentToday['sched-8pm']) {
-    const eveningMeds = ['protonix', 'iron', 'compazine'];
-    const due = [];
-    const d0 = dayStart(nowTs);
-    eveningMeds.forEach(medId => {
-      const med = state.meds.find(x => x.id === medId);
-      if (!med) return;
-      // Check if already taken in the evening window today
-      if (med.type === 'win') {
-        const eveningWin = med.windows.find(w => w.start >= 17);
-        if (eveningWin) {
-          const ws = d0 + eveningWin.start * 3600000;
-          const we = d0 + eveningWin.end * 3600000;
-          const taken = state.entries.some(e => e.medId === medId && e.ts >= ws && e.ts < we);
-          if (!taken) due.push(med.name);
-        } else {
-          // Anytime window (iron) - check if taken today at all
-          const taken = state.entries.some(e => e.medId === medId && e.ts >= d0);
-          if (!taken) due.push(med.name);
-        }
-      } else if (med.type === 'gap') {
-        // Compazine is gap-based but reminder at 8pm
-        const st = status(med);
-        if (!st.locked) due.push(med.name);
-      }
-    });
-    if (due.length > 0) {
-      sendNotif('Evening Meds Due', due.join(', ') + ' — time for evening doses', 'evening-8pm');
-    }
-    notifSentToday['sched-8pm'] = true;
-  }
-
-  // 8:30 AM reminder (8:30) - morning meds
-  // Fire between 8:30 AM and 8:35 AM
-  if (h === 8 && m >= 30 && m < 35 && !notifSentToday['sched-830am']) {
-    const morningMeds = [];
-    const d0 = dayStart(nowTs);
-    // Protonix morning window
-    const protonix = state.meds.find(x => x.id === 'protonix');
-    if (protonix) {
-      const mornWin = protonix.windows.find(w => w.start < 12);
-      if (mornWin) {
-        const ws = d0 + mornWin.start * 3600000;
-        const we = d0 + mornWin.end * 3600000;
-        const taken = state.entries.some(e => e.medId === 'protonix' && e.ts >= ws && e.ts < we);
-        if (!taken) morningMeds.push('Protonix');
-      }
-    }
-    if (morningMeds.length > 0) {
-      sendNotif('Morning Meds Due', morningMeds.join(', ') + ' — time for morning doses', 'morning-830am');
-    }
-    notifSentToday['sched-830am'] = true;
-  }
-
-  // 10:00 AM reminder (9:55-10:05) - Buspirone/Paroxetine (default window; if Protonix's actual
-  // morning dose logs later, morningWindowsFor() shifts these to 2h after that instead, and
-  // status().locked reflects that shift automatically — no separate dynamic check needed here
-  // since this fixed slot already lines up with the 10 AM default).
-  if ((h === 9 && m >= 55) || (h === 10 && m <= 5)) {
-    if (!notifSentToday['sched-10am']) {
-      const due = [];
-      ['buspirone', 'paroxetine'].forEach(medId => {
-        const med = state.meds.find(x => x.id === medId);
-        if (!med) return;
-        const st = status(med);
-        if (!st.locked) due.push(med.name);
-      });
-      if (due.length > 0) {
-        sendNotif('Morning Meds Due', due.join(', ') + ' — time for morning doses', 'morning-10am');
-      }
-      notifSentToday['sched-10am'] = true;
-    }
-  }
-
-  // --- GAP-BASED REMINDERS (fire when med becomes available) ---
-  const gapMeds = []; // Zofran is as-needed now — no gap-based availability reminder
-  gapMeds.forEach(medId => {
-    const med = state.meds.find(x => x.id === medId);
-    if (!med) return;
-    const st = status(med);
-
-    // Only notify when med just became available (was locked, now open)
-    if (st.locked) return;
-
-    // Check daily ceiling - don't notify if ceiling hit
-    if (st.ceilingHit) return;
-
-    // For Zofran: the 8:30 AM reminder already covers morning.
-    // Only send gap-based for later-in-day availability.
-    const last = latest(medId);
-    if (!last) return; // No previous dose, don't spam
-
-    // Create a unique key based on the dose timestamp so we only notify once per availability window
-    const notifKey = 'avail-' + medId + '-' + last.ts;
-    if (notifSentToday[notifKey]) return;
-
-    // Only notify if the gap JUST expired (within the last 2 minutes)
-    // This prevents firing on every render cycle
-    if (med.type === 'gap' && med.gapH > 0) {
-      const gapEnd = last.ts + med.gapH * 3600000;
-      const sinceFree = nowTs - gapEnd;
-      if (sinceFree >= 0 && sinceFree < 120000) {
-        sendNotif(med.name + ' Available', med.name + ' gap timer is up — ready to dose', 'avail-' + medId);
-        notifSentToday[notifKey] = true;
-      }
-    }
+  dueRemindersAt(new Date()).forEach(({ med, window }) => {
+    sendNotif(med.name + ' Due', med.name + (window.name ? ' — ' + window.name : '') + ' dose window has opened', 'win-' + med.id + '-' + window.start + '-' + window.end);
   });
 }
 
