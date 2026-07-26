@@ -3174,7 +3174,7 @@ function renderMedicationManager(now) {
 }
 
 
-const APP_VERSION = 'app-v17';
+const APP_VERSION = 'app-v18';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -3276,9 +3276,16 @@ function renderSettings(now) {
 }
 
 function renderBloodPressureReport(now) {
+  // v18 (Owner-reported): this function used to return a bare h() node in both branches instead of
+  // an array like every sibling report function (renderWeightTrend, renderHistory, etc). renderReportDetail
+  // spreads the return value with `...content` expecting an array -- spreading a single non-iterable
+  // Element threw a TypeError on every open, with no visible feedback (the throw happens before
+  // render() swaps in the new DOM) and the error re-fired every ~1s via the tick loop until the user
+  // navigated away. Pure display bug -- underlying BP entries were never at risk. Fix: wrap both
+  // returns in an array, matching the established sibling convention exactly.
   const list = state.entries.filter(e => e.medId === 'blood_pressure').sort((a, b) => b.ts - a.ts);
-  if (!list.length) return h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '22px 16px', textAlign: 'center', color: '#554A52', fontSize: '13px' } }, 'No blood pressure readings yet. Log them from the Home screen card.');
-  return h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', overflow: 'hidden' } },
+  if (!list.length) return [h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '22px 16px', textAlign: 'center', color: '#554A52', fontSize: '13px' } }, 'No blood pressure readings yet. Log them from the Home screen card.')];
+  return [h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', overflow: 'hidden' } },
     ...list.map((e, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 14px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
       h('div', { style: { flex: '1', minWidth: '0' } },
         h('div', { className: 'mono', style: { fontSize: '16px', fontWeight: '700', color: '#7B3F6B' } }, e.sys + '/' + e.dia + ' mmHg'),
@@ -3286,7 +3293,7 @@ function renderBloodPressureReport(now) {
       ),
       h('button', { onClick: () => removeEntryDB(e.id), style: { minHeight: '34px', padding: '0 10px', borderRadius: '9px', background: 'rgba(192,69,59,0.08)', border: '1px solid rgba(192,69,59,0.2)', color: '#A5443C', fontSize: '12px', fontWeight: '700' } }, 'Remove')
     ))
-  );
+  )];
 }
 
 function reportDescriptor(type, now) {
