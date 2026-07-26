@@ -30,6 +30,7 @@ button:focus-visible, [role="button"]:focus-visible, select:focus-visible, a:foc
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
 #root{min-height:100vh;}
 @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes tourPulse{0%{outline-color:rgba(46,125,79,1)}50%{outline-color:rgba(46,125,79,0.75)}100%{outline-color:rgba(46,125,79,1)}}
 @media (prefers-reduced-motion: reduce){*{animation-duration:0.01ms !important;transition-duration:0.01ms !important}}
 </style>
 </head>
@@ -1776,9 +1777,51 @@ function tourEvent(name) {
 }
 function tourClearHighlight() {
   if (window.__tourHighlighted) {
-    try { window.__tourHighlighted.style.outline = ''; window.__tourHighlighted.style.outlineOffset = ''; } catch (e) {}
+    try {
+      window.__tourHighlighted.style.outline = '';
+      window.__tourHighlighted.style.outlineOffset = '';
+      window.__tourHighlighted.style.animation = '';
+      window.__tourHighlighted.style.animationDelay = '';
+    } catch (e) {}
     window.__tourHighlighted = null;
   }
+}
+// v17: green attention treatment (Owner-reported — the guide banner/highlight blended in with the
+// app's own rose accent family). TOUR_PULSE_MS/tourPulseDelay compute a phase-synced NEGATIVE
+// animation-delay from real wall-clock time (Date.now(), not simNow()/state.now, so TEST_MODE date
+// jumps never glitch the glow) so a freshly-created node — every element here is rebuilt every
+// render pass, including every 1s tick — resumes the pulse mid-cycle instead of restarting it at 0%.
+// A naive `animation: … infinite` without this would visibly "snap" once a second for as long as a
+// tour step is on screen (same root cause as the v11 Plans-sheet flicker, different failure shape).
+// prefers-reduced-motion: the existing global rule (`*{animation-duration:0.01ms !important}`) works
+// for one-shot animations like sheetUp (it snaps to the end state and stops), but NOT for this one —
+// tourPulse has `iteration-count: infinite`, which the global rule doesn't touch, so forcing its
+// duration to 0.01ms just makes it loop at an absurd frequency instead of stopping. Design review
+// (outputs/DESIGNER_REVIEW_v17.md) caught this by polling computed style every ~40ms under emulated
+// reduced-motion and finding the outline alpha still jumping around unpredictably — a real flicker
+// risk for photosensitive users, the opposite of what the setting is supposed to guarantee. Fix:
+// check the media query directly in JS and skip the animation properties entirely when it's set, so
+// the element falls back to its static base outline-color (full-opacity green) with nothing looping.
+function prefersReducedMotion() {
+  try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { return false; }
+}
+const TOUR_PULSE_MS = 1600;
+function tourPulseDelay() { return '-' + (Date.now() % TOUR_PULSE_MS) + 'ms'; }
+function tourGlowAnim() {
+  if (prefersReducedMotion()) return {};
+  return { animation: 'tourPulse ' + TOUR_PULSE_MS + 'ms ease-out infinite', animationDelay: tourPulseDelay() };
+}
+function applyTourHighlight(el) {
+  el.style.outline = '3px solid #2E7D4F';
+  el.style.outlineOffset = '3px';
+  if (prefersReducedMotion()) {
+    el.style.animation = '';
+    el.style.animationDelay = '';
+  } else {
+    el.style.animation = 'tourPulse ' + TOUR_PULSE_MS + 'ms ease-out infinite';
+    el.style.animationDelay = tourPulseDelay();
+  }
+  window.__tourHighlighted = el;
 }
 function renderTourLayer() {
   if (state.tourStep == null) return null;
@@ -1790,7 +1833,7 @@ function renderTourLayer() {
   // render a slim banner docked under the header instead; "More" temporarily expands the full card.
   if (formStep && !tourExpanded) {
     return h('div', { id: 'tour-layer', style: { position: 'fixed', inset: '0', zIndex: '80', pointerEvents: 'none' } },
-      h('div', { id: 'tour-banner', role: 'status', 'aria-label': 'Guide: ' + step.title, style: { position: 'fixed', top: 'calc(8px + var(--safe-top))', left: '50%', transform: 'translateX(-50%)', width: 'min(94vw, 720px)', background: '#FFFFFF', border: '2px solid rgba(170,83,117,0.4)', borderRadius: '14px', padding: '6px 6px 6px 12px', boxShadow: '0 8px 24px rgba(80,30,55,0.22)', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '8px' } },
+      h('div', { id: 'tour-banner', role: 'status', 'aria-label': 'Guide: ' + step.title, style: { position: 'fixed', top: 'calc(8px + var(--safe-top))', left: '50%', transform: 'translateX(-50%)', width: 'min(94vw, 720px)', background: '#FFFFFF', border: '3px solid #2E7D4F', outline: '3px solid #2E7D4F', outlineOffset: '2px', borderRadius: '14px', padding: '6px 6px 6px 12px', boxShadow: '0 8px 24px rgba(80,30,55,0.22)', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '8px', ...tourGlowAnim() } },
         h('div', { style: { flex: '1', minWidth: '0' } },
           h('div', { style: { fontSize: '12px', fontWeight: '700', color: '#8E3D61', letterSpacing: '0.06em' } }, 'GUIDE · ' + (state.tourStep + 1) + ' OF ' + TOUR_STEPS.length),
           h('div', { style: { fontSize: '13px', fontWeight: '600', color: '#2A2127', lineHeight: '1.3' } }, step.short)
@@ -1801,7 +1844,7 @@ function renderTourLayer() {
     );
   }
   return h('div', { id: 'tour-layer', style: { position: 'fixed', inset: '0', zIndex: '80', pointerEvents: 'none' } },
-    h('div', { id: 'tour-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': step.title, style: { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 'min(88vw, 330px)', background: '#FFFFFF', borderRadius: '18px', padding: '18px', boxShadow: '0 18px 50px rgba(80,30,55,0.35)', pointerEvents: 'auto', border: '2px solid rgba(170,83,117,0.4)' } },
+    h('div', { id: 'tour-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': step.title, style: { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 'min(88vw, 330px)', background: '#FFFFFF', borderRadius: '18px', padding: '18px', boxShadow: '0 18px 50px rgba(80,30,55,0.35)', pointerEvents: 'auto', border: '3px solid #2E7D4F', outline: '3px solid #2E7D4F', outlineOffset: '2px', ...tourGlowAnim() } },
       h('div', { style: { fontSize: '12px', fontWeight: '700', color: '#7A6E76', letterSpacing: '0.07em', marginBottom: '6px' } }, 'GUIDE \u00b7 STEP ' + (state.tourStep + 1) + ' OF ' + TOUR_STEPS.length),
       h('div', { style: { ...TYPE.title, color: '#A24C71', marginBottom: '6px' } }, step.title),
       h('div', { style: { ...TYPE.body, color: '#5A4552' } }, step.text),
@@ -1833,16 +1876,14 @@ function positionTour() {
     // repositioning, no scrollIntoView: the page content scrolls freely beneath the sticky header.
     if (step.target) {
       const targetEl = document.querySelector('[data-tour="' + step.target + '"]');
-      if (targetEl) { targetEl.style.outline = '3px solid #E0679A'; targetEl.style.outlineOffset = '3px'; window.__tourHighlighted = targetEl; }
+      if (targetEl) applyTourHighlight(targetEl);
     }
     return;
   }
   if (!step.target) return; // centered
   const el = document.querySelector('[data-tour="' + step.target + '"]');
   if (!el) return; // target missing -> stay centered
-  el.style.outline = '3px solid #E0679A';
-  el.style.outlineOffset = '3px';
-  window.__tourHighlighted = el;
+  applyTourHighlight(el);
   if (isNewStep) { try { el.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (e) {} }
   const r = el.getBoundingClientRect();
   const cardH = card.offsetHeight || 200;
@@ -3133,7 +3174,7 @@ function renderMedicationManager(now) {
 }
 
 
-const APP_VERSION = 'app-v16';
+const APP_VERSION = 'app-v17';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
