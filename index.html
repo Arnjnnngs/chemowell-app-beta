@@ -525,7 +525,14 @@ function tempAsC(e) { return entryTempUnit(e) === 'Celsius' ? e.temp : (e.temp -
 // one unit, everywhere); all other entries keep their frozen dose string.
 function entryDoseLabel(e) {
   if (e.medId === 'temp' && typeof e.temp === 'number') return dispTemp(e) + ' ' + tempSuffix();
-  if (e.medId === 'weight' && typeof e.weight === 'number') return dispWeight(e) + ' ' + weightSuffix();
+  if (e.medId === 'weight' && typeof e.weight === 'number') {
+    let label = dispWeight(e) + ' ' + weightSuffix();
+    if (e.weightReason) {
+      label += ' · ' + weightReasonLabel(e.weightReason);
+      if (e.weightReason === 'paracentesis' && typeof e.litersDrained === 'number') label += ' (' + e.litersDrained + ' L)';
+    }
+    return label;
+  }
   return e.dose;
 }
 function tylenolMg() {
@@ -1015,7 +1022,23 @@ async function confirmTimeAndLog() {
     setToast('Temperature ' + v + ' ' + suffix + ' logged at ' + fmtTime(ts));
   } else if (m.type === 'weight') {
     const v = m.weightValue;
+    // Liters is optional, but if the user typed something while Paracentesis is selected, it must
+    // be a valid amount — silently dropping an out-of-range value would look like it saved when it
+    // didn't (audit finding: caregiver reviewing the trend later would see "Paracentesis" with no
+    // liters and no idea a typo or bad value was rejected).
+    const litersRaw = (m.litersDrained === undefined || m.litersDrained === null) ? '' : String(m.litersDrained).trim();
+    if (m.weightReason === 'paracentesis' && litersRaw !== '') {
+      const litersCheck = parseFloat(litersRaw);
+      if (isNaN(litersCheck) || litersCheck < 0 || litersCheck > 20) { setToast('Enter a valid liters amount (0–20), or leave it blank.'); return; }
+    }
     const entry = { medId: 'weight', weight: v, unit: CONFIG.weightUnit, dose: v + ' ' + weightSuffix(), mg: 0, ts };
+    if (m.weightReason) entry.weightReason = m.weightReason;
+    if (m.weightReason === 'paracentesis' && litersRaw !== '') {
+      const liters = parseFloat(litersRaw);
+      entry.litersDrained = round1(liters);
+    }
+    const noteTrimmed = (m.weightNote || '').trim();
+    if (noteTrimmed) entry.weightNote = noteTrimmed;
     setState({ weightInput: '', timeModal: null });
     await addEntryDB(entry);
     setToast('Weight ' + v + ' ' + weightSuffix() + ' logged at ' + fmtTime(ts));
@@ -1322,6 +1345,23 @@ async function submitAppetite(dayStartTs) {
 // most commonly-tracked chemo side effects, per Aaron's request.
 const SYMPTOM_TYPES = { nausea: 'Nausea', vomiting: 'Vomiting', fatigue: 'Fatigue', mouth_sores: 'Mouth Sores', neuropathy: 'Neuropathy (Numbness/Tingling)', headache: 'Headache', dizziness: 'Dizziness', skin_reaction: 'Skin Reaction/Rash', other: 'Other', diarrhea: 'Diarrhea', constipation: 'Constipation' };
 function symptomEntries() { return state.entries.filter(e => e.medId && e.medId.indexOf('symptom_') === 0).sort((a, b) => b.ts - a.ts); }
+
+// Weight-change reasons (app-v21, per Aaron's request) — a quick-select list of the most common
+// drivers of a fast weight swing in chemo/radiation patients, sourced from oncology-nursing and
+// cancer-society guidance on what's worth documenting. 'paracentesis' is the one that unlocks the
+// Liters Drained field below, since fluid volume removed is the standard companion metric to a
+// paracentesis-driven weight drop (~1 L ≈ 1 kg of the "weight" that just left the room).
+const WEIGHT_REASONS = [
+  { id: 'paracentesis', label: 'Paracentesis (fluid drained)' },
+  { id: 'fluid_retention', label: 'Fluid retention / swelling' },
+  { id: 'poor_appetite', label: 'Poor appetite / eating less' },
+  { id: 'nausea_vomiting', label: 'Nausea, vomiting, or diarrhea' },
+  { id: 'steroid', label: 'Steroid medication' },
+  { id: 'illness', label: 'Illness / infection' },
+  { id: 'increased_appetite', label: 'Eating more / appetite up' },
+  { id: 'other', label: 'Other' }
+];
+function weightReasonLabel(id) { const r = WEIGHT_REASONS.find(x => x.id === id); return r ? r.label : id; }
 async function logSymptom(type, ts, opts) {
   const entry = { medId: 'symptom_' + type, symptomType: type, ts, note: (opts && opts.note) || '', dose: null, mg: 0 };
   await addEntryDB(entry);
@@ -2144,6 +2184,25 @@ function renderTimeModal() {
       m.type === 'symptom' ? h('div', { style: { marginBottom: '16px' } },
         h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, m.symptomType === 'other' ? 'Describe it (required)' : 'Note (optional)'),
         h('textarea', { value: m.note || '', onInput: (e) => { state.timeModal.note = e.target.value; }, rows: 3, placeholder: m.symptomType === 'other' ? 'What symptom, when, anything else...' : 'What was noticed, when, anything else...', style: { width: '100%', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '10px 14px', fontSize: '14px', background: '#FFFFFF', color: '#2A2127', resize: 'vertical', fontFamily: 'inherit' } })
+      ) : null,
+      // Weight reason + conditional Liters Drained + free note (app-v21). Reason drives the Liters
+      // field so it only appears when it's actually relevant (Paracentesis) instead of cluttering
+      // every weight log with a field that means nothing the other 95% of the time.
+      m.type === 'weight' ? h('div', { style: { marginBottom: '16px' } },
+        h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, 'Reason for change (optional)'),
+        h('select', { value: m.weightReason || '', onChange: (e) => { state.timeModal.weightReason = e.target.value; setState({ timeModal: state.timeModal }); }, className: 'mono', style: { width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' } },
+          h('option', { value: '' }, 'Not noted'),
+          ...WEIGHT_REASONS.map(r => h('option', { value: r.id }, r.label))
+        )
+      ) : null,
+      m.type === 'weight' && m.weightReason === 'paracentesis' ? h('div', { style: { marginBottom: '16px' } },
+        h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, 'Liters drained (optional)'),
+        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', min: '0', max: '20', value: m.litersDrained === undefined || m.litersDrained === null ? '' : m.litersDrained, onInput: (e) => { state.timeModal.litersDrained = e.target.value; }, placeholder: 'e.g. 2.5', className: 'mono', style: { width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } }),
+        h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '6px' } }, 'How much fluid was removed, if known.')
+      ) : null,
+      m.type === 'weight' ? h('div', { style: { marginBottom: '16px' } },
+        h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, 'Note (optional)'),
+        h('textarea', { value: m.weightNote || '', onInput: (e) => { state.timeModal.weightNote = e.target.value; }, rows: 2, placeholder: 'Anything else worth noting...', style: { width: '100%', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '10px 14px', fontSize: '14px', background: '#FFFFFF', color: '#2A2127', resize: 'vertical', fontFamily: 'inherit' } })
       ) : null,
       m.type === 'period' ? h('div', null,
         h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, 'Start'),
@@ -3533,7 +3592,7 @@ function renderMedicationManager(now) {
 }
 
 
-const APP_VERSION = 'app-v20';
+const APP_VERSION = 'app-v21';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -4103,17 +4162,23 @@ function renderWeightTrend(now) {
     )
   );
 
-  // Readings list
+  // Readings list — reason/liters/note (app-v21) get their own lines below the date, since this
+  // view has the room History's compact single-line format doesn't.
   const readingsItems = points.slice().reverse().map((p, i) => {
     const d = new Date(p.ts);
     const day = d.toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
     const time = fmtTime(p.ts);
-    return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 14px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
-      h('div', { style: { flex: '1' } },
+    const reasonLine = p.weightReason
+      ? weightReasonLabel(p.weightReason) + (p.weightReason === 'paracentesis' && typeof p.litersDrained === 'number' ? ' — ' + p.litersDrained + ' L drained' : '')
+      : null;
+    return h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '11px 14px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
+      h('div', { style: { flex: '1', minWidth: '0' } },
         h('div', { style: { fontSize: '14px', fontWeight: '700' } }, day),
-        h('div', { style: { ...TYPE.caption, color: '#7A6E76' } }, time)
+        h('div', { style: { ...TYPE.caption, color: '#7A6E76' } }, time),
+        reasonLine ? h('div', { style: { fontSize: '12.5px', color: '#8E3D61', fontWeight: '700', marginTop: '3px' } }, reasonLine) : null,
+        p.weightNote ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '2px', fontStyle: 'italic', wordBreak: 'break-word' } }, p.weightNote) : null
       ),
-      h('div', { className: 'mono', style: { fontSize: '16px', fontWeight: '600', color: '#7B3F6B' } }, p.weight + ' ' + weightSuffix())
+      h('div', { className: 'mono', style: { fontSize: '16px', fontWeight: '600', color: '#7B3F6B', flexShrink: '0' } }, p.weight + ' ' + weightSuffix())
     );
   });
 
