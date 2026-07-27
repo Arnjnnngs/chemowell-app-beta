@@ -273,6 +273,14 @@ function safeMedicationId(value, fallback) {
   return cleaned || 'medication';
 }
 
+// v20 restart (audit P1-1): shared validator so a medication's live pausePeriods (normalizeMedication)
+// and an archived medication's carried-forward pausePeriods (normalizeArchivedMeds, deleteMedicationConfig's
+// restore path) can never drift into two different notions of "what's a valid period" -- both call sites
+// use this instead of duplicating the same filter/map inline.
+function normalizePausePeriods(raw) {
+  return Array.isArray(raw) ? raw.filter(p => p && Number.isFinite(p.start)).map(p => ({ start: p.start, end: Number.isFinite(p.end) ? p.end : null })) : [];
+}
+
 function normalizeMedication(raw, index) {
   const original = raw || {};
   const id = safeMedicationId(original.id, original.name || ('medication-' + (index + 1)));
@@ -282,11 +290,19 @@ function normalizeMedication(raw, index) {
     mg: Number(dose.mg) || 0,
     ...(Number(dose.pills) ? { pills: Number(dose.pills) } : {})
   })) : undefined;
+  // v20: start's ceiling was hard-clamped to 23 (silently truncating a legitimate 11:45 PM/23.75
+  // start to 11:00 PM the moment 15-minute-granular windows exist) -- raised to 23.75, the highest
+  // valid quarter-hour start. end's own ceiling (24, "through midnight") is unaffected.
   const windows = Array.isArray(original.windows) ? original.windows.map((window, windowIndex) => ({
-    start: Math.max(0, Math.min(23, Number(window.start) || 0)),
+    start: Math.max(0, Math.min(23.75, Number(window.start) || 0)),
     end: Math.max(1, Math.min(24, Number(window.end) || 24)),
     name: String(window.name || ('Window ' + (windowIndex + 1)))
   })).filter(window => window.end > window.start).sort((a, b) => a.start - b.start) : [];
+  // v20 restart (audit P2-1): resolved once, as a local, so treatmentOnly can be derived from it below
+  // instead of read independently from `original` (see the comment at the treatmentOnly/treatmentMode
+  // fields for why the independent-read version was a real, if not currently reachable, bug).
+  const treatmentMode = ['only', 'excluded'].includes(original.treatmentMode) ? original.treatmentMode
+    : (typeof original.treatmentOnly === 'boolean' ? (original.treatmentOnly ? 'only' : 'none') : (original.chemoOnly ? 'only' : 'none'));
   const medication = {
     ...original,
     id,
@@ -302,9 +318,25 @@ function normalizeMedication(raw, index) {
     // v16 migration: chemoOnly (fixed +-1 day window, "Chemo-day only") -> treatmentOnly with a
     // per-medication configurable day range. A device with an existing chemoOnly:true medication and
     // no explicit day fields keeps behaving identically (+-1) until the user edits it.
-    treatmentOnly: typeof original.treatmentOnly === 'boolean' ? original.treatmentOnly : !!original.chemoOnly,
+    // v20 restart (audit P2-1): treatmentOnly and treatmentMode used to be computed as two independent
+    // reads of `original`, so a desynced stored pair (unreachable via the shipped UI, but possible via
+    // tampering/a future import feature) would silently drive wrong visibility with no self-correction
+    // -- even though this function is the one place every saved medication is supposed to pass through
+    // for exactly that kind of schema-drift cleanup. treatmentMode is now resolved first as a local,
+    // and treatmentOnly is derived FROM it (matching how saveMedicationEditor already writes them in
+    // lockstep at save time), so the two fields can never disagree once they're normalized here.
+    treatmentOnly: treatmentMode === 'only',
     treatmentDaysBefore: Number.isFinite(original.treatmentDaysBefore) ? Math.max(0, Math.round(original.treatmentDaysBefore)) : 1,
-    treatmentDaysAfter: Number.isFinite(original.treatmentDaysAfter) ? Math.max(0, Math.round(original.treatmentDaysAfter)) : 1
+    treatmentDaysAfter: Number.isFinite(original.treatmentDaysAfter) ? Math.max(0, Math.round(original.treatmentDaysAfter)) : 1,
+    treatmentMode: treatmentMode,
+    // v20: pause a medication temporarily, for any reason, without deleting it. `paused` gates live
+    // behavior (Home card, reminders, dose logging); `pausePeriods` is a permanent per-day-range record
+    // of every past+current pause window, so missedDosesFor can skip exactly the days that were paused
+    // -- even after resuming -- instead of flooding History with "missed" flags for the whole pause
+    // window the moment it's lifted (see missedDosesFor's isPausedOn check below).
+    paused: typeof original.paused === 'boolean' ? original.paused : false,
+    pausedCheckinDate: Number.isFinite(original.pausedCheckinDate) ? original.pausedCheckinDate : null,
+    pausePeriods: normalizePausePeriods(original.pausePeriods)
   };
   delete medication.chemoOnly;
   const sd = original.scheduleDays;
@@ -328,7 +360,11 @@ function normalizeArchivedMeds(raw) {
   if (!raw || typeof raw !== 'object') return archived;
   Object.entries(raw).forEach(([id, value]) => {
     if (!value || typeof value !== 'object') return;
-    archived[id] = { name: String(value.name || id), sub: String(value.sub || '') };
+    // v20 restart (audit P1-1): archived entries used to be rebuilt as exactly {name, sub} on every
+    // load, silently dropping pausePeriods the moment the page reloaded -- deleteMedicationConfig's
+    // archive step below is only half the fix without this, since this function runs on every
+    // loadMedicationConfig() call and would otherwise strip right back out what was just archived.
+    archived[id] = { name: String(value.name || id), sub: String(value.sub || ''), pausePeriods: normalizePausePeriods(value.pausePeriods) };
   });
   return archived;
 }
@@ -362,7 +398,15 @@ function loadMedicationConfig() {
   try {
     if (typeof localStorage === 'undefined') return fallback;
     const saved = JSON.parse(localStorage.getItem(MED_CONFIG_STORAGE_KEY));
-    if (!saved || !Array.isArray(saved.meds) || !saved.meds.length) return fallback;
+    // v20 restart (audit P1-1, caught during fix verification): this used to also bail to the
+    // fallback -- discarding a real, persisted `archivedMeds` -- whenever `saved.meds` was a validly
+    // EMPTY array, not just when `saved` itself was missing/malformed. That's exactly what happens
+    // the moment a user deletes their only medication: the next reload silently wiped archivedMeds,
+    // so a medication re-added later got no pausePeriods restored, and the whole point of archiving
+    // them on delete (see deleteMedicationConfig) was defeated for precisely the single-medication
+    // case that's easiest for a real user to hit. Only bail on a genuinely malformed/missing save --
+    // an empty meds array is valid data, not corruption, and must still carry its archivedMeds through.
+    if (!saved || !Array.isArray(saved.meds)) return fallback;
     const archivedMeds = normalizeArchivedMeds(saved.archivedMeds);
     const meds = mergeMissingDefaultMeds(saved.meds.map(normalizeMedication).map(migrateSenokotV37), archivedMeds);
     return { meds, archivedMeds };
@@ -582,6 +626,21 @@ function treatmentActiveOn(med, dayTs) {
   const after = Number.isFinite(med.treatmentDaysAfter) ? med.treatmentDaysAfter : 1;
   return o >= -before && o <= after;
 }
+// v20: "excluded near treatment day" — the inverse of treatmentMode:'only'. Reuses treatmentActiveOn's
+// day-window math unchanged; only the caller's interpretation of "active" flips (only = available
+// exactly then, excluded = unavailable exactly then).
+function treatmentExcludedNow(med, dayTs) {
+  return med.treatmentMode === 'excluded' && treatmentActiveOn(med, dayTs);
+}
+// v20: does a calendar day fall inside any of this medication's recorded pause periods (past or
+// still-open)? Deliberately NOT the same thing as med.paused (the live "currently paused" flag) --
+// this checks history, so that once a medication is resumed, missedDosesFor keeps skipping exactly
+// the days it was actually paused, instead of flooding History with "missed" flags for the whole
+// pause window the moment it's lifted. med.paused (live) still gates the Home card/reminders/logging.
+function isPausedOn(med, dayTs) {
+  const d0 = dayStart(dayTs);
+  return (med.pausePeriods || []).some(p => d0 >= dayStart(p.start) && (p.end === null || d0 < dayStart(p.end)));
+}
 // Zofran is blocked for 3 days: chemo day itself plus the 2 days after (e.g. chemo Thursday ->
 // blocked Thu/Fri/Sat, opens Sunday). Confirmed by Aaron as the original, correct spec — v61/v62
 // of this file incorrectly "fixed" this to a 2-day block based on stale documentation elsewhere in
@@ -619,7 +678,12 @@ function scheduleDaysLabel(med) {
 }
 
 // DST-safe helpers: calendar arithmetic instead of fixed 86400000 hops (audit 6.3)
-function hourTs(d0, hour) { const d = new Date(d0); d.setHours(hour, 0, 0, 0); return d.getTime(); }
+// v20: hour may now be a quarter-hour decimal (8.25 = 8:15) from the structured time-window picker.
+// setHours(hour, ...) truncates a fractional first argument to the integer hour (verified), which
+// would silently round every 15/30/45-minute window down to the top of the hour -- split into whole
+// hour + minute explicitly instead, keeping the same DST-safe setHours-based approach (not raw
+// millisecond arithmetic, which would reintroduce the DST bug this helper was written to avoid).
+function hourTs(d0, hour) { const d = new Date(d0); d.setHours(Math.trunc(hour), Math.round((hour % 1) * 60), 0, 0); return d.getTime(); }
 function nextDay(dayTs) { const d = new Date(dayStart(dayTs)); d.setDate(d.getDate() + 1); return d.getTime(); }
 
 function missedDosesFor(dayTs, now) {
@@ -628,7 +692,9 @@ function missedDosesFor(dayTs, now) {
   if (isInpatientDay(d0)) return []; // meds given by hospital staff that day — not tracked here
   const out = [];
   state.meds.filter(m => m.alerts && m.windows).forEach(med => {
+    if (isPausedOn(med, d0)) return; // v20: skip exactly the days this medication was actually paused
     if (med.treatmentOnly && !treatmentActiveOn(med, d0)) return;
+    if (treatmentExcludedNow(med, d0)) return; // v20: excluded near treatment day
     if (!medScheduledOn(med, d0)) return; // not taken on this calendar day — nothing to miss
     const windows = med.id === 'dexamethasone' ? dexWindowsForOffset(chemoOffsetFor(d0)) : med.windows;
     const dayEntries = entriesFor(med.id).filter(e => e.ts >= d0 && e.ts < d0 + 86400000).sort((a, b) => a.ts - b.ts);
@@ -667,7 +733,9 @@ function doseProgressToday(now) {
   let scheduled = 0, taken = 0;
   state.meds.filter(m => m.windows && m.windows.length && medScheduledOn(m, now))
     .forEach(med => {
+      if (med.paused) return; // v20: don't count a paused medication as an incomplete dose today
       if (med.treatmentOnly && !treatmentActiveOn(med, now)) return;
+      if (treatmentExcludedNow(med, now)) return;
       const windows = med.id === 'dexamethasone' ? dexWindowsForOffset(chemoOffsetFor(d0)) : med.windows;
       scheduled += windows.length;
       const logs = entriesFor(med.id).filter(e => e.ts >= d0 && e.ts < nextDay(d0)).length; // skipped entries count as handled
@@ -758,6 +826,10 @@ function morningWindowsFor(med, d0) {
 
 function status(med) {
   const now = state.now;
+  // v20: defense-in-depth -- the Home card bypasses status() entirely for a paused medication (see
+  // medCards/renderGroupedMedsCard), but logMed()/other direct callers of status() are reachable
+  // independent of the card UI, so this closes that gap too.
+  if (med.paused) return { locked: true, paused: true };
   if (med.id === 'zofran' && zofranBlockedOn(now)) {
     // 3-day block (chemo day + 2 following days, see zofranBlockedOn) — opens on day+3 at 8am.
     return { locked: true, chemoBlock: true, availableAt: dayStart(nextChemoTs()) + 3 * 86400000 + 8 * 3600000 };
@@ -1568,7 +1640,9 @@ function renderBottomNav() {
 // (Buspirone/Paroxetine in the morning, Iron/Compazine in the evening).
 function renderGroupedMedsCard(title, meds, now) {
   const inpatientNow = isInpatientActiveNow();
-  const dueMeds = meds.filter(m => { if (!medScheduledOn(m, now)) return false; const s = status(m); return !s.locked; });
+  // v20: paused and treatment-window-hidden meds are excluded from "due"/"Take all" the same way
+  // medCards' upstream filter already excludes them for standalone Quick Log cards.
+  const dueMeds = meds.filter(m => { if (m.paused) return false; if (m.treatmentOnly && !treatmentActiveOn(m, now)) return false; if (treatmentExcludedNow(m, now)) return false; if (!medScheduledOn(m, now)) return false; const s = status(m); return !s.locked; });
   return h('section', null,
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
       h('div', { style: { ...TYPE.label, color: '#8A6479' } }, title),
@@ -1576,6 +1650,31 @@ function renderGroupedMedsCard(title, meds, now) {
     ),
     h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '18px', overflow: 'hidden', marginTop: '11px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06)' } },
       ...meds.map((med, i) => {
+        if (med.paused) {
+          // v20: pause wins over every other row state, matching medCards' standalone card ordering.
+          // Designer review (v20): apply the same opacity:0.65 muting as the treatment-excluded row
+          // just below, so this card has one consistent "row is inert" visual language instead of a
+          // third, weaker one of its own; copy also aligned with the standalone Home card's wording.
+          return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none', opacity: '0.65' } },
+            h('div', { style: { flex: '1', minWidth: '0' } },
+              h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name + ' \u2014 Paused'),
+              h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px' } }, 'Not tracked while paused. Resume anytime.')
+            ),
+            h('button', { onClick: () => setMedicationPaused(med.id, false), style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '999px', background: '#FFFFFF', border: '1px solid #D4C2C7', color: '#6E5A64', fontSize: '13px', fontWeight: '700' } }, 'Resume')
+          );
+        }
+        if ((med.treatmentOnly && !treatmentActiveOn(med, now)) || treatmentExcludedNow(med, now)) {
+          // v20: this grouped-card path never gated treatmentOnly/excluded at all before this
+          // release (a pre-existing gap noted in the schedule-window brief's blast-radius review) --
+          // closing it now for both directions rather than leaving grouped placement inconsistent
+          // with standalone Quick Log cards, which have always hidden the card outright here.
+          return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none', opacity: '0.65' } },
+            h('div', { style: { flex: '1', minWidth: '0' } },
+              h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name),
+              h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px' } }, med.treatmentOnly ? 'Outside its treatment-day window' : 'Excluded near treatment day')
+            )
+          );
+        }
         if (!inpatientNow && !medScheduledOn(med, now)) {
           return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none', opacity: '0.65' } },
             h('div', { style: { flex: '1', minWidth: '0' } },
@@ -1911,7 +2010,13 @@ function render() {
     // messages (e.g. "Dexamethasone marked as skipped for Afternoon window") were overflowing
     // past the edges of the pill instead of fitting inside it. Width is capped tighter (min(90vw,
     // 340px)) so wrapped text still reads as a compact toast, not an edge-to-edge banner.
-    state.toast ? h('div', { role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: 'calc(96px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(60,30,50,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(120,60,90,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word' } }, state.toast) : null,
+    // v20 QA finding: the toast has no button/click handler of its own (purely informational,
+    // role="status") but sat on top of real interactive controls for its full ~4.5s life -- most
+    // visibly the medication editor's Discard/Add buttons at keyboard-open heights, where the toast's
+    // fixed 96px-from-bottom position lands right on top of them. pointerEvents:'none' lets every tap
+    // pass straight through to whatever's underneath, which is safe precisely because the toast never
+    // needed to capture a tap in the first place.
+    state.toast ? h('div', { role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: 'calc(96px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(60,30,50,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(120,60,90,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', pointerEvents: 'none' } }, state.toast) : null,
     renderTimeModal(),
     renderUpgradeModal(),
     (state.view === 'reports' && state.reportsView) ? h('div', { style: { position: 'fixed', zIndex: '34', left: '0', right: '0', bottom: 'calc(78px + env(safe-area-inset-bottom))', display: 'flex', justifyContent: 'center', pointerEvents: 'none' } },
@@ -2234,6 +2339,29 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       ) : null
     ));
   }
+
+  // v20: Daily "still pausing?" check-in — one banner per paused-and-unconfirmed medication (not
+  // batched, so it's never ambiguous which medication a button applies to, matching how the missed-
+  // dose banner already does one line per miss rather than one generic pair of buttons). Modeled on
+  // the Bowel/Weight/Appetite check-in banners' cadence (once a day, non-urgent info tone — a
+  // deliberately paused medication isn't a risk signal the way a missing health data point is) but
+  // gated on a persisted per-medication field (pausedCheckinDate) rather than an entry's existence,
+  // since "did the user confirm this pause today" has no natural logged entry to check.
+  const pausedUnconfirmed = state.meds.filter(m => m.paused && m.pausedCheckinDate !== dayStart(now));
+  pausedUnconfirmed.forEach(med => {
+    const puTone = NOTICE_TONES.info;
+    parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderLeft: '4px solid ' + puTone.accent, borderRadius: '14px', padding: '14px 16px', display: 'flex', gap: '12px', alignItems: 'flex-start', boxShadow: '0 2px 10px rgba(180,130,150,0.10)' } },
+      h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: puTone.chipBg, color: puTone.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, '❚❚'),
+      h('div', { style: { flex: '1' } },
+        h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127', marginBottom: '2px' } }, 'Still pausing ' + med.name + '?'),
+        h('div', { style: { ...TYPE.caption, color: '#554A52', marginBottom: '10px' } }, 'It won’t be tracked or remind you today unless you resume it.'),
+        h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+          h('button', { onClick: () => setMedicationPaused(med.id, true), style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(212,104,138,0.2)', color: '#6E5A64', fontSize: '13px', fontWeight: '700' } }, 'Continue pausing'),
+          h('button', { onClick: () => setMedicationPaused(med.id, false), style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: puTone.accent, color: '#fff', fontSize: '13px', fontWeight: '700' } }, 'Resume')
+        )
+      )
+    ));
+  });
 
   // Menstrual Cycle active banner — non-dismissible, stays up until Period End is logged
   if (homePref('cycleTracking') && cycleActive()) {
@@ -2563,7 +2691,45 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('button', { onClick: () => { navigateTo('meds'); openMedicationEditor(null); }, style: { minHeight: '44px', padding: '0 20px', borderRadius: '12px', background: '#A24C71', color: '#fff', fontSize: '14px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, '+ Add your first medication')
     ));
   }
-  const medCards = state.meds.filter(m => m.quickLog && (!m.treatmentOnly || (treatmentActiveOn(m, now) && !status(m).courseComplete))).map(med => {
+  // v20 restart (audit P1-2, then P1-2-B on the second audit pass): treatmentExcludedNow used to be
+  // part of this filter, which meant a paused-AND-currently-excluded medication vanished from Home
+  // entirely instead of showing the same "Paused" card every other paused medication gets -- fixed by
+  // moving that clause into the .map() below. The FIRST fix pass deliberately left the
+  // treatmentOnly/courseComplete clause in the filter, reasoning it was a separate, older (v16),
+  // intentional "vanish outside window" design unrelated to the pause bug -- but the second audit pass
+  // caught that this was still the SAME underlying defect for the sibling 'only' mode: a paused medication
+  // that is also treatmentOnly-outside-its-window was filtered out before the .map()'s `paused` branch
+  // ever ran, same as the 'excluded' case originally was. The correct fix isn't to move this clause too
+  // (that would still change 'only' mode's non-paused vanish-outside-window behavior, which really is
+  // out of scope) -- it's to let `paused` short-circuit the treatmentOnly check specifically, so a paused
+  // medication always reaches the .map() regardless of its treatment mode, while a NON-paused
+  // treatmentOnly medication outside its window still vanishes exactly as before (unchanged for every
+  // state this filter was ever designed to hide).
+  const medCards = state.meds.filter(m => m.quickLog && (m.paused || !m.treatmentOnly || (treatmentActiveOn(m, now) && !status(m).courseComplete))).map(med => {
+    if (med.paused) {
+      // v20: pause wins over every other card state -- "the user explicitly said stop" outranks
+      // "hospital gave it" or "not scheduled today" as the thing to communicate. Card stays visible
+      // (not removed, unlike treatmentOnly/excluded outside their window) so the "Paused" label and
+      // inline Resume have somewhere to render -- a vanished card reads as data loss to this app's
+      // anxious-caregiver audience.
+      return h('div', { style: { background: 'rgba(125,105,116,0.06)', border: '1.5px dashed rgba(125,105,116,0.30)', borderRadius: '16px', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' } },
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '0' } },
+          h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name + ' — Paused'),
+          h('div', { style: { fontSize: '12px', color: '#7A6E76' } }, 'Not tracked while paused. Resume anytime.')
+        ),
+        h('button', { onClick: () => setMedicationPaused(med.id, false), style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '999px', background: '#FFFFFF', border: '1px solid #D4C2C7', color: '#6E5A64', fontSize: '13px', fontWeight: '700' } }, 'Resume')
+      );
+    }
+    if (treatmentExcludedNow(med, now)) {
+      // v20 restart (audit P1-2): moved here from the outer filter so a not-paused, currently-excluded
+      // medication still gets an inert card (matching renderGroupedMedsCard's equivalent row, index.html
+      // ~line 1646) instead of vanishing without a trace -- the `paused` branch above already wins over
+      // this one, matching every other guard's ordering in the file.
+      return h('div', { style: { background: 'rgba(125,105,116,0.06)', border: '1.5px dashed rgba(125,105,116,0.30)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
+        h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name),
+        h('div', { style: { fontSize: '12px', color: '#7A6E76' } }, 'Excluded near treatment day')
+      );
+    }
     if (inpatientActiveNow) {
       return h('div', { style: { background: 'rgba(154,100,25,0.08)', border: '1.5px dashed rgba(154,100,25,0.35)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
         h('div', { style: { ...TYPE.title, color: '#8B5715' } }, med.name + ' - In-Patient (Restricted)'),
@@ -2732,6 +2898,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
 
 function formatRuleSummary(med) {
   const fragments = [];
+  if (med.paused) fragments.push('Paused'); // v20: prepend so it's scannable without opening the editor
   if (med.rollingCeilingH) {
     // Rolling-window ceiling meds (e.g. Morphine) are governed by the cumulative-mg limit below,
     // not a flat per-dose gap — skip the "Min X-hour gap" fragment so it isn't shown alongside a
@@ -2739,7 +2906,7 @@ function formatRuleSummary(med) {
   } else if (med.type === 'gap') {
     fragments.push(med.gapH > 0 ? ('Min ' + med.gapH + '-hour gap') : 'No minimum gap set \u2014 edit to fix');
   } else if (med.windows && med.windows.length) {
-    fragments.push(med.windows.map(window => window.name || (formatHour(window.start) + '–' + formatHour(window.end))).join(' · '));
+    fragments.push(med.windows.map(window => window.name || (formatQuarterHour(window.start) + '–' + formatQuarterHour(window.end))).join(' · '));
   }
   if (med.ceiling) {
     const limit = medicationCeilingMax(med);
@@ -2753,6 +2920,30 @@ function formatHour(hour) {
   if (h === 0 || h === 24) return h === 24 ? 'Midnight' : '12 AM';
   return (h > 12 ? h - 12 : h) + (h >= 12 ? ' PM' : ' AM');
 }
+// v20: minute-aware sibling of formatHour, for the structured time-window picker (which stores
+// start/end as quarter-hour decimals -- 8.25 = 8:15). Byte-identical to formatHour for any whole-hour
+// value, so existing legacy medications' rule summaries/labels are unchanged.
+function formatQuarterHour(hour) {
+  const h = Math.max(0, Math.min(24, Number(hour) || 0));
+  if (h === 24) return 'Midnight';
+  const min = Math.round((h % 1) * 60);
+  const base = formatHour(Math.trunc(h));
+  return min === 0 ? base : base.replace(/^(\d+)/, '$1:' + String(min).padStart(2, '0'));
+}
+// v20: dropdown-option label -- always shows minutes (even :00) for unambiguous scanning across a
+// 96/97-entry list, unlike formatQuarterHour's more compact "8 AM" used in summaries/previews.
+function formatClockOption(hour) {
+  const h = Math.max(0, Math.min(24, Number(hour) || 0));
+  if (h === 24) return 'Midnight (12:00 AM)';
+  const whole = Math.trunc(h), min = Math.round((h % 1) * 60);
+  const displayH = whole === 0 ? 12 : (whole > 12 ? whole - 12 : whole);
+  return displayH + ':' + String(min).padStart(2, '0') + (whole >= 12 ? ' PM' : ' AM');
+}
+// 96 quarter-hour Start options (12:00 AM .. 11:45 PM). End options are the same 96 plus a 97th
+// "Midnight" entry at value 24, since the windows model already uses end:24 to mean "through the
+// end of the day" (see normalizeMedication's default fallback and formatHour's own Midnight case).
+const TIME_STEP_OPTIONS = Array.from({ length: 96 }, (_, i) => ({ value: i * 0.25, label: formatClockOption(i * 0.25) }));
+const END_TIME_OPTIONS = TIME_STEP_OPTIONS.concat([{ value: 24, label: formatClockOption(24) }]);
 
 function medicationDoseSummary(med) {
   return med.doses && med.doses.length ? med.doses.map(dose => dose.label).join(' · ') : 'Single-tap log';
@@ -2768,7 +2959,11 @@ function medicationFormFrom(med) {
     type: base.type === 'win' ? 'win' : 'gap',
     gapH: base.gapH || '', // v12: empty (grey placeholder 0) — no more delete-the-0-before-typing; empty still saves as 0/As needed
     dosesText: base.doses && base.doses.length ? base.doses.map(dose => dose.label).join(', ') : '',
-    windowsText: base.windows && base.windows.length ? base.windows.map(window => formatHour(window.start) + '-' + formatHour(window.end) + ' ' + (window.name || '')).join(', ') : '8 AM-8 PM Daily',
+    // v20: windowRows replaces windowsText's free-text round-trip entirely -- each row is loaded
+    // directly from med.windows (start/end/name copied as-is, no string parse/format step), which
+    // also removes the old round-trip's own latent bug (formatHour is lossy for non-whole hours;
+    // irrelevant before this release since none existed, but would have been a live landmine).
+    windowRows: base.windows && base.windows.length ? base.windows.map(window => ({ start: window.start, end: window.end, name: window.name || '' })) : [{ start: 8, end: 20, name: 'Daily' }],
     dailyLimit: max || '',
     dailyLimitUnit: base.ceilingUnit || 'mg',
     quickLog: typeof base.quickLog === 'boolean' ? base.quickLog : true,
@@ -2780,6 +2975,9 @@ function medicationFormFrom(med) {
     // field must never silently rewrite a patient's Home layout.
     _origPlacement: { quickLog: typeof base.quickLog === 'boolean' ? base.quickLog : true, groupedMorning: !!base.groupedMorning, groupedAfternoon: !!base.groupedAfternoon, groupedEvening: !!base.groupedEvening },
     treatmentOnly: !!base.treatmentOnly,
+    // v20: treatmentMode drives the new 3-way picker; base.treatmentMode is already normalized
+    // (derived from legacy treatmentOnly) by the time a medication reaches this editor.
+    treatmentMode: ['only', 'excluded'].includes(base.treatmentMode) ? base.treatmentMode : (base.treatmentOnly ? 'only' : 'none'),
     treatmentDaysBefore: Number.isFinite(base.treatmentDaysBefore) ? base.treatmentDaysBefore : 1,
     treatmentDaysAfter: Number.isFinite(base.treatmentDaysAfter) ? base.treatmentDaysAfter : 1,
     scheduleMode: base.scheduleDays ? base.scheduleDays.mode : 'daily',
@@ -2866,8 +3064,16 @@ function saveMedicationEditor() {
   if (!name) { setToast('Enter a medication name before saving.'); return; }
   const type = form.type === 'win' ? 'win' : 'gap';
   const gapH = Math.max(0, Number(form.gapH) || 0);
-  const windows = type === 'win' ? parseScheduleWindows(form.windowsText) : [];
-  if (type === 'win' && !windows.length) { setToast('Add at least one schedule window, for example 8 AM-12 PM Morning.'); return; }
+  // v20: windows now come straight from the structured windowRows picker (start/end already
+  // decimal-hour numbers from the dropdowns) instead of being parsed back out of free text --
+  // parseScheduleWindows is kept only for any legacy callers, not used here anymore. A row only
+  // counts if its end is actually after its start (a row left at its default or misconfigured by
+  // dragging end before start must not silently save a zero/negative-length window).
+  const windows = type === 'win' ? (form.windowRows || [])
+    .filter(row => Number(row.end) > Number(row.start))
+    .map((row, index) => ({ start: Number(row.start), end: Number(row.end), name: String(row.name || '').trim() || ('Window ' + (index + 1)) }))
+    : [];
+  if (type === 'win' && !windows.length) { setToast('Add at least one schedule window, for example 8:00 AM–12:00 PM Morning.'); return; }
   // v19: an "as needed" medication with no minimum gap never re-locks after logging -- the card
   // just sits on "Available" forever, which looked broken (Owner bug report: Zofran/Iron/Compazine
   // stayed "Available" right after being logged). A gap-timer medication now requires an actual
@@ -2894,6 +3100,14 @@ function saveMedicationEditor() {
   }
   const original = editor.sourceId ? state.meds.find(med => med.id === editor.sourceId) : null;
   const id = nextMedicationId(name, editor.sourceId);
+  // v20 restart (audit P1-1): when ADDING a brand-new medication (not editing an existing one) whose
+  // freshly-derived id happens to match a previously-deleted medication's archived entry, restore that
+  // entry's pausePeriods so re-adding "Ibuprofen" after deleting it doesn't erase the memory of which
+  // days it was legitimately paused (see deleteMedicationConfig's matching archive step). Only applies
+  // to a genuine add (editor.sourceId is falsy) -- an edit-mode save already carries its own
+  // pausePeriods forward via `...(original || {})` below and must never be overwritten by a stale
+  // archive entry.
+  const archivedMatch = !editor.sourceId ? (state.archivedMeds || {})[id] : null;
   const candidate = {
     ...(original || {}),
     id,
@@ -2909,7 +3123,11 @@ function saveMedicationEditor() {
     groupedMorning: !!form.groupedMorning,
     groupedAfternoon: !!form.groupedAfternoon,
     scheduleDays: scheduleDays,
-    treatmentOnly: !!form.treatmentOnly,
+    ...(archivedMatch ? { pausePeriods: normalizePausePeriods(archivedMatch.pausePeriods) } : {}),
+    // v20: treatmentOnly is kept in sync (mirrored) purely for any older code path that might
+    // still read the boolean directly -- treatmentMode is the actual source of truth going forward.
+    treatmentOnly: form.treatmentMode === 'only',
+    treatmentMode: ['only', 'excluded'].includes(form.treatmentMode) ? form.treatmentMode : 'none',
     treatmentDaysBefore: clampTreatmentDays(form.treatmentDaysBefore),
     treatmentDaysAfter: clampTreatmentDays(form.treatmentDaysAfter),
     ceiling: dailyLimit > 0,
@@ -2936,6 +3154,26 @@ function reorderableHomeMeds() {
   return state.meds.filter(med => med.quickLog && !med.groupedMorning && !med.groupedEvening && !med.groupedAfternoon);
 }
 
+// v20: pause/resume a single medication in place, immediate-persist (like moveReorderableMed below)
+// -- not routed through the med editor's Save-changes flow, since pausing should take effect right
+// away from the Home card or the daily check-in banner. Pausing opens a new pausePeriods entry
+// (end:null = still ongoing) and stamps today as already-confirmed so the daily banner doesn't
+// immediately re-ask about a medication the user just paused. Resuming closes the open period.
+function setMedicationPaused(id, paused) {
+  const today = dayStart(state.now);
+  const meds = state.meds.map(m => {
+    if (m.id !== id) return m;
+    const periods = (m.pausePeriods || []).slice();
+    if (paused) {
+      if (!periods.length || periods[periods.length - 1].end !== null) periods.push({ start: today, end: null });
+    } else if (periods.length && periods[periods.length - 1].end === null) {
+      periods[periods.length - 1] = { ...periods[periods.length - 1], end: today };
+    }
+    return { ...m, paused, pausedCheckinDate: paused ? today : null, pausePeriods: periods };
+  });
+  persistMedicationConfig(meds, state.archivedMeds);
+  setState({ meds });
+}
 // Swaps two meds' positions directly within state.meds (by id), leaving every other medication's
 // position untouched — including any grouped/managed-only meds that happen to sit between them in
 // the raw array. dir is -1 (move up/earlier) or +1 (move down/later), relative to the reorderable
@@ -2961,7 +3199,17 @@ function deleteMedicationConfig(id) {
   if (!med) return;
   if (state.confirmDeleteMed !== id) { setState({ confirmDeleteMed: id }); return; }
   const meds = state.meds.filter(item => item.id !== id);
-  const archivedMeds = { ...(state.archivedMeds || {}), [id]: { name: med.name, sub: med.sub || '' } };
+  // v20 restart (audit P1-1): archive pausePeriods too, not just {name, sub} -- otherwise a medication
+  // deleted and later re-added under the same (recycled) id loses all memory of which days it was
+  // legitimately paused, and those days silently reappear as "missed" the moment the new medication is
+  // saved (the exact flood the pause feature exists to prevent). Any still-OPEN period must be closed
+  // at the deletion timestamp before archiving -- isPausedOn treats end:null as "paused forever,
+  // including all future days," so archiving an open period as-is would make a medication re-added
+  // weeks later silently exempt from missed-dose tracking for the entire gap, a worse bug in the
+  // opposite direction.
+  const today = dayStart(state.now);
+  const archivedPausePeriods = normalizePausePeriods(med.pausePeriods).map(p => p.end === null ? { ...p, end: today } : p);
+  const archivedMeds = { ...(state.archivedMeds || {}), [id]: { name: med.name, sub: med.sub || '', pausePeriods: archivedPausePeriods } };
   persistMedicationConfig(meds, archivedMeds);
   setState({ meds, archivedMeds, confirmDeleteMed: null, medEditor: state.medEditor && state.medEditor.sourceId === id ? null : state.medEditor });
   setToast(med.name + ' was removed from the active list. Existing dose history was preserved.');
@@ -3005,6 +3253,54 @@ const PLACEMENT_OPTIONS = [
   { key: 'evening', label: 'Evening meds group', helper: 'Listed in the shared "Evening meds" card.' },
   { key: 'none', label: 'No Home card', helper: 'Managed from the Meds tab only — no logging card on Home.' }
 ];
+// v20: replaces the old "Treatment-day medication" on/off pill toggle. A single 3-way choice makes
+// "only available near treatment" and "excluded near treatment" mutually exclusive by construction
+// -- no validation code needed to reject a contradictory combination, and no risk of the same shared
+// days-before/after fields silently meaning two different things at once. Matches the same
+// radiogroup pattern the v13 Home-placement picker already established (see PLACEMENT_OPTIONS above).
+const TREATMENT_MODE_OPTIONS = [
+  { key: 'none', label: 'Always available', helper: 'No treatment-day restriction.' },
+  { key: 'only', label: 'Only near treatment day', helper: 'Only appears on Home for a window of days around your treatment date — hidden the rest of the time.' },
+  { key: 'excluded', label: 'Excluded near treatment day', helper: 'Hidden for a window of days around your treatment date — available the rest of the time.' }
+];
+function setTreatmentMode(key) {
+  if (!state.medEditor) return;
+  state.medEditor.form.treatmentMode = key;
+  setState({ medEditor: state.medEditor });
+}
+// v20: schedule-window row helpers -- form.windowRows is an array of {start, end, name} (same shape
+// windows entries take on disk), built/edited directly with no free-text intermediate. Changing a
+// row's Start auto-bumps its End forward when the current End would no longer be valid (End options
+// are also filtered to exclude values <= Start in the render below), so the End <select> never gets
+// stuck pointing at a now-invalid option.
+function updateWindowRow(index, field, value) {
+  if (!state.medEditor) return;
+  const rows = (state.medEditor.form.windowRows || []).slice();
+  if (!rows[index]) return;
+  const next = { ...rows[index] };
+  if (field === 'name') next.name = value;
+  else {
+    next[field] = Number(value);
+    if (field === 'start' && next.end <= next.start) next.end = Math.min(24, next.start + 0.25);
+  }
+  rows[index] = next;
+  state.medEditor.form.windowRows = rows;
+  setState({ medEditor: state.medEditor });
+}
+function addWindowRow() {
+  if (!state.medEditor) return;
+  const rows = (state.medEditor.form.windowRows || []).slice();
+  rows.push({ start: 8, end: 8.5, name: '' });
+  state.medEditor.form.windowRows = rows;
+  setState({ medEditor: state.medEditor });
+}
+function removeWindowRow(index) {
+  if (!state.medEditor) return;
+  const rows = (state.medEditor.form.windowRows || []).slice();
+  rows.splice(index, 1);
+  state.medEditor.form.windowRows = rows;
+  setState({ medEditor: state.medEditor });
+}
 function renderPillToggle(label, enabled, onClick, helper) {
   return h('button', { type: 'button', onClick, 'aria-pressed': enabled ? 'true' : 'false', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%', minHeight: '44px', borderRadius: '12px', padding: '0 12px', background: enabled ? 'rgba(170,83,117,0.13)' : 'rgba(255,255,255,0.48)', border: '1px solid ' + (enabled ? 'rgba(170,83,117,0.30)' : 'rgba(212,104,138,0.18)'), color: enabled ? '#8E3D61' : '#5F4A56', textAlign: 'left' } },
     h('span', null,
@@ -3030,11 +3326,17 @@ function renderMedicationEditor() {
   const form = state.medEditor.form;
   const scheduled = form.type === 'win';
   const title = state.medEditor.mode === 'add' ? 'Add medication' : 'Edit medication';
+  // v20: pause/resume reads live state (not the draft form) and takes effect immediately via
+  // setMedicationPaused -- not part of the Save-changes flow, since a paused-or-not decision
+  // shouldn't be lost if the user discards other in-progress edits, and shouldn't require finishing
+  // an unrelated edit just to un-pause. Only offered once a medication actually exists (edit mode).
+  const sourceMed = state.medEditor.sourceId ? state.meds.find(m => m.id === state.medEditor.sourceId) : null;
   return h('section', { 'data-tour': 'med-editor', style: { background: 'rgba(255,252,253,0.78)', border: '1px solid rgba(170,83,117,0.28)', borderRadius: '20px', padding: '16px', boxShadow: '0 10px 34px rgba(121,72,96,0.12), inset 0 1px 0 rgba(255,255,255,0.82)' } },
     h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px' } },
       // v12 redundancy cut: header sub-copy (repeated the Meds-page description) and the duplicate
       // header Cancel button removed — Discard at the bottom is the single close action.
-      h('div', { style: { ...TYPE.title, color: '#2A2127' } }, title)
+      h('div', { style: { ...TYPE.title, color: '#2A2127' } }, title),
+      sourceMed ? h('button', { type: 'button', onClick: () => setMedicationPaused(sourceMed.id, !sourceMed.paused), style: { flexShrink: '0', minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: sourceMed.paused ? '#A24C71' : 'rgba(255,255,255,0.6)', border: '1px solid ' + (sourceMed.paused ? '#A24C71' : 'rgba(212,104,138,0.25)'), color: sourceMed.paused ? '#fff' : '#6E5A64', fontSize: '13px', fontWeight: '800' } }, sourceMed.paused ? 'Resume' : 'Pause') : null
     ),
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: '11px' } },
       h('label', null, fieldLabel('Medication name'), formInput({ value: form.name, placeholder: 'Medication name', onInput: event => updateMedicationForm('name', event.target.value) })),
@@ -3065,7 +3367,45 @@ function renderMedicationEditor() {
           })
         ) : null
       ),
-      scheduled ? h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Schedule windows', 'e.g. 8 AM-12 PM Morning, 8 PM-10 PM Evening.'), formInput({ value: form.windowsText, placeholder: '8 AM-12 PM Morning, 8 PM-10 PM Evening', onInput: event => updateMedicationForm('windowsText', event.target.value) })) : h('label', null, fieldLabel('Minimum gap hours', 'Required \u2014 how long before this can be logged again.'), formInput({ type: 'number', min: '0.5', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'e.g. 4', onInput: event => updateMedicationForm('gapH', event.target.value) })),
+      // v20: replaces the old free-text "Schedule windows" field, whose parser (parseScheduleWindows)
+      // silently dropped any comma-separated segment it couldn't match with zero user-facing warning
+      // -- a caregiver could believe two reminder windows were set when only one actually saved. Every
+      // row here is built from dropdowns (Aaron's explicit spec), so there's nothing left to mistype.
+      scheduled ? h('div', { style: { gridColumn: '1 / -1' } },
+        fieldLabel('Schedule windows', 'When this medication should be taken and reminders sent.'),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
+          ...(form.windowRows || []).map((row, i) => {
+            // End can't be <= this row's own Start (matches the end>start invariant every window has
+            // always had) -- caught at selection time via a filtered option list, not just at save.
+            const endOptions = END_TIME_OPTIONS.filter(opt => opt.value > row.start);
+            return h('div', { style: { border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px' } },
+              // Lead Designer review (v20): bumping the trash button to a 44px touch target left no
+              // room for it on the same line as the two time selects at mobile widths (the selects'
+              // own flex:1/minWidth math already consumed the full row on its own) -- it silently
+              // wrapped to its own line instead of failing loudly. First attempt (minWidth 105/gap 6)
+              // only accounted for the 390px case (~300px available); re-verified against the actual
+              // smallest supported viewport (360px, ~270px available) and it still wrapped there, so
+              // this uses the true worst-case width: minWidth 95/gap 5 leaves ~6px of slack at 360px
+              // and ~36px at 390px, confirmed live at both.
+              h('div', { style: { display: 'flex', gap: '5px', flexWrap: 'wrap', alignItems: 'center' } },
+                h('select', { value: String(row.start), onChange: event => updateWindowRow(i, 'start', event.target.value), style: { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', flex: '1', minWidth: '95px' } },
+                  ...TIME_STEP_OPTIONS.map(opt => h('option', { value: String(opt.value) }, opt.label))
+                ),
+                h('span', { style: { fontSize: '12.5px', color: '#554A52', fontWeight: '700' } }, 'to'),
+                h('select', { value: String(row.end), onChange: event => updateWindowRow(i, 'end', event.target.value), style: { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', flex: '1', minWidth: '95px' } },
+                  ...endOptions.map(opt => h('option', { value: String(opt.value) }, opt.label))
+                ),
+                (form.windowRows || []).length > 1 ? h('button', { type: 'button', onClick: () => removeWindowRow(i), 'aria-label': 'Remove this time window', style: { flexShrink: '0', width: '44px', height: '44px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(192,69,59,0.08)', color: '#A15B56', border: '1px solid rgba(192,69,59,0.18)' } }, appIcon('trash', 16)) : null
+              ),
+              formInput({ value: row.name, placeholder: 'e.g. Morning, With breakfast', onInput: event => updateWindowRow(i, 'name', event.target.value) }),
+              // Live plain-language preview -- recomputed on every change, no separate preview step,
+              // same interaction as the treatment-window "Active window: N days..." summary below.
+              h('div', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76' } }, (row.name ? row.name + ' \u2014 ' : '') + 'Reminds between ' + formatQuarterHour(row.start) + ' and ' + formatQuarterHour(row.end))
+            );
+          }),
+          h('button', { type: 'button', onClick: addWindowRow, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.65)', border: '1px solid #EBE3E4', color: '#554A52', fontSize: '13px', fontWeight: '800', alignSelf: 'flex-start' } }, '+ Add another time window')
+        )
+      ) : h('label', null, fieldLabel('Minimum gap hours', 'Required \u2014 how long before this can be logged again.'), formInput({ type: 'number', min: '0.5', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'e.g. 4', onInput: event => updateMedicationForm('gapH', event.target.value) })),
       h('label', null, fieldLabel('Daily limit', 'Leave blank for none.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value) })),
       h('label', null, fieldLabel('Limit unit'), h('select', { value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, h('option', { value: 'mg' }, 'mg'), h('option', { value: 'pills' }, 'pills'), h('option', { value: 'applications' }, 'applications'))),
       h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Notes'), h('textarea', { placeholder: 'e.g. Take with food \u00b7 From Dr. Kim \u00b7 Crush if needed', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, form.note))
@@ -3082,15 +3422,24 @@ function renderMedicationEditor() {
         })
       )
     ),
-    h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '10px' } },
-      renderPillToggle('Treatment-day medication', !!form.treatmentOnly, () => toggleMedicationForm('treatmentOnly'), 'Only appears on Home for a window of days around your treatment date — hidden the rest of the time. Set your own range below (every regimen is different).')
+    h('div', { style: { marginTop: '10px' } },
+      fieldLabel('Treatment-day availability', 'Whether this medication is only available, or specifically excluded, near your treatment date.'),
+      h('div', { role: 'radiogroup', 'aria-label': 'Treatment-day availability', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px' } },
+        ...TREATMENT_MODE_OPTIONS.map(opt => {
+          const on = (form.treatmentMode || 'none') === opt.key;
+          return h('button', { type: 'button', role: 'radio', 'aria-checked': on ? 'true' : 'false', onClick: () => setTreatmentMode(opt.key), style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', width: '100%', minHeight: '44px', borderRadius: '12px', padding: '9px 12px', background: on ? 'rgba(170,83,117,0.13)' : 'rgba(255,255,255,0.48)', border: '1px solid ' + (on ? 'rgba(170,83,117,0.30)' : 'rgba(212,104,138,0.18)'), color: on ? '#8E3D61' : '#5F4A56', textAlign: 'left' } },
+            h('span', { style: { fontSize: '13px', fontWeight: '800' } }, (on ? '◉ ' : '○ ') + opt.label),
+            h('span', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76', lineHeight: '1.35' } }, opt.helper)
+          );
+        })
+      )
     ),
-    form.treatmentOnly ? h('div', { style: { marginTop: '8px' } },
+    (form.treatmentMode || 'none') !== 'none' ? h('div', { style: { marginTop: '8px' } },
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: '8px' } },
         h('label', null, fieldLabel('Days before treatment', 'Becomes active this many days before treatment day (0 = starts on treatment day itself).'), formInput({ type: 'number', min: '0', step: '1', value: String(form.treatmentDaysBefore), onInput: event => updateMedicationForm('treatmentDaysBefore', event.target.value, true) })),
         h('label', null, fieldLabel('Days after treatment', 'Stays active through this many days after treatment day (0 = treatment day only).'), formInput({ type: 'number', min: '0', step: '1', value: String(form.treatmentDaysAfter), onInput: event => updateMedicationForm('treatmentDaysAfter', event.target.value, true) }))
       ),
-      h('div', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76', marginTop: '6px', lineHeight: '1.4' } }, 'Active window: ' + clampTreatmentDays(form.treatmentDaysBefore) + ' day' + (clampTreatmentDays(form.treatmentDaysBefore) === 1 ? '' : 's') + ' before through ' + clampTreatmentDays(form.treatmentDaysAfter) + ' day' + (clampTreatmentDays(form.treatmentDaysAfter) === 1 ? '' : 's') + ' after treatment day.')
+      h('div', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76', marginTop: '6px', lineHeight: '1.4' } }, (form.treatmentMode === 'excluded' ? 'Excluded window: ' : 'Active window: ') + clampTreatmentDays(form.treatmentDaysBefore) + ' day' + (clampTreatmentDays(form.treatmentDaysBefore) === 1 ? '' : 's') + ' before through ' + clampTreatmentDays(form.treatmentDaysAfter) + ' day' + (clampTreatmentDays(form.treatmentDaysAfter) === 1 ? '' : 's') + ' after treatment day.')
     ) : null,
     h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '15px' } },
       h('button', { onClick: () => { setState({ medEditor: null }); tourEvent('medEditor:closed'); }, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.65)', border: '1px solid #EBE3E4', color: '#554A52', fontSize: '13px', fontWeight: '800' } }, 'Discard'),
@@ -3154,7 +3503,12 @@ function renderMedicationManager(now) {
         med.groupedEvening ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(155,91,138,0.12)', color: '#7B3F6B', fontSize: '12px', fontWeight: '700' } }, 'Evening group') : null,
         med.groupedAfternoon ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(155,91,138,0.12)', color: '#7B3F6B', fontSize: '12px', fontWeight: '700' } }, 'Afternoon group') : null,
         med.scheduleDays ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(46,125,79,0.10)', color: '#2E7D4F', fontSize: '12px', fontWeight: '700' } }, scheduleDaysLabel(med)) : null,
-        med.treatmentOnly ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(192,69,59,0.10)', color: '#A15B56', fontSize: '12px', fontWeight: '700' } }, 'Treatment day −' + clampTreatmentDays(med.treatmentDaysBefore) + '/+' + clampTreatmentDays(med.treatmentDaysAfter)) : null
+        med.treatmentMode === 'only' ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(192,69,59,0.10)', color: '#A15B56', fontSize: '12px', fontWeight: '700' } }, 'Treatment day −' + clampTreatmentDays(med.treatmentDaysBefore) + '/+' + clampTreatmentDays(med.treatmentDaysAfter)) : null,
+        // v20 Designer review: "Excluded" gets the amber NOTICE_TONES.attention token (not the same
+        // red as "Only"/"Treatment day" above) since the two states are opposites -- available-then
+        // vs. withheld-then -- and sharing one color made them indistinguishable at a glance.
+        med.treatmentMode === 'excluded' ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: NOTICE_TONES.attention.chipBg, color: NOTICE_TONES.attention.chipFg, fontSize: '12px', fontWeight: '700' } }, 'Excluded near treatment −' + clampTreatmentDays(med.treatmentDaysBefore) + '/+' + clampTreatmentDays(med.treatmentDaysAfter)) : null,
+        med.paused ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(125,105,116,0.14)', color: '#5A4750', fontSize: '12px', fontWeight: '700' } }, 'Paused') : null
       ),
       deleting ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', paddingTop: '9px', borderTop: '1px solid rgba(192,69,59,0.16)' } },
         h('span', { style: { flex: '1', fontSize: '12px', color: '#A15B56', fontWeight: '700', lineHeight: '1.35' } }, 'Existing dose history will remain visible.'),
@@ -3179,7 +3533,7 @@ function renderMedicationManager(now) {
 }
 
 
-const APP_VERSION = 'app-v19';
+const APP_VERSION = 'app-v20';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -3845,10 +4199,18 @@ function dueRemindersAt(nowDate) {
   const due = [];
   if (h >= 22 || h < 8) return due; // quiet hours: no notifications 10 PM-8 AM
   state.meds.filter(med => med.alerts && med.windows && med.windows.length).forEach(med => {
+    if (med.paused) return; // v20: don't remind for a currently-paused medication
     if (!medScheduledOn(med, nowTs)) return; // off-day for this medication's own schedule
     if (med.treatmentOnly && !treatmentActiveOn(med, nowTs)) return; // outside its treatment-day window
+    if (treatmentExcludedNow(med, nowTs)) return; // v20: excluded near treatment day
     med.windows.forEach(w => {
-      if (h !== w.start || m >= 5) return; // fire only in the window's first 5 minutes
+      // v20: w.start may now be a quarter-hour decimal (8.25 = 8:15) from the structured time-window
+      // picker -- the old `h !== w.start` integer-only compare would never match a non-hour-aligned
+      // window, silently killing its reminder forever. Split into hour+minute and fire only in the
+      // window's first 5 minutes, same as before for on-the-hour windows (byte-identical behavior
+      // when w.start is a whole number).
+      const startH = Math.trunc(w.start), startM = Math.round((w.start % 1) * 60);
+      if (h !== startH || m < startM || m >= startM + 5) return;
       // Key includes both start AND end hour, not just start (audit v16 finding #2): two windows
       // that happen to open at the same hour (e.g. "8-9 AM dose 1" + "8-20 AM dose 2") would
       // otherwise collide on a start-hour-only key and silently suppress the second window's
