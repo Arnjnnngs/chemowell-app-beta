@@ -2737,7 +2737,7 @@ function formatRuleSummary(med) {
     // not a flat per-dose gap — skip the "Min X-hour gap" fragment so it isn't shown alongside a
     // rule that no longer applies.
   } else if (med.type === 'gap') {
-    fragments.push(med.gapH > 0 ? ('Min ' + med.gapH + '-hour gap') : 'As needed');
+    fragments.push(med.gapH > 0 ? ('Min ' + med.gapH + '-hour gap') : 'No minimum gap set \u2014 edit to fix');
   } else if (med.windows && med.windows.length) {
     fragments.push(med.windows.map(window => window.name || (formatHour(window.start) + '–' + formatHour(window.end))).join(' · '));
   }
@@ -2868,6 +2868,11 @@ function saveMedicationEditor() {
   const gapH = Math.max(0, Number(form.gapH) || 0);
   const windows = type === 'win' ? parseScheduleWindows(form.windowsText) : [];
   if (type === 'win' && !windows.length) { setToast('Add at least one schedule window, for example 8 AM-12 PM Morning.'); return; }
+  // v19: an "as needed" medication with no minimum gap never re-locks after logging -- the card
+  // just sits on "Available" forever, which looked broken (Owner bug report: Zofran/Iron/Compazine
+  // stayed "Available" right after being logged). A gap-timer medication now requires an actual
+  // gap value before it can be saved.
+  if (type === 'gap' && gapH <= 0) { setToast('Enter a minimum gap in hours (e.g. 4) before saving an \u201cas needed\u201d medication \u2014 without one, the card never locks after logging.'); return; }
   let scheduleDays;
   if (form.scheduleMode === 'asneeded') {
     scheduleDays = { mode: 'asneeded' };
@@ -3060,7 +3065,7 @@ function renderMedicationEditor() {
           })
         ) : null
       ),
-      scheduled ? h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Schedule windows', 'e.g. 8 AM-12 PM Morning, 8 PM-10 PM Evening.'), formInput({ value: form.windowsText, placeholder: '8 AM-12 PM Morning, 8 PM-10 PM Evening', onInput: event => updateMedicationForm('windowsText', event.target.value) })) : h('label', null, fieldLabel('Minimum gap hours', 'Leave blank for no minimum gap.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: '0', onInput: event => updateMedicationForm('gapH', event.target.value) })),
+      scheduled ? h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Schedule windows', 'e.g. 8 AM-12 PM Morning, 8 PM-10 PM Evening.'), formInput({ value: form.windowsText, placeholder: '8 AM-12 PM Morning, 8 PM-10 PM Evening', onInput: event => updateMedicationForm('windowsText', event.target.value) })) : h('label', null, fieldLabel('Minimum gap hours', 'Required \u2014 how long before this can be logged again.'), formInput({ type: 'number', min: '0.5', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'e.g. 4', onInput: event => updateMedicationForm('gapH', event.target.value) })),
       h('label', null, fieldLabel('Daily limit', 'Leave blank for none.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value) })),
       h('label', null, fieldLabel('Limit unit'), h('select', { value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, h('option', { value: 'mg' }, 'mg'), h('option', { value: 'pills' }, 'pills'), h('option', { value: 'applications' }, 'applications'))),
       h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Notes'), h('textarea', { placeholder: 'e.g. Take with food \u00b7 From Dr. Kim \u00b7 Crush if needed', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, form.note))
@@ -3174,7 +3179,7 @@ function renderMedicationManager(now) {
 }
 
 
-const APP_VERSION = 'app-v18';
+const APP_VERSION = 'app-v19';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
