@@ -85,3 +85,21 @@ repeat failures, the next attempt's brief must say why the previous one failed f
   run. This is what turned today's push into a 20-minute manual GitHub-web-upload exercise
   (263 files, no push credentials in this sandbox) — the fix is fewer, better-chosen
   screenshots, not a better upload method.
+
+## Copy review (wordsmith)
+
+Aaron flagged (app-v23) that user-facing wording needs the same deliberate review as layout
+and spacing — a clear label matters as much as a clean one, and a caregiver reading a card
+at 2am shouldn't have to parse a run-on sentence to know what happened. Rather than adding a
+ninth stage, this folds into the **Designer** review that already exists in both lanes:
+Designer checks every piece of new or changed user-facing copy for the same things it checks
+visuals for — is it as short as it can be without losing meaning, does it avoid repeating
+itself (e.g. a date and a time appearing twice across two adjacent labels), does it read the
+way a person would actually say it out loud, not the way the underlying data field is named.
+Suggestions come with the exact replacement text, the same way visual suggestions come with
+exact pixel values.
+
+If a piece of copy is high-stakes enough that getting the tone wrong has real consequences —
+anything a caregiver reads while making a medical decision, not just a button label — the
+Designer should say so explicitly in their review rather than guess, and the Lead Developer
+should flag it to Aaron as worth a real copywriter's pass rather than resolve it in-chain.

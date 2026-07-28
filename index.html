@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#F8E8EE">
+<meta name="theme-color" content="#FDF1F4">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25,6 +25,14 @@ button{-webkit-tap-highlight-color:transparent;font-family:inherit;cursor:pointe
 button:active{transform:translateY(1px);}
 input{-webkit-tap-highlight-color:transparent;font-family:inherit;}
 input:focus{outline:2px solid #A24C71;outline-offset:0;border-color:#A24C71;}
+/* v23 (Aaron-requested): native <select> elements weren't covered by the same font-family:inherit
+   reset button/input already get, so every dropdown box silently fell back to the OS's default UI
+   font instead of the app's own -- this one rule fixes that everywhere in one place. The rounded
+   corners / light background / custom arrow (replacing the dark, square native one) are applied
+   per-select via SELECT_ARROW_STYLE (see selectStyleFix helper) since those also need per-instance
+   sizing, but the font fix belongs globally so no dropdown can be missed. */
+select{font-family:inherit;-webkit-tap-highlight-color:transparent;}
+select:focus{outline:2px solid #A24C71;outline-offset:0;border-color:#A24C71;}
 button:focus-visible, [role="button"]:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #A24C71; outline-offset: 2px; }
 ::placeholder{color:#7A6E76 !important;opacity:1;}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
@@ -338,7 +346,9 @@ function normalizeMedication(raw, index) {
     name: String(original.name || 'Untitled medication').trim(),
     sub: String(original.sub || '').trim(),
     type,
-    gapH: type === 'gap' ? Math.max(0, Number(original.gapH) || 0) : 0,
+    // v23: gapH now survives normalize for scheduled ('win') meds too, so a scheduled medication can
+    // optionally carry its own minimum-gap lockout on top of its time windows (Aaron-requested).
+    gapH: Math.max(0, Number(original.gapH) || 0),
     alerts: type === 'win' && !(original.scheduleDays && original.scheduleDays.mode === 'asneeded'), // scheduled meds get missed-dose tracking; as-needed meds don't
     quickLog: typeof original.quickLog === 'boolean' ? original.quickLog : DEFAULT_QUICK_LOG_IDS.includes(id),
     groupedEvening: typeof original.groupedEvening === 'boolean' ? original.groupedEvening : DEFAULT_EVENING_IDS.includes(id),
@@ -572,8 +582,26 @@ function dailyPills(medId) { const c = dayStart(state.now); return entriesFor(me
 function isEarlyAt(med, ts) {
   if (med.type === 'gap') {
     if (!med.gapH) return false;
-    const prev = entriesFor(med.id).filter(e => e.ts < ts).sort((a, b) => a.ts - b.ts).pop();
+    // v23 auditor fix: was a strict "<", so two doses logged in the same clock minute (the time
+    // picker only has minute precision) got an identical ts -- the second dose's ts < prev.ts was
+    // false, prev came back undefined, and the override silently lost its "early" flag entirely
+    // (not just a mislabeled toast — the entry recorded no override at all). "<=" correctly still
+    // finds that same-minute previous dose; this is evaluated before the new entry is ever saved, so
+    // there's no risk of a dose matching itself.
+    const prev = entriesFor(med.id).filter(e => e.ts <= ts).sort((a, b) => a.ts - b.ts).pop();
     return !!prev && ts < prev.ts + med.gapH * 3600000;
+  }
+  // v23: scheduled meds can now optionally carry a gapH lockout on top of their time windows — check
+  // that first (same rule as as-needed meds), then fall back to the existing before-first-window check.
+  if (med.gapH) {
+    // v23 auditor fix: was a strict "<", so two doses logged in the same clock minute (the time
+    // picker only has minute precision) got an identical ts -- the second dose's ts < prev.ts was
+    // false, prev came back undefined, and the override silently lost its "early" flag entirely
+    // (not just a mislabeled toast — the entry recorded no override at all). "<=" correctly still
+    // finds that same-minute previous dose; this is evaluated before the new entry is ever saved, so
+    // there's no risk of a dose matching itself.
+    const prev = entriesFor(med.id).filter(e => e.ts <= ts).sort((a, b) => a.ts - b.ts).pop();
+    if (prev && ts < prev.ts + med.gapH * 3600000) return true;
   }
   const d0 = dayStart(ts);
   return ts < d0 + med.windows[0].start * 3600000;
@@ -752,7 +780,14 @@ function missedDosesFor(dayTs, now) {
       if (hit) { used.add(hit); win.covered = true; }
     });
     wins.forEach(win => {
-      if (!win.covered && now >= win.we) out.push({ missed: true, medId: med.id, ts: win.ws, windowName: win.w.name });
+      if (win.covered || now < win.we) return;
+      // v23 bugfix (Aaron report): adding a brand-new medication mid-day immediately flagged every
+      // already-passed window that day as "missed" -- the medication never had a chance to take
+      // those doses because it didn't exist yet. A window that closed before the medication's own
+      // createdAt never counts as missed. Medications saved before this fix have no createdAt and
+      // keep behaving exactly as before (falls back to the app-wide MISSED_TRACK_SINCE floor above).
+      if (med.createdAt && win.we <= med.createdAt) return;
+      out.push({ missed: true, medId: med.id, ts: win.ws, windowName: win.w.name });
     });
   });
   // Per-row "Clear" (dismissMissedDose) hides a specific window without logging anything -- filtered
@@ -808,16 +843,14 @@ function toLocalISO(ts) {
   return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
 }
 
+// v23 (Aaron-requested copy simplification): the old "Today - Monday 7/28 at 5:12 AM" doubled up
+// "Today" and the weekday, and repeated a time that already shows on its own "Next dose at ..."
+// line right next to it -- cramped onto one line, it's what was forcing the ellipsis-clipping fix
+// below. Just weekday + date reads cleanly and never needs the "Today -" special case.
 function fmtDateLabel(ts) {
-  const d0 = dayStart(state.now);
-  const entryDay = dayStart(ts);
-  const time = new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const weekday = new Date(ts).toLocaleDateString([], { weekday: 'long' });
   const md = (new Date(ts).getMonth() + 1) + '/' + new Date(ts).getDate();
-  if (entryDay === d0) {
-    return 'Today - ' + weekday + ' ' + md + ' at ' + time;
-  }
-  return weekday + ', ' + md + ' at ' + time;
+  return weekday + ' ' + md;
 }
 
 // Protonix's evening (PM) dose log time for the given day, if logged yet — the second dose,
@@ -903,12 +936,22 @@ function status(med) {
   }
   const d0 = dayStart(now), atH = (h) => d0 + h * 3600000;
   const windows = med.id === 'dexamethasone' ? dexWindowsForOffset(chemoOffsetFor(d0)) : med.eveningLinkedToProtonix ? eveningWindowsFor(med, d0) : med.morningLinkedToProtonix ? morningWindowsFor(med, d0) : med.windows;
+  // v23: scheduled meds can now optionally carry a gapH minimum-gap lockout on top of their time
+  // windows (Aaron-requested — "scheduled meds still could have gap timers"). This ORs in with the
+  // window logic below: a window being open no longer guarantees "available" if the last dose was
+  // logged too recently. The existing "Log early" override UI already keys off locked/availableAt
+  // generically, so it picks this up with no changes of its own.
+  const lastForGap = es[es.length - 1];
+  const gapAvailableAt = (med.gapH && lastForGap) ? lastForGap.ts + med.gapH * 3600000 : null;
   for (const w of windows) {
     const ws = atH(w.start), we = atH(w.end);
     const used = es.some(e => e.ts >= ws && e.ts < we);
     if (used) continue;
-    if (now < ws) return { locked: true, availableAt: ws, windowName: w.name };
-    if (now >= ws && now < we) return { locked: false, windowName: w.name };
+    if (now < ws) return { locked: true, availableAt: gapAvailableAt ? Math.max(ws, gapAvailableAt) : ws, windowName: w.name };
+    if (now >= ws && now < we) {
+      if (gapAvailableAt && now < gapAvailableAt) return { locked: true, availableAt: gapAvailableAt, windowName: w.name };
+      return { locked: false, windowName: w.name };
+    }
   }
   const chemoOver = med.treatmentOnly && !treatmentActiveOn(med, d0 + 86400000);
   if (chemoOver) {
@@ -1037,10 +1080,27 @@ async function confirmTimeAndLog() {
     if (med.volumePerDoseMl) entry.volumeMl = med.volumePerDoseMl;
     if (med.painScale && m.painLevel) entry.painLevel = m.painLevel;
     const early = !!(m.opts && m.opts.force) && isEarlyAt(med, ts);
-    if (early) entry.override = true;
+    // v23 (Aaron-requested): confirm on-screen when a dose was force-logged over today's daily
+    // limit, the same way an early gap-timer override already gets "(early)" appended below.
+    const overLimit = !!(m.opts && m.opts.force) && !!med.ceiling && (() => {
+      const dc = dailyCeiling(med);
+      if (!dc) return false;
+      const amt = med.ceilingUnit ? (entry.pills || 0) : (entry.mg || 0);
+      return amt > 0 && amt > (dc.max - dc.used);
+    })();
+    // v23 auditor fix: both "early" and "over-limit" overrides set the same entry.override flag,
+    // so an over-limit log showed a factually wrong "EARLY" badge in the Journal/History even
+    // though it wasn't early at all -- overrideReason lets the badge say which one actually
+    // happened. Entries logged before this fix have override:true with no overrideReason; the
+    // badge below defaults those to "Early" since that was the only override reason that existed
+    // at the time they were saved.
+    if (early || overLimit) {
+      entry.override = true;
+      entry.overrideReason = early && overLimit ? 'both' : early ? 'early' : 'overLimit';
+    }
     setState({ timeModal: null });
     await addEntryDB(entry);
-    setToast(med.name + ' logged' + (m.dose ? (' · ' + m.dose.label) : '') + (entry.painLevel ? (' · Pain ' + entry.painLevel + '/10') : '') + (early ? ' (early)' : '') + ' at ' + fmtTime(ts));
+    setToast(med.name + ' logged' + (m.dose ? (' · ' + m.dose.label) : '') + (entry.painLevel ? (' · Pain ' + entry.painLevel + '/10') : '') + (early ? ' (early)' : '') + (overLimit ? ' (over today’s limit)' : '') + ' at ' + fmtTime(ts));
     setTimeout(() => afterLog({ ...entry, id: 'pending' }), 500);
   } else if (m.type === 'temp') {
     const v = m.tempValue;
@@ -1886,22 +1946,40 @@ function renderGroupedMedsCard(title, meds, now) {
         const todayLogs = entriesFor(med.id).filter(e => e.ts >= dayStart(now));
         const lastToday = todayLogs[todayLogs.length - 1];
         const isOv = !!(state.override && state.override.medId === med.id);
+        // v23 bugfix: this card's ceiling handling was silently broken -- a medication that hit its
+        // daily limit (st.ceilingHit, no rollingCeilingH) has no st.availableAt at all, so the old
+        // "Opens " + fmtTime(undefined) button rendered as "Opens Invalid Date", and the override
+        // button unconditionally said "Log early" even when the real reason was the daily limit, not
+        // a gap timer. Also brings the override capability here in line with the standalone Quick Log
+        // card (Aaron: "there isn't a way to override taking a med if over the limit"). Auditor v23
+        // re-review caught a second reachable case (st.courseComplete -- a treatment-only medication
+        // whose window has ended) that still hit the same "Invalid Date" bug; handled alongside
+        // ceilingHit here rather than leaving one case fixed and the other not. Designer v23 re-review
+        // caught the override buttons had no explanatory copy (unlike the standalone card's red
+        // banner) and sat at 42px, under the app's 44px touch-target floor -- both fixed below.
+        const overrideReasonLabel = st.courseComplete ? 'Course complete' : st.ceilingHit ? 'Log over limit' : 'Log early';
+        const overrideExplain = st.courseComplete
+          ? 'This medication’s treatment window has ended. Log it anyway?'
+          : st.ceilingHit
+            ? 'This would go over today’s limit. Log it anyway?'
+            : ('Closed — opens ' + (st.availableAt ? fmtTime(st.availableAt) : 'later') + '. Log it early anyway?');
         let right;
         if (isOv) {
           right = h('div', { style: { display: 'flex', gap: '7px', flexShrink: '0' } },
-            h('button', { onClick: () => logMed(med.id, med.doses ? med.doses[0] : null, { force: true }), style: { minHeight: '42px', padding: '0 13px', borderRadius: '11px', background: '#C0453B', color: '#fff', fontSize: '13px', fontWeight: '700' } }, 'Log early'),
-            h('button', { onClick: () => setState({ override: null }), style: { minHeight: '42px', padding: '0 11px', borderRadius: '11px', background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(212,104,138,0.15)', color: '#7A6E76', fontSize: '13px', fontWeight: '600' } }, 'Cancel')
+            h('button', { onClick: () => logMed(med.id, med.doses ? med.doses[0] : null, { force: true }), style: { minHeight: '44px', padding: '0 13px', borderRadius: '11px', background: '#C0453B', color: '#fff', fontSize: '13px', fontWeight: '700' } }, overrideReasonLabel),
+            h('button', { onClick: () => setState({ override: null }), style: { minHeight: '44px', padding: '0 11px', borderRadius: '11px', background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(212,104,138,0.15)', color: '#7A6E76', fontSize: '13px', fontWeight: '600' } }, 'Cancel')
           );
         } else if (!st.locked) {
           right = h('button', { onClick: () => logMed(med.id, med.doses ? med.doses[0] : null), style: { minHeight: '44px', padding: '0 20px', borderRadius: '12px', background: '#A24C71', color: '#fff', fontSize: '14px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)', flexShrink: '0' } }, 'Log');
         } else {
-          right = h('button', { onClick: () => setState({ override: { medId: med.id } }), className: 'mono', style: { minHeight: '44px', padding: '0 12px', borderRadius: '99px', background: 'rgba(255,255,255,0.4)', border: '1px solid rgba(212,104,138,0.15)', color: '#5C6662', fontSize: '12.5px', fontWeight: '600', flexShrink: '0' } }, 'Opens ' + fmtTime(st.availableAt));
+          right = h('button', { onClick: () => setState({ override: { medId: med.id } }), className: 'mono', style: { minHeight: '44px', padding: '0 12px', borderRadius: '99px', background: 'rgba(255,255,255,0.4)', border: '1px solid rgba(212,104,138,0.15)', color: '#5C6662', fontSize: '12.5px', fontWeight: '600', flexShrink: '0' } }, st.courseComplete ? 'Course complete' : st.ceilingHit ? 'Limit reached' : (st.availableAt ? ('Opens ' + fmtTime(st.availableAt)) : 'Closed'));
         }
         return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
           h('div', { style: { flex: '1', minWidth: '0' } },
             h('div', { style: { ...TYPE.title, color: '#2A2127' } }, med.name),
             h('div', { style: { ...TYPE.caption, color: '#7A6E76' } }, med.sub + (med.note ? (' · ' + med.note) : '')),
-            lastToday ? h('div', { style: { fontSize: '12.5px', color: '#0C7F57', fontWeight: '700', marginTop: '2px' } }, '✓ Logged ' + fmtTime(lastToday.ts)) : null
+            lastToday ? h('div', { style: { fontSize: '12.5px', color: '#0C7F57', fontWeight: '700', marginTop: '2px' } }, '✓ Logged ' + fmtTime(lastToday.ts)) : null,
+            isOv ? h('div', { style: { fontSize: '12px', color: '#A15B56', fontWeight: '600', marginTop: '3px', lineHeight: '1.35' } }, overrideExplain) : null
           ),
           right
         );
@@ -2322,7 +2400,7 @@ function renderTimeModal() {
       h('div', { style: { ...TYPE.title, color: '#2A2127', marginBottom: '22px', textAlign: 'center' } }, title),
       m.type === 'symptom' ? h('div', { style: { marginBottom: '16px' } },
         h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, 'Symptom'),
-        h('select', { value: m.symptomType || '', onChange: (e) => { state.timeModal.symptomType = e.target.value; setState({ timeModal: state.timeModal }); }, className: 'mono', style: { width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } },
+        h('select', { value: m.symptomType || '', onChange: (e) => { state.timeModal.symptomType = e.target.value; setState({ timeModal: state.timeModal }); }, className: 'mono', style: selectFix({ width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' }) },
           h('option', { value: '' }, 'Select...'),
           h('option', { value: 'nausea' }, 'Nausea'),
           h('option', { value: 'vomiting' }, 'Vomiting'),
@@ -2344,7 +2422,7 @@ function renderTimeModal() {
       // every weight log with a field that means nothing the other 95% of the time.
       m.type === 'weight' ? h('div', { style: { marginBottom: '16px' } },
         h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, 'Reason for change (optional)'),
-        h('select', { value: m.weightReason || '', onChange: (e) => { state.timeModal.weightReason = e.target.value; setState({ timeModal: state.timeModal }); }, className: 'mono', style: { width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' } },
+        h('select', { value: m.weightReason || '', onChange: (e) => { state.timeModal.weightReason = e.target.value; setState({ timeModal: state.timeModal }); }, className: 'mono', style: selectFix({ width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }) },
           h('option', { value: '' }, 'Not noted'),
           ...WEIGHT_REASONS.map(r => h('option', { value: r.id }, r.label))
         ),
@@ -2421,7 +2499,7 @@ function renderTimeModal() {
       ),
       showPainScale ? h('div', { style: { marginTop: '16px' } },
         h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, 'Pain level (1–10)'),
-        h('select', { value: m.painLevel || '', onChange: (e) => { state.timeModal.painLevel = e.target.value ? Number(e.target.value) : null; }, className: 'mono', style: { width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } },
+        h('select', { value: m.painLevel || '', onChange: (e) => { state.timeModal.painLevel = e.target.value ? Number(e.target.value) : null; }, className: 'mono', style: selectFix({ width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' }) },
           h('option', { value: '' }, 'Not recorded'),
           ...Array.from({ length: 10 }, (_, i) => i + 1).map(n => h('option', { value: String(n) }, String(n) + (n === 1 ? ' — mild' : n === 5 ? ' — moderate' : n === 10 ? ' — worst' : '')))
         )
@@ -2629,7 +2707,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
         h('div', { style: { ...TYPE.label, color: bTone.chipFg } }, 'Update status for ' + bannerDayLabel),
         h('div', { style: { display: 'flex', gap: '8px' } },
-          h('select', { value: bBannerValue, onChange: (e) => { state.bowelBannerInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: '#FFFFFF', color: '#2A2127' } },
+          h('select', { value: bBannerValue, onChange: (e) => { state.bowelBannerInput = e.target.value; }, className: 'mono', style: selectFix({ flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: '#FFFFFF', color: '#2A2127' }) },
             h('option', { value: '' }, 'Update status if back to normal...'),
             h('option', { value: 'normal' }, 'Normal'),
             h('option', { value: 'very_little' }, 'Very little'),
@@ -2666,7 +2744,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
           )
         ),
         h('div', { style: { display: 'flex', gap: '8px' } },
-          h('select', { value: bmSelectValue, onChange: (e) => { state.bowelInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: '#FFFFFF', color: '#2A2127' } },
+          h('select', { value: bmSelectValue, onChange: (e) => { state.bowelInput = e.target.value; }, className: 'mono', style: selectFix({ flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: '#FFFFFF', color: '#2A2127' }) },
             h('option', { value: '' }, 'Select...'),
             h('option', { value: 'normal' }, 'Normal'),
             h('option', { value: 'very_little' }, 'Very little'),
@@ -2702,7 +2780,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
           )
         ),
         h('div', { style: { display: 'flex', gap: '8px' } },
-          h('select', { value: apSelectValue, onChange: (e) => { state.appetiteInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: '#FFFFFF', color: '#2A2127' } },
+          h('select', { value: apSelectValue, onChange: (e) => { state.appetiteInput = e.target.value; }, className: 'mono', style: selectFix({ flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: '#FFFFFF', color: '#2A2127' }) },
             h('option', { value: '' }, 'Select...'),
             h('option', { value: 'normal' }, 'Normal'),
             h('option', { value: 'little' }, 'Little to none'),
@@ -2968,7 +3046,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     const last = latest(med.id);
     const doseList = med.doses || [{ single: true }];
     const countdownLabel = locked && st.availableAt ? fmtCountdown(st.availableAt - now) : '';
-    const lastLabel = last ? ('Last dose ' + fmtDateLabel(last.ts) + (last.dose ? (' · ' + last.dose) : '')) : 'No doses logged';
+    const lastLabel = last ? ('Last taken - ' + fmtDateLabel(last.ts) + (last.dose ? (' · ' + last.dose) : '')) : 'No doses logged';
     // Next dose label
     let nextDoseLabel = '';
     if (st.ceilingHit && st.rollingCeiling) {
@@ -2994,6 +3072,13 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       subStatus = st.windowName + ' window open';
     }
     const isOverriding = !!(state.override && state.override.medId === med.id);
+    // v23 (Aaron-requested): there was previously no way to log a dose that would push past the
+    // daily limit even temporarily -- doseBlocked doses just hit a dead-end toast. doseKey identifies
+    // WHICH dose option is being overridden (a med can offer several dose sizes, only some of which
+    // may cross the remaining room), distinct from the whole-card lock override above (which never
+    // sets doseKey).
+    const doseKeyOf = (d, i) => (d.label != null ? String(d.label) : ('idx' + i));
+    const overridingDoseKey = (isOverriding && state.override.doseKey != null) ? state.override.doseKey : null;
     // A dose is blocked if it would push past the daily ceiling (unless the ceiling is already
     // hit, in which case the explicit red override flow is the only path and stays available)
     const doseBlocked = (d) => {
@@ -3001,26 +3086,42 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       const amt = med.ceilingUnit ? (d.pills || 0) : (d.mg || 0);
       return amt > 0 && amt > (dc.max - dc.used);
     };
-    const blockedBtn = (d) => h('button', { onClick: () => setToast('Exceeds ' + (med.rollingCeilingH ? 'the ' : 'today’s ') + dc.label + ' limit — ' + (med.ceilingUnit ? (dc.max - dc.used) + ' ' + dc.unit : (dc.max - dc.used).toLocaleString() + ' mg') + ' left'), style: { flex: '0 0 auto', minWidth: '0', minHeight: '44px', padding: '0 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.35)', border: '1px dashed rgba(138,100,121,0.35)', color: '#5F4A56', fontSize: '13px', fontWeight: '600', cursor: 'not-allowed' } }, (d.single ? ('Log ' + med.name) : d.label) + ' · over limit');
+    // First tap arms the same red confirm-to-override pattern as the gap-lockout flow above, instead
+    // of a dead-end toast -- lets a caregiver log a dose over the limit for a legitimate temporary
+    // reason, with an explicit second tap required before it actually logs.
+    const overrideDoseBtn = (d, i) => h('button', { onClick: () => setState({ override: { medId: med.id, doseKey: doseKeyOf(d, i) } }), style: { flex: '0 1 auto', minWidth: '0', maxWidth: '100%', minHeight: '44px', padding: '0 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.35)', border: '1px dashed rgba(138,100,121,0.35)', color: '#5F4A56', fontSize: '13px', fontWeight: '600', whiteSpace: 'normal', textAlign: 'center', lineHeight: '1.25' } }, (d.single ? ('Log ' + med.name) : d.label) + ' · over limit');
 
     // Buttons
     let buttonArea;
-    if (!locked) {
+    if (overridingDoseKey != null) {
+      const idx = doseList.findIndex((d, i) => doseKeyOf(d, i) === overridingDoseKey);
+      const od = idx >= 0 ? doseList[idx] : doseList[0];
+      buttonArea = h('div', { style: { background: 'rgba(192,69,59,0.12)', border: '1px solid rgba(192,69,59,0.25)', borderRadius: '13px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '7px' } },
+        h('div', { style: { fontSize: '12px', color: '#A15B56', fontWeight: '600', lineHeight: '1.35', display: 'flex', alignItems: 'center', gap: '7px' } },
+          h('span', { style: { flexShrink: '0', width: '18px', height: '18px', borderRadius: '50%', background: '#C0453B', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '12px' } }, '!'),
+          'This would go over today’s ' + (dc ? dc.label + ' ' : '') + 'limit. Log it anyway?'
+        ),
+        h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
+          h('button', { onClick: () => logMed(med.id, od.single ? null : od, { force: true }), style: { flex: '0 1 auto', minWidth: '0', maxWidth: '100%', minHeight: '44px', padding: '0 13px', borderRadius: '999px', background: '#C0453B', color: '#fff', fontSize: '12.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)', whiteSpace: 'normal', textAlign: 'center', lineHeight: '1.25' } }, 'Override — log now'),
+          h('button', { onClick: () => setState({ override: null }), style: { flexShrink: '0', minHeight: '44px', padding: '0 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '999px', background: 'rgba(255,255,255,0.5)', color: '#A15B56', fontSize: '12.5px', fontWeight: '600' } }, 'Cancel')
+        )
+      );
+    } else if (!locked) {
       buttonArea = h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
-        ...doseList.map(d => doseBlocked(d) ? blockedBtn(d) : h('button', { onClick: () => logMed(med.id, d.single ? null : d), style: { flex: '0 0 auto', minWidth: '0', minHeight: '44px', padding: '0 18px', borderRadius: '999px', background: '#A24C71', color: '#fff', fontSize: '14px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, d.single ? ('Log ' + med.name) : d.label))
+        ...doseList.map((d, i) => doseBlocked(d) ? overrideDoseBtn(d, i) : h('button', { onClick: () => logMed(med.id, d.single ? null : d), style: { flex: '0 1 auto', minWidth: '0', maxWidth: '100%', minHeight: '44px', padding: '0 18px', borderRadius: '999px', background: '#A24C71', color: '#fff', fontSize: '14px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)', whiteSpace: 'normal', textAlign: 'center', lineHeight: '1.25' } }, d.single ? ('Log ' + med.name) : d.label))
       );
     } else if (!isOverriding) {
       buttonArea = h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
-        ...doseList.map(d => doseBlocked(d) ? blockedBtn(d) : h('button', { onClick: () => setState({ override: { medId: med.id } }), style: { flex: '0 0 auto', minWidth: '0', minHeight: '44px', padding: '0 13px', border: '1px solid #E5C9D6', borderRadius: '999px', background: '#FFFFFF', color: '#6E5A64', fontSize: '12.5px', fontWeight: '600' } }, d.single ? ('Log ' + med.name) : d.label))
+        ...doseList.map((d, i) => doseBlocked(d) ? overrideDoseBtn(d, i) : h('button', { onClick: () => setState({ override: { medId: med.id } }), style: { flex: '0 1 auto', minWidth: '0', maxWidth: '100%', minHeight: '44px', padding: '0 13px', border: '1px solid #E5C9D6', borderRadius: '999px', background: '#FFFFFF', color: '#6E5A64', fontSize: '12.5px', fontWeight: '600', whiteSpace: 'normal', textAlign: 'center', lineHeight: '1.25' } }, d.single ? ('Log ' + med.name) : d.label))
       );
     } else {
       buttonArea = h('div', { style: { background: 'rgba(192,69,59,0.12)', border: '1px solid rgba(192,69,59,0.25)', borderRadius: '13px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '7px' } },
         h('div', { style: { fontSize: '12px', color: '#A15B56', fontWeight: '600', lineHeight: '1.35', display: 'flex', alignItems: 'center', gap: '7px' } },
           h('span', { style: { flexShrink: '0', width: '18px', height: '18px', borderRadius: '50%', background: '#C0453B', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '12px' } }, '!'),
-          st.ceilingHit ? ((med.rollingCeilingH ? '' : 'Daily ') + (dc ? dc.label + ' ' : '') + 'ceiling reached. Log more anyway?') : st.chemoBlock ? 'Care team said no Zofran on chemo days. Log it anyway?' : ('Closed — opens in ' + countdownLabel + '. Log it early anyway?')
+          st.ceilingHit ? (med.rollingCeilingH ? ('Up to the ' + (dc ? dc.label : 'limit') + ' reached. Log more anyway?') : ('Daily limit of ' + (dc ? dc.label : 'limit') + ' reached. Log more anyway?')) : st.chemoBlock ? 'Care team said no Zofran on chemo days. Log it anyway?' : ('Closed — opens in ' + countdownLabel + '. Log it early anyway?')
         ),
         h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
-          ...doseList.map(d => doseBlocked(d) ? blockedBtn(d) : h('button', { onClick: () => logMed(med.id, d.single ? null : d, { force: true }), style: { flex: '0 0 auto', minWidth: '0', minHeight: '44px', padding: '0 13px', borderRadius: '999px', background: '#C0453B', color: '#fff', fontSize: '12.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)' } }, d.single ? 'Override — log now' : ('Log ' + d.label + ' now'))),
+          ...doseList.map((d, i) => doseBlocked(d) ? overrideDoseBtn(d, i) : h('button', { onClick: () => logMed(med.id, d.single ? null : d, { force: true }), style: { flex: '0 1 auto', minWidth: '0', maxWidth: '100%', minHeight: '44px', padding: '0 13px', borderRadius: '999px', background: '#C0453B', color: '#fff', fontSize: '12.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)', whiteSpace: 'normal', textAlign: 'center', lineHeight: '1.25' } }, d.single ? 'Override — log now' : ('Log ' + d.label + ' now'))),
           h('button', { onClick: () => setState({ override: null }), style: { flexShrink: '0', minHeight: '44px', padding: '0 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '999px', background: 'rgba(255,255,255,0.5)', color: '#A15B56', fontSize: '12.5px', fontWeight: '600' } }, 'Cancel')
         )
       );
@@ -3030,8 +3131,10 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       // Header row
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' } },
         h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '4px', minWidth: '0', flex: '1', flexWrap: 'wrap' } },
-          h('div', { style: { ...TYPE.title, color: '#2A2127', whiteSpace: 'nowrap' } }, med.name),
-          h('div', { style: { ...TYPE.caption, color: '#554A52', whiteSpace: 'nowrap' } }, med.sub)
+          // v23 (Aaron-requested): words shouldn't get cut off on cards -- an unusually long
+          // medication name/generic name now wraps to another line instead of overflowing the card.
+          h('div', { style: { ...TYPE.title, color: '#2A2127' } }, med.name),
+          h('div', { style: { ...TYPE.caption, color: '#554A52' } }, med.sub)
         ),
         // Status pills (item 10): one consistent 26px chip \u2014 tinted bg, no border, no solid discs
         locked ?
@@ -3045,12 +3148,21 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
           )
       ),
       // Meta lines
-      h('div', { style: { ...TYPE.caption, color: '#584350', display: 'flex', alignItems: 'center', gap: '4px', minWidth: '0' } },
-        h('span', { style: { flex: '1', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, lastLabel),
-        locked ? h('span', { style: { flexShrink: '0', color: (st.ceilingHit || st.chemoBlock) ? '#A5443C' : '#96631C', fontWeight: '700', whiteSpace: 'nowrap' } }, nextDoseLabel) : null
-        // v12 redundancy cut: two permanently display:none spans (subStatus, med.note) deleted —
-        // dead weight built on every card every second by the render loop.
+      // v23 (Aaron-requested): this used to force both labels onto one line and ellipsis-clip
+      // whichever ran out of room ("Last dose Today - Monday 7/28 at 5:12 AM · 500 mg" was long
+      // enough to clip on its own even before the next-dose text crowded in next to it). Simplifying
+      // the last-taken copy (see fmtDateLabel/lastLabel) removes most of the pressure; flexWrap lets
+      // the next-dose text drop to its own line on top of that, for the cases still too long for one.
+      h('div', { style: { ...TYPE.caption, color: '#584350', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2px 8px', minWidth: '0' } },
+        h('span', { style: { minWidth: '0' } }, lastLabel),
+        locked ? h('span', { style: { color: (st.ceilingHit || st.chemoBlock) ? '#A5443C' : '#96631C', fontWeight: '700' } }, nextDoseLabel) : null
+        // v12 redundancy cut removed two permanently display:none spans (subStatus, med.note) here —
+        // that cut also silently dropped the only place this card ever showed med.note at all (it
+        // never actually rendered even before the display:none bug). v23 (Aaron: "some of the stuff
+        // mentioned in meds" doesn't show up on cards) restores it below, this time visible and
+        // wrapping instead of the dead display:none span it used to be.
       ),
+      med.note ? h('div', { style: { ...TYPE.caption, color: '#7A6E76', fontStyle: 'italic' } }, med.note) : null,
       // Buttons
       buttonArea
     );
@@ -3101,7 +3213,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
               h('div', { style: { flex: '1' } },
                 h('div', { style: { ...TYPE.body, display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' } },
                   nameOf(e.medId),
-                  e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, 'Early') : null,
+                  e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, e.overrideReason === 'overLimit' ? 'Over limit' : e.overrideReason === 'both' ? 'Early \u00b7 Over limit' : 'Early') : null,
                   e.skipped ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#7A6E76', background: 'rgba(125,105,116,0.14)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
                 ),
                 e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, entryDoseLabel(e) + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, 'Pain ' + e.painLevel + '/10') : null)
@@ -3128,6 +3240,9 @@ function formatRuleSummary(med) {
     fragments.push(med.gapH > 0 ? ('Min ' + med.gapH + '-hour gap') : 'No minimum gap set \u2014 edit to fix');
   } else if (med.windows && med.windows.length) {
     fragments.push(med.windows.map(window => window.name || (formatQuarterHour(window.start) + '–' + formatQuarterHour(window.end))).join(' · '));
+    // v23: scheduled meds can now optionally also carry a gapH lockout (see status()) -- show both
+    // rules together instead of the old gap/windows either-or.
+    if (med.gapH > 0) fragments.push('Min ' + med.gapH + '-hour gap');
   }
   if (med.ceiling) {
     const limit = medicationCeilingMax(med);
@@ -3353,7 +3468,11 @@ function saveMedicationEditor() {
     treatmentDaysAfter: clampTreatmentDays(form.treatmentDaysAfter),
     ceiling: dailyLimit > 0,
     ceilingMax: dailyLimit || undefined,
-    ceilingUnit: form.dailyLimitUnit === 'mg' ? undefined : form.dailyLimitUnit
+    ceilingUnit: form.dailyLimitUnit === 'mg' ? undefined : form.dailyLimitUnit,
+    // v23 bugfix: stamp brand-new medications with a createdAt so missedDosesFor never flags a
+    // window that closed before the medication existed (see missedDosesFor). Editing an existing
+    // medication leaves its createdAt untouched via the `...(original || {})` spread above.
+    ...(!editor.sourceId ? { createdAt: Date.now() } : {})
   };
   if (!candidate.doses.length) delete candidate.doses;
   if (!candidate.scheduleDays) delete candidate.scheduleDays;
@@ -3541,6 +3660,17 @@ function fieldLabel(text, helper) {
 function formInput(attrs) {
   return h('input', { ...attrs, style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 11px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', ...(attrs.style || {}) } });
 }
+// v23 (Aaron-requested): every native <select> in the app looked like a bare OS control next to the
+// app's otherwise fully custom rounded inputs -- dark, square arrow, mismatched font. The global
+// select{font-family:inherit} rule (see stylesheet, near input's own reset) fixes the font half;
+// this fixes the rest -- appearance:none removes the native arrow, replaced with a custom chevron in
+// the app's own ink color, with room reserved for it via paddingRight regardless of whatever
+// per-instance padding a given select already sets (a later same-key wins the same way background
+// + backgroundImage already coexist safely elsewhere in this file).
+const SELECT_CHEVRON_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238A6479' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E";
+function selectFix(style) {
+  return { ...(style || {}), appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', backgroundImage: 'url("' + SELECT_CHEVRON_URL + '")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center', backgroundSize: '10px 6px', paddingRight: '30px' };
+}
 
 function renderMedicationEditor() {
   if (!state.medEditor) return null;
@@ -3563,11 +3693,13 @@ function renderMedicationEditor() {
       h('label', null, fieldLabel('Medication name'), formInput({ value: form.name, placeholder: 'Medication name', onInput: event => updateMedicationForm('name', event.target.value) })),
       h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, placeholder: 'Generic name', onInput: event => updateMedicationForm('sub', event.target.value) })),
       h('label', null, fieldLabel('Dosage options', 'Separate choices with commas.'), formInput({ value: form.dosesText, placeholder: '500 mg, 1000 mg', onInput: event => updateMedicationForm('dosesText', event.target.value) })),
-      h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, h('option', { value: 'gap' }, 'As needed \u2014 gap timer between doses'), h('option', { value: 'win' }, 'Scheduled \u2014 set time windows'))),
+      h('label', null, fieldLabel('Daily limit', 'Blocks logging more doses once this many are reached for the day. Leave blank for no limit.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value) })),
+      h('label', null, fieldLabel('Limit unit'), h('select', { value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' }) }, h('option', { value: 'mg' }, 'mg'), h('option', { value: 'pills' }, 'pills'), h('option', { value: 'applications' }, 'applications'))),
+      h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }) }, h('option', { value: 'gap' }, 'As needed \u2014 gap timer between doses'), h('option', { value: 'win' }, 'Scheduled \u2014 set time windows'))),
       h('div', { style: { gridColumn: '1 / -1' } },
         fieldLabel('Days taken', 'Not every medication is daily \u2014 pick which days this one is given.'),
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
-          h('select', { value: form.scheduleMode, onChange: event => updateMedicationForm('scheduleMode', event.target.value, true), style: { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } },
+          h('select', { value: form.scheduleMode, onChange: event => updateMedicationForm('scheduleMode', event.target.value, true), style: selectFix({ minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' }) },
             h('option', { value: 'daily' }, 'Every day'),
             h('option', { value: 'asneeded' }, form.type === 'win' ? 'As needed \u2014 don\u2019t flag missed doses' : 'No set days'),
             h('option', { value: 'weekly' }, 'Specific days of the week'),
@@ -3609,11 +3741,11 @@ function renderMedicationEditor() {
               // this uses the true worst-case width: minWidth 95/gap 5 leaves ~6px of slack at 360px
               // and ~36px at 390px, confirmed live at both.
               h('div', { style: { display: 'flex', gap: '5px', flexWrap: 'wrap', alignItems: 'center' } },
-                h('select', { value: String(row.start), onChange: event => updateWindowRow(i, 'start', event.target.value), style: { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', flex: '1', minWidth: '95px' } },
+                h('select', { value: String(row.start), onChange: event => updateWindowRow(i, 'start', event.target.value), style: selectFix({ minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', flex: '1', minWidth: '95px' }) },
                   ...TIME_STEP_OPTIONS.map(opt => h('option', { value: String(opt.value) }, opt.label))
                 ),
                 h('span', { style: { fontSize: '12.5px', color: '#554A52', fontWeight: '700' } }, 'to'),
-                h('select', { value: String(row.end), onChange: event => updateWindowRow(i, 'end', event.target.value), style: { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', flex: '1', minWidth: '95px' } },
+                h('select', { value: String(row.end), onChange: event => updateWindowRow(i, 'end', event.target.value), style: selectFix({ minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', flex: '1', minWidth: '95px' }) },
                   ...endOptions.map(opt => h('option', { value: String(opt.value) }, opt.label))
                 ),
                 (form.windowRows || []).length > 1 ? h('button', { type: 'button', onClick: () => removeWindowRow(i), 'aria-label': 'Remove this time window', style: { flexShrink: '0', width: '44px', height: '44px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(192,69,59,0.08)', color: '#A15B56', border: '1px solid rgba(192,69,59,0.18)' } }, appIcon('trash', 16)) : null
@@ -3626,9 +3758,14 @@ function renderMedicationEditor() {
           }),
           h('button', { type: 'button', onClick: addWindowRow, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.65)', border: '1px solid #EBE3E4', color: '#554A52', fontSize: '13px', fontWeight: '800', alignSelf: 'flex-start' } }, '+ Add another time window')
         )
-      ) : h('label', null, fieldLabel('Minimum gap hours', 'Required \u2014 how long before this can be logged again.'), formInput({ type: 'number', min: '0.5', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'e.g. 4', onInput: event => updateMedicationForm('gapH', event.target.value) })),
-      h('label', null, fieldLabel('Daily limit', 'Leave blank for none.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value) })),
-      h('label', null, fieldLabel('Limit unit'), h('select', { value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value), style: { width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, h('option', { value: 'mg' }, 'mg'), h('option', { value: 'pills' }, 'pills'), h('option', { value: 'applications' }, 'applications'))),
+      ) : null,
+      // v23 (Aaron-requested -- "scheduled meds still could have gap timers"): a scheduled medication
+      // can now ALSO carry an optional minimum-gap lockout on top of its time windows, so logging a
+      // dose too soon after the last one is blocked the same way it is for as-needed meds (see
+      // status()). Unlike the as-needed field, this one is optional -- 0/blank just means no extra gap.
+      scheduled
+        ? h('label', null, fieldLabel('Minimum gap hours (optional)', 'Also require this much time since the last dose, even during an open schedule window.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'No extra gap', onInput: event => updateMedicationForm('gapH', event.target.value) }))
+        : h('label', null, fieldLabel('Minimum gap hours', 'Required \u2014 how long before this can be logged again.'), formInput({ type: 'number', min: '0.5', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'e.g. 4', onInput: event => updateMedicationForm('gapH', event.target.value) })),
       h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Notes'), h('textarea', { placeholder: 'e.g. Take with food \u00b7 From Dr. Kim \u00b7 Crush if needed', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, form.note))
     ),
     h('div', { style: { marginTop: '12px' } },
@@ -3820,7 +3957,7 @@ function renderApptModal() {
       h('div', { style: { ...TYPE.label, color: '#8A6479', marginTop: '16px', marginBottom: '8px' } }, 'Time'),
       h('input', { type: 'time', value: m.time, onInput: (e) => { state.apptModal.time = e.target.value; }, className: 'mono', style: { width: '100%', minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127', colorScheme: 'light' } }),
       h('div', { style: { ...TYPE.label, color: '#8A6479', marginTop: '16px', marginBottom: '8px' } }, 'Remind me'),
-      h('select', { value: m.reminder, onChange: (e) => { state.apptModal.reminder = e.target.value; setState({ apptModal: state.apptModal }); }, className: 'mono', style: { width: '100%', minHeight: '48px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' } },
+      h('select', { value: m.reminder, onChange: (e) => { state.apptModal.reminder = e.target.value; setState({ apptModal: state.apptModal }); }, className: 'mono', style: selectFix({ width: '100%', minHeight: '48px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' }) },
         ...APPT_REMINDER_OPTIONS.map(r => h('option', { value: r.id }, r.label))
       ),
       h('div', { style: { ...TYPE.label, color: '#8A6479', marginTop: '16px', marginBottom: '8px' } }, 'Note (optional)'),
@@ -3889,13 +4026,13 @@ function renderCalendarView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v22';
+const APP_VERSION = 'app-v23';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
   const secStyle = { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '17px', padding: '14px' };
   const secLabel = text => h('div', { style: { ...TYPE.label, color: '#8E3D61' } }, text);
-  const selStyle = { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' };
+  const selStyle = selectFix({ minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' });
   const toggle = (key, label, helper) => renderPillToggle(label, homePref(key), () => setHomePref(key, !homePref(key)), helper);
   return [
     h('section', null,
@@ -4161,7 +4298,7 @@ function renderHistory(now) {
               h('div', { style: { flex: '1' } },
                 h('div', { style: { ...TYPE.body, display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' } },
                   nameOf(e.medId),
-                  e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, 'Early') : null,
+                  e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, e.overrideReason === 'overLimit' ? 'Over limit' : e.overrideReason === 'both' ? 'Early \u00b7 Over limit' : 'Early') : null,
                   e.skipped ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#7A6E76', background: 'rgba(125,105,116,0.14)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
                 ),
                 e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, entryDoseLabel(e) + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, 'Pain ' + e.painLevel + '/10') : null)
