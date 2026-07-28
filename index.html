@@ -30,6 +30,8 @@ button:focus-visible, [role="button"]:focus-visible, select:focus-visible, a:foc
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
 #root{min-height:100vh;}
 @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes drawerIn{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+@keyframes scrimIn{from{opacity:0}to{opacity:1}}
 @keyframes tourPulse{0%{outline-color:rgba(46,125,79,1)}50%{outline-color:rgba(46,125,79,0.75)}100%{outline-color:rgba(46,125,79,1)}}
 @media (prefers-reduced-motion: reduce){*{animation-duration:0.01ms !important;transition-duration:0.01ms !important}}
 </style>
@@ -180,6 +182,33 @@ async function setPrefsDB(patch) {
   const next = { ...getPrefsDB(), ...patch };
   saveJSON(PREFS_KEY, next);
   if (prefsListener) prefsListener(next);
+}
+
+// ---- Calendar / appointments (app-v22) — future appointments and other important dates the
+// patient or caregiver wants a reminder for. Mirrors the entries/prefs storage pattern above:
+// profile-scoped localStorage, held in state.appts, mutated through these functions + setState.
+// Kept fully separate from the medication/dose "entries" store since appointments aren't doses.
+const APPTS_KEY = 'chemowell-app-p-' + ACTIVE_PROFILE_ID + '-appts-v1';
+function loadAppointments() { return loadJSON(APPTS_KEY, []); }
+function persistAppointments(list) { saveJSON(APPTS_KEY, list); }
+function addAppointment(appt) {
+  const id = 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const list = loadAppointments();
+  list.push({ id, reminded: false, ...appt });
+  persistAppointments(list);
+  setState({ appts: list });
+  setToast('Appointment saved');
+}
+function updateAppointment(id, patch) {
+  const list = loadAppointments().map(a => a.id === id ? { ...a, ...patch } : a);
+  persistAppointments(list);
+  setState({ appts: list });
+}
+function removeAppointment(id) {
+  const list = loadAppointments().filter(a => a.id !== id);
+  persistAppointments(list);
+  setState({ appts: list, confirmDeleteAppt: null });
+  setToast('Appointment removed');
 }
 
 // Keep two open tabs on the same device in sync.
@@ -437,13 +466,13 @@ const initialMedicationConfig = loadMedicationConfig();
 // through a strict whitelist (anything unexpected falls back to 'home'). Deliberately NOT
 // persisted: reportsView, open modals, drafts, confirms, and the TEST_MODE date offset.
 const UI_VIEW_KEY = 'chemowell-app-ui-view';
-const VALID_VIEWS = ['home', 'meds', 'reports', 'inpatient', 'symptoms', 'settings'];
+const VALID_VIEWS = ['home', 'meds', 'reports', 'inpatient', 'symptoms', 'settings', 'calendar'];
 function restoreView() {
   try { const v = sessionStorage.getItem(UI_VIEW_KEY); return VALID_VIEWS.indexOf(v) >= 0 ? v : 'home'; }
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, showPastAppts: false };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -1362,6 +1391,24 @@ const WEIGHT_REASONS = [
   { id: 'other', label: 'Other' }
 ];
 function weightReasonLabel(id) { const r = WEIGHT_REASONS.find(x => x.id === id); return r ? r.label : id; }
+// Common oncology steroid names/brands (dexamethasone/Decadron is the standard chemo antiemetic
+// steroid; the rest cover other regimens) — used only to power the tap-to-fill weight-reason
+// suggestion above, never to auto-select anything on the user's behalf.
+const STEROID_NAME_PATTERN = /dexamethasone|decadron|prednisone|prednisolone|methylprednisolone|medrol|hydrocortisone/i;
+function activeSteroidMed() { return state.meds.find(m => !m.paused && STEROID_NAME_PATTERN.test(m.name || '')) || null; }
+
+// FAQ (app-v22, Owner-requested) — app-usage questions only, deliberately not medical advice
+// (that stays in the About & legal disclaimer below it, which this section sits right above).
+const FAQ_ITEMS = [
+  { id: 'privacy', q: 'Is my data private?', a: 'Yes. Everything you enter stays on this device in local storage — there’s no cloud, no account, and nothing is ever sent anywhere. If you erase this device or uninstall the app, that data is gone, so it’s worth keeping the device backed up the way you normally would.' },
+  { id: 'add-med', q: 'How do I add a medication?', a: 'Open the Meds tab and tap Add. Give it a name, choose As needed (a gap timer between doses) or Scheduled (set time windows), and save — it’ll show up on Home right away.' },
+  { id: 'switch-profile', q: 'How do I switch or add a profile?', a: 'Open the menu (the three lines, top left) and tap your name at the top, or go to Settings — Profiles. Each profile keeps its own medications and history completely separate on this device.' },
+  { id: 'missed-dose', q: 'What happens if I miss a dose?', a: 'ChemoWell flags it as missed once its window passes without a log. You can resolve it from History — mark it Took later, Skipped, or Clear it if it was logged some other way.' },
+  { id: 'treatment-date', q: 'How do I set a treatment (chemo/radiation) date?', a: 'On Home, under Treatment schedule, tap Pick a date. Medications set to "Treatment-day only" or "Excluded near treatment day" use this date to know when to show or hide themselves.' },
+  { id: 'weight-reason', q: 'How do I note why weight changed?', a: 'When you log a weight, an optional Reason for change dropdown appears — Paracentesis, fluid retention, appetite changes, and more. Picking Paracentesis reveals a Liters drained field, and there’s a free-text Note too. All of it shows up in the Weight report.' },
+  { id: 'calendar', q: 'How do I get a reminder for an appointment?', a: 'Open the menu and tap Calendar, then Add. Give it a title, date, and time, and choose Remind me — 1 hour before, the morning of, or 1 day before. You’ll need to allow notifications when asked for the reminder to actually fire.' },
+  { id: 'reset', q: 'Can I start over / erase everything?', a: 'Yes — Settings, all the way at the bottom, under Start over. It erases the patient name, medication list, and all logged history from this device. This can’t be undone, so use it only if you really mean to wipe the slate clean.' }
+];
 async function logSymptom(type, ts, opts) {
   const entry = { medId: 'symptom_' + type, symptomType: type, ts, note: (opts && opts.note) || '', dose: null, mg: 0 };
   await addEntryDB(entry);
@@ -1515,7 +1562,15 @@ function svgIcon(name, size) {
     chevron: '<path d="m9 18 6-6-6-6"/>',
     edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',
     trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/>',
-    notes: '<path d="M6 4h9l3 3v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/><path d="M14 4v3h4"/><path d="M8 12h8"/><path d="M8 16h5"/>'
+    notes: '<path d="M6 4h9l3 3v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/><path d="M14 4v3h4"/><path d="M8 12h8"/><path d="M8 16h5"/>',
+    menu: '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
+    calendar: '<path d="M6.5 4v4"/><path d="M17.5 4v4"/><path d="M5 8h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><path d="M8.5 13h.01"/><path d="M12 13h.01"/><path d="M15.5 13h.01"/><path d="M8.5 16.5h.01"/><path d="M12 16.5h.01"/>',
+    user: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20.5c0-3.5 3.1-6.3 7-6.3s7 2.8 7 6.3"/>',
+    x: '<path d="M6 6l12 12"/><path d="M18 6 6 18"/>',
+    help: '<circle cx="12" cy="12" r="9"/><path d="M9.3 9.2a2.7 2.7 0 0 1 5.2.9c0 1.8-2.5 2-2.5 3.6"/><path d="M12 17.2h.01"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2.06 2.06 0 1 1-2.92 2.92l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56v.17a2.06 2.06 0 1 1-4.12 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2.06 2.06 0 1 1-2.92-2.92l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H4.6a2.06 2.06 0 1 1 0-4.12h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2.06 2.06 0 1 1 2.92-2.92l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1.03-1.56V4.6a2.06 2.06 0 1 1 4.12 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2.06 2.06 0 1 1 2.92 2.92l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.56 1.03h.17a2.06 2.06 0 1 1 0 4.12h-.09a1.7 1.7 0 0 0-1.56 1.03Z"/>',
+    bulb: '<path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6.5 6.5 0 0 0-3.8 11.8c.6.45 1 1.1 1.1 1.83V17h5.4v-.37c0-.72.5-1.38 1.1-1.83A6.5 6.5 0 0 0 12 3Z"/>',
+    bell: '<path d="M6 9a6 6 0 0 1 12 0c0 3.6 1 5.2 1.6 6H4.4C5 14.2 6 12.6 6 9Z"/><path d="M10 19a2 2 0 0 0 4 0"/>'
   };
   return '<svg ' + common + '>' + (paths[name] || paths.home) + '</svg>';
 }
@@ -1533,6 +1588,47 @@ function navigateTo(view) {
   if (editorClosing) tourEvent('medEditor:closed'); // step the tour back BEFORE the view event so it re-points at Add
   tourEvent('view:' + view);
 }
+
+// ---- Left-side nav drawer (app-v22) — houses Profile/Calendar/Settings per Owner request. Kept
+// as its own small state machine (not just a boolean) so open/close can manage focus properly:
+// the trigger button ref is remembered so focus returns to it on close, matching standard
+// dialog/drawer accessibility behavior (Designer research: M3 navigation drawer guidelines).
+let drawerTriggerEl = null;
+function openDrawer() {
+  // Audit nice-to-have: the drawer (z90) renders above the first-run tour card (z80), so opening it
+  // mid-tour buries the tour with no way back short of closing the drawer first. The hamburger has
+  // no reason to be tapped mid-tour (the tour's own Skip/Back/Next controls are always available),
+  // so simplest fix is just not opening the drawer while a tour is in progress.
+  if (state.tourStep != null) return;
+  drawerTriggerEl = document.querySelector('[data-tour="menu-btn"]');
+  setState({ drawerOpen: true });
+  setTimeout(() => { const el = document.getElementById('drawer-close-btn'); if (el) el.focus(); }, 50);
+}
+function closeDrawer() {
+  setState({ drawerOpen: false });
+  if (drawerTriggerEl) { try { drawerTriggerEl.focus(); } catch (e) {} }
+}
+function drawerGo(view) {
+  closeDrawer();
+  navigateTo(view);
+}
+// Escape closes the drawer from anywhere; Tab is trapped inside it while open so keyboard focus
+// can't silently leave into the (visually obscured, scrim-covered) app behind it. Registered once
+// at module scope, not per-render, so it never double-attaches.
+document.addEventListener('keydown', (ev) => {
+  if (!state.drawerOpen) return;
+  if (ev.key === 'Escape') { ev.preventDefault(); closeDrawer(); return; }
+  if (ev.key === 'Tab') {
+    const panel = document.getElementById('app-drawer');
+    if (!panel) return;
+    const focusables = panel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+    else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+  }
+});
 
 function openReport(report) {
   setState({ view: 'reports', reportsView: report });
@@ -1612,16 +1708,16 @@ function renderHeader(now) {
   const dateLabel = new Date(now).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
   const pastMissed = pastMissedCount(now);
   return h('header', { style: { position: 'sticky', top: '0', zIndex: '20', background: '#FDF1F4', borderBottom: '1px solid #EBE3E4', padding: 'calc(10px + var(--safe-top)) 16px 12px', boxShadow: '0 2px 12px rgba(180,130,150,0.08)' } },
-    // Row 1 — brand/utility row (44px): wordmark + BETA badge left, ?/gear buttons right (44px hit areas)
+    // Row 1 -- brand/utility row (44px): hamburger (opens the drawer -- Profile/Calendar/Settings)
+    // left of the wordmark, matching the standard Android drawer-trigger placement (app-v22 --
+    // replaces the old standalone "?"/gear icon pair, both of which now live one tap deeper inside
+    // the drawer + Settings instead of cluttering the header).
     h('div', { style: { maxWidth: '720px', margin: '0 auto', height: '44px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', color: '#A24C71', minWidth: '0' } },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', color: '#A24C71', minWidth: '0' } },
+        h('button', { onClick: openDrawer, 'aria-label': 'Open menu', 'aria-expanded': state.drawerOpen ? 'true' : 'false', 'aria-controls': 'app-drawer', 'data-tour': 'menu-btn', style: { width: '44px', height: '44px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(162,76,113,0.10)', color: '#8E3D61', border: 'none', flexShrink: '0', cursor: 'pointer' } }, appIcon('menu', 21)),
         appIcon('heart', 20),
         h('span', { style: { ...TYPE.caption, fontWeight: '800', color: '#A24C71', letterSpacing: '0' } }, 'ChemoWell'),
         TEST_MODE ? h('span', { style: { color: '#8C5900', background: '#FFF3E2', border: '1px solid #E8C9A0', borderRadius: '99px', padding: '3px 9px', fontSize: '12px', fontWeight: '700', letterSpacing: '0.05em' } }, 'BETA') : null
-      ),
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexShrink: '0' } },
-        h('button', { onClick: startTour, 'aria-label': 'Open the how-to guide', title: 'How-to guide', style: { width: '44px', height: '44px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(162,76,113,0.10)', color: '#8E3D61', border: 'none', fontSize: '16px', fontWeight: '800', cursor: 'pointer' } }, '?'),
-        h('button', { onClick: () => navigateTo('settings'), 'aria-label': 'Settings', title: 'Settings', style: { width: '44px', height: '44px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(162,76,113,0.10)', color: '#8E3D61', border: 'none', fontSize: '18px', cursor: 'pointer' } }, '\u2699')
       )
     ),
     // Row 2 \u2014 context row: title + date left, dose-progress ring right (no clock \u2014 per Aaron 2026-07-24)
@@ -1670,6 +1766,61 @@ function renderBottomNav() {
           h('span', { style: { width: '4px', height: '4px', borderRadius: '50%', background: active ? '#A24C71' : 'transparent' } })
         );
       })
+    )
+  );
+}
+
+// Left-side nav drawer (app-v22, Owner-requested) — houses Profile / Calendar / Settings, the
+// pattern he described from common Android apps. Spec follows Designer research on Material
+// Design 3 navigation drawers: 304-360dp panel width (capped so the scrim stays visible), a
+// 32%-opacity scrim, decelerate-in slide animation, identity header, 56px menu rows with a
+// pill-shaped active indicator, and real dismissal (scrim tap, Escape, or the explicit X — see
+// the Tab-trap + focus-return wiring next to openDrawer/closeDrawer above).
+function renderDrawer() {
+  if (!state.drawerOpen) return null;
+  const name = (CONFIG.patientName || '').trim() || 'Patient';
+  const initial = name.charAt(0).toUpperCase();
+  const items = [
+    { key: 'calendar', label: 'Calendar', icon: 'calendar', helper: 'Appointments & reminders' },
+    { key: 'settings', label: 'Settings', icon: 'gear', helper: 'Profiles, units, data' }
+  ];
+  return h('div', { style: { position: 'fixed', inset: '0', zIndex: '90' } },
+    h('div', { onClick: closeDrawer, 'aria-hidden': 'true', style: { position: 'absolute', inset: '0', background: 'rgba(0,0,0,0.32)', animation: 'scrimIn .22s ease' } }),
+    h('div', { id: 'app-drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Menu', style: { position: 'absolute', left: '0', top: '0', bottom: '0', width: 'min(84vw, 320px)', background: '#FFFFFF', boxShadow: '4px 0 32px rgba(80,30,55,0.22)', display: 'flex', flexDirection: 'column', animation: 'drawerIn .26s cubic-bezier(0.16,1,0.3,1)', paddingTop: 'var(--safe-top)' } },
+      // Identity header (app-v22 audit fix): the close "X" is now its own top-right button, not
+      // nested inside the identity button. Two real bugs from the first pass, fixed together:
+      // (1) a nested <button><span role=button></span></button> is invalid markup and inconsistent
+      // across screen readers; (2) because the drawer opens flush to the header's top-left, the old
+      // full-width identity button placed interactive area right where the hamburger used to be, so
+      // a fast double-tap on the hamburger could land its second tap on the newly-rendered identity
+      // button underneath and force-navigate to Settings instead of just opening the drawer. Moving
+      // the X to the top-right corner (away from the hamburger's top-left position) removes the
+      // coordinate collision entirely, regardless of tap timing.
+      h('div', { style: { position: 'relative', padding: '20px 56px 20px 18px', borderBottom: '1px solid #EBE3E4' } },
+        h('button', { id: 'drawer-close-btn', onClick: closeDrawer, 'aria-label': 'Close menu', style: { position: 'absolute', top: '8px', right: '8px', width: '44px', height: '44px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8A6479', background: 'transparent' } }, appIcon('x', 18)),
+        h('button', { onClick: () => drawerGo('settings'), 'aria-label': 'Open Settings — active profile ' + name, style: { display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', width: '100%' } },
+          h('span', { style: { width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(162,76,113,0.14)', color: '#8E3D61', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: '800', flexShrink: '0' } }, initial),
+          h('div', { style: { minWidth: '0', flex: '1' } },
+            h('div', { style: { ...TYPE.title, color: '#2A2127', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, name),
+            h('div', { style: { ...TYPE.caption, color: '#8A6479', marginTop: '1px' } }, 'View profile & plan ›')
+          )
+        )
+      ),
+      h('nav', { 'aria-label': 'Secondary navigation', style: { padding: '10px 8px', flex: '1', overflowY: 'auto' } },
+        ...items.map(item => {
+          const active = state.view === item.key;
+          return h('button', { onClick: () => drawerGo(item.key), ...(active ? { 'aria-current': 'page' } : {}), style: { width: '100%', display: 'flex', alignItems: 'center', gap: '14px', minHeight: '56px', padding: '0 12px', borderRadius: '28px', background: active ? 'rgba(162,76,113,0.12)' : 'transparent', color: active ? '#8E3D61' : '#2A2127', marginBottom: '2px' } },
+            appIcon(item.icon, 22, { color: active ? '#8E3D61' : '#6E5A64', flexShrink: '0' }),
+            h('div', { style: { textAlign: 'left', minWidth: '0' } },
+              h('div', { style: { fontSize: '15px', fontWeight: '700' } }, item.label),
+              h('div', { style: { fontSize: '12px', color: active ? '#8E3D61' : '#8A6479', fontWeight: '600', marginTop: '1px' } }, item.helper)
+            )
+          );
+        })
+      ),
+      h('div', { style: { padding: '14px 18px calc(14px + env(safe-area-inset-bottom))', borderTop: '1px solid #EBE3E4' } },
+        h('div', { style: { fontSize: '11.5px', color: '#8A6479', fontWeight: '600' } }, 'ChemoWell ' + APP_VERSION)
+      )
     )
   );
 }
@@ -1765,6 +1916,7 @@ function renderContent(now, mg, pct, tyColor, ceiling) {
   if (state.view === 'reports') return state.reportsView ? renderReportDetail(state.reportsView, now) : renderReportsMenu(now);
   if (state.view === 'inpatient') return renderInPatient(now);
   if (state.view === 'symptoms') return renderSymptoms(now);
+  if (state.view === 'calendar') return renderCalendarView(now);
   return [...renderToday(now, mg, pct, tyColor, ceiling)];
 }
 
@@ -1891,7 +2043,7 @@ const TOUR_STEPS = [
   { target: 'nav-reports', title: 'Reports', text: 'The full history lives here — every dose, weight, temperature, and symptom, organized day by day.', next: 'Next' },
   { target: 'nav-inpatient', title: 'In-Patient stays', text: 'Track hospital stays here. While a stay is active, home medication logging pauses, since the hospital handles meds.', next: 'Next' },
   { target: 'nav-symptoms', title: 'Symptoms', text: 'Log symptoms like nausea, pain, or fever so you have a clear record to share with the care team.', next: 'Next' },
-  { target: null, title: 'You\u2019re ready!', text: 'That\u2019s the basics. You can re-run this guide any time by tapping the ? button at the top of the screen.', next: 'Finish' }
+  { target: null, title: 'You\u2019re ready!', text: 'That\u2019s the basics. You can re-run this guide any time from the menu (the three lines, top left) \u2192 Settings \u2192 Replay the walkthrough.', next: 'Finish' }
 ];
 // v12: on form-filling steps the tour renders as a slim banner (see renderTourLayer). tourExpanded
 // tracks the user tapping "More" for the full card; deliberately NOT persisted and reset on every
@@ -2059,6 +2211,8 @@ function render() {
     state.toast ? h('div', { role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: 'calc(96px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(60,30,50,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(120,60,90,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', pointerEvents: 'none' } }, state.toast) : null,
     renderTimeModal(),
     renderUpgradeModal(),
+    renderApptModal(),
+    renderDrawer(),
     (state.view === 'reports' && state.reportsView) ? h('div', { style: { position: 'fixed', zIndex: '34', left: '0', right: '0', bottom: 'calc(78px + env(safe-area-inset-bottom))', display: 'flex', justifyContent: 'center', pointerEvents: 'none' } },
       h('button', { onClick: () => setState({ reportsView: null }), style: { pointerEvents: 'auto', minHeight: '42px', padding: '0 18px', borderRadius: '99px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(60,30,50,0.88)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', fontSize: '13px', fontWeight: '800', boxShadow: '0 10px 28px rgba(120,60,90,0.22)' } }, '↩ Back')
     ) : null,
@@ -2193,7 +2347,15 @@ function renderTimeModal() {
         h('select', { value: m.weightReason || '', onChange: (e) => { state.timeModal.weightReason = e.target.value; setState({ timeModal: state.timeModal }); }, className: 'mono', style: { width: '100%', minHeight: '52px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' } },
           h('option', { value: '' }, 'Not noted'),
           ...WEIGHT_REASONS.map(r => h('option', { value: r.id }, r.label))
-        )
+        ),
+        // app-v22, Owner-requested: steroids are a well-documented cause of fast weight gain during
+        // chemo, so if an active medication looks like one and no reason is picked yet, nudge toward
+        // it instead of leaving the user to remember the connection themselves. Never auto-selects —
+        // only a tap-to-fill suggestion, since the app never silently picks a value for the user.
+        (!m.weightReason && activeSteroidMed()) ? h('button', { onClick: () => { state.timeModal.weightReason = 'steroid'; setState({ timeModal: state.timeModal }); }, style: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%', marginTop: '8px', padding: '10px 12px', borderRadius: '11px', background: 'rgba(154,100,25,0.08)', border: '1px solid rgba(154,100,25,0.22)', textAlign: 'left' } },
+          appIcon('bulb', 16, { color: '#9A6419', flexShrink: '0', marginTop: '1px' }),
+          h('span', { style: { fontSize: '12.5px', color: '#7A5313', lineHeight: '1.4' } }, 'Taking ' + activeSteroidMed().name + ' — steroids commonly cause fast weight gain. Tap to set the reason to Steroid medication.')
+        ) : null
       ) : null,
       m.type === 'weight' && m.weightReason === 'paracentesis' ? h('div', { style: { marginBottom: '16px' } },
         h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, 'Liters drained (optional)'),
@@ -3592,7 +3754,142 @@ function renderMedicationManager(now) {
 }
 
 
-const APP_VERSION = 'app-v21';
+const APPT_REMINDER_OPTIONS = [
+  { id: 'none', label: 'No reminder' },
+  { id: '1h', label: '1 hour before' },
+  { id: 'morning', label: 'The morning of (9 AM)' },
+  { id: '1day', label: '1 day before' }
+];
+function apptReminderLabel(id) { const r = APPT_REMINDER_OPTIONS.find(x => x.id === id); return r ? r.label : 'No reminder'; }
+
+function openApptModal(editId) {
+  if (editId) {
+    const appt = (state.appts || []).find(a => a.id === editId);
+    if (!appt) return;
+    const d = new Date(appt.ts);
+    setState({ apptModal: { editId, title: appt.title, note: appt.note || '', reminder: appt.reminder || 'none', dateStr: toLocalISO(appt.ts).slice(0, 10), time: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'), calOpen: false, calCursor: toLocalISO(appt.ts).slice(0, 7) } });
+  } else {
+    const todayStr = toLocalISO(simNow()).slice(0, 10);
+    setState({ apptModal: { editId: null, title: '', note: '', reminder: 'none', dateStr: '', time: '09:00', calOpen: false, calCursor: todayStr.slice(0, 7) } });
+  }
+}
+function closeApptModal() { setState({ apptModal: null }); }
+function confirmApptModal() {
+  const m = state.apptModal;
+  const title = (m.title || '').trim();
+  if (!title) { setToast('Enter a title for this appointment'); return; }
+  if (!m.dateStr) { setToast('Pick a date'); return; }
+  const ts = new Date(m.dateStr + 'T' + (m.time || '09:00')).getTime();
+  if (isNaN(ts)) { setToast('Invalid date or time'); return; }
+  const noteTrimmed = (m.note || '').trim();
+  const payload = { title, note: noteTrimmed, reminder: m.reminder || 'none', ts };
+  if (m.editId) {
+    // Editing resets the reminded flag ONLY when a field the trigger condition actually depends on
+    // changed (time or reminder choice) — audit fix: resetting unconditionally re-armed the reminder
+    // on an edit as small as fixing a typo in the note, re-notifying for an appointment already
+    // inside its fired 24h grace window with nothing about the reminder itself having changed.
+    const prev = (state.appts || []).find(a => a.id === m.editId);
+    // Compare at minute precision, not exact ms — the form's time input is minute-granularity, so
+    // an appointment whose stored ts carried seconds/ms (however it was created) would otherwise
+    // look "changed" on every edit even when the user picked the exact same date and time back.
+    const reminderRelevantChange = !prev || Math.floor(prev.ts / 60000) !== Math.floor(ts / 60000) || (prev.reminder || 'none') !== (m.reminder || 'none');
+    updateAppointment(m.editId, { ...payload, reminded: reminderRelevantChange ? false : !!(prev && prev.reminded) });
+  } else {
+    if (m.reminder && m.reminder !== 'none' && !isNativeApp() && !TEST_MODE) requestNotifPermission();
+    addAppointment(payload);
+  }
+  closeApptModal();
+}
+
+function renderApptModal() {
+  if (!state.apptModal) return null;
+  const m = state.apptModal;
+  return h('div', { style: { position: 'fixed', inset: '0', background: 'rgba(60,30,50,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '60', padding: '20px' }, onClick: (e) => { if (e.target === e.currentTarget) closeApptModal(); } },
+    h('div', { role: 'dialog', 'aria-modal': 'true', 'aria-label': (m.editId ? 'Edit' : 'Add') + ' appointment', style: { width: '100%', maxWidth: '380px', maxHeight: '88vh', overflowY: 'auto', background: '#FFFFFF', borderRadius: '22px', padding: '22px 20px', boxShadow: '0 24px 64px rgba(120,60,90,0.18)' } },
+      h('div', { style: { ...TYPE.title, color: '#2A2127', marginBottom: '16px' } }, (m.editId ? 'Edit' : 'Add') + ' appointment'),
+      h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, 'Title'),
+      h('input', { value: m.title, onInput: (e) => { state.apptModal.title = e.target.value; }, placeholder: 'e.g. Infusion, lab draw, oncologist visit', style: { width: '100%', minHeight: '48px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127', marginBottom: '16px' } }),
+      h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, 'Date'),
+      h('button', { onClick: () => setState({ apptModal: { ...state.apptModal, calOpen: !state.apptModal.calOpen } }), style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' } },
+        h('span', null, calPillLabel(m.dateStr)),
+        h('span', { style: { fontSize: '12px', color: '#8A6479' } }, m.calOpen ? '▲' : '▼')
+      ),
+      m.calOpen ? h('div', { style: { marginTop: '8px' } },
+        renderCalendar(m.dateStr, m.calCursor, (ds) => { state.apptModal.dateStr = ds; state.apptModal.calOpen = false; setState({ apptModal: state.apptModal }); }, (delta) => { state.apptModal.calCursor = calShift(m.calCursor, delta); setState({ apptModal: state.apptModal }); })
+      ) : null,
+      h('div', { style: { ...TYPE.label, color: '#8A6479', marginTop: '16px', marginBottom: '8px' } }, 'Time'),
+      h('input', { type: 'time', value: m.time, onInput: (e) => { state.apptModal.time = e.target.value; }, className: 'mono', style: { width: '100%', minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127', colorScheme: 'light' } }),
+      h('div', { style: { ...TYPE.label, color: '#8A6479', marginTop: '16px', marginBottom: '8px' } }, 'Remind me'),
+      h('select', { value: m.reminder, onChange: (e) => { state.apptModal.reminder = e.target.value; setState({ apptModal: state.apptModal }); }, className: 'mono', style: { width: '100%', minHeight: '48px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' } },
+        ...APPT_REMINDER_OPTIONS.map(r => h('option', { value: r.id }, r.label))
+      ),
+      h('div', { style: { ...TYPE.label, color: '#8A6479', marginTop: '16px', marginBottom: '8px' } }, 'Note (optional)'),
+      h('textarea', { value: m.note, onInput: (e) => { state.apptModal.note = e.target.value; }, rows: 2, placeholder: 'Anything else worth noting...', style: { width: '100%', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '10px 14px', fontSize: '14px', background: '#FFFFFF', color: '#2A2127', resize: 'vertical', fontFamily: 'inherit' } }),
+      h('div', { style: { display: 'flex', gap: '10px', marginTop: '20px' } },
+        h('button', { onClick: closeApptModal, style: { flex: '1', minHeight: '48px', borderRadius: '13px', background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(125,105,116,0.25)', color: '#5F4A56', fontSize: '14px', fontWeight: '700' } }, 'Cancel'),
+        h('button', { onClick: confirmApptModal, style: { flex: '1', minHeight: '48px', borderRadius: '13px', background: '#A24C71', color: '#fff', fontSize: '14px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, m.editId ? 'Save' : 'Add')
+      )
+    )
+  );
+}
+
+function renderCalendarView(now) {
+  const all = (state.appts || []).slice().sort((a, b) => a.ts - b.ts);
+  const dayStartNow = dayStart(now);
+  const upcoming = all.filter(a => a.ts >= dayStartNow);
+  const past = all.filter(a => a.ts < dayStartNow).reverse();
+  const apptRow = (appt) => {
+    const d = new Date(appt.ts);
+    return h('div', { key: appt.id, style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '13px 15px', borderTop: '1px solid rgba(212,104,138,0.08)' } },
+      h('div', { style: { flexShrink: '0', width: '52px', textAlign: 'center' } },
+        h('div', { style: { fontSize: '11px', fontWeight: '800', color: '#A24C71', textTransform: 'uppercase' } }, d.toLocaleDateString([], { month: 'short' })),
+        h('div', { style: { fontSize: '20px', fontWeight: '800', color: '#2A2127', lineHeight: '1.1' } }, d.getDate())
+      ),
+      h('div', { style: { flex: '1', minWidth: '0' } },
+        h('div', { style: { ...TYPE.title, fontSize: '15px', color: '#2A2127' } }, appt.title),
+        h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' } },
+          h('span', null, d.toLocaleDateString([], { weekday: 'short' }) + ' · ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })),
+          (appt.reminder && appt.reminder !== 'none') ? h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '3px' } }, appIcon('bell', 12, { color: '#8A6479' }), apptReminderLabel(appt.reminder)) : null
+        ),
+        appt.note ? h('div', { style: { fontSize: '12.5px', color: '#5A4552', marginTop: '4px', fontStyle: 'italic', lineHeight: '1.4' } }, appt.note) : null
+      ),
+      h('div', { style: { display: 'flex', gap: '4px', flexShrink: '0' } },
+        h('button', { onClick: () => openApptModal(appt.id), 'aria-label': 'Edit ' + appt.title, style: { width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(162,76,113,0.08)', color: '#8E3D61', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('edit', 15)),
+        state.confirmDeleteAppt === appt.id
+          ? h('button', { onClick: () => removeAppointment(appt.id), 'aria-label': 'Confirm delete', style: { minHeight: '44px', padding: '0 10px', borderRadius: '10px', background: '#C0453B', color: '#fff', fontSize: '12px', fontWeight: '800' } }, 'Delete?')
+          : h('button', { onClick: () => setState({ confirmDeleteAppt: appt.id }), 'aria-label': 'Delete ' + appt.title, style: { width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(192,69,59,0.08)', color: '#A5443C', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('trash', 15))
+      )
+    );
+  };
+  return [
+    h('section', null,
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' } },
+        h('div', null,
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#A24C71' } }, appIcon('calendar', 19), h('span', { style: { ...TYPE.label } }, 'Calendar')),
+          h('h1', { style: { ...TYPE.display, color: '#2A2127', marginTop: '5px' } }, 'Calendar'),
+          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', maxWidth: '470px', lineHeight: '1.4' } }, 'Appointments, infusions, labs, and other dates worth a reminder.')
+        ),
+        h('button', { onClick: () => openApptModal(null), style: { flexShrink: '0', minHeight: '44px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: '5px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '12.5px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, appIcon('plus', 16), 'Add')
+      )
+    ),
+    h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06)' } },
+      upcoming.length
+        ? h('div', null, ...upcoming.map(apptRow))
+        : h('div', { style: { padding: '28px 16px', textAlign: 'center' } },
+            h('div', { style: { ...TYPE.body, color: '#7A6E76' } }, 'No upcoming appointments yet.'),
+            h('div', { style: { ...TYPE.caption, color: '#8A6479', marginTop: '4px' } }, 'Add your next infusion, lab draw, or visit — with an optional reminder.')
+          )
+    ),
+    past.length ? h('section', null,
+      h('button', { onClick: () => setState({ showPastAppts: !state.showPastAppts }), style: { display: 'flex', alignItems: 'center', gap: '6px', color: '#8A6479', fontSize: '13px', fontWeight: '700' } },
+        h('span', null, (state.showPastAppts ? '▾' : '▸') + ' Past appointments (' + past.length + ')')
+      ),
+      state.showPastAppts ? h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '18px', overflow: 'hidden', marginTop: '10px', opacity: '0.75' } }, ...past.map(apptRow)) : null
+    ) : null
+  ];
+}
+
+const APP_VERSION = 'app-v22';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -3672,6 +3969,22 @@ function renderSettings(now) {
     h('section', { style: secStyle },
       secLabel('How-to guide'),
       h('button', { onClick: () => { navigateTo('home'); startTour(); }, style: { marginTop: '10px', minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'rgba(170,83,117,0.10)', border: '1px solid rgba(170,83,117,0.25)', color: '#8E3D61', fontSize: '13px', fontWeight: '800' } }, 'Replay the walkthrough')
+    ),
+    // FAQ (app-v22, Owner-requested)
+    h('section', { style: secStyle },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, appIcon('help', 17, { color: '#8E3D61' }), secLabel('FAQ')),
+      h('div', { style: { marginTop: '8px', borderRadius: '13px', overflow: 'hidden', border: '1px solid #EBE3E4' } },
+        ...FAQ_ITEMS.map((item, i) => {
+          const open = state.faqOpenId === item.id;
+          return h('div', { style: { borderTop: i > 0 ? '1px solid rgba(212,104,138,0.10)' : 'none' } },
+            h('button', { onClick: () => setState({ faqOpenId: open ? null : item.id }), 'aria-expanded': open ? 'true' : 'false', style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', minHeight: '48px', padding: '11px 14px', textAlign: 'left', background: '#FFFFFF' } },
+              h('span', { style: { fontSize: '13.5px', fontWeight: '700', color: '#2A2127' } }, item.q),
+              h('span', { style: { fontSize: '13px', color: '#8A6479', flexShrink: '0' } }, open ? '−' : '+')
+            ),
+            open ? h('div', { style: { padding: '0 14px 14px', fontSize: '13px', color: '#554A52', lineHeight: '1.5' } }, item.a) : null
+          );
+        })
+      )
     ),
     // About & legal
     h('section', { style: secStyle },
@@ -4305,6 +4618,41 @@ function checkNotifications() {
   });
 }
 
+// Calendar appointment reminders (app-v22) — deliberately independent of checkNotifications()
+// above: appointments aren't medication doses, so they don't belong in that function's dose-window
+// logic, and keeping them separate means a future change to one can't silently break the other.
+// Same TEST_MODE gate as checkNotifications for the same reason (simulated beta dates make
+// real-time reminders meaningless on the web build; the native test build fires for real).
+function reminderTriggerTs(appt) {
+  if (appt.reminder === '1h') return appt.ts - 3600000;
+  if (appt.reminder === '1day') return appt.ts - 86400000;
+  if (appt.reminder === 'morning') {
+    const d = new Date(appt.ts);
+    d.setHours(9, 0, 0, 0);
+    let triggerTs = d.getTime();
+    // Audit fix: a fixed 9 AM trigger fires AFTER an appointment earlier than 9 AM (e.g. a 7 AM
+    // lab draw) — the reminder would land while the visit is already over. Fall back to 1 hour
+    // before the appointment itself whenever that would land earlier than the naive 9 AM slot.
+    if (triggerTs >= appt.ts - 3600000) triggerTs = appt.ts - 3600000;
+    return triggerTs;
+  }
+  return null; // 'none' or unset
+}
+function checkAppointmentReminders() {
+  if (TEST_MODE && !isNativeApp()) return;
+  if (!isNativeApp() && (!('Notification' in window) || Notification.permission !== 'granted')) return;
+  const nowTs = Date.now();
+  (state.appts || []).forEach(appt => {
+    if (appt.reminded || !appt.reminder || appt.reminder === 'none') return;
+    const triggerTs = reminderTriggerTs(appt);
+    // Skip stale appointments the app never had a chance to check in time (e.g. reopened after a
+    // long absence) rather than firing a reminder for something that already happened over a day ago.
+    if (triggerTs == null || nowTs < triggerTs || nowTs > appt.ts + 86400000) return;
+    sendNotif('Upcoming: ' + appt.title, new Date(appt.ts).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + (appt.note ? ' — ' + appt.note : ''), 'appt-' + appt.id);
+    updateAppointment(appt.id, { reminded: true });
+  });
+}
+
 subscribePush();
 
 // Init
@@ -4335,8 +4683,12 @@ setInterval(() => {
   // upgradeOpen joins timeModal in the tick guard (v11): rebuilding the plans sheet every second
   // replayed its 320ms sheetUp entry animation and reset its internal scroll — the "flickering,
   // adjusting popup" Aaron saw on his phone. Interaction re-renders still repaint it instantly.
-  if (!state.timeModal && !state.upgradeOpen && !isEditing) render();
+  // drawerOpen/apptModal join the same guard (v22): without it, a focused element inside the drawer
+  // or the appointment form would be destroyed and re-created every second by the full-tree rebuild,
+  // silently dropping keyboard focus (and defeating the drawer's Tab-trap) the instant the tick fired.
+  if (!state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !isEditing) render();
   checkNotifications();
+  checkAppointmentReminders();
 }, 1000);
 if (!getPrefsDB().tourDone && (getPrefsDB().patientName || '').trim()) { const savedStep = getPrefsDB().tourStep; state.tourStep = (typeof savedStep === 'number' && savedStep >= 0 && savedStep < TOUR_STEPS.length) ? savedStep : 0; }
 render();
