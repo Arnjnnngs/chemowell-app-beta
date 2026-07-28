@@ -2309,9 +2309,31 @@ function render() {
   // after any tap inside it. Re-query by id both times — never cache the node (stale-ref landmine).
   const prevSheet = document.getElementById('plans-sheet');
   const sheetScroll = prevSheet ? prevSheet.scrollTop : 0;
+  // Preserve focus + text-cursor position across interaction re-renders (v25 audit fix, Finding 1):
+  // same root cause as the plans-sheet scroll above -- the full rebuild below destroys whatever
+  // input/select currently has focus and creates a brand-new element in its place, silently
+  // dropping keyboard focus and, for text fields, resetting the cursor to nowhere. That's fine for
+  // most fields (their own onInput doesn't force a rerender), but any field that DOES need a live
+  // rerender-while-typing (e.g. the medication editor's Dosage options / Daily limit / Limit unit,
+  // which drive a live preview) needs the same identity to survive the rebuild. Only text-like
+  // inputs/selects with a stable id opt in -- elements without one are left alone, unchanged from
+  // before this fix.
+  const prevActive = document.activeElement;
+  const prevActiveId = (prevActive && prevActive.id && (prevActive.tagName === 'INPUT' || prevActive.tagName === 'SELECT' || prevActive.tagName === 'TEXTAREA')) ? prevActive.id : null;
+  const prevSelStart = (prevActive && typeof prevActive.selectionStart === 'number') ? prevActive.selectionStart : null;
+  const prevSelEnd = (prevActive && typeof prevActive.selectionEnd === 'number') ? prevActive.selectionEnd : null;
   root.innerHTML = '';
   root.appendChild(page);
   if (sheetScroll > 0) { const freshSheet = document.getElementById('plans-sheet'); if (freshSheet) freshSheet.scrollTop = sheetScroll; }
+  if (prevActiveId) {
+    const freshActive = document.getElementById(prevActiveId);
+    if (freshActive) {
+      freshActive.focus();
+      if (prevSelStart !== null && typeof freshActive.setSelectionRange === 'function') {
+        try { freshActive.setSelectionRange(prevSelStart, prevSelEnd); } catch (e) { /* not a text-selectable input type, e.g. type="number" in some browsers -- focus alone is still restored */ }
+      }
+    }
+  }
   positionTour();
 }
 
@@ -3352,8 +3374,13 @@ function dailyLimitPreview(form) {
   const testDoses = parseDoseOptions(form.dosesText);
   const carries = unit === 'mg' ? testDoses.some(d => d.mg > 0) : testDoses.some(d => d.pills > 0);
   if (!carries) {
+    // v25 audit fix (Finding 2): this used to be a two-way mg/pills ternary, so "Number of
+    // applications" medications (patches, sprays, creams) were incorrectly told to add "a pill
+    // count" -- confusing for exactly the non-technical caregiver audience this copy exists for.
+    // Matches the three-way branch the success-message below already used.
+    const missingWord = unit === 'mg' ? 'an mg amount' : unit === 'pills' ? 'a pill count' : 'an application count';
     return h('div', { style: { gridColumn: '1 / -1', fontSize: '12px', fontWeight: '700', color: '#9A6419', background: 'rgba(199,120,0,0.08)', border: '1px solid rgba(199,120,0,0.22)', borderRadius: '10px', padding: '8px 10px', lineHeight: '1.4' } },
-      'Dosage options don’t include ' + (unit === 'mg' ? 'an mg amount' : 'a pill count') + ' yet — this limit won’t work until they do.');
+      'Dosage options don’t include ' + missingWord + ' yet — this limit won’t work until they do.');
   }
   const unitWord = unit === 'mg' ? 'mg' : (unit === 'pills' ? (dailyLimit === 1 ? 'pill' : 'pills') : (dailyLimit === 1 ? 'application' : 'applications'));
   const verb = unit === 'mg' ? 'is' : 'are';
@@ -3454,7 +3481,14 @@ function saveMedicationEditor() {
     const testDoses = parseDoseOptions(form.dosesText);
     const unit = form.dailyLimitUnit;
     const carries = unit === 'mg' ? testDoses.some(d => d.mg > 0) : testDoses.some(d => d.pills > 0);
-    if (!carries) { setToast('Add ' + (unit === 'mg' ? 'an mg amount to Dosage options (e.g. "500 mg")' : 'a pill count to Dosage options (e.g. "1 pill")') + ', or change Limit unit to match, before saving this daily limit.'); return; }
+    // v25 audit fix (Finding 2): same three-way unit branch as the inline preview above, so an
+    // "applications"-unit medication (patch/spray/cream) gets its own correct example text instead
+    // of being told to add "a pill count."
+    if (!carries) {
+      const addWhat = unit === 'mg' ? 'an mg amount to Dosage options (e.g. "500 mg")' : unit === 'pills' ? 'a pill count to Dosage options (e.g. "1 pill")' : 'an application count to Dosage options (e.g. "1 application")';
+      setToast('Add ' + addWhat + ', or change Limit unit to match, before saving this daily limit.');
+      return;
+    }
   }
   const original = editor.sourceId ? state.meds.find(med => med.id === editor.sourceId) : null;
   const id = nextMedicationId(name, editor.sourceId);
@@ -3718,9 +3752,15 @@ function renderMedicationEditor() {
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: '11px' } },
       h('label', null, fieldLabel('Medication name'), formInput({ value: form.name, placeholder: 'Medication name', onInput: event => updateMedicationForm('name', event.target.value) })),
       h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, placeholder: 'Generic name', onInput: event => updateMedicationForm('sub', event.target.value) })),
-      h('label', null, fieldLabel('Dosage options', 'Separate choices with commas.'), formInput({ value: form.dosesText, placeholder: '500 mg, 1000 mg', onInput: event => updateMedicationForm('dosesText', event.target.value) })),
-      h('label', null, fieldLabel('Daily limit', 'Blocks logging more doses once this many are reached for the day. Leave blank for no limit.'), formInput({ type: 'number', min: '0', step: '0.5', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value) })),
-      h('label', null, fieldLabel('Limit unit', 'What the number above counts.'), h('select', { value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' }) }, h('option', { value: 'mg' }, 'Total milligrams (mg)'), h('option', { value: 'pills' }, 'Number of pills / doses'), h('option', { value: 'applications' }, 'Number of applications'))),
+      // v25 audit fix (Finding 1): these three fields drive dailyLimitPreview() below, and the
+      // preview is supposed to update live as the user types/picks -- but this renderer does a full
+      // root.innerHTML rebuild on every setState() (see render()), so passing rerender:true here
+      // (needed for the preview to actually refresh) would otherwise destroy and recreate the input
+      // out from under the user's cursor on every keystroke. Stable ids let render() find the same
+      // logical field again after rebuild and restore focus + cursor position onto it.
+      h('label', null, fieldLabel('Dosage options', 'Separate choices with commas.'), formInput({ id: 'med-doses-text', value: form.dosesText, placeholder: '500 mg, 1000 mg', onInput: event => updateMedicationForm('dosesText', event.target.value, true) })),
+      h('label', null, fieldLabel('Daily limit', 'Blocks logging more doses once this many are reached for the day. Leave blank for no limit.'), formInput({ id: 'med-daily-limit', type: 'number', min: '0', step: '0.5', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value, true) })),
+      h('label', null, fieldLabel('Limit unit', 'What the number above counts.'), h('select', { id: 'med-daily-limit-unit', value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' }) }, h('option', { value: 'mg' }, 'Total milligrams (mg)'), h('option', { value: 'pills' }, 'Number of pills / doses'), h('option', { value: 'applications' }, 'Number of applications'))),
       h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }) }, h('option', { value: 'gap' }, 'As needed \u2014 wait a set number of hours between doses'), h('option', { value: 'win' }, 'Scheduled \u2014 remind me at specific times'))),
       dailyLimitPreview(form),
       h('div', { style: { gridColumn: '1 / -1' } },
