@@ -5,8 +5,30 @@ this file, not in anyone's memory, so it survives across sessions.
 
 Aaron is a non-technical solo founder and product owner. He sets direction and gives final
 acceptance; he should never have to catch a technical defect himself. Every technical
-decision (architecture, libraries, process) is owned by the Lead Developer unless Aaron
-says otherwise.
+decision (architecture, libraries) is owned by the Lead Developer unless Aaron says
+otherwise. Running the process itself is a separate question — see below.
+
+## Chain of command (app-v25, Aaron-mandated)
+
+**The Project Manager leads this process. The Lead Developer does not, and never should
+have.** This was corrected explicitly after the Lead Developer let real defects (unclear
+copy, a visual regression, a confusing validation error, an architecture question that
+needed real investigation) reach Aaron on the medication editor despite the chain
+supposedly having covered all of it. The PM decides whether a stage's output actually
+clears the bar, whether the restart rule applies, and when something is genuinely ready for
+Aaron — that authority does not sit with whoever is implementing the fix.
+
+The Lead Developer's place in the sequence is fixed, not roaming the whole chain: it sits
+right after the **Zero Day Auditor**. The Auditor finds what's wrong; the Lead Developer
+implements the fix, and if that fix doesn't hold up or turns up more problems, the Lead
+Developer is who runs it back through the restart rule. The Lead Developer does not get to
+decide the loop is done — that call belongs to the PM.
+
+**PM sign-off is a real independent check, not the Lead Developer re-labeling its own pass.**
+Up through app-v24, the PM write-up was produced by the same Claude session that did the
+implementing — the exact self-certification problem this correction exists to close. Going
+forward, PM runs the same way Auditor and Designer already do: as its own independent pass,
+not narrated by the Lead Developer after the fact.
 
 ## Two lanes, chosen by scope
 
@@ -25,9 +47,10 @@ things that are obviously small, not a way to talk yourself into skipping review
 
 ## Fast lane — 4 stages
 
-1. **Lead Developer (Claude)** — investigates, implements, self-verifies: syntax check, a
-   real browser/runtime smoke test of every affected screen at mobile and desktop sizes,
-   zero console errors. No placeholders, no TODOs, no "should work."
+1. **Lead Developer (Claude)** — implements the fix, self-verifies: syntax check, a real
+   browser/runtime smoke test of every affected screen at mobile and desktop sizes, zero
+   console errors. No placeholders, no TODOs, no "should work." This is an implementer role,
+   not a leadership one — see Chain of command above.
 2. **Auditor** — one combined pass: line-by-line code check of the change and its blast
    radius, plus a real end-to-end test of the fix on the running product (not a thought
    experiment) including the obvious edge cases. This absorbs what QA User Zero used to do
@@ -35,24 +58,42 @@ things that are obviously small, not a way to talk yourself into skipping review
    half of what the Auditor already does. Runs before the Designer (app-v24: Aaron moved
    Audit ahead of Design) — a fix that turns out to be functionally wrong shouldn't get a
    polish pass first, since Auditor findings can still reshape the UI the Designer would
-   otherwise be reviewing.
+   otherwise be reviewing. If the Auditor finds something wrong, it goes back to the Lead
+   Developer to fix and returns here — the Lead Developer implements and re-implements in
+   this loop, it does not decide when the loop is over.
 3. **Designer** — quick visual pass, only if the UI actually changed. Skipped entirely for
    backend-only or logic-only fixes.
-4. **Project Manager** — confirms the fix matches what Aaron actually asked for, confirms
-   the Auditor's test evidence is real, checks release mechanics (version bump if
-   applicable, live smoke test after push), writes Aaron a plain-language summary.
+4. **Project Manager (leads this process)** — independent pass, not a restatement of the
+   Lead Developer's own work: confirms the fix matches what Aaron actually asked for,
+   confirms the Auditor's test evidence is real, checks release mechanics (version bump if
+   applicable, live smoke test after push), decides whether this is genuinely ready for
+   Aaron or needs to loop back, writes Aaron a plain-language summary.
 
 ## Full chain — 8 stages before Aaron
 
 1. **Developer** — investigates the affected code, researches the approach plus at least
-   one alternative, defines what "done" looks like. Written brief.
-2. **Lead Developer (Claude)** — implements fully, self-verifies as above.
+   one alternative, defines what "done" looks like. Written brief. Anything that's an actual
+   architecture or data-model question — not just a defect fix — gets investigated here
+   before anyone implements it, even if that means the loop takes an extra pass. app-v25
+   example: "schedule windows should be a single alert time, not a start/end range" is a
+   real redesign of logic multiple releases have depended on (gap timers, missed-dose
+   detection, the reminder copy itself) and needs this stage's actual thought, not a quick
+   patch.
+2. **Lead Developer (Claude)** — implements fully, self-verifies as above. An implementer
+   role, not a leadership one — see Chain of command above. Sits right after the Zero Day
+   Auditor in the loop: the Auditor finds what's wrong, the Lead Developer fixes it, and if
+   the fix doesn't hold up the Lead Developer is who runs it back through the restart rule.
+   The Lead Developer does not decide the loop is done.
 3. **Auditor ("Zero Day Auditor")** — full line-by-line code audit of the change and its
    blast radius, plus end-to-end user journeys on the running product including edge cases:
    double-taps, day boundaries, empty states, absurd inputs, offline/reload. Runs before the
    Designer (app-v24: Aaron moved Audit ahead of Design, since a functional finding can
    reshape a screen the Designer would otherwise have already signed off on). Written report
-   with severity, repro steps, locations.
+   with severity, repro steps, locations. Explicitly includes whether copy actually reads
+   clearly to a non-technical user and whether the screen matches the app's current visual
+   language (rounded controls, not stray browser-default square ones) — not just "does it
+   function," since app-v25 shipped both a confusing-copy miss and a visual-consistency miss
+   that a narrowly-functional audit didn't catch.
 
    **Minimum bar for every full-chain release (app-v24, Aaron-mandated): at least 20 distinct,
    written test cases**, not a handful of spot-checks — covering, at minimum:
@@ -76,7 +117,7 @@ things that are obviously small, not a way to talk yourself into skipping review
    the primary check, not an afterthought after a desktop pass.
 4. **Lead Auditor** — reproduces every finding, probes what the audit didn't cover. Only
    required if the Auditor flags something they're not confident about; otherwise optional
-   at the Lead Developer's discretion for high-risk changes (data model changes, anything
+   at the PM's discretion for high-risk changes (data model changes, anything
    safety-relevant).
 5. **Designer** — reviews the actual rendered product on every touched screen: spacing,
    typography, color, alignment, touch targets, empty/error states. Premium consumer-grade
@@ -84,10 +125,13 @@ things that are obviously small, not a way to talk yourself into skipping review
 6. **Lead Designer** — independently re-inspects a sample, confirms the Designer covered
    every affected surface (modals, toasts, disabled states, smallest viewport). Only
    required if the Designer flags something they're not confident about; otherwise
-   optional at the Lead Developer's discretion for high-visibility UI work.
-7. **Project Manager** — verifies every stage that ran actually produced its artifact,
-   cross-checks every finding was fixed and the fix re-verified, confirms no scope drift,
-   verifies release mechanics, writes the completion summary.
+   optional at the PM's discretion for high-visibility UI work.
+7. **Project Manager (leads this process)** — the real gate, run as its own independent
+   pass rather than narrated by the Lead Developer: verifies every stage that ran actually
+   produced its artifact, cross-checks every finding was fixed and the fix re-verified,
+   confirms no scope drift, verifies release mechanics, decides whether this is genuinely
+   ready for Aaron or needs to loop back through the restart rule, writes the completion
+   summary.
 8. **Owner (Aaron)** — final acceptance.
 
 ## The restart rule (applies to both lanes)
