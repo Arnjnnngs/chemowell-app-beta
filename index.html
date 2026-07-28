@@ -3759,7 +3759,16 @@ function renderMedicationEditor() {
       // out from under the user's cursor on every keystroke. Stable ids let render() find the same
       // logical field again after rebuild and restore focus + cursor position onto it.
       h('label', null, fieldLabel('Dosage options', 'Separate choices with commas.'), formInput({ id: 'med-doses-text', value: form.dosesText, placeholder: '500 mg, 1000 mg', onInput: event => updateMedicationForm('dosesText', event.target.value, true) })),
-      h('label', null, fieldLabel('Daily limit', 'Blocks logging more doses once this many are reached for the day. Leave blank for no limit.'), formInput({ id: 'med-daily-limit', type: 'number', min: '0', step: '0.5', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value, true) })),
+      // v25 audit re-verify fix (Finding A): type="number" inputs throw on setSelectionRange in
+      // Chrome, which the new render()-time cursor-restore logic silently swallows -- with no
+      // fallback, a freshly-refocused number input's cursor resets to position 0 after every
+      // keystroke-triggered rerender, so multi-digit/decimal typing lands in reverse order (typing
+      // "40" saves as "04"). type="text" + inputMode="decimal" gives the same numeric mobile
+      // keyboard with none of that limitation -- setSelectionRange is fully supported on text
+      // inputs, and every consumer of this value already goes through Number(...) parsing (see
+      // dailyLimitPreview / saveMedicationEditor), never the type="number"-only valueAsNumber, so
+      // this is a purely additive fix with no other behavior change.
+      h('label', null, fieldLabel('Daily limit', 'Blocks logging more doses once this many are reached for the day. Leave blank for no limit.'), formInput({ id: 'med-daily-limit', type: 'text', inputMode: 'decimal', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value, true) })),
       h('label', null, fieldLabel('Limit unit', 'What the number above counts.'), h('select', { id: 'med-daily-limit-unit', value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' }) }, h('option', { value: 'mg' }, 'Total milligrams (mg)'), h('option', { value: 'pills' }, 'Number of pills / doses'), h('option', { value: 'applications' }, 'Number of applications'))),
       h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }) }, h('option', { value: 'gap' }, 'As needed \u2014 wait a set number of hours between doses'), h('option', { value: 'win' }, 'Scheduled \u2014 remind me at specific times'))),
       dailyLimitPreview(form),
@@ -3861,8 +3870,12 @@ function renderMedicationEditor() {
     ),
     (form.treatmentMode || 'none') !== 'none' ? h('div', { style: { marginTop: '8px' } },
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: '8px' } },
-        h('label', null, fieldLabel('Days before treatment', 'Becomes active this many days before treatment day (0 = starts on treatment day itself).'), formInput({ type: 'number', min: '0', step: '1', value: String(form.treatmentDaysBefore), onInput: event => updateMedicationForm('treatmentDaysBefore', event.target.value, true) })),
-        h('label', null, fieldLabel('Days after treatment', 'Stays active through this many days after treatment day (0 = treatment day only).'), formInput({ type: 'number', min: '0', step: '1', value: String(form.treatmentDaysAfter), onInput: event => updateMedicationForm('treatmentDaysAfter', event.target.value, true) }))
+        // v25 audit re-verify fix: same digit-scrambling class of bug as Finding A above (these two
+        // fields also pass rerender:true on every keystroke) -- fixed the same way, plus a stable id
+        // so render()'s cursor-restore logic can find them again after rebuild (they previously had
+        // none, so they were losing focus entirely on every keystroke, not just scrambling digits).
+        h('label', null, fieldLabel('Days before treatment', 'Becomes active this many days before treatment day (0 = starts on treatment day itself).'), formInput({ id: 'med-treatment-days-before', type: 'text', inputMode: 'numeric', value: String(form.treatmentDaysBefore), onInput: event => updateMedicationForm('treatmentDaysBefore', event.target.value, true) })),
+        h('label', null, fieldLabel('Days after treatment', 'Stays active through this many days after treatment day (0 = treatment day only).'), formInput({ id: 'med-treatment-days-after', type: 'text', inputMode: 'numeric', value: String(form.treatmentDaysAfter), onInput: event => updateMedicationForm('treatmentDaysAfter', event.target.value, true) }))
       ),
       h('div', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76', marginTop: '6px', lineHeight: '1.4' } }, (form.treatmentMode === 'excluded' ? 'Excluded window: ' : 'Active window: ') + clampTreatmentDays(form.treatmentDaysBefore) + ' day' + (clampTreatmentDays(form.treatmentDaysBefore) === 1 ? '' : 's') + ' before through ' + clampTreatmentDays(form.treatmentDaysAfter) + ' day' + (clampTreatmentDays(form.treatmentDaysAfter) === 1 ? '' : 's') + ' after treatment day.')
     ) : null,
