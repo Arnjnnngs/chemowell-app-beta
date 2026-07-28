@@ -1466,7 +1466,7 @@ const FAQ_ITEMS = [
   { id: 'missed-dose', q: 'What happens if I miss a dose?', a: 'ChemoWell flags it as missed once its window passes without a log. You can resolve it from History — mark it Took later, Skipped, or Clear it if it was logged some other way.' },
   { id: 'treatment-date', q: 'How do I set a treatment (chemo/radiation) date?', a: 'On Home, under Treatment schedule, tap Pick a date. Medications set to "Treatment-day only" or "Excluded near treatment day" use this date to know when to show or hide themselves.' },
   { id: 'weight-reason', q: 'How do I note why weight changed?', a: 'When you log a weight, an optional Reason for change dropdown appears — Paracentesis, fluid retention, appetite changes, and more. Picking Paracentesis reveals a Liters drained field, and there’s a free-text Note too. All of it shows up in the Weight report.' },
-  { id: 'calendar', q: 'How do I get a reminder for an appointment?', a: 'Open the menu and tap Calendar, then Add. Give it a title, date, and time, and choose Remind me — 1 hour before, the morning of, or 1 day before. You’ll need to allow notifications when asked for the reminder to actually fire.' },
+  { id: 'calendar', q: 'How do I get a reminder for an appointment?', a: 'Open the menu and tap Calendar, then Add. Give it a title, date, and time, then choose when to be reminded — right at the time, 1 hour before, the morning of, 1 day before, or a custom lead time you set yourself. One thing to know: reminders only fire while ChemoWell is open in your browser, so they won’t reach you if your phone is locked or the tab is closed. You’ll also need to allow notifications when your browser asks.' },
   { id: 'reset', q: 'Can I start over / erase everything?', a: 'Yes — Settings, all the way at the bottom, under Start over. It erases the patient name, medication list, and all logged history from this device. This can’t be undone, so use it only if you really mean to wipe the slate clean.' }
 ];
 async function logSymptom(type, ts, opts) {
@@ -3601,7 +3601,11 @@ const PLACEMENT_OPTIONS = [
 const TREATMENT_MODE_OPTIONS = [
   { key: 'none', label: 'Always available', helper: 'No treatment-day restriction.' },
   { key: 'only', label: 'Only near treatment day', helper: 'Only appears on Home for a window of days around your treatment date — hidden the rest of the time.' },
-  { key: 'excluded', label: 'Excluded near treatment day', helper: 'Hidden for a window of days around your treatment date — available the rest of the time.' }
+  // v24 Auditor finding: copy previously said "Hidden," but the Home card deliberately stays
+  // visible-but-inert during the excluded window (a v20 design choice so a caregiver never sees a
+  // medication silently vanish and wonders if data was lost) — the sibling "Only" mode above
+  // genuinely does hide the card, so this needed to say something different, not the same word.
+  { key: 'excluded', label: 'Excluded near treatment day', helper: 'Grayed out and can’t be logged for a window of days around your treatment date — available the rest of the time.' }
 ];
 function setTreatmentMode(key) {
   if (!state.medEditor) return;
@@ -3893,21 +3897,38 @@ function renderMedicationManager(now) {
 
 const APPT_REMINDER_OPTIONS = [
   { id: 'none', label: 'No reminder' },
+  { id: 'attime', label: 'At the scheduled time' },
   { id: '1h', label: '1 hour before' },
   { id: 'morning', label: 'The morning of (9 AM)' },
-  { id: '1day', label: '1 day before' }
+  { id: '1day', label: '1 day before' },
+  { id: 'custom', label: 'Custom...' }
 ];
-function apptReminderLabel(id) { const r = APPT_REMINDER_OPTIONS.find(x => x.id === id); return r ? r.label : 'No reminder'; }
+// v24: takes the full appointment (not just the reminder id) so the 'custom' case can read its
+// stored lead-time value/unit to build a real label instead of a generic placeholder.
+function apptReminderLabel(appt) {
+  if (appt.reminder === 'custom') {
+    const n = appt.reminderCustomValue, unit = appt.reminderCustomUnit || 'minutes';
+    if (!Number.isFinite(n) || n < 0) return 'Custom reminder';
+    if (n === 0) return 'At the scheduled time'; // 0 lead time = same as the 'attime' option
+    const unitLabel = unit === 'days' ? (n === 1 ? 'day' : 'days') : unit === 'hours' ? (n === 1 ? 'hour' : 'hours') : (n === 1 ? 'minute' : 'minutes');
+    return n + ' ' + unitLabel + ' before';
+  }
+  const r = APPT_REMINDER_OPTIONS.find(x => x.id === appt.reminder);
+  return r ? r.label : 'No reminder';
+}
 
 function openApptModal(editId) {
   if (editId) {
     const appt = (state.appts || []).find(a => a.id === editId);
     if (!appt) return;
     const d = new Date(appt.ts);
-    setState({ apptModal: { editId, title: appt.title, note: appt.note || '', reminder: appt.reminder || 'none', dateStr: toLocalISO(appt.ts).slice(0, 10), time: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'), calOpen: false, calCursor: toLocalISO(appt.ts).slice(0, 7) } });
+    // v24: seed customValue/customUnit from the appointment so re-opening an edit shows the lead
+    // time Aaron actually set, same as every other field here — default to 30 minutes if this
+    // appointment has never used the custom option, so the fields aren't blank if he switches to it.
+    setState({ apptModal: { editId, title: appt.title, note: appt.note || '', reminder: appt.reminder || 'none', dateStr: toLocalISO(appt.ts).slice(0, 10), time: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'), calOpen: false, calCursor: toLocalISO(appt.ts).slice(0, 7), customValue: Number.isFinite(appt.reminderCustomValue) ? appt.reminderCustomValue : 30, customUnit: appt.reminderCustomUnit || 'minutes' } });
   } else {
     const todayStr = toLocalISO(simNow()).slice(0, 10);
-    setState({ apptModal: { editId: null, title: '', note: '', reminder: 'none', dateStr: '', time: '09:00', calOpen: false, calCursor: todayStr.slice(0, 7) } });
+    setState({ apptModal: { editId: null, title: '', note: '', reminder: 'none', dateStr: '', time: '09:00', calOpen: false, calCursor: todayStr.slice(0, 7), customValue: 30, customUnit: 'minutes' } });
   }
 }
 function closeApptModal() { setState({ apptModal: null }); }
@@ -3918,8 +3939,19 @@ function confirmApptModal() {
   if (!m.dateStr) { setToast('Pick a date'); return; }
   const ts = new Date(m.dateStr + 'T' + (m.time || '09:00')).getTime();
   if (isNaN(ts)) { setToast('Invalid date or time'); return; }
+  // v24: custom reminder must be a real, non-negative number — block the save with a clear
+  // message rather than let a malformed value silently save a reminder that never fires (matches
+  // the existing validation pattern used for the Liters-drained field).
+  if (m.reminder === 'custom' && (m.customValue === '' || isNaN(Number(m.customValue)) || Number(m.customValue) < 0)) {
+    setToast('Enter a reminder time of 0 or more.');
+    return;
+  }
   const noteTrimmed = (m.note || '').trim();
   const payload = { title, note: noteTrimmed, reminder: m.reminder || 'none', ts };
+  if (m.reminder === 'custom') {
+    payload.reminderCustomValue = Number(m.customValue);
+    payload.reminderCustomUnit = m.customUnit || 'minutes';
+  }
   if (m.editId) {
     // Editing resets the reminded flag ONLY when a field the trigger condition actually depends on
     // changed (time or reminder choice) — audit fix: resetting unconditionally re-armed the reminder
@@ -3929,10 +3961,22 @@ function confirmApptModal() {
     // Compare at minute precision, not exact ms — the form's time input is minute-granularity, so
     // an appointment whose stored ts carried seconds/ms (however it was created) would otherwise
     // look "changed" on every edit even when the user picked the exact same date and time back.
-    const reminderRelevantChange = !prev || Math.floor(prev.ts / 60000) !== Math.floor(ts / 60000) || (prev.reminder || 'none') !== (m.reminder || 'none');
+    // v24: also re-arm when only the custom lead time/unit changed — the reminder id itself stays
+    // 'custom' in both cases, so without this clause below, changing "30 min before" to "2 hours
+    // before" on an already-fired appointment would silently never re-notify even though the
+    // actual trigger timestamp moved. No-op for the other 4 options since they carry no per-
+    // instance stored value, so this can't over-fire for them.
+    const reminderRelevantChange = !prev
+      || Math.floor(prev.ts / 60000) !== Math.floor(ts / 60000)
+      || (prev.reminder || 'none') !== (m.reminder || 'none')
+      || (m.reminder === 'custom' && (Number(prev.reminderCustomValue) !== Number(m.customValue) || (prev.reminderCustomUnit || 'minutes') !== (m.customUnit || 'minutes')));
     updateAppointment(m.editId, { ...payload, reminded: reminderRelevantChange ? false : !!(prev && prev.reminded) });
   } else {
-    if (m.reminder && m.reminder !== 'none' && !isNativeApp() && !TEST_MODE) requestNotifPermission();
+    // v24 fix: same simulated-date gate as checkAppointmentReminders — was `&& !TEST_MODE`, which
+    // never fired on the web build at all (TEST_MODE is always true there). Note subscribePush()
+    // already requests permission once at page load regardless of this gate, so this call is
+    // mostly a safety net for a session that started before permission existed.
+    if (m.reminder && m.reminder !== 'none' && !isNativeApp() && !(TEST_MODE && !!state.dateOffsetDays)) requestNotifPermission();
     addAppointment(payload);
   }
   closeApptModal();
@@ -3960,6 +4004,23 @@ function renderApptModal() {
       h('select', { value: m.reminder, onChange: (e) => { state.apptModal.reminder = e.target.value; setState({ apptModal: state.apptModal }); }, className: 'mono', style: selectFix({ width: '100%', minHeight: '48px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' }) },
         ...APPT_REMINDER_OPTIONS.map(r => h('option', { value: r.id }, r.label))
       ),
+      // v24: custom lead-time controls, only shown once 'Custom...' is picked — same
+      // show-a-field-when-a-related-choice-is-selected pattern as the Liters-drained field.
+      m.reminder === 'custom' ? h('div', { style: { display: 'flex', gap: '10px', marginTop: '10px' } },
+        h('div', { style: { flex: '1' } },
+          h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '6px', fontSize: '11px' } }, 'Remind me before'),
+          h('input', { type: 'number', min: '0', step: '1', value: String(m.customValue == null ? '' : m.customValue), placeholder: 'e.g. 30', onInput: (e) => { state.apptModal.customValue = e.target.value === '' ? '' : Number(e.target.value); setState({ apptModal: state.apptModal }); }, className: 'mono', style: { width: '100%', minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' } })
+        ),
+        h('div', { style: { flex: '1' } },
+          h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '6px', fontSize: '11px' } }, 'Unit'),
+          h('select', { value: m.customUnit || 'minutes', onChange: (e) => { state.apptModal.customUnit = e.target.value; setState({ apptModal: state.apptModal }); }, className: 'mono', style: selectFix({ width: '100%', minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' }) },
+            h('option', { value: 'minutes' }, 'Minutes'), h('option', { value: 'hours' }, 'Hours'), h('option', { value: 'days' }, 'Days')
+          )
+        )
+      ) : null,
+      m.reminder === 'custom' && m.customValue !== '' && Number.isFinite(Number(m.customValue)) && Number(m.customValue) >= 0
+        ? h('div', { style: { ...TYPE.caption, color: '#8A6479', marginTop: '6px' } }, 'Reminds ' + (Number(m.customValue) === 0 ? 'right at the scheduled time' : Number(m.customValue) + ' ' + ((m.customUnit || 'minutes') === 'days' ? (Number(m.customValue) === 1 ? 'day' : 'days') : (m.customUnit || 'minutes') === 'hours' ? (Number(m.customValue) === 1 ? 'hour' : 'hours') : (Number(m.customValue) === 1 ? 'minute' : 'minutes')) + ' before'))
+        : null,
       h('div', { style: { ...TYPE.label, color: '#8A6479', marginTop: '16px', marginBottom: '8px' } }, 'Note (optional)'),
       h('textarea', { value: m.note, onInput: (e) => { state.apptModal.note = e.target.value; }, rows: 2, placeholder: 'Anything else worth noting...', style: { width: '100%', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '10px 14px', fontSize: '14px', background: '#FFFFFF', color: '#2A2127', resize: 'vertical', fontFamily: 'inherit' } }),
       h('div', { style: { display: 'flex', gap: '10px', marginTop: '20px' } },
@@ -3986,7 +4047,12 @@ function renderCalendarView(now) {
         h('div', { style: { ...TYPE.title, fontSize: '15px', color: '#2A2127' } }, appt.title),
         h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' } },
           h('span', null, d.toLocaleDateString([], { weekday: 'short' }) + ' · ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })),
-          (appt.reminder && appt.reminder !== 'none') ? h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '3px' } }, appIcon('bell', 12, { color: '#8A6479' }), apptReminderLabel(appt.reminder)) : null
+          // v24 Designer finding: was alignItems:'center', which centers the icon against the whole
+          // wrapped text block instead of line 1 -- a custom reminder label (e.g. "999 minutes
+          // before") can now wrap to 2 lines at these widths, which the 3 old fixed-length options
+          // never did, leaving the bell floating in the gap between lines. flex-start + a small
+          // top nudge lines it up with line 1's cap-height instead.
+          (appt.reminder && appt.reminder !== 'none') ? h('span', { style: { display: 'inline-flex', alignItems: 'flex-start', gap: '3px' } }, h('span', { style: { marginTop: '2px', flexShrink: '0' } }, appIcon('bell', 12, { color: '#8A6479' })), apptReminderLabel(appt)) : null
         ),
         appt.note ? h('div', { style: { fontSize: '12.5px', color: '#5A4552', marginTop: '4px', fontStyle: 'italic', lineHeight: '1.4' } }, appt.note) : null
       ),
@@ -4026,7 +4092,7 @@ function renderCalendarView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v23';
+const APP_VERSION = 'app-v24';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -4097,10 +4163,15 @@ function renderSettings(now) {
       ),
       h('div', { style: { fontSize: '12px', color: '#6E5A64', marginTop: '8px', lineHeight: '1.4' } }, 'Readings are shown in your chosen units everywhere \u2014 stored values are never changed, just converted for display.')
     ),
-    // Notifications (native build)
+    // Notifications (native build + web/PWA)
     h('section', { style: secStyle },
       secLabel('Notifications'),
-      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, isNativeApp() ? 'Dose reminders and missed-dose alerts are on for this app. Per-medication controls are coming soon.' : 'Dose reminders and missed-dose alerts arrive with the phone-app version (in progress). Your preferences will live here.')
+      // v24: the old non-native copy said dose reminders "arrive with the phone-app version (in
+      // progress)" — actively wrong once Calendar reminders (app-v22) and the TEST_MODE gate fix
+      // (v24) made both dose and appointment reminders real on the web build too, just foreground-
+      // only (no background/locked-phone delivery without the native app — see below).
+      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, isNativeApp() ? 'Dose reminders and missed-dose alerts are on for this app. Per-medication controls are coming soon.' : 'Calendar and dose reminders fire while this app is open in your browser. They can’t reach you while your phone is locked or the tab is closed — full background delivery needs the phone-app version (in progress).'),
+      !isNativeApp() ? notifPermissionStatusBlock() : null
     ),
     // Guide
     h('section', { style: secStyle },
@@ -4663,8 +4734,42 @@ async function requestNotifPermission() {
     return;
   }
   if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
+    // v24: awaited (was fire-and-forget) so the Settings "Turn on notifications" button can chain
+    // a re-render once the browser's real answer comes back, instead of the status line only
+    // updating on the next unrelated render.
+    await Notification.requestPermission();
   }
+}
+
+// v24 (Aaron-reported: no way to tell if notification permission was ever granted, or to retry
+// after dismissing/denying the one-time browser prompt): visible status + action for Settings.
+// Native build has its own OS-level permission surface and doesn't need this.
+function notifPermissionStatusBlock() {
+  if (!('Notification' in window)) {
+    return h('div', { style: { marginTop: '10px', fontSize: '12.5px', color: '#8A6479' } }, 'This browser doesn’t support notifications.');
+  }
+  const perm = Notification.permission;
+  if (perm === 'granted') {
+    // v24 Designer finding: reuse the app's existing success-pill pattern (same one used for the
+    // "Active" profile badge two sections above) instead of bare colored text, so a settled
+    // positive state reads consistently across the same screen.
+    return h('div', { style: { marginTop: '10px', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12.5px', fontWeight: '700', color: '#2E7D4F', background: 'rgba(46,125,79,0.10)', padding: '3px 10px', borderRadius: '99px' } }, '✓ Notifications are on');
+  }
+  if (perm === 'denied') {
+    return h('div', { style: { marginTop: '10px' } },
+      h('div', { style: { fontSize: '12.5px', fontWeight: '700', color: '#A5443C' } }, 'Notifications are blocked for this app'),
+      h('div', { style: { fontSize: '12px', color: '#6E5A64', marginTop: '3px', lineHeight: '1.4' } }, 'To turn them back on, open your browser’s site settings for this page, allow notifications, then reload.')
+    );
+  }
+  return h('div', { style: { marginTop: '10px' } },
+    h('div', { style: { fontSize: '12.5px', fontWeight: '700', color: '#9A6419' } }, 'Notifications aren’t turned on yet'),
+    // v24 Designer findings: was 40px tall (4px under the app's 44px touch-target floor) and
+    // styled identically to the low-stakes "Replay the walkthrough" button right below it, even
+    // though this is the fix for an actual functional gap (no reminders fire until it's tapped) —
+    // now uses the app's solid-fill primary-action treatment (same as the Calendar modal's Add/
+    // Save button) so it visually reads as "the thing to tap," not an optional extra.
+    h('button', { onClick: () => { requestNotifPermission().then(() => setState({})); }, style: { marginTop: '8px', minHeight: '44px', padding: '0 16px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, 'Turn on notifications')
+  );
 }
 
 function sendNotif(title, body, tag) {
@@ -4742,12 +4847,26 @@ function dueRemindersAt(nowDate) {
 }
 
 function checkNotifications() {
-  // Web/PWA beta stays silent (TEST_MODE simulated dates make real-time reminders meaningless
-  // there); the native APK test build fires for real even under TEST_MODE, since that's the whole
-  // point of this build — see isNativeApp() above (v14).
-  if (TEST_MODE && !isNativeApp()) return;
+  // v24 fix (Aaron-reported: "no notifications working"): this used to blanket-return whenever
+  // TEST_MODE was true on the web build, full stop -- even on a normal day where Aaron never
+  // touched the Beta Date Controls. That made every reminder dead on arrival on the exact build
+  // he tests with, always. Now only suppressed while the date is ACTUALLY simulated
+  // (state.dateOffsetDays !== 0) -- not just because TEST_MODE exists. This isn't only a UX call:
+  // dose entries logged while time-traveled are stamped with simNow() (see confirmTimeAndLog), so
+  // a real-time check run against a simulated-day dose could wrongly conclude the dose "wasn't
+  // taken" and fire a spurious reminder -- suppressing during an active date-jump avoids that, not
+  // just avoiding a confusing-but-harmless notification. Resets to dateOffsetDays===0 on every
+  // reload, so a normal session that never opens Beta Date Controls gets real reminders throughout.
+  if (TEST_MODE && !isNativeApp() && !!state.dateOffsetDays) return;
   if (!isNativeApp() && (!('Notification' in window) || Notification.permission !== 'granted')) return;
-  if (!state.loaded || state.entries.length === 0 && !state.demo) return;
+  // v24 Auditor finding: this used to also require state.entries.length > 0, which silently
+  // blocked the single highest-value reminder a new caregiver would ever get -- their first
+  // scheduled medication's first dose window, before they've logged anything at all. That
+  // clause predates this release (was moot behind the old blanket TEST_MODE gate above, so its
+  // effect was invisible until this release made the pipeline fire for real) and dueRemindersAt()
+  // below already scopes itself correctly to medications with alerts on, so there's no noise risk
+  // from dropping it -- just !state.loaded remains, to avoid checking before storage has read in.
+  if (!state.loaded) return;
 
   resetNotifTracking();
   dueRemindersAt(new Date()).forEach(({ med, window }) => {
@@ -4758,11 +4877,23 @@ function checkNotifications() {
 // Calendar appointment reminders (app-v22) — deliberately independent of checkNotifications()
 // above: appointments aren't medication doses, so they don't belong in that function's dose-window
 // logic, and keeping them separate means a future change to one can't silently break the other.
-// Same TEST_MODE gate as checkNotifications for the same reason (simulated beta dates make
-// real-time reminders meaningless on the web build; the native test build fires for real).
+// Same simulated-date gate as checkNotifications, for the same reason (see the fix comment there) —
+// applied identically per Aaron's explicit ask to check "the whole notification pipeline," not just
+// one repro, since both functions had the exact same bug.
 function reminderTriggerTs(appt) {
   if (appt.reminder === '1h') return appt.ts - 3600000;
   if (appt.reminder === '1day') return appt.ts - 86400000;
+  if (appt.reminder === 'attime') return appt.ts; // v24: fires the same instant as the appointment
+  if (appt.reminder === 'custom') {
+    // v24: Aaron-requested self-set reminder lead time, since none of the fixed options land
+    // exactly where he wants for every appointment. Malformed/negative data (shouldn't happen —
+    // confirmApptModal blocks negative values at save time — but old/corrupted records shouldn't
+    // crash this) falls back to null, same "no reminder fires" contract as 'none'/unset below.
+    const n = Number(appt.reminderCustomValue);
+    if (!Number.isFinite(n) || n < 0) return null;
+    const unitMs = appt.reminderCustomUnit === 'days' ? 86400000 : appt.reminderCustomUnit === 'hours' ? 3600000 : 60000;
+    return appt.ts - n * unitMs;
+  }
   if (appt.reminder === 'morning') {
     const d = new Date(appt.ts);
     d.setHours(9, 0, 0, 0);
@@ -4776,7 +4907,7 @@ function reminderTriggerTs(appt) {
   return null; // 'none' or unset
 }
 function checkAppointmentReminders() {
-  if (TEST_MODE && !isNativeApp()) return;
+  if (TEST_MODE && !isNativeApp() && !!state.dateOffsetDays) return;
   if (!isNativeApp() && (!('Notification' in window) || Notification.permission !== 'granted')) return;
   const nowTs = Date.now();
   (state.appts || []).forEach(appt => {

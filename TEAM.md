@@ -28,13 +28,16 @@ things that are obviously small, not a way to talk yourself into skipping review
 1. **Lead Developer (Claude)** — investigates, implements, self-verifies: syntax check, a
    real browser/runtime smoke test of every affected screen at mobile and desktop sizes,
    zero console errors. No placeholders, no TODOs, no "should work."
-2. **Designer** — quick visual pass, only if the UI actually changed. Skipped entirely for
-   backend-only or logic-only fixes.
-3. **Auditor** — one combined pass: line-by-line code check of the change and its blast
+2. **Auditor** — one combined pass: line-by-line code check of the change and its blast
    radius, plus a real end-to-end test of the fix on the running product (not a thought
    experiment) including the obvious edge cases. This absorbs what QA User Zero used to do
    as a separate stage — a first-time-user walkthrough of the changed flow is just the first
-   half of what the Auditor already does.
+   half of what the Auditor already does. Runs before the Designer (app-v24: Aaron moved
+   Audit ahead of Design) — a fix that turns out to be functionally wrong shouldn't get a
+   polish pass first, since Auditor findings can still reshape the UI the Designer would
+   otherwise be reviewing.
+3. **Designer** — quick visual pass, only if the UI actually changed. Skipped entirely for
+   backend-only or logic-only fixes.
 4. **Project Manager** — confirms the fix matches what Aaron actually asked for, confirms
    the Auditor's test evidence is real, checks release mechanics (version bump if
    applicable, live smoke test after push), writes Aaron a plain-language summary.
@@ -44,21 +47,44 @@ things that are obviously small, not a way to talk yourself into skipping review
 1. **Developer** — investigates the affected code, researches the approach plus at least
    one alternative, defines what "done" looks like. Written brief.
 2. **Lead Developer (Claude)** — implements fully, self-verifies as above.
-3. **Designer** — reviews the actual rendered product on every touched screen: spacing,
-   typography, color, alignment, touch targets, empty/error states. Premium consumer-grade
-   is the bar. Suggestions come with exact values.
-4. **Lead Designer** — independently re-inspects a sample, confirms the Designer covered
-   every affected surface (modals, toasts, disabled states, smallest viewport). Only
-   required if the Designer flags something they're not confident about; otherwise
-   optional at the Lead Developer's discretion for high-visibility UI work.
-5. **Auditor** — full line-by-line code audit of the change and its blast radius, plus
-   end-to-end user journeys on the running product including edge cases: double-taps, day
-   boundaries, empty states, absurd inputs, offline/reload. Written report with severity,
-   repro steps, locations.
-6. **Lead Auditor** — reproduces every finding, probes what the audit didn't cover. Only
+3. **Auditor ("Zero Day Auditor")** — full line-by-line code audit of the change and its
+   blast radius, plus end-to-end user journeys on the running product including edge cases:
+   double-taps, day boundaries, empty states, absurd inputs, offline/reload. Runs before the
+   Designer (app-v24: Aaron moved Audit ahead of Design, since a functional finding can
+   reshape a screen the Designer would otherwise have already signed off on). Written report
+   with severity, repro steps, locations.
+
+   **Minimum bar for every full-chain release (app-v24, Aaron-mandated): at least 20 distinct,
+   written test cases**, not a handful of spot-checks — covering, at minimum:
+   - A full first-run walkthrough from a genuinely wiped install: welcome screen, the guided
+     tour, adding the first medication, confirming it actually lands on the Home screen.
+   - Adding a medication in every placement/category the editor supports: own Home card,
+     hidden from Home, grouped into the Morning/Afternoon/Evening card, treatment-day-only,
+     and excluded-near-treatment-day — each one verified to actually behave that way on
+     Home, not just saved without error.
+   - Logging across a full simulated 7-day span (via the Beta Date Controls) for every
+     loggable type the app has — medication doses, weight, temperature, blood pressure,
+     bowel movements, appetite, symptoms — with each entry checked against every place it's
+     supposed to show up: Home cards, the relevant Reports tab report, Today's Journal,
+     History, and Symptoms, not just the entry list it was logged from.
+   - Anything the release actually touched, with edge cases specific to that change.
+
+   Every test case gets a one-line pass/fail in the written report; failures get full repro
+   steps. This is exhaustive by design — it exists because a scoped review is structurally
+   blind to anything outside the diff, and past releases have shipped defects a broader pass
+   would have caught. **Mobile-first throughout**: phone-sized viewports (360–390px wide) are
+   the primary check, not an afterthought after a desktop pass.
+4. **Lead Auditor** — reproduces every finding, probes what the audit didn't cover. Only
    required if the Auditor flags something they're not confident about; otherwise optional
    at the Lead Developer's discretion for high-risk changes (data model changes, anything
    safety-relevant).
+5. **Designer** — reviews the actual rendered product on every touched screen: spacing,
+   typography, color, alignment, touch targets, empty/error states. Premium consumer-grade
+   is the bar. Suggestions come with exact values.
+6. **Lead Designer** — independently re-inspects a sample, confirms the Designer covered
+   every affected surface (modals, toasts, disabled states, smallest viewport). Only
+   required if the Designer flags something they're not confident about; otherwise
+   optional at the Lead Developer's discretion for high-visibility UI work.
 7. **Project Manager** — verifies every stage that ran actually produced its artifact,
    cross-checks every finding was fixed and the fix re-verified, confirms no scope drift,
    verifies release mechanics, writes the completion summary.
