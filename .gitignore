@@ -1,5 +1,13 @@
 node_modules/
 
+# Scratch Playwright verification scripts written during Quality Chain stages (Developer/
+# Auditor/Designer self-checks). These hardcode localhost/tmp paths for one-off local runs and
+# aren't part of the shipped app — intentionally excluded from every release, not accidentally
+# forgotten.
+verify_*.mjs
+audit_*.mjs
+designer_*.mjs
+
 # Native Android project is generated fresh by CI (npx cap add android) from package.json +
 # capacitor.config.ts + app-icons/ — not committed, so it never drifts from the pinned Capacitor
 # version. See .github/workflows/android-build.yml.
