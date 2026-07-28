@@ -150,3 +150,94 @@ through the loop properly rather than be patched in without going back through t
 
 Once that loop closes (expect this to be fast — it's a one-line, isolated copy change with no logic
 implications), this release should be ready to present to Aaron.
+
+## Loop closure (follow-up pass)
+
+**Who ran this pass:** Project Manager, a different independent session from the one that wrote
+everything above. Per TEAM.md, I did not take the "it's fixed" claims at face value — this section
+documents my own independent re-verification, run with the same rigor as the original gate pass,
+not a rubber stamp of the intervening work.
+
+**What happened since the original gate (for context, all independently confirmed below, not just
+restated):** commit `bfad974` fixed the Finding PM-1 copy line and added the README app-v25 entry;
+commit `3b270f9` committed the three previously-uncommitted documents (`DEV_BRIEF_v25.md`, this
+file, `AARON_UPDATE_v25.md`); a focused Zero Day Auditor re-verify pass
+(`outputs/AUDIT_v25_pmgate_reverify.md`) then independently tested the fix and reported PASS.
+
+### 1. Read the re-verify audit in full, checked it actually re-tested what was asked
+
+`AUDIT_v25_pmgate_reverify.md` covers, with real evidence rather than restatement:
+- **The copy line itself**, checked two ways: a raw-GitHub source fetch (confirms the old `'Reminds
+  between ' + ... + ' and ' + ...` string is gone, only the new `'Reminds at ' + formatQuarterHour
+  (row.start)` string remains, cross-checked with `grep -n "Reminds"` across the whole file to rule
+  out a second stale copy elsewhere) and a live-browser test via `claude-in-chrome` against the
+  user's actual connected browser (not a thought experiment).
+- **Both existing and brand-new medications** — seeded a test medication into `localStorage`
+  alongside the 5 real ones and also created one fresh via the "Add" flow, checked the preview line
+  on both, then cleaned up the seeded data and confirmed the app returned to its original state
+  afterward.
+- **The End-time picker still works** — explicitly changed the End-time select via a real `change`
+  event and confirmed (a) the preview line is unaffected by End, driven only by Start, matching the
+  brief's intent, and (b) the `<select>` itself is still rendered, still populated, still
+  interactive — not silently removed as a shortcut.
+- **README entry and DEV_BRIEF commit** — confirmed the README app-v25 row exists at the top of the
+  version-history table, and separately confirmed via `git log` that commit `3b270f9` added the
+  previously-missing `DEV_BRIEF_v25.md`.
+- **A general regression check**, not just the one line: re-tested the daily-limit live preview and
+  the "Extra hours between doses" label (both from earlier rounds of this same release) and found
+  zero console errors across the full session.
+
+This is real re-verification — a source diff plus a live browser session against the user's actual
+device, exactly the kind of evidence the restart rule expects, not a paraphrase of the commit
+message.
+
+### 2. My own independent spot-check (not trusting the audit's word either)
+
+Ran these myself, separately from reading the audit report:
+
+- Fetched `https://raw.githubusercontent.com/Arnjnnngs/chemowell-app-beta/main/index.html` directly
+  and `grep -n "Reminds"` across it. Only four matches total: the schedule-window preview line
+  (now `'Reminds at ' + formatQuarterHour(row.start)`, line 3840), the pre-existing reminder-lead-time
+  caption on the Calendar screen, the daily-weight-check-in toggle description, and an explanatory
+  code comment directly above the fixed line that documents *why* the old wording was wrong. **No
+  "Reminds between...and..." string remains anywhere in the file.**
+- Diffed the raw-GitHub copy of `index.html` against the working directory's copy — byte-for-byte
+  identical, confirming this sandbox isn't looking at a stale or diverged local state.
+- Fetched `https://raw.githubusercontent.com/Arnjnnngs/chemowell-app-beta/main/README.md` directly
+  and confirmed the `app-v25` row exists at the top of the Version History table, dated 2026-07-28,
+  and its own text explicitly documents the "Reminds at X" correction and the PM loop-back that
+  produced it.
+- Confirmed `outputs/DEV_BRIEF_v25.md` is genuinely in the repository, three independent ways: `git
+  ls-files outputs/DEV_BRIEF_v25.md` shows it tracked, `git log --oneline -- outputs/DEV_BRIEF_v25.md`
+  shows exactly one commit (`3b270f9`) adding it, and a direct raw-GitHub fetch of the file returns
+  200 with the full 420-line document — not a 404, not a stub.
+- Also independently confirmed the End-time picker's underlying code (`endOptions = END_TIME_OPTIONS
+  .filter(opt => opt.value > row.start)`, `index.html:3809`) is present and untouched by this fix —
+  matches what the re-verify audit described.
+- `git status` in this working copy is clean and `HEAD` (`59b04bc`) matches the remote's `main`
+  branch tip exactly — nothing local, uncommitted, or unpushed is being relied on for this
+  sign-off.
+
+Every claim in the re-verify audit and in the prior PM pass's restart instructions checks out
+against source I pulled myself, independently of anyone's narration.
+
+### 3. Decision
+
+**The loop is genuinely closed.** I looked specifically for anything new the intervening passes
+might have missed — not just confirming the one line — and found nothing: the End-time picker is
+unaffected and still functional, no other "Reminds between" strings survived anywhere in the file,
+the fix is driven purely by Start as intended, both new and pre-existing medications behave
+identically, and there's no console-error regression from this same-file edit. The two
+release-mechanics gaps (README entry, uncommitted brief) are both closed and independently
+verifiable in the pushed repository, not just claimed.
+
+This release has now genuinely been through the full chain: **Developer → Lead Developer → Zero
+Day Auditor → Lead Developer → Auditor re-verify → Lead Developer → Auditor re-verify → PM (this
+gate, first pass) → Lead Developer (Finding PM-1 + PM-2 + PM-3 fixes) → focused Zero Day Auditor
+re-verify → PM (this follow-up pass)**. That is the chain closing correctly, including its
+restart-rule loop working exactly as TEAM.md designs it to: a real gap was caught, sent back to the
+correct stage, fixed, independently re-tested, and independently re-confirmed here — not
+rubber-stamped at any point along the way.
+
+**Verdict: READY FOR AARON.** No further loop-back needed. `outputs/AARON_UPDATE_v25.md` has been
+updated to reflect that the previously-open item is now closed.

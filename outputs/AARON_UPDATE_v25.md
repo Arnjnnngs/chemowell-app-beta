@@ -26,16 +26,21 @@ the actual code and the team's live testing rather than just taking their word f
   writes code, so it doesn't accidentally make "missed dose" alerts show up too late. That's coming
   back to you separately.
 
-**One thing I caught that isn't done yet, and why I'm not calling this batch fully finished:** the
-team's own investigation found that the line under each schedule window ("Reminds between 8:00 AM
-and 8:30 AM") is actually a little misleading — the app only ever reminds you once, at the start
-time, not repeatedly through that window. They planned to fix just that one sentence regardless of
-the bigger schedule-windows question above, but it didn't actually make it into the final version,
-and none of the three review passes caught that it was missed. It's a small, one-line wording fix,
-not a functional problem — nothing about how or when you actually get reminded is wrong, just that
-one sentence describing it. I'm sending it back for that one line to get fixed and double-checked
-before I call this batch done, which should be quick.
+**One thing I caught, and it's now fixed too:** the team's own investigation found that the line
+under each schedule window ("Reminds between 8:00 AM and 8:30 AM") was a little misleading — the
+app only ever reminds you once, at the start time, not repeatedly through that window. They'd
+planned to fix just that one sentence regardless of the bigger schedule-windows question above,
+but it didn't make it into the first version, and none of the three review passes caught that it
+was missed. I sent it back for that one line to get fixed — it now reads "Reminds at 8:00 AM,"
+which matches what the app actually does. I re-checked it myself directly against the live code
+(both on an existing medication and a brand-new one) and it holds up; nothing about how or when
+you actually get reminded changed, just that one sentence now describes it accurately. The two
+small paperwork items from the same pass (a missing entry in the version-history log, and one
+report that hadn't been saved to the project's history yet) are also closed out.
 
-**Bottom line:** safe to consider 5 of 6 items done and verified. Not quite ready to close out the
-whole batch yet — one small wording line needs a quick fix first. I'll let you know when that's
-closed out.
+**Bottom line:** all 6 items are now resolved — 5 fixed and verified as described above, and the
+6th (schedule windows → single alert time) deliberately deferred pending your input, as explained
+above. This batch has been through the team's full review chain twice over (three independent
+reviewers, a project-management check, one loop back for the wording fix, and a final independent
+re-check) and everything checks out. Ready for you to look at whenever you have a chance — no
+outstanding technical work in this batch.
