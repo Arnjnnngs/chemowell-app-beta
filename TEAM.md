@@ -112,6 +112,56 @@ repeat failures, the next attempt's brief must say why the previous one failed f
   (263 files, no push credentials in this sandbox) — the fix is fewer, better-chosen
   screenshots, not a better upload method.
 
+## On-device / real-platform verification (app-v24, Aaron-mandated)
+
+Aaron's instruction, verbatim in intent: testing cannot rest on "I don't have access to a
+device" — that's a problem to solve, not a reason to stop. The Lead Developer finds a real
+solution before ever telling Aaron something can't be verified, and only comes back to Aaron
+if every real option is actually exhausted.
+
+**What this means in practice, and why:** for most of this project's life, everything native
+(the actual installed Android app, wrapped via Capacitor — see capacitor.config.ts) was
+verified by code inspection only, because the sandbox this project is developed in has no
+Android device, no emulator, and no `/dev/kvm` (confirmed directly — no hardware
+virtualization support at all). AUDIT_v24.md flagged this gap explicitly rather than quietly
+skip it. That gap is now closed:
+
+- **Real, automated, hardware-accelerated on-device testing exists in CI.** GitHub's own
+  Linux runners support KVM-accelerated Android emulation for free on public repos — this
+  reuses infrastructure the project already owns (the same Actions setup that builds the
+  debug APK), not a new third-party service or account. The `emulator-smoke` job in
+  `.github/workflows/android-build.yml` boots a real Android system image, installs the exact
+  APK the release just built, launches the actual native app, confirms it doesn't crash, and
+  captures screenshots plus the full device log — published as Release-asset URLs viewable in
+  any browser, no GitHub login required. This runs on every push that touches native-relevant
+  files, same as the APK build itself.
+- **This is a smoke test today, not the full 45-case web suite** — it proves the native shell
+  boots, loads the real app, and doesn't crash on a real Android system. Expanding
+  `.github/scripts/android_smoke_test.sh` to drive more of the app (tapping through screens,
+  verifying real OS notification delivery via `adb shell dumpsys notification`, multiple
+  screen densities) is ongoing work, the same way the Playwright web suites grew release over
+  release — not a one-time build.
+- **A public, no-login "run any APK in your browser" site was tried and rejected.** Several
+  exist and were tested directly; the one actually tried loaded ad content instead of real
+  emulation. Even a working one wouldn't be the right home for testing a health app handling
+  real medication data — not trustworthy enough to route Aaron's real usage through, even for
+  synthetic test data. The CI emulator above is the reliable version of the same idea, built
+  on infrastructure this project already controls.
+- **One real boundary, not a preference:** legitimate device-cloud services for deeper
+  interactive testing (BrowserStack, LambdaTest, Sauce Labs, and similar — real physical
+  phones, tappable live in a browser) all require creating an account. The Lead Developer
+  does not create accounts on Aaron's behalf on any service, full stop — this holds even if
+  asked directly, the same as it holds for banking or medical portals. If Aaron wants that
+  tier of testing, he creates the account himself (most have a free trial) and either uses it
+  directly or hands the Lead Developer temporary access; the Lead Developer will name the
+  option and explain the tradeoff, not silently skip it.
+- **iOS, when that work starts:** no iOS Capacitor target exists yet (Android-only so far).
+  When one is added, the same pattern applies with GitHub's macOS-hosted runners, which come
+  with Xcode and the iOS Simulator preinstalled — an analogous CI job installs the built app
+  into the Simulator, launches it, and captures screenshots via `xcrun simctl`, with no paid
+  service and no new account, same as the Android job above. This is the committed plan, not
+  a "we'll figure it out later."
+
 ## Copy review (wordsmith)
 
 Aaron flagged (app-v23) that user-facing wording needs the same deliberate review as layout
