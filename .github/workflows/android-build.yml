@@ -101,3 +101,63 @@ jobs:
           body: "Debug APK for on-device testing (real notifications + native look/feel) before store submission. Sideload only — not for distribution. Rebuilt on every relevant push to main; this release always reflects the current app-icons/, capacitor.config.ts, index.html, and www/."
           prerelease: true
           files: android/app/build/outputs/apk/debug/app-debug.apk
+
+  # Real on-device verification, automated. This sandbox's development environment has no route to
+  # Google's Maven/Gradle Plugin Portal AND no /dev/kvm (confirmed: no hardware-virtualization
+  # support at all), so a local Android emulator was never an option there. GitHub's Linux runners
+  # DO support hardware-accelerated (KVM) emulation for free on public repos — this job boots a
+  # real Android system image, installs the exact APK the `build` job above just produced, launches
+  # the real native app (not the website), confirms it doesn't crash, and captures screenshots +
+  # the full device log. This closes the gap AUDIT_v24.md flagged explicitly: "I could not exercise
+  # the actual native/Capacitor branch in this sandbox — flagging as untested rather than silently
+  # skipping." It's still a smoke test, not the full 45-case suite the web build gets — expand
+  # `.github/scripts/android_smoke_test.sh` over time the same way the Playwright suites grew.
+  emulator-smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the debug APK this run just built
+        uses: actions/download-artifact@v4
+        with:
+          name: chemowell-app-debug-apk
+          path: artifacts
+
+      - name: Enable KVM group perms (required for hardware-accelerated emulation on Linux runners)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Boot emulator, install + launch the real app, capture screenshots + logs
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          script: bash .github/scripts/android_smoke_test.sh
+
+      - name: Upload screenshots + device log (workflow artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chemowell-app-emulator-smoke
+          path: screenshots/
+          retention-days: 30
+
+      # Same reasoning as the APK's own Release asset above: workflow artifacts need an
+      # authenticated GitHub session to fetch, which Aaron's phone doesn't have. Publishing the
+      # screenshots as Release assets too gives a stable, unauthenticated, viewable-in-browser URL.
+      # Deliberately omits `body`/`name` — per action-gh-release's own documented behavior, omitted
+      # fields leave the existing release description (written by the `build` job above) untouched;
+      # only the file list is added/replaced.
+      - name: Publish screenshots as GitHub Release assets (stable public URLs)
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-v14-native-test
+          prerelease: true
+          files: screenshots/*
