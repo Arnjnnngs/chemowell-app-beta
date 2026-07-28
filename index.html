@@ -3829,7 +3829,15 @@ function renderMedicationEditor() {
               formInput({ value: row.name, placeholder: 'e.g. Morning, With breakfast', onInput: event => updateWindowRow(i, 'name', event.target.value) }),
               // Live plain-language preview -- recomputed on every change, no separate preview step,
               // same interaction as the treatment-window "Active window: N days..." summary below.
-              h('div', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76' } }, (row.name ? row.name + ' \u2014 ' : '') + 'Reminds between ' + formatQuarterHour(row.start) + ' and ' + formatQuarterHour(row.end))
+              // v25 PM-gate fix (DEV_BRIEF_v25.md section 3d, PM_GATE_v25.md Finding PM-1): this used
+              // to read "Reminds between X and Y", which overstates what dueRemindersAt() actually
+              // does -- it fires the reminder once, in the first few minutes after `start`, never
+              // repeatedly through to `end`. That's true regardless of item 3's still-deferred
+              // Start/End-to-single-time redesign (End still has a real job below -- it sets the
+              // missed-dose deadline / when this window closes for one-tap logging -- so the field
+              // stays in the UI), so this line is corrected on its own, independent of that bigger
+              // decision, per the brief's explicit recommendation.
+              h('div', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76' } }, (row.name ? row.name + ' \u2014 ' : '') + 'Reminds at ' + formatQuarterHour(row.start))
             );
           }),
           h('button', { type: 'button', onClick: addWindowRow, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.65)', border: '1px solid #EBE3E4', color: '#554A52', fontSize: '13px', fontWeight: '800', alignSelf: 'flex-start' } }, '+ Add another time window')
