@@ -482,7 +482,7 @@ function restoreView() {
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, showPastAppts: false };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, showPastAppts: false, infoModal: null };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -579,6 +579,21 @@ function tylenolMg() {
   return med && med.ceilingGroup ? dailyGroupMg(med) : dailyDoseMg('tylenol');
 }
 function dailyPills(medId) { const c = dayStart(state.now); return entriesFor(medId).filter(e => e.ts >= c).reduce((s, e) => s + (e.pills || 0), 0); }
+// v26: the Journal/History override badge used a flat 3-way ternary ('overLimit' / 'both' / else
+// "Early") that only ever had to distinguish two independent reasons. Adding offDay as a third,
+// independent override reason (an entry can now be off-day AND over-limit AND early, all at once)
+// turned that into real combinatorics -- centralized here as one function both badge call sites
+// use, instead of duplicating a growing ternary in two places. 'both' is kept as a literal legacy
+// alias so pre-v26 entries (which only ever stored 'early'/'overLimit'/'both') still render
+// correctly; new entries store reasons as a '+'-joined list (see confirmTimeAndLog) which this
+// parses generically so a fourth reason added later wouldn't need this function touched again.
+function overrideBadgeLabel(overrideReason) {
+  if (!overrideReason) return 'Early';
+  if (overrideReason === 'both') return 'Early · Over limit';
+  const LABELS = { offDay: 'Not scheduled', early: 'Early', overLimit: 'Over limit' };
+  const labels = overrideReason.split('+').map(p => LABELS[p]).filter(Boolean);
+  return labels.length ? labels.join(' · ') : 'Early';
+}
 function isEarlyAt(med, ts) {
   if (med.type === 'gap') {
     if (!med.gapH) return false;
@@ -1006,7 +1021,14 @@ async function logMed(medId, dose, opts) {
   opts = opts || {};
   const med = state.meds.find(m => m.id === medId);
   const st = status(med);
-  if (st.locked && !opts.force) { setState({ override: { medId } }); return; }
+  // v26 (Aaron-requested): a medication restricted to specific days used to be a dead-end on an
+  // off day -- no log option at all. It now gets the same arm-then-confirm override as any other
+  // locked state (daily limit, gap timer, closed window); offDay rides along on state.override so
+  // the card renderers' own offDay gating (medCards, renderGroupedMedsCard) — matches the file's own
+  // scheduleDays/medScheduledOn logic used everywhere else a medication's "is it scheduled today"
+  // question gets asked.
+  const offDay = !medScheduledOn(med, state.now);
+  if ((st.locked || offDay) && !opts.force) { setState({ override: { medId, offDay } }); return; }
   setState({ override: null, timeModal: { type: 'med', medId, dose, opts, timeValue: nowLocalISO() } });
 }
 
@@ -1088,19 +1110,35 @@ async function confirmTimeAndLog() {
       const amt = med.ceilingUnit ? (entry.pills || 0) : (entry.mg || 0);
       return amt > 0 && amt > (dc.max - dc.used);
     })();
+    // v26 auditor fix: the off-day override (Aaron-requested — every medication can now be logged
+    // on a day it isn't scheduled for) went through the exact same force-logMed path as early/
+    // over-limit overrides but was never checked here, so the resulting entry carried no override
+    // flag at all and was indistinguishable from a normal on-schedule dose in Journal/History --
+    // silently losing the "this was a caregiver exception" audit trail for the release's headline
+    // feature. Checked against the logged date (dayStart(ts)), not state.now, so a caregiver
+    // backdating/adjusting the time in the modal is still evaluated against the day they actually
+    // logged for.
+    const offDay = !!(m.opts && m.opts.force) && !medScheduledOn(med, dayStart(ts));
     // v23 auditor fix: both "early" and "over-limit" overrides set the same entry.override flag,
     // so an over-limit log showed a factually wrong "EARLY" badge in the Journal/History even
     // though it wasn't early at all -- overrideReason lets the badge say which one actually
     // happened. Entries logged before this fix have override:true with no overrideReason; the
     // badge below defaults those to "Early" since that was the only override reason that existed
-    // at the time they were saved.
-    if (early || overLimit) {
+    // at the time they were saved. v26: offDay folds into the same scheme rather than a parallel
+    // one -- reasonParts lists every reason actually true, so a dose that's simultaneously off-day
+    // and over the daily limit (e.g. a caregiver already force-logged once today) still records
+    // both facts instead of one silently overwriting the other.
+    if (early || overLimit || offDay) {
       entry.override = true;
-      entry.overrideReason = early && overLimit ? 'both' : early ? 'early' : 'overLimit';
+      const reasonParts = [];
+      if (offDay) reasonParts.push('offDay');
+      if (early) reasonParts.push('early');
+      if (overLimit) reasonParts.push('overLimit');
+      entry.overrideReason = reasonParts.length > 1 ? reasonParts.join('+') : reasonParts[0];
     }
     setState({ timeModal: null });
     await addEntryDB(entry);
-    setToast(med.name + ' logged' + (m.dose ? (' · ' + m.dose.label) : '') + (entry.painLevel ? (' · Pain ' + entry.painLevel + '/10') : '') + (early ? ' (early)' : '') + (overLimit ? ' (over today’s limit)' : '') + ' at ' + fmtTime(ts));
+    setToast(med.name + ' logged' + (m.dose ? (' · ' + m.dose.label) : '') + (entry.painLevel ? (' · Pain ' + entry.painLevel + '/10') : '') + (offDay ? ' (not scheduled today)' : '') + (early ? ' (early)' : '') + (overLimit ? ' (over today’s limit)' : '') + ' at ' + fmtTime(ts));
     setTimeout(() => afterLog({ ...entry, id: 'pending' }), 500);
   } else if (m.type === 'temp') {
     const v = m.tempValue;
@@ -1463,11 +1501,16 @@ const FAQ_ITEMS = [
   { id: 'privacy', q: 'Is my data private?', a: 'Yes. Everything you enter stays on this device in local storage — there’s no cloud, no account, and nothing is ever sent anywhere. If you erase this device or uninstall the app, that data is gone, so it’s worth keeping the device backed up the way you normally would.' },
   { id: 'add-med', q: 'How do I add a medication?', a: 'Open the Meds tab and tap Add. Give it a name, choose As needed (a gap timer between doses) or Scheduled (set time windows), and save — it’ll show up on Home right away.' },
   { id: 'switch-profile', q: 'How do I switch or add a profile?', a: 'Open the menu (the three lines, top left) and tap your name at the top, or go to Settings — Profiles. Each profile keeps its own medications and history completely separate on this device.' },
-  { id: 'missed-dose', q: 'What happens if I miss a dose?', a: 'ChemoWell flags it as missed once its window passes without a log. You can resolve it from History — mark it Took later, Skipped, or Clear it if it was logged some other way.' },
+  { id: 'missed-dose', q: 'What happens if I miss a dose?', a: 'Each scheduled reminder stays open — not flagged as missed — until the next reminder for that medication that day, or until midnight if it was the last one, giving real room to log it a little late. Once that cutoff passes with nothing logged, it’s flagged missed and shows up in History, where you can mark it Took later, Skipped, or Clear it if it was logged some other way.' },
   { id: 'treatment-date', q: 'How do I set a treatment (chemo/radiation) date?', a: 'On Home, under Treatment schedule, tap Pick a date. Medications set to "Treatment-day only" or "Excluded near treatment day" use this date to know when to show or hide themselves.' },
   { id: 'weight-reason', q: 'How do I note why weight changed?', a: 'When you log a weight, an optional Reason for change dropdown appears — Paracentesis, fluid retention, appetite changes, and more. Picking Paracentesis reveals a Liters drained field, and there’s a free-text Note too. All of it shows up in the Weight report.' },
   { id: 'calendar', q: 'How do I get a reminder for an appointment?', a: 'Open the menu and tap Calendar, then Add. Give it a title, date, and time, then choose when to be reminded — right at the time, 1 hour before, the morning of, 1 day before, or a custom lead time you set yourself. One thing to know: reminders only fire while ChemoWell is open in your browser, so they won’t reach you if your phone is locked or the tab is closed. You’ll also need to allow notifications when your browser asks.' },
-  { id: 'reset', q: 'Can I start over / erase everything?', a: 'Yes — Settings, all the way at the bottom, under Start over. It erases the patient name, medication list, and all logged history from this device. This can’t be undone, so use it only if you really mean to wipe the slate clean.' }
+  { id: 'schedule-windows', q: 'What does “Reminds at” mean on a scheduled medication?', a: 'Each row under Schedule windows is one reminder — a single time of day, not a start-and-end range. Tap the “?” next to Schedule windows in the medication editor for the full explanation of how that time relates to missed-dose tracking.' },
+  { id: 'off-day-log', q: 'Can I log a medication on a day it isn’t normally scheduled?', a: 'Yes. If a medication is set to specific days (see Days taken) and today isn’t one of them, its card shows “Not scheduled today” with a button to log it anyway — tap it, then confirm. Every medication has this override, the same way daily-limit and gap-timer locks do.' },
+  { id: 'daily-limit', q: 'How does Daily limit work?', a: 'It blocks logging more of a medication once the number you set is reached for the day, in whichever unit you choose under Limit unit (total mg, number of pills, or number of applications). It only works if at least one Dosage option actually carries that unit — the editor warns you right under Dosage options if it doesn’t. You can always log over the limit anyway by tapping the button that appears once it’s reached and confirming.' },
+  { id: 'gap-timer', q: 'What’s “Hours between doses” / minimum gap?', a: 'It’s the minimum time ChemoWell requires since the last dose before the card unlocks again — used for “as needed” medications (e.g. every 4 hours) and, optionally, layered on top of a scheduled medication’s reminder times too. Like other locks, you can override it early if there’s a real reason to.' },
+  { id: 'reset', q: 'Can I start over / erase everything?', a: 'Yes — Settings, all the way at the bottom, under Start over. It erases the patient name, medication list, and all logged history from this device. This can’t be undone, so use it only if you really mean to wipe the slate clean.' },
+  { id: 'in-patient', q: 'How does In-Patient tracking work?', a: 'Tap Log In-Patient Start when a hospital stay begins. While it’s active, Home medication logging pauses (the hospital is administering meds, not you), and the In-Patient tab shows how many days into the stay you are. Tap Log In-Patient End when discharged — every past stay is kept in the In-Patient History list below.' }
 ];
 async function logSymptom(type, ts, opts) {
   const entry = { medId: 'symptom_' + type, symptomType: type, ts, note: (opts && opts.note) || '', dose: null, mg: 0 };
@@ -1926,14 +1969,11 @@ function renderGroupedMedsCard(title, meds, now) {
             )
           );
         }
-        if (!inpatientNow && !medScheduledOn(med, now)) {
-          return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none', opacity: '0.65' } },
-            h('div', { style: { flex: '1', minWidth: '0' } },
-              h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name),
-              h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px' } }, 'Not scheduled today \u00b7 Taken: ' + scheduleDaysLabel(med))
-            )
-          );
-        }
+        // v26 (Aaron-requested): matches medCards' equivalent fix -- a day-restricted medication now
+        // falls through to the normal override-capable row instead of a dead-end inert row, so every
+        // medication has the same "log it anyway" option regardless of why it's not the default
+        // available state. inpatientNow still wins outright (hospital-administered, not overridable).
+        const offDay = !inpatientNow && !medScheduledOn(med, now);
         if (inpatientNow) {
           return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
             h('div', { style: { flex: '1', minWidth: '0' } },
@@ -1943,6 +1983,7 @@ function renderGroupedMedsCard(title, meds, now) {
           );
         }
         const st = status(med);
+        const locked = !!st.locked || offDay;
         const todayLogs = entriesFor(med.id).filter(e => e.ts >= dayStart(now));
         const lastToday = todayLogs[todayLogs.length - 1];
         const isOv = !!(state.override && state.override.medId === med.id);
@@ -1957,22 +1998,24 @@ function renderGroupedMedsCard(title, meds, now) {
         // ceilingHit here rather than leaving one case fixed and the other not. Designer v23 re-review
         // caught the override buttons had no explanatory copy (unlike the standalone card's red
         // banner) and sat at 42px, under the app's 44px touch-target floor -- both fixed below.
-        const overrideReasonLabel = st.courseComplete ? 'Course complete' : st.ceilingHit ? 'Log over limit' : 'Log early';
+        const overrideReasonLabel = st.courseComplete ? 'Course complete' : st.ceilingHit ? 'Log over limit' : offDay ? 'Log anyway' : 'Log early';
         const overrideExplain = st.courseComplete
           ? 'This medication’s treatment window has ended. Log it anyway?'
           : st.ceilingHit
             ? 'This would go over today’s limit. Log it anyway?'
-            : ('Closed — opens ' + (st.availableAt ? fmtTime(st.availableAt) : 'later') + '. Log it early anyway?');
+            : offDay
+              ? ('Not scheduled today (' + scheduleDaysLabel(med) + '). Log it anyway?')
+              : ('Closed — opens ' + (st.availableAt ? fmtTime(st.availableAt) : 'later') + '. Log it early anyway?');
         let right;
         if (isOv) {
           right = h('div', { style: { display: 'flex', gap: '7px', flexShrink: '0' } },
             h('button', { onClick: () => logMed(med.id, med.doses ? med.doses[0] : null, { force: true }), style: { minHeight: '44px', padding: '0 13px', borderRadius: '11px', background: '#C0453B', color: '#fff', fontSize: '13px', fontWeight: '700' } }, overrideReasonLabel),
             h('button', { onClick: () => setState({ override: null }), style: { minHeight: '44px', padding: '0 11px', borderRadius: '11px', background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(212,104,138,0.15)', color: '#7A6E76', fontSize: '13px', fontWeight: '600' } }, 'Cancel')
           );
-        } else if (!st.locked) {
+        } else if (!locked) {
           right = h('button', { onClick: () => logMed(med.id, med.doses ? med.doses[0] : null), style: { minHeight: '44px', padding: '0 20px', borderRadius: '12px', background: '#A24C71', color: '#fff', fontSize: '14px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)', flexShrink: '0' } }, 'Log');
         } else {
-          right = h('button', { onClick: () => setState({ override: { medId: med.id } }), className: 'mono', style: { minHeight: '44px', padding: '0 12px', borderRadius: '99px', background: 'rgba(255,255,255,0.4)', border: '1px solid rgba(212,104,138,0.15)', color: '#5C6662', fontSize: '12.5px', fontWeight: '600', flexShrink: '0' } }, st.courseComplete ? 'Course complete' : st.ceilingHit ? 'Limit reached' : (st.availableAt ? ('Opens ' + fmtTime(st.availableAt)) : 'Closed'));
+          right = h('button', { onClick: () => setState({ override: { medId: med.id } }), className: 'mono', style: { minHeight: '44px', padding: '0 12px', borderRadius: '99px', background: 'rgba(255,255,255,0.4)', border: '1px solid rgba(212,104,138,0.15)', color: '#5C6662', fontSize: '12.5px', fontWeight: '600', flexShrink: '0' } }, st.courseComplete ? 'Course complete' : st.ceilingHit ? 'Limit reached' : offDay ? 'Not scheduled' : (st.availableAt ? ('Opens ' + fmtTime(st.availableAt)) : 'Closed'));
         }
         return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
           h('div', { style: { flex: '1', minWidth: '0' } },
@@ -2045,6 +2088,34 @@ function renderSetup() {
 // every re-render while it sits open (toast show/clear alone re-renders twice after "Simulate
 // purchase", each replay = a visible flicker). Reset on close so the next open animates again.
 let upgradeSheetAnimated = false;
+// v26 (Aaron-requested): a small, reusable "explain this" bottom sheet -- same pattern as
+// renderUpgradeModal (backdrop tap or ✕ to dismiss) -- for any field whose behavior isn't
+// obvious from its one-line helper text alone. First use: the Schedule windows field, whose
+// (now-hidden) window-end cutoff still drives missed-dose timing and deserved a real explanation.
+function renderInfoModal() {
+  if (!state.infoModal) return null;
+  const m = state.infoModal;
+  return h('div', { onClick: (e) => { if (e.target === e.currentTarget) setState({ infoModal: null }); }, style: { position: 'fixed', inset: '0', zIndex: '75', background: 'rgba(50,25,40,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '0' } },
+    h('div', { role: 'dialog', 'aria-modal': 'true', 'aria-label': m.title, style: { width: '100%', maxWidth: '520px', maxHeight: '80vh', overflowY: 'auto', background: '#FFFFFF', borderRadius: '22px 22px 0 0', padding: '8px 20px calc(20px + env(safe-area-inset-bottom))', boxShadow: '0 -12px 48px rgba(60,25,45,0.30)', animation: 'sheetUp .32s cubic-bezier(0.32,0.72,0,1)' } },
+      h('div', { 'aria-hidden': 'true', style: { width: '36px', height: '4px', borderRadius: '99px', background: '#DCCFD4', margin: '4px auto 14px' } }),
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px' } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, appIcon('help', 18, { color: '#8E3D61' }), h('div', { style: { ...TYPE.title, fontSize: '17px', color: '#2A2127' } }, m.title)),
+        h('button', { onClick: () => setState({ infoModal: null }), 'aria-label': 'Close', style: { flexShrink: '0', width: '44px', height: '44px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(125,105,116,0.10)', color: '#5F4A56', fontSize: '15px', fontWeight: '800' } }, '✕')
+      ),
+      h('div', { style: { fontSize: '13.5px', color: '#554A52', lineHeight: '1.55', whiteSpace: 'pre-line' } }, m.body)
+    )
+  );
+}
+// Small "?" trigger for the above -- drop next to any fieldLabel() that needs a plain-language
+// explanation beyond its one-line helper text. The visible glyph stays a small 20px circle
+// (matching the compact label row it sits in), but the tappable button itself meets this app's own
+// 44px touch-target minimum -- padding (not a negative margin) grows the hit area so the extra
+// space is claimed normally in the flex row instead of overlapping neighboring rows.
+function helpIcon(title, body) {
+  return h('button', { type: 'button', onClick: () => setState({ infoModal: { title, body } }), 'aria-label': 'What does this mean?', style: { flexShrink: '0', width: '44px', height: '44px', padding: '0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none' } },
+    h('span', { 'aria-hidden': 'true', style: { width: '20px', height: '20px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(170,83,117,0.14)', color: '#8E3D61', fontSize: '12px', fontWeight: '800' } }, '?')
+  );
+}
 function renderUpgradeModal() {
   if (!state.upgradeOpen) { upgradeSheetAnimated = false; return null; }
   const animateIn = !upgradeSheetAnimated;
@@ -2290,6 +2361,7 @@ function render() {
     renderTimeModal(),
     renderUpgradeModal(),
     renderApptModal(),
+    renderInfoModal(),
     renderDrawer(),
     (state.view === 'reports' && state.reportsView) ? h('div', { style: { position: 'fixed', zIndex: '34', left: '0', right: '0', bottom: 'calc(78px + env(safe-area-inset-bottom))', display: 'flex', justifyContent: 'center', pointerEvents: 'none' } },
       h('button', { onClick: () => setState({ reportsView: null }), style: { pointerEvents: 'auto', minHeight: '42px', padding: '0 18px', borderRadius: '99px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(60,30,50,0.88)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', fontSize: '13px', fontWeight: '800', boxShadow: '0 10px 28px rgba(120,60,90,0.22)' } }, '↩ Back')
@@ -3057,14 +3129,14 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         h('div', { style: { fontSize: '12px', color: '#704E22' } }, 'Given by hospital staff — not logged in this app')
       );
     }
-    if (!medScheduledOn(med, now)) {
-      return h('div', { style: { background: 'rgba(125,105,116,0.06)', border: '1.5px dashed rgba(125,105,116,0.30)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
-        h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name + ' \u2014 Not scheduled today'),
-        h('div', { style: { fontSize: '12px', color: '#7A6E76' } }, 'Taken: ' + scheduleDaysLabel(med))
-      );
-    }
+    // v26 (Aaron-requested): a medication restricted to specific days used to be a dead-end here \u2014
+    // no button at all on an off day, even though every other lock reason (daily limit, gap timer,
+    // closed window) has always had an override. Now it falls through to the same card machinery as
+    // every other medication, with `offDay` folded into `locked` so it gets the same
+    // arm-then-confirm override flow instead of a separate, disconnected mechanism.
+    const offDay = !medScheduledOn(med, now);
     const st = status(med);
-    const locked = !!st.locked;
+    const locked = !!st.locked || offDay;
     const last = latest(med.id);
     const doseList = med.doses || [{ single: true }];
     const countdownLabel = locked && st.availableAt ? fmtCountdown(st.availableAt - now) : '';
@@ -3080,6 +3152,8 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       nextDoseLabel = 'Restricted — next dose ' + new Date(st.availableAt).toLocaleDateString([], { weekday: 'long' }) + ' ' + fmtTime(st.availableAt);
     } else if (st.courseComplete) {
       nextDoseLabel = 'Course complete';
+    } else if (offDay) {
+      nextDoseLabel = 'Not scheduled today · Taken: ' + scheduleDaysLabel(med);
     } else if (locked && st.availableAt) {
       nextDoseLabel = 'Next dose at ' + fmtTime(st.availableAt);
     } else {
@@ -3140,7 +3214,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       buttonArea = h('div', { style: { background: 'rgba(192,69,59,0.12)', border: '1px solid rgba(192,69,59,0.25)', borderRadius: '13px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '7px' } },
         h('div', { style: { fontSize: '12px', color: '#A15B56', fontWeight: '600', lineHeight: '1.35', display: 'flex', alignItems: 'center', gap: '7px' } },
           h('span', { style: { flexShrink: '0', width: '18px', height: '18px', borderRadius: '50%', background: '#C0453B', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '12px' } }, '!'),
-          st.ceilingHit ? (med.rollingCeilingH ? ('Up to the ' + (dc ? dc.label : 'limit') + ' reached. Log more anyway?') : ('Daily limit of ' + (dc ? dc.label : 'limit') + ' reached. Log more anyway?')) : st.chemoBlock ? 'Care team said no Zofran on chemo days. Log it anyway?' : ('Closed — opens in ' + countdownLabel + '. Log it early anyway?')
+          st.ceilingHit ? (med.rollingCeilingH ? ('Up to the ' + (dc ? dc.label : 'limit') + ' reached. Log more anyway?') : ('Daily limit of ' + (dc ? dc.label : 'limit') + ' reached. Log more anyway?')) : st.chemoBlock ? 'Care team said no Zofran on chemo days. Log it anyway?' : st.courseComplete ? 'This medication’s treatment window has ended. Log it anyway?' : offDay ? ('Not scheduled today (' + scheduleDaysLabel(med) + '). Log it anyway?') : ('Closed — opens in ' + countdownLabel + '. Log it early anyway?')
         ),
         h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
           ...doseList.map((d, i) => doseBlocked(d) ? overrideDoseBtn(d, i) : h('button', { onClick: () => logMed(med.id, d.single ? null : d, { force: true }), style: { flex: '0 1 auto', minWidth: '0', maxWidth: '100%', minHeight: '44px', padding: '0 13px', borderRadius: '999px', background: '#C0453B', color: '#fff', fontSize: '12.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)', whiteSpace: 'normal', textAlign: 'center', lineHeight: '1.25' } }, d.single ? 'Override — log now' : ('Log ' + d.label + ' now'))),
@@ -3162,7 +3236,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         locked ?
           ((st.ceilingHit || st.chemoBlock) ?
             h('div', { className: 'mono', innerHTML: lockSVG + ' ' + (st.ceilingHit ? 'Limit' : 'Restricted'), style: { display: 'inline-flex', alignItems: 'center', gap: '5px', height: '26px', background: 'rgba(192,69,59,0.10)', color: '#A5443C', borderRadius: '99px', padding: '0 10px', fontSize: '12px', fontWeight: '700', flexShrink: '0', whiteSpace: 'nowrap' } }) :
-            h('div', { className: 'mono', innerHTML: clockSVG + ' Waiting', style: { display: 'inline-flex', alignItems: 'center', gap: '5px', height: '26px', background: 'rgba(181,118,30,0.12)', color: '#8C5900', borderRadius: '99px', padding: '0 10px', fontSize: '12px', fontWeight: '700', flexShrink: '0', whiteSpace: 'nowrap' } })
+            h('div', { className: 'mono', innerHTML: clockSVG + ' ' + (offDay ? 'Not scheduled' : 'Waiting'), style: { display: 'inline-flex', alignItems: 'center', gap: '5px', height: '26px', background: 'rgba(181,118,30,0.12)', color: '#8C5900', borderRadius: '99px', padding: '0 10px', fontSize: '12px', fontWeight: '700', flexShrink: '0', whiteSpace: 'nowrap' } })
           ) :
           h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', height: '26px', background: 'rgba(15,157,87,0.12)', color: '#0C7F57', borderRadius: '99px', padding: '0 10px', fontSize: '12px', fontWeight: '700', flexShrink: '0', whiteSpace: 'nowrap' } },
             '\u2713',
@@ -3235,7 +3309,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
               h('div', { style: { flex: '1' } },
                 h('div', { style: { ...TYPE.body, display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' } },
                   nameOf(e.medId),
-                  e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, e.overrideReason === 'overLimit' ? 'Over limit' : e.overrideReason === 'both' ? 'Early \u00b7 Over limit' : 'Early') : null,
+                  e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, overrideBadgeLabel(e.overrideReason)) : null,
                   e.skipped ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#7A6E76', background: 'rgba(125,105,116,0.14)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
                 ),
                 e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, entryDoseLabel(e) + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, 'Pain ' + e.painLevel + '/10') : null)
@@ -3261,7 +3335,9 @@ function formatRuleSummary(med) {
   } else if (med.type === 'gap') {
     fragments.push(med.gapH > 0 ? ('Min ' + med.gapH + '-hour gap') : 'No minimum gap set \u2014 edit to fix');
   } else if (med.windows && med.windows.length) {
-    fragments.push(med.windows.map(window => window.name || (formatQuarterHour(window.start) + '–' + formatQuarterHour(window.end))).join(' · '));
+    // v26: windows are now a single alert time each (no user-facing range) — the summary shows
+    // just the start time for an unnamed window instead of a start–end pair.
+    fragments.push(med.windows.map(window => window.name || formatQuarterHour(window.start)).join(' · '));
     // v23: scheduled meds can now optionally also carry a gapH lockout (see status()) -- show both
     // rules together instead of the old gap/windows either-or.
     if (med.gapH > 0) fragments.push('Min ' + med.gapH + '-hour gap');
@@ -3297,11 +3373,9 @@ function formatClockOption(hour) {
   const displayH = whole === 0 ? 12 : (whole > 12 ? whole - 12 : whole);
   return displayH + ':' + String(min).padStart(2, '0') + (whole >= 12 ? ' PM' : ' AM');
 }
-// 96 quarter-hour Start options (12:00 AM .. 11:45 PM). End options are the same 96 plus a 97th
-// "Midnight" entry at value 24, since the windows model already uses end:24 to mean "through the
-// end of the day" (see normalizeMedication's default fallback and formatHour's own Midnight case).
+// 96 quarter-hour Start options (12:00 AM .. 11:45 PM). v26: each window row is now a single alert
+// time only — there is no user-facing End option anymore (see deriveWindowEnds).
 const TIME_STEP_OPTIONS = Array.from({ length: 96 }, (_, i) => ({ value: i * 0.25, label: formatClockOption(i * 0.25) }));
-const END_TIME_OPTIONS = TIME_STEP_OPTIONS.concat([{ value: 24, label: formatClockOption(24) }]);
 
 function medicationDoseSummary(med) {
   return med.doses && med.doses.length ? med.doses.map(dose => dose.label).join(' · ') : 'Single-tap log';
@@ -3321,7 +3395,11 @@ function medicationFormFrom(med) {
     // directly from med.windows (start/end/name copied as-is, no string parse/format step), which
     // also removes the old round-trip's own latent bug (formatHour is lossy for non-whole hours;
     // irrelevant before this release since none existed, but would have been a live landmine).
-    windowRows: base.windows && base.windows.length ? base.windows.map(window => ({ start: window.start, end: window.end, name: window.name || '' })) : [{ start: 8, end: 20, name: 'Daily' }],
+    // v26: end is kept here only as a harmless passthrough for existing medications' already-stored
+    // values (unused — deriveWindowEnds recomputes it fresh at save from the other rows' starts).
+    // A brand-new medication's default row has no end at all anymore, since there's no End field
+    // left in the UI to have set it.
+    windowRows: base.windows && base.windows.length ? base.windows.map(window => ({ start: window.start, end: window.end, name: window.name || '' })) : [{ start: 8, name: 'Daily' }],
     dailyLimit: max || '',
     dailyLimitUnit: base.ceilingUnit || 'mg',
     quickLog: typeof base.quickLog === 'boolean' ? base.quickLog : true,
@@ -3379,8 +3457,12 @@ function dailyLimitPreview(form) {
     // count" -- confusing for exactly the non-technical caregiver audience this copy exists for.
     // Matches the three-way branch the success-message below already used.
     const missingWord = unit === 'mg' ? 'an mg amount' : unit === 'pills' ? 'a pill count' : 'an application count';
-    return h('div', { style: { gridColumn: '1 / -1', fontSize: '12px', fontWeight: '700', color: '#9A6419', background: 'rgba(199,120,0,0.08)', border: '1px solid rgba(199,120,0,0.22)', borderRadius: '10px', padding: '8px 10px', lineHeight: '1.4' } },
-      'Dosage options don’t include ' + missingWord + ' yet — this limit won’t work until they do.');
+    // v26 (Aaron-requested): the plain amber-on-cream text line was easy to miss against the
+    // editor's background. Solid fill + border + a filled "!" badge instead of relying on color
+    // alone to signal "this is a warning."
+    return h('div', { style: { gridColumn: '1 / -1', display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '12.5px', fontWeight: '700', color: '#8C5900', background: '#FBEBD2', border: '1.5px solid #C77800', borderRadius: '11px', padding: '10px 11px', lineHeight: '1.4' } },
+      h('span', { 'aria-hidden': 'true', style: { flexShrink: '0', width: '18px', height: '18px', borderRadius: '50%', background: '#C77800', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '12px', marginTop: '1px' } }, '!'),
+      h('span', null, 'Dosage options don’t include ' + missingWord + ' yet — this limit won’t work until they do.'));
   }
   const unitWord = unit === 'mg' ? 'mg' : (unit === 'pills' ? (dailyLimit === 1 ? 'pill' : 'pills') : (dailyLimit === 1 ? 'application' : 'applications'));
   const verb = unit === 'mg' ? 'is' : 'are';
@@ -3441,6 +3523,24 @@ function clampTreatmentDays(value) {
   const n = Math.round(Number(value));
   return Number.isFinite(n) && n >= 0 ? n : 1;
 }
+// v26 (Aaron-requested): schedule windows are now a single alert time each — no user-facing End
+// field. `end` still exists internally because two other pieces of logic depend on it: status()
+// uses it to decide when a scheduled window's one-tap Log button is available, and
+// missedDosesFor() uses it as the deadline a window gets flagged "missed" at. Rather than removing
+// those checks (which would mean a reminder never actually "closes" and never gets flagged missed
+// — a real regression for a medication-safety app), end is auto-derived as the next window's start
+// that day (or midnight for the last one), giving the exact same grace-period behavior as before
+// with zero UI exposure and zero behavior change for existing medications.
+function deriveWindowEnds(rows) {
+  const sorted = (rows || []).map(row => ({ ...row, start: Number(row.start) })).filter(row => Number.isFinite(row.start)).sort((a, b) => a.start - b.start);
+  const deduped = [];
+  sorted.forEach(row => { if (!deduped.length || deduped[deduped.length - 1].start !== row.start) deduped.push(row); });
+  return deduped.map((row, index) => ({
+    start: row.start,
+    end: index + 1 < deduped.length ? deduped[index + 1].start : 24,
+    name: String(row.name || '').trim() || ('Window ' + (index + 1))
+  }));
+}
 function saveMedicationEditor() {
   if (!state.medEditor) return;
   const editor = state.medEditor;
@@ -3449,16 +3549,23 @@ function saveMedicationEditor() {
   if (!name) { setToast('Enter a medication name before saving.'); return; }
   const type = form.type === 'win' ? 'win' : 'gap';
   const gapH = Math.max(0, Number(form.gapH) || 0);
-  // v20: windows now come straight from the structured windowRows picker (start/end already
-  // decimal-hour numbers from the dropdowns) instead of being parsed back out of free text --
-  // parseScheduleWindows is kept only for any legacy callers, not used here anymore. A row only
-  // counts if its end is actually after its start (a row left at its default or misconfigured by
-  // dragging end before start must not silently save a zero/negative-length window).
-  const windows = type === 'win' ? (form.windowRows || [])
-    .filter(row => Number(row.end) > Number(row.start))
-    .map((row, index) => ({ start: Number(row.start), end: Number(row.end), name: String(row.name || '').trim() || ('Window ' + (index + 1)) }))
-    : [];
+  // v20: windows now come straight from the structured windowRows picker instead of being parsed
+  // back out of free text -- parseScheduleWindows is kept only for any legacy callers, not used
+  // here anymore. v26: end is no longer user-set -- deriveWindowEnds computes it from the other
+  // windows' start times (see its own comment above).
+  const windows = type === 'win' ? deriveWindowEnds(form.windowRows || []) : [];
   if (type === 'win' && !windows.length) { setToast('Add at least one schedule time — tap “+ Add another time window” to add one.'); return; }
+  // v26 auditor fix: addWindowRow() already steers a brand-new row away from an existing start
+  // time, but editing an existing row's Start dropdown to match another row was unguarded --
+  // deriveWindowEnds() silently dedupes same-start rows, so the second row just vanished on save
+  // with no toast, no error, nothing telling the caregiver a reminder they configured was dropped.
+  // Block the save instead and name which time collided, matching this function's existing
+  // validate-and-toast pattern rather than losing data quietly.
+  if (type === 'win' && windows.length < (form.windowRows || []).length) {
+    const dropped = (form.windowRows || []).length - windows.length;
+    setToast((dropped === 1 ? 'Two schedule windows share' : (dropped + 1) + ' schedule windows share') + ' the same time — give each one a different time before saving.');
+    return;
+  }
   // v19: an "as needed" medication with no minimum gap never re-locks after logging -- the card
   // just sits on "Available" forever, which looked broken (Owner bug report: Zofran/Iron/Compazine
   // stayed "Available" right after being logged). A gap-timer medication now requires an actual
@@ -3678,11 +3785,10 @@ function updateWindowRow(index, field, value) {
   const rows = (state.medEditor.form.windowRows || []).slice();
   if (!rows[index]) return;
   const next = { ...rows[index] };
+  // v26: end is no longer a field this row has (see deriveWindowEnds) -- only start/name are
+  // ever set here now.
   if (field === 'name') next.name = value;
-  else {
-    next[field] = Number(value);
-    if (field === 'start' && next.end <= next.start) next.end = Math.min(24, next.start + 0.25);
-  }
+  else next[field] = Number(value);
   rows[index] = next;
   state.medEditor.form.windowRows = rows;
   setState({ medEditor: state.medEditor });
@@ -3690,7 +3796,14 @@ function updateWindowRow(index, field, value) {
 function addWindowRow() {
   if (!state.medEditor) return;
   const rows = (state.medEditor.form.windowRows || []).slice();
-  rows.push({ start: 8, end: 8.5, name: '' });
+  // Guard against two rows sharing the same alert time -- with no End field left to disambiguate,
+  // an identical start would silently collide when end-times are derived at save (one window would
+  // compute a zero-length span and vanish with no warning). Pick the next quarter-hour after the
+  // last row's start instead of always defaulting to 8:00.
+  const usedStarts = new Set(rows.map(r => r.start));
+  let start = 8;
+  while (usedStarts.has(start) && start < 23.75) start += 0.25;
+  rows.push({ start, name: '' });
   state.medEditor.form.windowRows = rows;
   setState({ medEditor: state.medEditor });
 }
@@ -3759,6 +3872,9 @@ function renderMedicationEditor() {
       // out from under the user's cursor on every keystroke. Stable ids let render() find the same
       // logical field again after rebuild and restore focus + cursor position onto it.
       h('label', null, fieldLabel('Dosage options', 'Separate choices with commas.'), formInput({ id: 'med-doses-text', value: form.dosesText, placeholder: '500 mg, 1000 mg', onInput: event => updateMedicationForm('dosesText', event.target.value, true) })),
+      // v26 (Aaron-requested): this warning explains Dosage options, so it now renders right under
+      // that field instead of after Schedule type, several fields away from what it's about.
+      dailyLimitPreview(form),
       // v25 audit re-verify fix (Finding A): type="number" inputs throw on setSelectionRange in
       // Chrome, which the new render()-time cursor-restore logic silently swallows -- with no
       // fallback, a freshly-refocused number input's cursor resets to position 0 after every
@@ -3771,7 +3887,6 @@ function renderMedicationEditor() {
       h('label', null, fieldLabel('Daily limit', 'Blocks logging more doses once this many are reached for the day. Leave blank for no limit.'), formInput({ id: 'med-daily-limit', type: 'text', inputMode: 'decimal', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value, true) })),
       h('label', null, fieldLabel('Limit unit', 'What the number above counts.'), h('select', { id: 'med-daily-limit-unit', value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' }) }, h('option', { value: 'mg' }, 'Total milligrams (mg)'), h('option', { value: 'pills' }, 'Number of pills / doses'), h('option', { value: 'applications' }, 'Number of applications'))),
       h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }) }, h('option', { value: 'gap' }, 'As needed \u2014 wait a set number of hours between doses'), h('option', { value: 'win' }, 'Scheduled \u2014 remind me at specific times'))),
-      dailyLimitPreview(form),
       h('div', { style: { gridColumn: '1 / -1' } },
         fieldLabel('Days taken', 'Not every medication is daily \u2014 pick which days this one is given.'),
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
@@ -3801,28 +3916,23 @@ function renderMedicationEditor() {
       // -- a caregiver could believe two reminder windows were set when only one actually saved. Every
       // row here is built from dropdowns (Aaron's explicit spec), so there's nothing left to mistype.
       scheduled ? h('div', { style: { gridColumn: '1 / -1' } },
-        fieldLabel('Schedule windows', 'When this medication should be taken and reminders sent.'),
+        // v26 (Aaron-requested): a "?" next to the label opens a plain-language explanation of what
+        // the (now-hidden) window-end cutoff means for missed-dose tracking -- Aaron: "there needs to
+        // be an explanation as to what that section means... if I didn't understand it, people will
+        // definitely be confused."
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '2px', marginBottom: '2px' } },
+          fieldLabel('Schedule windows', 'When this medication should be taken and reminders sent.'),
+          helpIcon('Schedule windows & missed doses', 'Each row is one reminder — a single time of day, not a start-and-end range.\n\nIf a dose isn’t logged by that time, it stays open (not flagged as missed) until the next reminder for this medication that day, or until midnight if it’s the last one — giving real room to log it a little late without it showing up as missed.\n\nOnce that next reminder time (or midnight) passes with nothing logged, the dose is marked missed and shows up in History to resolve.')
+        ),
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
           ...(form.windowRows || []).map((row, i) => {
-            // End can't be <= this row's own Start (matches the end>start invariant every window has
-            // always had) -- caught at selection time via a filtered option list, not just at save.
-            const endOptions = END_TIME_OPTIONS.filter(opt => opt.value > row.start);
             return h('div', { style: { border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px' } },
-              // Lead Designer review (v20): bumping the trash button to a 44px touch target left no
-              // room for it on the same line as the two time selects at mobile widths (the selects'
-              // own flex:1/minWidth math already consumed the full row on its own) -- it silently
-              // wrapped to its own line instead of failing loudly. First attempt (minWidth 105/gap 6)
-              // only accounted for the 390px case (~300px available); re-verified against the actual
-              // smallest supported viewport (360px, ~270px available) and it still wrapped there, so
-              // this uses the true worst-case width: minWidth 95/gap 5 leaves ~6px of slack at 360px
-              // and ~36px at 390px, confirmed live at both.
-              h('div', { style: { display: 'flex', gap: '5px', flexWrap: 'wrap', alignItems: 'center' } },
-                h('select', { value: String(row.start), onChange: event => updateWindowRow(i, 'start', event.target.value), style: selectFix({ minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', flex: '1', minWidth: '95px' }) },
+              // v26: the End select is gone (each row is a single alert time now — see
+              // deriveWindowEnds), so Start and the trash button share the row with far more room
+              // than the old three-way Start/to/End/trash layout ever had at mobile widths.
+              h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
+                h('select', { value: String(row.start), onChange: event => updateWindowRow(i, 'start', event.target.value), style: selectFix({ minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', flex: '1', minWidth: '120px' }) },
                   ...TIME_STEP_OPTIONS.map(opt => h('option', { value: String(opt.value) }, opt.label))
-                ),
-                h('span', { style: { fontSize: '12.5px', color: '#554A52', fontWeight: '700' } }, 'to'),
-                h('select', { value: String(row.end), onChange: event => updateWindowRow(i, 'end', event.target.value), style: selectFix({ minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', flex: '1', minWidth: '95px' }) },
-                  ...endOptions.map(opt => h('option', { value: String(opt.value) }, opt.label))
                 ),
                 (form.windowRows || []).length > 1 ? h('button', { type: 'button', onClick: () => removeWindowRow(i), 'aria-label': 'Remove this time window', style: { flexShrink: '0', width: '44px', height: '44px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(192,69,59,0.08)', color: '#A15B56', border: '1px solid rgba(192,69,59,0.18)' } }, appIcon('trash', 16)) : null
               ),
@@ -4176,7 +4286,7 @@ function renderCalendarView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v25';
+const APP_VERSION = 'app-v26';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -4453,7 +4563,7 @@ function renderHistory(now) {
               h('div', { style: { flex: '1' } },
                 h('div', { style: { ...TYPE.body, display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' } },
                   nameOf(e.medId),
-                  e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, e.overrideReason === 'overLimit' ? 'Over limit' : e.overrideReason === 'both' ? 'Early \u00b7 Over limit' : 'Early') : null,
+                  e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, overrideBadgeLabel(e.overrideReason)) : null,
                   e.skipped ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#7A6E76', background: 'rgba(125,105,116,0.14)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
                 ),
                 e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, entryDoseLabel(e) + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#8A6479' } }, 'Pain ' + e.painLevel + '/10') : null)
@@ -4545,44 +4655,82 @@ function renderBowelMovementReport(now) {
   return [history];
 }
 
+// v26 (Aaron-requested — "in patient tab need to be redesigned, looks basic"): generalizes
+// fmtInpatientPeriod's day math (start-day counts as Day 1) to also work for a still-open stay
+// (end === null), so the stats row below can count "days so far" for an active stay, not just
+// finished ones.
+function inpatientStayDays(p, now) { return Math.round((dayStart(p.end === null ? now : p.end) - dayStart(p.start)) / 86400000) + 1; }
 function renderInPatient(now) {
   const activeNow = isInpatientActiveNow();
   const ipDayN = daysSinceInpatientStart();
   const cur = currentInpatientPeriod();
   const confirming = !!state.confirmUndoInpatient;
-  const card = h('section', { style: { background: '#FFFFFF', border: '1px solid rgba(154,100,25,0.25)', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06)' } },
+  const card = h('section', { style: { background: activeNow ? 'linear-gradient(150deg, #FFF6E8 0%, #FFFFFF 60%)' : '#FFFFFF', border: '1px solid rgba(154,100,25,0.25)', borderRadius: '18px', padding: '18px', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' } },
-      h('div', null,
-        h('div', { style: { ...TYPE.label, color: '#8A6479' } }, 'In-Patient Status'),
-        h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } }, activeNow ? ((ipDayN !== null ? ('Day ' + ipDayN + ' — ') : '') + 'since ' + fmtInpatientDateTime(cur.start)) : 'Not currently in-patient')
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', minWidth: '0' } },
+        h('div', { style: { flexShrink: '0', width: '44px', height: '44px', borderRadius: '13px', background: activeNow ? '#9A6419' : 'rgba(154,100,25,0.12)', color: activeNow ? '#fff' : '#9A6419', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('hospital', 22)),
+        h('div', { style: { minWidth: '0' } },
+          h('div', { style: { ...TYPE.label, color: '#8A6479' } }, 'In-Patient Status'),
+          activeNow
+            ? h('div', { style: { fontSize: '28px', fontWeight: '800', color: '#8B5715', lineHeight: '1.1', marginTop: '2px' } }, ipDayN !== null ? ('Day ' + ipDayN) : 'Active')
+            : h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#554A52', marginTop: '3px' } }, 'Not currently in-patient')
+        )
       ),
       activeNow ? h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(154,100,25,0.14)', color: '#9A6419', border: '1px solid rgba(154,100,25,0.3)', borderRadius: '99px', padding: '5px 11px', fontSize: '12.5px', fontWeight: '700', flexShrink: '0' } },
         h('span', { style: { width: '7px', height: '7px', borderRadius: '50%', background: '#9A6419', display: 'inline-block' } }),
         'Active'
       ) : null
     ),
-    activeNow ? h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } },
+    activeNow ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '10px', lineHeight: '1.45' } }, 'Since ' + fmtInpatientDateTime(cur.start) + '. Home medication logging is paused while a stay is active — the hospital is administering doses, not you.') : null,
+    activeNow ? h('div', { style: { display: 'flex', gap: '8px', marginTop: '14px' } },
       h('button', { onClick: logInpatientEnd, style: { flex: '1', minHeight: '52px', borderRadius: '13px', background: '#9A6419', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)' } }, 'Log In-Patient End'),
       h('button', { onClick: () => logPeriodForDay('inpatient_start', 'inpatient_end', 'In-Patient'), title: 'Log a past stay (Start + End)', 'aria-label': 'Log a past hospital stay', style: { flexShrink: '0', minHeight: '52px', width: '52px', borderRadius: '13px', background: '#FFFFFF', border: '1px solid rgba(154,100,25,0.3)', color: '#9A6419', fontSize: '20px', fontWeight: '700' } }, '+'),
       h('button', { onClick: undoInpatientStart, style: { flexShrink: '0', minHeight: '52px', padding: '0 16px', borderRadius: '13px', background: confirming ? '#C0453B' : 'rgba(255,255,255,0.6)', border: '1px solid ' + (confirming ? '#C0453B' : 'rgba(154,100,25,0.3)'), color: confirming ? '#fff' : '#9A6419', fontSize: '13.5px', fontWeight: '700' } }, confirming ? 'Tap to confirm' : 'Undo')
-    ) : h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } },
+    ) : h('div', { style: { display: 'flex', gap: '8px', marginTop: '14px' } },
       h('button', { onClick: logInpatientStart, style: { flex: '1', minHeight: '52px', borderRadius: '13px', background: '#9A6419', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: '0 2px 8px rgba(60,45,55,0.18)' } }, 'Log In-Patient Start'),
       h('button', { onClick: () => logPeriodForDay('inpatient_start', 'inpatient_end', 'In-Patient'), title: 'Log a past stay (Start + End)', 'aria-label': 'Log a past hospital stay', style: { flexShrink: '0', minHeight: '52px', width: '52px', borderRadius: '13px', background: '#FFFFFF', border: '1px solid rgba(154,100,25,0.3)', color: '#9A6419', fontSize: '20px', fontWeight: '700' } }, '+')
     )
   );
 
   const periods = inpatientPeriods();
-  const history = h('section', null,
+  // New stats row -- a quick "how much of this has there been" summary a caregiver/patient can
+  // scan at a glance, instead of having to read through every history row to piece it together.
+  const statTile = (label, value) => h('div', { style: { flex: '1', minWidth: '0', background: '#FFFFFF', border: '1px solid rgba(154,100,25,0.18)', borderRadius: '14px', padding: '11px 12px', textAlign: 'center' } },
+    h('div', { style: { fontSize: '19px', fontWeight: '800', color: '#2A2127' } }, value),
+    h('div', { style: { fontSize: '11px', fontWeight: '700', color: '#8A6479', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' } }, label)
+  );
+  const totalDays = periods.reduce((sum, p) => sum + inpatientStayDays(p, now), 0);
+  const longest = periods.length ? Math.max(...periods.map(p => inpatientStayDays(p, now))) : 0;
+  const thisYear = periods.filter(p => new Date(p.start).getFullYear() === new Date(now).getFullYear()).length;
+  const stats = periods.length ? h('div', { style: { display: 'flex', gap: '8px', marginTop: '14px' } },
+    statTile(periods.length === 1 ? 'Stay' : 'Stays', periods.length),
+    statTile('Total days', totalDays),
+    statTile('Longest', longest + 'd'),
+    statTile('This year', thisYear)
+  ) : null;
+
+  const history = h('section', { style: { marginTop: '18px' } },
     h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '10px' } }, 'In-Patient History'),
     periods.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-      ...periods.map(p => h('div', { style: { background: '#FFFFFF', border: '1px solid rgba(154,100,25,0.25)', borderRadius: '16px', padding: '15px 16px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 4px 24px rgba(180,130,150,0.10)' } },
-        h('span', { style: { flexShrink: '0', width: '10px', height: '10px', borderRadius: '50%', background: p.end === null ? '#9A6419' : '#B08A50', display: 'inline-block' } }),
-        h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#2A2127' } }, fmtInpatientPeriod(p))
-      ))
-    ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No in-patient stays logged yet.')
+      ...periods.map(p => {
+        const active = p.end === null;
+        const days = inpatientStayDays(p, now);
+        return h('div', { style: { background: '#FFFFFF', border: '1px solid rgba(154,100,25,0.25)', borderRadius: '16px', padding: '14px 15px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 4px 24px rgba(180,130,150,0.10)' } },
+          h('div', { style: { flexShrink: '0', width: '38px', height: '38px', borderRadius: '11px', background: active ? '#9A6419' : 'rgba(154,100,25,0.12)', color: active ? '#fff' : '#9A6419', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('hospital', 18)),
+          h('div', { style: { flex: '1', minWidth: '0' } },
+            h('div', { style: { fontSize: '14.5px', fontWeight: '700', color: '#2A2127' } }, fmtInpatientDate(p.start) + (active ? '' : ' – ' + fmtInpatientDate(p.end))),
+            h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '2px' } }, new Date(p.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + (active ? ' – ongoing' : ' – ' + new Date(p.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })))
+          ),
+          h('div', { style: { flexShrink: '0', fontSize: '12px', fontWeight: '800', color: active ? '#fff' : '#8B5715', background: active ? '#9A6419' : 'rgba(154,100,25,0.14)', borderRadius: '99px', padding: '5px 10px', whiteSpace: 'nowrap' } }, days + (days === 1 ? ' day' : ' days'))
+        );
+      })
+    ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' } },
+      h('div', { style: { width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(154,100,25,0.10)', color: '#9A6419', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('hospital', 22)),
+      h('div', { style: { fontSize: '14px', lineHeight: '1.5' } }, 'No in-patient stays logged yet.')
+    )
   );
 
-  return [card, history];
+  return [card, stats, history].filter(Boolean);
 }
 
 const SYMPTOM_COLORS = { nausea: '#9A6419', vomiting: '#C0453B', fatigue: '#8A6479', mouth_sores: '#C0453B', neuropathy: '#8E5FA8', headache: '#A24C71', dizziness: '#8E5FA8', skin_reaction: '#C77800', diarrhea: '#C0453B', constipation: '#8E5FA8' };
