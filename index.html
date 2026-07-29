@@ -1682,12 +1682,22 @@ function appIcon(name, size, style) {
   return h('span', { innerHTML: svgIcon(name, size), style: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', ...(style || {}) } });
 }
 
+// v27 (Aaron-reported): scrollTo(0,0) called synchronously right after a tap can get quietly undone
+// on mobile Safari, which resizes the viewport (collapsing/expanding the URL bar) a frame or two
+// AFTER the tap -- the page looks like it "jumps down too far" once that resize settles, landing
+// below the field the user is meant to type into. A second scrollTo on the next animation frame,
+// after that settle has happened, fixes it without changing behavior on browsers that don't have
+// this quirk (the second call is a no-op there since the first already landed at 0,0).
+function scrollToTop() {
+  window.scrollTo(0, 0);
+  requestAnimationFrame(() => window.scrollTo(0, 0));
+}
 function navigateTo(view) {
   const editorClosing = !!state.medEditor && view !== 'meds'; // audit v12 P3-1: nav-away also closes the editor
   const next = { view, reportsView: view === 'reports' ? null : state.reportsView, medEditor: view === 'meds' ? state.medEditor : null, confirmDeleteMed: null };
   setState(next);
   persistView(view);
-  window.scrollTo(0, 0);
+  scrollToTop();
   if (editorClosing) tourEvent('medEditor:closed'); // step the tour back BEFORE the view event so it re-points at Add
   tourEvent('view:' + view);
 }
@@ -1736,7 +1746,7 @@ document.addEventListener('keydown', (ev) => {
 function openReport(report) {
   setState({ view: 'reports', reportsView: report });
   persistView('reports');
-  window.scrollTo(0, 0);
+  scrollToTop();
 }
 
 // Jumps straight to the top of the History tab, filtered to missed doses only (v70) -- used by
@@ -3364,18 +3374,23 @@ function formatQuarterHour(hour) {
   const base = formatHour(Math.trunc(h));
   return min === 0 ? base : base.replace(/^(\d+)/, '$1:' + String(min).padStart(2, '0'));
 }
-// v20: dropdown-option label -- always shows minutes (even :00) for unambiguous scanning across a
-// 96/97-entry list, unlike formatQuarterHour's more compact "8 AM" used in summaries/previews.
-function formatClockOption(hour) {
-  const h = Math.max(0, Math.min(24, Number(hour) || 0));
-  if (h === 24) return 'Midnight (12:00 AM)';
-  const whole = Math.trunc(h), min = Math.round((h % 1) * 60);
-  const displayH = whole === 0 ? 12 : (whole > 12 ? whole - 12 : whole);
-  return displayH + ':' + String(min).padStart(2, '0') + (whole >= 12 ? ' PM' : ' AM');
+// v27 (Aaron-requested): the Start field for each schedule window is now a native <input type="time">
+// clock picker instead of a 96-entry 15-minute-increment dropdown -- these two converters translate
+// between the app's internal decimal-hour representation (8.25 = 8:15 AM, unchanged by this) and the
+// "HH:MM" 24-hour string a time input reads/writes. A native picker also drops the old 15-minute
+// floor entirely -- any minute can be set directly, not just quarter-hours.
+function decimalHourToTimeValue(hour) {
+  const h = Math.max(0, Math.min(23.983333333333334, Number(hour) || 0)); // clamp below 24:00 -- a Start is never midnight-as-end-of-day
+  const totalMinutes = Math.round(h * 60);
+  const hh = Math.floor(totalMinutes / 60), mm = totalMinutes % 60;
+  return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
 }
-// 96 quarter-hour Start options (12:00 AM .. 11:45 PM). v26: each window row is now a single alert
-// time only — there is no user-facing End option anymore (see deriveWindowEnds).
-const TIME_STEP_OPTIONS = Array.from({ length: 96 }, (_, i) => ({ value: i * 0.25, label: formatClockOption(i * 0.25) }));
+function timeValueToDecimalHour(value) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(value || ''));
+  if (!m) return 0;
+  const hh = Math.max(0, Math.min(23, Number(m[1]))), mm = Math.max(0, Math.min(59, Number(m[2])));
+  return hh + mm / 60;
+}
 
 function medicationDoseSummary(med) {
   return med.doses && med.doses.length ? med.doses.map(dose => dose.label).join(' · ') : 'Single-tap log';
@@ -3510,7 +3525,7 @@ function nextMedicationId(name, existingId) {
 function openMedicationEditor(med) {
   setState({ medEditor: { mode: med ? 'edit' : 'add', sourceId: med ? med.id : null, form: medicationFormFrom(med) }, confirmDeleteMed: null });
   tourEvent('medEditor:open');
-  window.scrollTo(0, 0);
+  scrollToTop();
 }
 
 // Clamp a treatment-window day-count input to a non-negative integer, falling back to 1 (the old
@@ -3787,7 +3802,10 @@ function updateWindowRow(index, field, value) {
   const next = { ...rows[index] };
   // v26: end is no longer a field this row has (see deriveWindowEnds) -- only start/name are
   // ever set here now.
+  // v27: start now arrives as an "HH:MM" string from the native time input, not a decimal-hour
+  // string from the old dropdown -- timeValueToDecimalHour parses it back to the same internal shape.
   if (field === 'name') next.name = value;
+  else if (field === 'start') next.start = timeValueToDecimalHour(value);
   else next[field] = Number(value);
   rows[index] = next;
   state.medEditor.form.windowRows = rows;
@@ -3914,7 +3932,7 @@ function renderMedicationEditor() {
       // v20: replaces the old free-text "Schedule windows" field, whose parser (parseScheduleWindows)
       // silently dropped any comma-separated segment it couldn't match with zero user-facing warning
       // -- a caregiver could believe two reminder windows were set when only one actually saved. Every
-      // row here is built from dropdowns (Aaron's explicit spec), so there's nothing left to mistype.
+      // row here is built from structured controls, so there's nothing left to mistype.
       scheduled ? h('div', { style: { gridColumn: '1 / -1' } },
         // v26 (Aaron-requested): a "?" next to the label opens a plain-language explanation of what
         // the (now-hidden) window-end cutoff means for missed-dose tracking -- Aaron: "there needs to
@@ -3927,16 +3945,25 @@ function renderMedicationEditor() {
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
           ...(form.windowRows || []).map((row, i) => {
             return h('div', { style: { border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px' } },
+              // v27 (Aaron-requested): the old Start select was a 96-entry, 15-minute-increment
+              // dropdown -- a long scroll to find e.g. 2:37 PM. A native clock-style time input lets
+              // the device's own time picker set (or directly type) any minute in a couple of taps.
               // v26: the End select is gone (each row is a single alert time now — see
               // deriveWindowEnds), so Start and the trash button share the row with far more room
               // than the old three-way Start/to/End/trash layout ever had at mobile widths.
               h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
-                h('select', { value: String(row.start), onChange: event => updateWindowRow(i, 'start', event.target.value), style: selectFix({ minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', flex: '1', minWidth: '120px' }) },
-                  ...TIME_STEP_OPTIONS.map(opt => h('option', { value: String(opt.value) }, opt.label))
-                ),
+                h('input', { type: 'time', id: 'med-window-start-' + i, value: decimalHourToTimeValue(row.start), onChange: event => updateWindowRow(i, 'start', event.target.value), style: { minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', flex: '1', minWidth: '120px' } }),
                 (form.windowRows || []).length > 1 ? h('button', { type: 'button', onClick: () => removeWindowRow(i), 'aria-label': 'Remove this time window', style: { flexShrink: '0', width: '44px', height: '44px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(192,69,59,0.08)', color: '#A15B56', border: '1px solid rgba(192,69,59,0.18)' } }, appIcon('trash', 16)) : null
               ),
-              formInput({ value: row.name, placeholder: 'e.g. Morning, With breakfast', onInput: event => updateWindowRow(i, 'name', event.target.value) }),
+              // v27 (Aaron-reported bug): this field had no stable id, so the render()-time cursor-
+              // restore logic (see render()) couldn't find it again after the rebuild every keystroke
+              // triggers (updateWindowRow always calls setState) -- it lost focus on every character
+              // typed or deleted, which read as the box "disappearing." A per-row id fixes it exactly
+              // like med-doses-text/med-daily-limit already do for the same reason. Kept as free text
+              // rather than a dropdown (Aaron's alternate suggestion) since a window's label is
+              // whatever the caregiver wants to call it ("With breakfast", "Post-chemo") -- a fixed
+              // list of options couldn't cover that.
+              formInput({ id: 'med-window-name-' + i, value: row.name, placeholder: 'e.g. Morning, With breakfast', onInput: event => updateWindowRow(i, 'name', event.target.value) }),
               // Live plain-language preview -- recomputed on every change, no separate preview step,
               // same interaction as the treatment-window "Active window: N days..." summary below.
               // v25 PM-gate fix (DEV_BRIEF_v25.md section 3d, PM_GATE_v25.md Finding PM-1): this used
@@ -4286,7 +4313,7 @@ function renderCalendarView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v26';
+const APP_VERSION = 'app-v27';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -5186,7 +5213,12 @@ setInterval(() => {
   // drawerOpen/apptModal join the same guard (v22): without it, a focused element inside the drawer
   // or the appointment form would be destroyed and re-created every second by the full-tree rebuild,
   // silently dropping keyboard focus (and defeating the drawer's Tab-trap) the instant the tick fired.
-  if (!state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !isEditing) render();
+  // medEditor/infoModal join the same guard (v27, Aaron-reported): the medication editor was left out
+  // of this list by oversight, so the whole sheet -- including the small "?" help-icon badge next to
+  // Schedule windows -- was being torn down and rebuilt every single second while it sat open, which
+  // read as the icon "flashing"/disappearing. infoModal (the help-icon's own explanation sheet) gets
+  // the same guard for the same reason -- it's a bottom sheet exactly like plans/appt, not a live view.
+  if (!state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.medEditor && !state.infoModal && !isEditing) render();
   checkNotifications();
   checkAppointmentReminders();
 }, 1000);
