@@ -53,6 +53,19 @@ button:focus-visible, [role="button"]:focus-visible, select:focus-visible, a:foc
 // All data lives in this device's localStorage. Nothing is ever sent to a server.
 const TEST_MODE = true; // APP BETA — enables the date-override controls + simulated purchases
 
+// ---- Optional "support the app" prompt (Aaron-requested, app-v29) ----
+// The ONLY monetization touchpoint anywhere in ChemoWell — there are no ads. A quiet, dismissible
+// card offering an optional one-time gift to help keep the app free and ad-free, shown at most once
+// every 20 logged entries, never as a blocking modal, never repeated once someone opts out. See
+// supportPromptDue()/renderToday() near the bottom of the Today section.
+// TODO(Aaron): replace with your real donation page link (Ko-fi, Stripe Payment Link, etc.).
+// SUPPORT_LINK_READY derives off the URL itself (true once it no longer contains "REPLACE") rather
+// than a second hand-maintained flag, so there's no way for the two to drift out of sync — the
+// banner is safely disabled (never rendered, checked in supportPromptDue()) until this one line is
+// swapped for a real link, then it turns on automatically with no other code change needed.
+const SUPPORT_LINK = 'https://ko-fi.com/REPLACE_WITH_REAL_LINK';
+const SUPPORT_LINK_READY = SUPPORT_LINK.indexOf('REPLACE') === -1;
+
 // ---- Safe-area top (v15) ----
 // Android WebViews (incl. the Capacitor shell on edge-to-edge devices) draw under the status bar
 // but report env(safe-area-inset-top)=0. Probe env(); only when it measures 0 inside a WebView do
@@ -263,6 +276,30 @@ async function clearMissedDoses() {
   } catch (e) {
     setToast('Could not save');
   }
+}
+
+// "Support ChemoWell" prompt (app-v29) — see SUPPORT_LINK near the top of the file. Due once
+// state.entries.length has grown 20 past the count it was last acknowledged at, so it naturally
+// re-appears every ~20 logs without needing its own separate counter. Tapping the donate button,
+// "Maybe later", or the × all count as "acknowledged" and push the next appearance out another 20
+// logs — the only thing that silences it for good is "Don't ask again".
+function supportPromptDue() {
+  return SUPPORT_LINK_READY && !state.supportOptOut && state.entries.length > 0 && (state.entries.length - (state.supportPromptAt || 0)) >= 20;
+}
+async function acknowledgeSupportPrompt() {
+  const at = state.entries.length;
+  try { await setPrefsDB({ supportPromptAt: at }); }
+  catch (e) { setState({ supportPromptAt: at }); }
+}
+async function optOutSupportPrompt() {
+  const at = state.entries.length;
+  try { await setPrefsDB({ supportOptOut: true, supportPromptAt: at }); }
+  catch (e) { setState({ supportOptOut: true, supportPromptAt: at }); }
+  setToast('Got it — you won’t see this again');
+}
+function openSupportLink() {
+  acknowledgeSupportPrompt();
+  try { window.open(SUPPORT_LINK, '_blank', 'noopener'); } catch (e) {}
 }
 
 // Full local wipe: profile, medication list, and every logged entry. Since everything lives on
@@ -482,7 +519,7 @@ function restoreView() {
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, showPastAppts: false, infoModal: null };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, showPastAppts: false, infoModal: null };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -3383,6 +3420,26 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', marginTop: '11px', lineHeight: '1.5' } }, 'No doses logged yet today.\nDoses you log from your medication cards will appear here.')
   ));
 
+  // "Support ChemoWell" — the app's only monetization touchpoint (no ads anywhere). Deliberately
+  // placed last, after everything actionable, and styled as a soft info card rather than a modal so
+  // it never blocks or interrupts anything the person came here to do.
+  if (supportPromptDue()) {
+    const sTone = NOTICE_TONES.info;
+    parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderLeft: '4px solid ' + sTone.accent, borderRadius: '14px', padding: '14px 16px', display: 'flex', gap: '12px', alignItems: 'flex-start', boxShadow: '0 2px 10px rgba(180,130,150,0.10)' } },
+      h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: sTone.chipBg, color: sTone.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('heart', 16, { color: sTone.chipFg })),
+      h('div', { style: { flex: '1', minWidth: '0' } },
+        h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127', marginBottom: '2px' } }, 'Enjoying ChemoWell?'),
+        h('div', { style: { ...TYPE.caption, color: '#554A52', marginBottom: '10px' } }, 'This app is free and ad-free, and always will be. If it’s been helpful, an optional gift helps keep it that way.'),
+        h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
+          h('button', { onClick: openSupportLink, style: { minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: 'linear-gradient(135deg, #A24C71 0%, #8E3D61 100%)', color: '#fff', fontSize: '13px', fontWeight: '700', border: 'none', cursor: 'pointer' } }, 'Support ChemoWell'),
+          h('button', { onClick: acknowledgeSupportPrompt, style: { minHeight: '44px', padding: '0 10px', borderRadius: '12px', background: 'transparent', border: 'none', color: '#7A6E76', fontSize: '13px', fontWeight: '600', cursor: 'pointer' } }, 'Maybe later')
+        ),
+        h('button', { onClick: optOutSupportPrompt, style: { marginTop: '8px', padding: '0', background: 'none', border: 'none', color: '#9B8890', fontSize: '11.5px', fontWeight: '600', textDecoration: 'underline', cursor: 'pointer' } }, 'Don’t ask again')
+      ),
+      h('button', { onClick: acknowledgeSupportPrompt, 'aria-label': 'Dismiss', style: { flexShrink: '0', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(125,105,116,0.10)', color: '#7A6E76', fontSize: '13px', fontWeight: '800', border: 'none', cursor: 'pointer' } }, '✕')
+    ));
+  }
+
   return parts;
 }
 
@@ -4393,7 +4450,7 @@ function renderCalendarView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v28';
+const APP_VERSION = 'app-v29';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -5269,7 +5326,7 @@ unsubPrefs = subscribePrefs((prefs) => {
   CONFIG.tempUnit = prefs.tempUnit === 'Celsius' ? 'Celsius' : 'Fahrenheit';
   CONFIG.weightUnit = prefs.weightUnit === 'kg' ? 'kg' : 'lbs';
   CONFIG.patientName = (prefs.patientName || '').trim();
-  setState({ missedClearedAt: prefs.missedClearedAt || 0, dismissedMisses: prefs.dismissedMisses || [], patientName: CONFIG.patientName, prefsLoaded: true });
+  setState({ missedClearedAt: prefs.missedClearedAt || 0, dismissedMisses: prefs.dismissedMisses || [], patientName: CONFIG.patientName, prefsLoaded: true, supportPromptAt: prefs.supportPromptAt || 0, supportOptOut: !!prefs.supportOptOut });
 });
 unsub = subscribeEntries((entries) => {
   const wasEmpty = state.entries.length === 0 && !state.loaded;
