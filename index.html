@@ -53,11 +53,15 @@ button:focus-visible, [role="button"]:focus-visible, select:focus-visible, a:foc
 // All data lives in this device's localStorage. Nothing is ever sent to a server.
 const TEST_MODE = true; // APP BETA — enables the date-override controls + simulated purchases
 
-// ---- Optional "support the app" prompt (Aaron-requested, app-v29) ----
-// The ONLY monetization touchpoint anywhere in ChemoWell — there are no ads. A quiet, dismissible
-// card offering an optional one-time gift to help keep the app free and ad-free, shown at most once
+// ---- Optional "leave a tip" prompt (Owner-requested, app-v32) ----
+// A quiet, dismissible card offering an optional one-time gift to the developer, shown at most once
 // every 20 logged entries, never as a blocking modal, never repeated once someone opts out. See
 // supportPromptDue()/renderToday() near the bottom of the Today section.
+// v29 first shipped this framed as "help keep the app free and ad-free" — the Owner correctly
+// flagged that as false and contradictory (ChemoWell already has paid Free/Plus/Pro tiers). This
+// version keeps the same non-intrusive mechanics but drops every claim about "free," ads, or
+// necessity — it's simply an optional way to say thanks, unrelated to the tiers and unrelated to
+// whether the app keeps working either way.
 // TODO(Aaron): replace with your real donation page link (Ko-fi, Stripe Payment Link, etc.).
 // SUPPORT_LINK_READY derives off the URL itself (true once it no longer contains "REPLACE") rather
 // than a second hand-maintained flag, so there's no way for the two to drift out of sync — the
@@ -278,9 +282,9 @@ async function clearMissedDoses() {
   }
 }
 
-// "Support ChemoWell" prompt (app-v29) — see SUPPORT_LINK near the top of the file. Due once
+// "Leave a tip" prompt (app-v32) — see SUPPORT_LINK near the top of the file. Due once
 // state.entries.length has grown 20 past the count it was last acknowledged at, so it naturally
-// re-appears every ~20 logs without needing its own separate counter. Tapping the donate button,
+// re-appears every ~20 logs without needing its own separate counter. Tapping the tip button,
 // "Maybe later", or the × all count as "acknowledged" and push the next appearance out another 20
 // logs — the only thing that silences it for good is "Don't ask again".
 function supportPromptDue() {
@@ -3420,8 +3424,11 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(212,104,138,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', marginTop: '11px', lineHeight: '1.5' } }, 'No doses logged yet today.\nDoses you log from your medication cards will appear here.')
   ));
 
-  // "Support ChemoWell" — the app's only monetization touchpoint (no ads anywhere). Deliberately
-  // placed last, after everything actionable, and styled as a soft info card rather than a modal so
+  // "Leave a tip" — a purely optional, appreciative touchpoint. Deliberately makes no claims about
+  // the app being free, ad-free, or needing support to keep running (that framing was tried once,
+  // correctly called out by the Owner as contradicting the app's existing paid tiers) — this is just
+  // "if it helped, here's a way to say thanks," entirely separate from the Free/Plus/Pro plans.
+  // Placed last, after everything actionable, and styled as a soft info card rather than a modal so
   // it never blocks or interrupts anything the person came here to do.
   if (supportPromptDue()) {
     const sTone = NOTICE_TONES.info;
@@ -3429,9 +3436,9 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: sTone.chipBg, color: sTone.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('heart', 16, { color: sTone.chipFg })),
       h('div', { style: { flex: '1', minWidth: '0' } },
         h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127', marginBottom: '2px' } }, 'Enjoying ChemoWell?'),
-        h('div', { style: { ...TYPE.caption, color: '#554A52', marginBottom: '10px' } }, 'This app is free and ad-free, and always will be. If it’s been helpful, an optional gift helps keep it that way.'),
+        h('div', { style: { ...TYPE.caption, color: '#554A52', marginBottom: '10px' } }, 'If it’s been helpful, you’re welcome to leave an optional one-time gift for the developer. Totally optional — nothing about the app changes either way.'),
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
-          h('button', { onClick: openSupportLink, style: { minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: 'linear-gradient(135deg, #A24C71 0%, #8E3D61 100%)', color: '#fff', fontSize: '13px', fontWeight: '700', border: 'none', cursor: 'pointer' } }, 'Support ChemoWell'),
+          h('button', { onClick: openSupportLink, style: { minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: 'linear-gradient(135deg, #A24C71 0%, #8E3D61 100%)', color: '#fff', fontSize: '13px', fontWeight: '700', border: 'none', cursor: 'pointer' } }, 'Send a gift'),
           h('button', { onClick: acknowledgeSupportPrompt, style: { minHeight: '44px', padding: '0 10px', borderRadius: '12px', background: 'transparent', border: 'none', color: '#7A6E76', fontSize: '13px', fontWeight: '600', cursor: 'pointer' } }, 'Maybe later')
         ),
         h('button', { onClick: optOutSupportPrompt, style: { marginTop: '8px', padding: '0', background: 'none', border: 'none', color: '#9B8890', fontSize: '11.5px', fontWeight: '600', textDecoration: 'underline', cursor: 'pointer' } }, 'Don’t ask again')
@@ -4450,7 +4457,7 @@ function renderCalendarView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v29';
+const APP_VERSION = 'app-v32';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
