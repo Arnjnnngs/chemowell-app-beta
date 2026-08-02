@@ -140,8 +140,12 @@ function createProfile(name) {
   const id = 'p' + Date.now().toString(36);
   ps.list.push({ id: id, name: name, createdAt: Date.now() });
   ps.activeId = id;
-  // Seed the new profile so it opens ready to use (no welcome screen / guide rerun).
-  saveJSON('chemowell-app-p-' + id + '-prefs-v1', { patientName: name, installedAt: Date.now(), tourDone: true });
+  // v33: new profiles now go through the (3-question) setup screen instead of skipping it —
+  // sex and treatment type gate real UI (cycle tracking, radiation card), so a profile created
+  // without them would land in the ambiguous legacy state on purpose, which defeats the point.
+  // The typed name rides along as pendingName and prefills the setup form; tourDone stays true
+  // so an experienced multi-profile caregiver isn't forced back through the guided tour.
+  saveJSON('chemowell-app-p-' + id + '-prefs-v1', { pendingName: name, installedAt: Date.now(), tourDone: true });
   saveJSON(PROFILES_KEY, ps);
   location.reload();
   return true;
@@ -517,7 +521,7 @@ const initialMedicationConfig = loadMedicationConfig();
 // through a strict whitelist (anything unexpected falls back to 'home'). Deliberately NOT
 // persisted: reportsView, open modals, drafts, confirms, and the TEST_MODE date offset.
 const UI_VIEW_KEY = 'chemowell-app-ui-view';
-const VALID_VIEWS = ['home', 'meds', 'reports', 'inpatient', 'symptoms', 'settings', 'calendar'];
+const VALID_VIEWS = ['home', 'meds', 'reports', 'inpatient', 'symptoms', 'settings', 'calendar', 'account'];
 function restoreView() {
   try { const v = sessionStorage.getItem(UI_VIEW_KEY); return VALID_VIEWS.indexOf(v) >= 0 ? v : 'home'; }
   catch (e) { return 'home'; }
@@ -891,7 +895,7 @@ function fmtCountdown(ms) {
   if (m >= 1) { if (m < 5) { const s = Math.floor((ms % 60000) / 1000); return m + 'm ' + s + 's'; } return m + 'm'; }
   return Math.max(1, Math.floor(ms / 1000)) + 's';
 }
-function nameOf(id) { if (id === 'temp') return 'Temperature'; if (id === 'blood_pressure') return 'Blood Pressure'; if (id === 'weight') return 'Weight'; if (id === 'cycle_start') return 'Period Start'; if (id === 'cycle_end') return 'Period End'; if (id === 'inpatient') return 'In-Patient Day'; if (id === 'inpatient_start') return 'In-Patient Start'; if (id === 'inpatient_end') return 'In-Patient End'; if (id === 'bowel_movement') return 'Bowel Movement'; if (id === 'appetite') return 'Appetite'; if (id && id.indexOf('symptom_') === 0) return SYMPTOM_TYPES[id.slice(8)] || id.slice(8); const m = state.meds.find(x => x.id === id); const archived = state.archivedMeds && state.archivedMeds[id]; return m ? m.name : (archived ? archived.name : id); }
+function nameOf(id) { if (id === 'temp') return 'Temperature'; if (id === 'blood_pressure') return 'Blood Pressure'; if (id === 'weight') return 'Weight'; if (id === 'radiation_session') return 'Radiation Session'; if (id === 'cycle_start') return 'Period Start'; if (id === 'cycle_end') return 'Period End'; if (id === 'inpatient') return 'In-Patient Day'; if (id === 'inpatient_start') return 'In-Patient Start'; if (id === 'inpatient_end') return 'In-Patient End'; if (id === 'bowel_movement') return 'Bowel Movement'; if (id === 'appetite') return 'Appetite'; if (id && id.indexOf('symptom_') === 0) return SYMPTOM_TYPES[id.slice(8)] || id.slice(8); const m = state.meds.find(x => x.id === id); const archived = state.archivedMeds && state.archivedMeds[id]; return m ? m.name : (archived ? archived.name : id); }
 function nowLocalISO() { return toLocalISO(simNow()); }
 function toLocalISO(ts) {
   const d = new Date(ts);
@@ -1261,8 +1265,28 @@ async function confirmTimeAndLog() {
     const editId = m.editId;
     setState({ timeModal: null });
     if (editId) await removeEntryDB(editId);
-    await logSymptom(m.symptomType, ts, { note: (m.note || '').trim() });
+    await logSymptom(m.symptomType, ts, { note: (m.note || '').trim(), site: m.symptomType === 'skin_reaction' ? (m.site || '').trim() : '', severity: m.symptomType === 'skin_reaction' ? (m.severity || '') : '' });
     setToast((SYMPTOM_TYPES[m.symptomType] || m.symptomType) + (editId ? ' updated' : ' logged') + ' at ' + fmtTime(ts));
+  } else if (m.type === 'radiation') {
+    // v33: backdated radiation session. Session numbers are always DERIVED from chronological
+    // order (never stored on the entry), so logging a forgotten past session automatically
+    // renumbers everything after it — no stale "Session 12" living on an entry that's now 13th.
+    // v33 audit fix (m1/m3): soft second-confirm — same pattern as futureOk — when the picked
+    // day already holds a session (fractions are usually once daily; twice-daily courses exist,
+    // so never a hard block) and/or the date is over a year past (almost always a typo).
+    if (!m.radOk) {
+      const dupDay = state.entries.some(e => e.medId === 'radiation_session' && dayStart(e.ts) === dayStart(ts));
+      const veryOld = ts < simNow() - 365 * 86400000;
+      if (dupDay || veryOld) {
+        state.timeModal.radOk = true;
+        state.timeModal.radWarn = dupDay && veryOld ? 'A session is already logged for that day, and it’s over a year ago.' : dupDay ? 'A session is already logged for that day.' : 'That date is over a year ago.';
+        setState({ timeModal: state.timeModal });
+        return;
+      }
+    }
+    setState({ timeModal: null });
+    await addEntryDB({ medId: 'radiation_session', dose: null, mg: 0, ts });
+    setToast('Radiation session logged for ' + new Date(ts).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' at ' + fmtTime(ts));
   }
 }
 
@@ -1300,6 +1324,21 @@ function daysSinceCycleStart() {
   const last = lastCycleStart();
   if (!last) return null;
   return Math.floor((dayStart(state.now) - dayStart(last.ts)) / 86400000) + 1; // start day counts as Day 1
+}
+// ---- Radiation sessions (app-v33) ----
+// Radiation is scheduled as daily sessions ("fractions"), typically Mon–Fri over 1–8+ weeks —
+// patients think "session 14 of 30", never in chemo-style cycles. Session numbers are always
+// derived from chronological position (index in the sorted list), never stored, so deleting or
+// backdating a session renumbers everything correctly for free. The planned total is a
+// per-profile pref (radiationPlannedTotal) since it's one fact about the course, not an entry.
+function radiationSessionsSorted() { return state.entries.filter(e => e.medId === 'radiation_session').sort((a, b) => a.ts - b.ts); }
+function radiationPlannedTotal() { const v = parseInt(getPrefsDB().radiationPlannedTotal, 10); return (!isNaN(v) && v > 0 && v <= 99) ? v : null; }
+function radiationSessionToday(now) { const d0 = dayStart(now); return radiationSessionsSorted().find(e => dayStart(e.ts) === d0) || null; }
+async function logRadiationSession() {
+  const n = radiationSessionsSorted().length + 1;
+  const planned = radiationPlannedTotal();
+  await addEntryDB({ medId: 'radiation_session', dose: null, mg: 0, ts: simNow() });
+  setToast('Session ' + n + (planned ? ' of ' + planned : '') + ' logged' + (planned && n >= planned ? ' — that’s the full course! 🎉' : ''));
 }
 async function logCycleStart() { await addEntryDB({ medId: 'cycle_start', dose: null, mg: 0, ts: simNow() }); setToast('Period start logged'); }
 async function logCycleEnd() { await addEntryDB({ medId: 'cycle_end', dose: null, mg: 0, ts: simNow() }); setToast('Period end logged'); }
@@ -1353,7 +1392,21 @@ function yesterdayStart(now) { return dayStart(now) - 86400000; }
 // Home screen & daily check-in preferences (audit §4). Vitals cards default ON; the daily
 // check-in alerts default OFF for a general audience — they were the original family's
 // care-team instruction, not a universal need. Cycle tracking is opt-in.
-const HOME_PREF_DEFAULTS = { showTemperature: true, showWeight: true, showBloodPressure: true, showChemoSchedule: true, dailyWeightCheckin: false, bowelCheckin: false, appetiteCheckin: false, cycleTracking: false };
+const HOME_PREF_DEFAULTS = { showTemperature: true, showWeight: true, showBloodPressure: true, showChemoSchedule: true, showRadiationSessions: true, dailyWeightCheckin: false, bowelCheckin: false, appetiteCheckin: false, cycleTracking: false };
+
+// ---- Profile identity (app-v33): sex + treatment type, set during onboarding ----
+// Both live in per-profile prefs. Empty string = "not set yet" (profiles created before v33);
+// those keep today's behavior until answered via the finish-setup card on Home, so nothing a
+// legacy user relies on disappears out from under them.
+function profileSex() { return getPrefsDB().sex || ''; }        // 'male' | 'female' | ''
+function treatmentType() { return getPrefsDB().treatmentType || ''; } // 'chemo' | 'radiation' | 'both' | ''
+function hasRadiation() { const t = treatmentType(); return t === 'radiation' || t === 'both'; }
+// Unset treatment (legacy profile) is treated as chemo — that's what every pre-v33 profile was.
+function isRadiationOnly() { return treatmentType() === 'radiation'; }
+// Menstrual-cycle UI is Owner-specified as Female-only. Unset sex (legacy profile) keeps the old
+// behavior (toggle available) so existing users' cycle history never vanishes before they answer.
+function cycleAllowed() { return profileSex() !== 'male'; }
+function needsProfileCompletion() { const p = getPrefsDB(); return !!(p.patientName || '').trim() && (!p.sex || !p.treatmentType); }
 function homePref(key) {
   const prefs = getPrefsDB();
   const saved = prefs.homeCards || {};
@@ -1555,13 +1608,19 @@ const FAQ_ITEMS = [
 ];
 async function logSymptom(type, ts, opts) {
   const entry = { medId: 'symptom_' + type, symptomType: type, ts, note: (opts && opts.note) || '', dose: null, mg: 0 };
+  // v33: skin reactions carry two optional radiation-relevant details — where on the body (site)
+  // and how bad (severity) — because localized skin irritation at the beam site is the most common
+  // radiation side effect after fatigue and "rash, somewhere, some amount" isn't actionable info
+  // for a care team. Optional on purpose: a quick log is always better than an abandoned one.
+  if (opts && opts.site) entry.site = opts.site;
+  if (opts && opts.severity) entry.severity = opts.severity;
   await addEntryDB(entry);
 }
 // Opens the shared time modal in 'symptom' mode. Pass an existing entry to edit it in place
 // (edits are implemented as remove-old + add-new, same pattern used elsewhere in the app).
 function openSymptomModal(entry) {
   setState({ timeModal: entry
-    ? { type: 'symptom', editId: entry.id, symptomType: entry.symptomType, freq: entry.freq || null, note: entry.note || '', timeValue: toLocalISO(entry.ts) }
+    ? { type: 'symptom', editId: entry.id, symptomType: entry.symptomType, freq: entry.freq || null, note: entry.note || '', site: entry.site || '', severity: entry.severity || '', timeValue: toLocalISO(entry.ts) }
     : { type: 'symptom', symptomType: '', freq: null, note: '', timeValue: nowLocalISO() }
   });
 }
@@ -1959,8 +2018,9 @@ function renderDrawer() {
   const name = (CONFIG.patientName || '').trim() || 'Patient';
   const initial = name.charAt(0).toUpperCase();
   const items = [
+    { key: 'account', label: 'Account', icon: 'user', helper: 'Profiles, plan & export' },
     { key: 'calendar', label: 'Calendar', icon: 'calendar', helper: 'Appointments & reminders' },
-    { key: 'settings', label: 'Settings', icon: 'gear', helper: 'Profiles, units, data' }
+    { key: 'settings', label: 'Settings', icon: 'gear', helper: 'Units, guide & data' }
   ];
   return h('div', { style: { position: 'fixed', inset: '0', zIndex: '90' } },
     h('div', { onClick: closeDrawer, 'aria-hidden': 'true', style: { position: 'absolute', inset: '0', background: 'rgba(0,0,0,0.32)', animation: 'scrimIn .22s ease' } }),
@@ -1976,7 +2036,7 @@ function renderDrawer() {
       // coordinate collision entirely, regardless of tap timing.
       h('div', { style: { position: 'relative', padding: '20px 56px 20px 18px', borderBottom: '1px solid #EBE3E4' } },
         h('button', { id: 'drawer-close-btn', onClick: closeDrawer, 'aria-label': 'Close menu', style: { position: 'absolute', top: '8px', right: '8px', width: '44px', height: '44px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8A6479', background: 'transparent' } }, appIcon('x', 18)),
-        h('button', { onClick: () => drawerGo('settings'), 'aria-label': 'Open Settings — active profile ' + name, style: { display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', width: '100%' } },
+        h('button', { onClick: () => drawerGo('account'), 'aria-label': 'Open Account — active profile ' + name, style: { display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', width: '100%' } },
           h('span', { style: { width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(162,76,113,0.14)', color: '#8E3D61', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: '800', flexShrink: '0' } }, initial),
           h('div', { style: { minWidth: '0', flex: '1' } },
             h('div', { style: { ...TYPE.title, color: '#2A2127', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, name),
@@ -2109,6 +2169,7 @@ function renderGroupedMedsCard(title, meds, now) {
 function renderContent(now, mg, pct, tyColor, ceiling) {
   if (state.view === 'meds') return renderMedicationManager(now);
   if (state.view === 'settings') return renderSettings(now);
+  if (state.view === 'account') return renderAccount(now);
   if (state.view === 'reports') return state.reportsView ? renderReportDetail(state.reportsView, now) : renderReportsMenu(now);
   if (state.view === 'inpatient') return renderInPatient(now);
   if (state.view === 'symptoms') return renderSymptoms(now);
@@ -2116,40 +2177,79 @@ function renderContent(now, mg, pct, tyColor, ceiling) {
   return [...renderToday(now, mg, pct, tyColor, ceiling)];
 }
 
-// ---------- First-run setup (APP BETA onboarding, step 1: patient name) ----------
+// ---------- First-run setup (app-v33: short profile buildup \u2014 name, sex, treatment) ----------
+// Owner-specified: a full profile buildup but with FEW questions, since most of this is never
+// shared anywhere. Three fields total, one card, no wizard steps \u2014 a wizard adds taps and
+// regression surface without adding information. Sex gates menstrual-cycle tracking (Female
+// only); treatment type gates the radiation-session card vs the chemo plan banner. All drafts
+// are module-level (not state) so typing survives the full-tree re-renders, same pattern the
+// original name field used.
 let setupNameDraft = '';
+let setupSexDraft = '';
+let setupTreatmentDraft = '';
+// Drafts for the finish-setup (v33 migration) card on Home — module-level for the same
+// survive-the-re-render reason as the setup drafts above.
+let migrateSexDraft = '';
+let migrateTreatDraft = '';
 function completeSetup() {
   const name = setupNameDraft.trim();
   if (!name) { setToast('Enter the patient\u2019s name to get started'); return; }
-  setPrefsDB({ patientName: name });
+  if (!setupSexDraft) { setToast('Select Male or Female to continue'); return; }
+  if (!setupTreatmentDraft) { setToast('Select the treatment type to continue'); return; }
+  // One prefs write for all three (+ clearing any pendingName handoff from "Add profile") \u2014 the
+  // render gate watches patientName alone, so a multi-write here could paint the app shell with
+  // sex/treatment still unset for one frame.
+  setPrefsDB({ patientName: name, sex: setupSexDraft, treatmentType: setupTreatmentDraft, pendingName: null });
   const ps = profilesState();
   const ap = ps.list.find(p => p.id === ps.activeId);
   if (ap) { ap.name = name; saveJSON(PROFILES_KEY, ps); }
   setToast('Welcome to ChemoWell');
   if (!getPrefsDB().tourDone) setState({ tourStep: 0 });
 }
+// Small shared chip-row builder for the setup card (and nowhere else \u2014 Settings uses toggles).
+function setupChipRow(labelText, options, current, onPick) {
+  return h('div', null,
+    h('label', { style: { display: 'block', textAlign: 'left', fontSize: '12.5px', fontWeight: '700', color: '#8A6B82', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' } }, labelText),
+    h('div', { style: { display: 'flex', gap: '8px', marginBottom: '16px' } },
+      ...options.map(([val, lab]) => {
+        const on = current === val;
+        return h('button', { onClick: () => onPick(val), 'aria-pressed': on ? 'true' : 'false', style: { flex: '1', minHeight: '48px', padding: '0 6px', borderRadius: '12px', border: on ? '2px solid #A24C71' : '1.5px solid #E5C9D6', background: on ? 'rgba(162,76,113,0.10)' : '#FFF9FB', color: on ? '#8E3D61' : '#5F4A56', fontSize: '14px', fontWeight: on ? '800' : '600', cursor: 'pointer' } }, lab);
+      })
+    )
+  );
+}
 function renderSetup() {
   const root = document.getElementById('root');
   const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(180deg, #FBF0F2 0%, #FAF7F6 260px)', color: '#2A2127', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(24px + var(--safe-top)) 24px 24px' } },
-    h('div', { style: { maxWidth: '420px', width: '100%', background: '#FFFFFF', borderRadius: '22px', padding: '32px 26px', boxShadow: '0 18px 50px rgba(170,83,117,0.18)', textAlign: 'center' } },
+    h('div', { style: { maxWidth: '420px', width: '100%', background: '#FFFFFF', borderRadius: '22px', padding: '30px 26px', boxShadow: '0 18px 50px rgba(170,83,117,0.18)', textAlign: 'center' } },
       h('div', { style: { fontSize: '40px', marginBottom: '10px' } }, '\u2764\uFE0F'),
       h('div', { style: { ...TYPE.display, color: '#A24C71', marginBottom: '6px' } }, 'Welcome to ChemoWell'),
-      h('div', { style: { ...TYPE.body, color: '#7A5E74', marginBottom: '22px' } },
-        'A private medication and symptom tracker for chemo patients and their caregivers. Everything you log stays on this device \u2014 nothing is sent to the cloud.'),
+      h('div', { style: { ...TYPE.body, color: '#7A5E74', marginBottom: '20px' } },
+        'A private medication and symptom tracker for chemo and radiation patients and their caregivers. Everything you log stays on this device \u2014 nothing is sent to the cloud.'),
       h('label', { style: { display: 'block', textAlign: 'left', fontSize: '12.5px', fontWeight: '700', color: '#8A6B82', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' } }, 'Patient name'),
       h('input', {
         value: setupNameDraft,
         placeholder: 'Enter patient name',
         onInput: (ev) => { setupNameDraft = ev.target.value; },
         onKeyDown: (ev) => { if (ev.key === 'Enter') completeSetup(); },
-        style: { width: '100%', boxSizing: 'border-box', padding: '13px 14px', fontSize: '16px', border: '1.5px solid #E5C9D6', borderRadius: '12px', outline: 'none', marginBottom: '18px', background: '#FFF9FB' }
+        style: { width: '100%', boxSizing: 'border-box', padding: '13px 14px', fontSize: '16px', border: '1.5px solid #E5C9D6', borderRadius: '12px', outline: 'none', marginBottom: '16px', background: '#FFF9FB' }
       }),
+      setupChipRow('Patient is', [['male', 'Male'], ['female', 'Female']], setupSexDraft, (v) => { setupSexDraft = v; render(); }),
+      setupChipRow('Treatment type', [['chemo', 'Chemo'], ['radiation', 'Radiation'], ['both', 'Both']], setupTreatmentDraft, (v) => { setupTreatmentDraft = v; render(); }),
       h('button', {
         onClick: completeSetup,
         style: { width: '100%', padding: '14px', fontSize: '16px', fontWeight: '800', color: '#FFFFFF', background: 'linear-gradient(135deg, #A24C71 0%, #8E3D61 100%)', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 8px 22px rgba(170,83,117,0.35)' } }, 'Get started'),
-      h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '16px', lineHeight: '1.5' } },
-        'After this, a short interactive guide will walk you through adding your medications and using the app.')
-    )
+      h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '14px', lineHeight: '1.5' } },
+        'That\u2019s the whole setup \u2014 these answers just tailor which cards the app shows. A short interactive guide comes next.')
+    ),
+    // v33 QA (User Zero) blocker fix: the welcome screen renders BEFORE the main app shell, so
+    // the app's toast layer never existed here \u2014 every validation message from completeSetup()
+    // ("enter the name", "select Male or Female", "select the treatment type") was being silently
+    // discarded, which made Get started look like a dead button. The setup page now carries its
+    // own copy of the exact same toast pill. (This gap predates v33 \u2014 the old one-field welcome
+    // had the same silent swallow on an empty name \u2014 but three validations made it a guaranteed
+    // first-run wall instead of an occasional one.)
+    state.toast ? h('div', { role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: 'calc(40px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(60,30,50,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(120,60,90,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', pointerEvents: 'none' } }, state.toast) : null
   );
   root.replaceChildren(page);
 }
@@ -2214,7 +2314,7 @@ function renderUpgradeModal() {
           h('div', { style: { ...TYPE.title, color: '#2A2127' } }, title),
           h('div', { style: { ...TYPE.title, fontSize: '20px', color: '#2A2127' } }, priceValue)
         ),
-        h('div', { style: { ...TYPE.caption, color: '#554A52' } }, 'The complete tracker \u2014 1 profile. Always free.'),
+        h('div', { style: { ...TYPE.caption, color: '#554A52' } }, 'The complete tracker \u2014 1 profile, CSV export included. Always free.'),
         current ? h('div', { style: { marginTop: '4px', fontSize: '12.5px', fontWeight: '800', color: '#2E7D4F' } }, '\u2713 Current plan') : null
       );
     }
@@ -2244,7 +2344,7 @@ function renderUpgradeModal() {
       h('div', { style: { ...TYPE.caption, color: '#554A52', marginBottom: '12px' } }, 'One-time purchases \u2014 no subscriptions. The free tracker is complete and stays free.'),
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
         planCard('free', 'Free', '$0', null, [], 'free'),
-        planCard('plus', 'Plus', '$4.99', 'one-time', ['Up to 3 patient profiles', 'PDF / CSV export for doctor visits (coming in beta)', 'Backup & transfer to a new phone (coming in beta)'], 'plus'),
+        planCard('plus', 'Plus', '$4.99', 'one-time', ['Up to 3 patient profiles', 'Printable doctor’s report (print or save as PDF)', 'Backup & transfer to a new phone (coming in beta)'], 'plus'),
         planCard('pro', 'Pro', '$14.99', 'one-time', ['Unlimited patient profiles', 'Everything in Plus', 'Built for professional and multi-patient caregivers'], 'pro')
       ),
       TEST_MODE ? h('button', { onClick: () => { setLicense({ tier: 'free', simulated: true }); setToast('License reset to Free (beta)'); setState({}); }, style: { marginTop: '12px', width: '100%', minHeight: '44px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: '#6E5A64', background: 'transparent', cursor: 'pointer' } }, 'Reset to Free (beta testing)') : null,
@@ -2578,6 +2678,8 @@ function renderTimeModal() {
     title = 'Log ' + m.label + (m.ongoing ? ' Start' : '');
   } else if (m.type === 'symptom') {
     title = (m.editId ? 'Edit ' : 'Log ') + (m.symptomType ? (SYMPTOM_TYPES[m.symptomType] || m.symptomType) : 'Symptom');
+  } else if (m.type === 'radiation') {
+    title = 'Log Past Radiation Session';
   } else {
     title = 'Log Weight · ' + m.weightValue + ' ' + weightSuffix();
   }
@@ -2608,6 +2710,20 @@ function renderTimeModal() {
           h('option', { value: 'skin_reaction' }, 'Skin Reaction/Rash'),
           h('option', { value: 'other' }, 'Other')
         )
+      ) : null,
+      // v33: skin-reaction detail fields (severity chips + body-site text) — radiation patients'
+      // most common localized side effect. Only rendered for skin_reaction so the other symptoms'
+      // modal stays exactly as short as it was. Both optional.
+      m.type === 'symptom' && m.symptomType === 'skin_reaction' ? h('div', { style: { marginBottom: '16px' } },
+        h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, 'How bad is it? (optional)'),
+        h('div', { style: { display: 'flex', gap: '8px' } },
+          ...[['mild', 'Mild'], ['moderate', 'Moderate'], ['severe', 'Severe']].map(([val, lab]) => {
+            const on = m.severity === val;
+            return h('button', { onClick: () => { state.timeModal.severity = on ? '' : val; setState({ timeModal: state.timeModal }); }, 'aria-pressed': on ? 'true' : 'false', style: { flex: '1', minHeight: '44px', borderRadius: '11px', border: on ? '1.5px solid #A24C71' : '1px solid rgba(212,104,138,0.25)', background: on ? 'rgba(162,76,113,0.10)' : '#FFFFFF', color: on ? '#8E3D61' : '#5F4A56', fontSize: '13.5px', fontWeight: '700' } }, lab);
+          })
+        ),
+        h('div', { style: { ...TYPE.label, color: '#8A6479', margin: '14px 0 8px' } }, 'Where on the body? (optional)'),
+        h('input', { value: m.site || '', placeholder: 'e.g. chest, left side of neck', onInput: (e) => { state.timeModal.site = e.target.value; }, style: { width: '100%', boxSizing: 'border-box', minHeight: '48px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' } })
       ) : null,
       m.type === 'symptom' ? h('div', { style: { marginBottom: '16px' } },
         h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, m.symptomType === 'other' ? 'Describe it (required)' : 'Note (optional)'),
@@ -2701,6 +2817,7 @@ function renderTimeModal() {
         )
       ) : null,
       m.futureOk ? h('div', { style: { marginTop: '14px', background: 'rgba(181,118,30,0.12)', border: '1px solid rgba(181,118,30,0.3)', borderRadius: '12px', padding: '11px 13px', fontSize: '13px', lineHeight: '1.45', color: '#9A6419', fontWeight: '600' } }, '⚠ This time is in the future. Press Confirm again to log it anyway.') : null,
+      m.radWarn ? h('div', { style: { marginTop: '14px', background: 'rgba(181,118,30,0.12)', border: '1px solid rgba(181,118,30,0.3)', borderRadius: '12px', padding: '11px 13px', fontSize: '13px', lineHeight: '1.45', color: '#9A6419', fontWeight: '600' } }, '⚠ ' + m.radWarn + ' Press Confirm again to log it anyway.') : null,
       h('div', { style: { display: 'flex', gap: '10px', marginTop: '22px' } },
         h('button', { onClick: () => setState({ timeModal: null }), style: { flex: '1', minHeight: '50px', borderRadius: '13px', border: '1px solid #E3D5DA', background: '#FFFFFF', color: '#5F4A56', fontSize: '15px', fontWeight: '700' } }, 'Cancel'),
         h('button', { onClick: confirmTimeAndLog, style: { flex: '1', minHeight: '50px', borderRadius: '13px', background: '#A24C71', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, 'Confirm')
@@ -2737,7 +2854,9 @@ function missedRow(e, i) {
 // dosing safety chain the 48h lock protects, so they stay editable/removable indefinitely
 // (data-entry corrections only). Symptoms use a medId prefix (symptom_nausea, etc.) rather than
 // a fixed id, so those are matched separately below instead of being listed in this set.
-const BYPASS_48H_IDS = new Set(['weight', 'cycle_start', 'cycle_end', 'bowel_movement', 'appetite']);
+const BYPASS_48H_IDS = new Set(['weight', 'cycle_start', 'cycle_end', 'bowel_movement', 'appetite', 'radiation_session', 'blood_pressure']);
+// blood_pressure joined in v33: its report rows now use the shared removeBtn (two-tap confirm), and
+// like weight it's a vital reading outside the dosing safety chain — corrections stay open forever.
 function bypasses48h(medId) { return BYPASS_48H_IDS.has(medId) || (medId && medId.indexOf('symptom_') === 0); }
 function removeBtn(e) {
   if (!bypasses48h(e.medId) && state.now - e.ts > 48 * 3600000) return null; // entries older than 48h are permanent history
@@ -2747,12 +2866,44 @@ function removeBtn(e) {
       h('button', { onClick: () => setState({ confirmRemove: null }), style: { color: '#7A6E76', fontSize: '12.5px', minHeight: '44px', padding: '8px 6px', fontWeight: '600' } }, 'Keep')
     );
   }
-  return h('button', { onClick: () => { setState({ confirmRemove: e.id }); setTimeout(() => { if (state.confirmRemove === e.id) setState({ confirmRemove: null }); }, 6000); }, style: { color: '#A15B56', fontSize: '12.5px', padding: '12px 10px' } }, 'Remove');
+  return h('button', { onClick: () => { setState({ confirmRemove: e.id }); setTimeout(() => { if (state.confirmRemove === e.id) setState({ confirmRemove: null }); }, 6000); }, style: { color: '#A15B56', fontSize: '12.5px', padding: '12px 10px', minHeight: '44px' } }, 'Remove');
 }
 
 function renderToday(now, mg, pct, tyColor, ceiling) {
   const parts = [];
   const inpatientActiveNow = isInpatientActiveNow();
+
+  // v33 migration: profiles created before v33 have no sex/treatment on record, and both now
+  // gate real UI. A compact finish-setup card sits at the top of Home until answered — deliber-
+  // ately NOT dismissible (dismiss-forever would freeze the profile in the ambiguous legacy
+  // state), but it goes away the moment both chips are picked and saved, and everything else
+  // keeps working exactly as before in the meantime. Drafts are module-level like the setup form.
+  if (needsProfileCompletion()) {
+    const mTone = NOTICE_TONES.info;
+    const p = getPrefsDB();
+    const curSex = migrateSexDraft || p.sex || '';
+    const curTreat = migrateTreatDraft || p.treatmentType || '';
+    const chipBtn = (on, label, cb) => h('button', { onClick: cb, 'aria-pressed': on ? 'true' : 'false', style: { flex: '1', minHeight: '44px', padding: '0 4px', borderRadius: '11px', border: on ? '2px solid #A24C71' : '1px solid rgba(212,104,138,0.3)', background: on ? 'rgba(162,76,113,0.10)' : '#FFFFFF', color: on ? '#8E3D61' : '#5F4A56', fontSize: '13px', fontWeight: on ? '800' : '600' } }, label);
+    parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderLeft: '4px solid ' + mTone.accent, borderRadius: '14px', padding: '14px 16px', boxShadow: '0 2px 10px rgba(180,130,150,0.10)' } },
+      h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127', marginBottom: '2px' } }, 'Finish setting up this profile'),
+      h('div', { style: { ...TYPE.caption, color: '#554A52', marginBottom: '10px' } }, 'Two quick answers tailor which cards appear — nothing is shared off this device.'),
+      h('div', { style: { fontSize: '11px', fontWeight: '800', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6B82', marginBottom: '5px' } }, 'Patient is'),
+      h('div', { style: { display: 'flex', gap: '8px', marginBottom: '10px' } },
+        chipBtn(curSex === 'male', 'Male', () => { migrateSexDraft = 'male'; setState({}); }),
+        chipBtn(curSex === 'female', 'Female', () => { migrateSexDraft = 'female'; setState({}); })
+      ),
+      h('div', { style: { fontSize: '11px', fontWeight: '800', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#8A6B82', marginBottom: '5px' } }, 'Treatment type'),
+      h('div', { style: { display: 'flex', gap: '8px', marginBottom: '10px' } },
+        chipBtn(curTreat === 'chemo', 'Chemo', () => { migrateTreatDraft = 'chemo'; setState({}); }),
+        chipBtn(curTreat === 'radiation', 'Radiation', () => { migrateTreatDraft = 'radiation'; setState({}); }),
+        chipBtn(curTreat === 'both', 'Both', () => { migrateTreatDraft = 'both'; setState({}); })
+      ),
+      // Full-strength fill always (v33 fix pass): the 35%-alpha "waiting" state read as a broken
+      // disabled button while still being tappable — the tap-with-guidance toast covers the
+      // incomplete case, so the button just stays a real button.
+      h('button', { onClick: () => { if (!curSex || !curTreat) { setToast('Pick both answers to save'); return; } setPrefsDB({ sex: curSex, treatmentType: curTreat }); migrateSexDraft = ''; migrateTreatDraft = ''; setToast('Profile updated'); }, style: { width: '100%', minHeight: '44px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Save')
+    ));
+  }
 
   // In-Patient banner — pinned, non-dismissible, only shown while a stay is active
   if (inpatientActiveNow) {
@@ -2800,9 +2951,11 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     ));
   }
 
-  // Chemo plan banner — persistent from 2 days before chemo through the day after
+  // Chemo plan banner — persistent from 2 days before chemo through the day after.
+  // v33: hidden for radiation-only profiles — their daily-session rhythm has no "pre-treatment
+  // meds two days out" concept, and the radiation card below covers their schedule.
   const chemoOffNow = chemoOffsetFor(now);
-  if (chemoOffNow !== null && chemoOffNow >= -2 && chemoOffNow <= 1) {
+  if (!isRadiationOnly() && chemoOffNow !== null && chemoOffNow >= -2 && chemoOffNow <= 1) {
     const cLabel = new Date(dayStart(nextChemoTs())).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' });
     let cTitle = '', cBody = '';
     if (chemoOffNow === -2) { cTitle = 'Treatment on ' + cLabel; cBody = 'Treatment session is in two days. If the care team prescribed pre-treatment medications, they may need to start the day before \u2014 follow the care team\u2019s plan.'; }
@@ -2858,8 +3011,9 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     ));
   });
 
-  // Menstrual Cycle active banner — non-dismissible, stays up until Period End is logged
-  if (homePref('cycleTracking') && cycleActive()) {
+  // Menstrual Cycle active banner — non-dismissible, stays up until Period End is logged.
+  // v33: cycleAllowed() joins the gate — Owner-specified that cycle tracking is Female-only.
+  if (cycleAllowed() && homePref('cycleTracking') && cycleActive()) {
     const cDayN = daysSinceCycleStart();
     const pTone = NOTICE_TONES.info;
     parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderLeft: '4px solid ' + pTone.accent, borderRadius: '14px', padding: '14px 16px', display: 'flex', gap: '12px', alignItems: 'center', boxShadow: '0 2px 10px rgba(180,130,150,0.10)' } },
@@ -3151,7 +3305,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     daysUntil === 1 ? new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' }) + ' · TOMORROW' :
     daysUntil === 0 ? 'TODAY' :
     'Last treatment ' + new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' });
-  if (homePref('showChemoSchedule')) parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06)' } },
+  if (!isRadiationOnly() && homePref('showChemoSchedule')) parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' } },
       h('div', null,
         h('div', { style: { ...TYPE.label, color: '#8A6479' } }, 'Treatment schedule'),
@@ -3176,6 +3330,39 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       ) : null
     )
   ));
+
+  // Radiation sessions card (app-v33, toggleable) — the radiation patient's equivalent of the
+  // chemo schedule card. One-tap "done today" logging, a derived Session-N-of-M counter with a
+  // progress bar (planned total is optional — the counter alone still works without it), and a
+  // "+" for backdating a forgotten session through the shared time modal.
+  if (hasRadiation() && homePref('showRadiationSessions')) {
+    const rSessions = radiationSessionsSorted();
+    const rPlanned = radiationPlannedTotal();
+    const rToday = radiationSessionToday(now);
+    const rCount = rSessions.length;
+    const rDone = rPlanned && rCount >= rPlanned;
+    parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 3px 14px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06)' } },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' } },
+        h('div', null,
+          h('div', { style: { ...TYPE.label, color: '#8A6479' } }, 'Radiation sessions'),
+          h('div', { style: { ...TYPE.bodyBold, marginTop: '3px', color: rDone ? '#0C7F57' : '#2A2127' } },
+            rCount === 0 ? 'No sessions logged yet' : ('Session ' + rCount + (rPlanned ? ' of ' + rPlanned : '') + (rDone ? ' — course complete' : '')))
+        ),
+        h('label', { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', flexShrink: '0', fontSize: '11px', fontWeight: '700', color: '#8A6479', textTransform: 'uppercase', letterSpacing: '0.04em' } }, 'Planned total',
+          h('input', { type: 'number', inputMode: 'numeric', min: '1', max: '99', placeholder: '—', value: rPlanned || '', onChange: (e) => { const raw = (e.target.value || '').trim(); const v = parseInt(raw, 10); const ok = !isNaN(v) && v > 0 && v <= 99; if (raw !== '' && !ok) setToast('Planned total must be a number from 1 to 99'); setPrefsDB({ radiationPlannedTotal: ok ? v : null }); }, className: 'mono', style: { width: '64px', minHeight: '44px', border: '1px solid #EBE3E4', borderRadius: '10px', padding: '0 10px', fontSize: '14.5px', textAlign: 'center', background: '#FFFFFF', color: '#2A2127' } })
+        )
+      ),
+      rPlanned ? h('div', { style: { height: '8px', borderRadius: '99px', background: 'rgba(162,76,113,0.10)', overflow: 'hidden' } },
+        h('div', { style: { height: '100%', width: Math.min(100, Math.round(rCount / rPlanned * 100)) + '%', borderRadius: '99px', background: rDone ? '#0F9D57' : 'linear-gradient(90deg, #A24C71, #8E3D61)', transition: 'width .3s ease' } })
+      ) : null,
+      h('div', { style: { display: 'flex', gap: '8px' } },
+        rToday
+          ? h('div', { style: { flex: '1', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', borderRadius: '11px', background: 'rgba(15,157,87,0.10)', border: '1px solid rgba(15,157,87,0.25)', color: '#0A6B4A', fontSize: '13.5px', fontWeight: '700' } }, '✓ Today’s session logged (' + fmtTime(rToday.ts) + ')')
+          : h('button', { onClick: logRadiationSession, style: { flex: '1', minHeight: '44px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, 'Log today’s session'),
+        h('button', { onClick: () => setState({ timeModal: { type: 'radiation', timeValue: nowLocalISO() } }), 'aria-label': 'Log a past radiation session', title: 'Log a past session', style: { flexShrink: '0', minHeight: '44px', width: '44px', borderRadius: '11px', background: 'rgba(162,76,113,0.08)', border: '1px solid rgba(170,83,117,0.25)', color: '#8E3D61', fontSize: '19px', fontWeight: '700' } }, '+')
+      )
+    ));
+  }
 
   // Quick Log section
   const noMedsAtAll = state.meds.length === 0;
@@ -4457,7 +4644,7 @@ function renderCalendarView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v32';
+const APP_VERSION = 'app-v33';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -4482,15 +4669,15 @@ function renderSettings(now) {
         ...ps.list.map((p, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', background: '#FFFFFF', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.10)' : 'none', flexWrap: 'wrap' } },
           h('span', { style: { flex: '1', minWidth: '90px', fontSize: '14px', fontWeight: '700', color: '#2A2127' } }, p.name || 'Unnamed'),
           p.id === ACTIVE_PROFILE_ID
-            ? h('span', { style: { fontSize: '12px', fontWeight: '700', color: '#2E7D4F', background: 'rgba(46,125,79,0.10)', padding: '3px 10px', borderRadius: '99px' } }, 'Active')
+            ? h('span', { style: { fontSize: '12px', fontWeight: '700', color: '#0A6B4A', background: 'rgba(46,125,79,0.10)', padding: '3px 10px', borderRadius: '99px' } }, 'Active') // v33: #0A6B4A for AA contrast on the tint (Lead Designer catch)
             : state.confirmDeleteProfile === p.id
               ? h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
                   h('span', { style: { fontSize: '12px', fontWeight: '700', color: '#A5443C' } }, 'Delete forever?'),
-                  h('button', { onClick: () => deleteProfile(p.id), style: { minHeight: '34px', padding: '0 10px', borderRadius: '9px', background: '#C0453B', color: '#fff', fontSize: '12px', fontWeight: '800' } }, 'Delete'),
-                  h('button', { onClick: () => setState({ confirmDeleteProfile: null }), style: { minHeight: '34px', padding: '0 8px', color: '#745D69', fontSize: '12px', fontWeight: '800' } }, 'Keep'))
+                  h('button', { onClick: () => deleteProfile(p.id), style: { minHeight: '44px', padding: '0 10px', borderRadius: '9px', background: '#C0453B', color: '#fff', fontSize: '12px', fontWeight: '800' } }, 'Delete'),
+                  h('button', { onClick: () => setState({ confirmDeleteProfile: null }), style: { minHeight: '44px', padding: '0 8px', color: '#745D69', fontSize: '12px', fontWeight: '800' } }, 'Keep'))
               : h('div', { style: { display: 'flex', gap: '6px' } },
-                  h('button', { onClick: () => switchProfile(p.id), style: { minHeight: '34px', padding: '0 12px', borderRadius: '10px', background: 'rgba(170,83,117,0.10)', border: '1px solid rgba(170,83,117,0.22)', color: '#8E3D61', fontSize: '12px', fontWeight: '800' } }, 'Switch'),
-                  h('button', { onClick: () => setState({ confirmDeleteProfile: p.id }), 'aria-label': 'Delete ' + (p.name || 'profile'), style: { minHeight: '34px', padding: '0 10px', borderRadius: '10px', background: 'rgba(192,69,59,0.08)', border: '1px solid rgba(192,69,59,0.25)', color: '#A5443C', fontSize: '12px', fontWeight: '800' } }, 'Delete'))
+                  h('button', { onClick: () => switchProfile(p.id), style: { minHeight: '44px', padding: '0 12px', borderRadius: '10px', background: 'rgba(170,83,117,0.10)', border: '1px solid rgba(170,83,117,0.22)', color: '#8E3D61', fontSize: '12px', fontWeight: '800' } }, 'Switch'),
+                  h('button', { onClick: () => setState({ confirmDeleteProfile: p.id }), 'aria-label': 'Delete ' + (p.name || 'profile'), style: { minHeight: '44px', padding: '0 10px', borderRadius: '10px', background: 'rgba(192,69,59,0.08)', border: '1px solid rgba(192,69,59,0.25)', color: '#A5443C', fontSize: '12px', fontWeight: '800' } }, 'Delete'))
         ))
       ),
       state.addingProfile ? h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
@@ -4510,11 +4697,12 @@ function renderSettings(now) {
         toggle('showTemperature', 'Temperature card', 'Quick temperature logging on Home.'),
         toggle('showWeight', 'Weight card', 'Quick weight logging on Home.'),
         toggle('showBloodPressure', 'Blood pressure card', 'Quick BP logging on Home; readings appear in Reports.'),
-        toggle('showChemoSchedule', 'Treatment schedule card', 'Countdown and reminders around treatment dates.'),
+        !isRadiationOnly() ? toggle('showChemoSchedule', 'Treatment schedule card', 'Countdown and reminders around treatment dates.') : null,
+        hasRadiation() ? toggle('showRadiationSessions', 'Radiation sessions card', 'Session counter and quick logging on Home.') : null,
         toggle('dailyWeightCheckin', 'Daily weight check-in', 'Reminds every day until a weight is logged.'),
         toggle('bowelCheckin', 'Bowel movement check-in', 'Asks about the previous day, once a day.'),
         toggle('appetiteCheckin', 'Appetite check-in', 'Asks about the previous day, once a day.'),
-        toggle('cycleTracking', 'Menstrual cycle tracking', 'Period banner on Home and the Cycle report.')
+        cycleAllowed() ? toggle('cycleTracking', 'Menstrual cycle tracking', 'Period banner on Home and the Cycle report.') : null
       )
     ),
     // Units
@@ -4559,6 +4747,9 @@ function renderSettings(now) {
         })
       )
     ),
+    // Export (app-v33) — same section the Account view shows, surfaced here too because
+    // "Settings" is where most people go hunting for an export button.
+    renderExportSection(),
     // About & legal
     h('section', { style: secStyle },
       secLabel('About & legal'),
@@ -4579,6 +4770,175 @@ function renderSettings(now) {
   ];
 }
 
+// ---------- Account view + data export (app-v33, Owner-requested) ----------
+// Reached from the drawer. Shows the plan, every profile on the device (with treatment type and
+// entry counts), profile switching, and the export tools. Export philosophy per Owner decision:
+// CSV of your own medical data is FREE for everyone (never hold someone's health record hostage);
+// the formatted printable doctor's report is the Plus/Pro perk.
+function profilePrefsFor(id) { return loadJSON('chemowell-app-p-' + id + '-prefs-v1', {}); }
+function profileEntryCountFor(id) { return loadJSON('chemowell-app-p-' + id + '-entries-v1', []).filter(e => e.medId !== 'chemo_date').length; }
+function treatmentLabel(t) { return t === 'chemo' ? 'Chemo' : t === 'radiation' ? 'Radiation' : t === 'both' ? 'Chemo + Radiation' : 'Not set'; }
+
+function csvField(v) {
+  v = (v === null || v === undefined) ? '' : String(v);
+  // v33 audit fix (M1): neutralize spreadsheet formula injection (OWASP CSV Injection). Cells
+  // starting with = + - @ (or tab/CR) are EVALUATED by Excel/Sheets — a patient note like
+  // "=2+2" or even "-3 lbs overnight" would corrupt or weaponize a doctor-facing export.
+  // Leading apostrophe forces text interpretation; the visible ' is the accepted tradeoff.
+  if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
+  return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+// One row per logged entry, chronological. chemo_date markers are internal scheduling state, not
+// health data, so they're excluded; everything else the patient logged is included.
+function buildExportRows() {
+  const all = allEntriesRaw().filter(e => e.medId !== 'chemo_date').sort((a, b) => a.ts - b.ts);
+  const radIds = {};
+  all.filter(e => e.medId === 'radiation_session').forEach((e, i) => { radIds[e.id] = i + 1; });
+  return all.map(e => {
+    const d = new Date(e.ts);
+    let detail = '', note = e.note || '';
+    if (e.medId === 'temp') detail = e.dose || (e.temp + ' ' + (e.unit === 'Celsius' ? '°C' : '°F'));
+    else if (e.medId === 'blood_pressure') detail = e.sys + '/' + e.dia + ' mmHg';
+    else if (e.medId === 'weight') { detail = e.dose || (e.weight + ' ' + (e.unit || '')); if (e.weightReason) detail += ' (' + e.weightReason + (e.litersDrained ? ', ' + e.litersDrained + 'L drained' : '') + ')'; note = e.weightNote || note; }
+    else if (e.medId === 'radiation_session') detail = 'Session ' + radIds[e.id];
+    else if (e.medId === 'bowel_movement') detail = (typeof BOWEL_MOVEMENT_LABELS === 'object' && BOWEL_MOVEMENT_LABELS[e.value]) || e.value || '';
+    else if (e.medId === 'appetite') detail = (typeof APPETITE_LABELS === 'object' && APPETITE_LABELS[e.value]) || e.value || '';
+    else if (e.medId && e.medId.indexOf('symptom_') === 0) { const bits = []; if (e.severity) bits.push(e.severity); if (e.site) bits.push('site: ' + e.site); if (e.freq) bits.push(e.freq + ' episodes'); detail = bits.join(', '); }
+    else if (e.medId === 'cycle_start' || e.medId === 'cycle_end' || e.medId === 'inpatient_start' || e.medId === 'inpatient_end' || e.medId === 'inpatient') detail = '';
+    else { detail = e.dose || ''; if (e.pills) detail += (detail ? ', ' : '') + e.pills + ' pill' + (e.pills === 1 ? '' : 's'); if (e.painLevel) detail += (detail ? ', ' : '') + 'pain ' + e.painLevel + '/10'; if (e.overrideReason) detail += (detail ? ', ' : '') + 'override: ' + e.overrideReason; }
+    return [d.toLocaleDateString('en-CA'), fmtTime(e.ts), nameOf(e.medId), detail, note];
+  });
+}
+function downloadEntriesCSV() {
+  const rows = buildExportRows();
+  if (!rows.length) { setToast('Nothing to export yet — log something first'); return; }
+  const header = ['Date', 'Time', 'Type', 'Detail', 'Note'];
+  const csv = [header, ...rows].map(r => r.map(csvField).join(',')).join('\r\n');
+  try {
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }); // BOM so Excel opens UTF-8 correctly
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'chemowell-' + ((CONFIG.patientName || 'export').replace(/[^a-z0-9]/gi, '-').toLowerCase()) + '-' + new Date(simNow()).toLocaleDateString('en-CA') + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    setToast(rows.length + ' entries exported to CSV');
+  } catch (e) { setToast('Export failed on this device — try the printable report instead'); }
+}
+function escHtml(s) { return String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+// Printable doctor's report (Plus/Pro). Opens a print-styled window grouped by day, newest first —
+// the browser's print dialog gives "Save as PDF" on every modern phone/desktop for free, which is
+// how this ships PDF export without a PDF library in a single-file offline app.
+function openPrintReport() {
+  if (getLicense().tier === 'free') { setToast('The printable report is part of Plus — CSV export is free below'); setState({ upgradeOpen: true }); return; }
+  const rows = buildExportRows();
+  if (!rows.length) { setToast('Nothing to report yet — log something first'); return; }
+  const byDay = {};
+  rows.forEach(r => { (byDay[r[0]] = byDay[r[0]] || []).push(r); });
+  const days = Object.keys(byDay).sort().reverse();
+  const planned = radiationPlannedTotal();
+  const radCount = allEntriesRaw().filter(e => e.medId === 'radiation_session').length;
+  let body = '';
+  days.forEach(day => {
+    body += '<h2>' + escHtml(new Date(day + 'T12:00').toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })) + '</h2><table><thead><tr><th>Time</th><th>Type</th><th>Detail</th><th>Note</th></tr></thead><tbody>';
+    byDay[day].forEach(r => { body += '<tr><td>' + escHtml(r[1]) + '</td><td>' + escHtml(r[2]) + '</td><td>' + escHtml(r[3]) + '</td><td>' + escHtml(r[4]) + '</td></tr>'; });
+    body += '</tbody></table>';
+  });
+  const doc = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>ChemoWell Report — ' + escHtml(CONFIG.patientName) + '</title><style>'
+    + 'body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a1a1a;margin:24px;line-height:1.4}'
+    + 'h1{font-size:20px;margin:0 0 2px}.sub{color:#666;font-size:12px;margin-bottom:18px}'
+    + 'h2{font-size:14px;margin:18px 0 6px;border-bottom:1px solid #ddd;padding-bottom:3px}'
+    + 'table{width:100%;border-collapse:collapse;font-size:12px}th{text-align:left;color:#666;font-weight:600;padding:3px 8px 3px 0}'
+    + 'td{padding:3px 8px 3px 0;border-top:1px solid #f0f0f0;vertical-align:top}@media print{h2{break-after:avoid}}'
+    + '</style></head><body><h1>Treatment record — ' + escHtml(CONFIG.patientName) + '</h1>'
+    + '<div class="sub">Generated ' + escHtml(new Date(simNow()).toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })) + ' · ChemoWell ' + APP_VERSION
+    + (treatmentType() ? ' · ' + escHtml(treatmentLabel(treatmentType())) : '')
+    + (radCount ? ' · Radiation: ' + radCount + (planned ? ' of ' + planned : '') + ' sessions' : '')
+    + '</div>' + body
+    + '<div class="sub" style="margin-top:18px">Patient-logged record from the ChemoWell app. Not a medical document — verify against clinical records.</div>'
+    + '</body></html>';
+  const win = window.open('', '_blank');
+  if (!win) { setToast('Pop-up blocked — allow pop-ups for this app to print the report'); return; }
+  win.document.write(doc); win.document.close();
+  setTimeout(() => { try { win.print(); } catch (e) {} }, 250);
+}
+
+function renderExportSection() {
+  const isFree = getLicense().tier === 'free';
+  return h('section', { style: { marginTop: '14px', background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '17px', padding: '14px' } },
+    h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8E3D61' } }, 'Export data'),
+    h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, 'Everything logged for this profile, ready for doctor visits. CSV opens in Excel or Google Sheets; the formatted report prints or saves as a PDF.'),
+    h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
+      h('button', { onClick: downloadEntriesCSV, style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, 'Download CSV'),
+      h('button', { onClick: openPrintReport, style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1.5px solid rgba(170,83,117,0.35)', color: '#8E3D61', fontSize: '13px', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '7px' } }, 'Printable report', isFree ? h('span', { style: { fontSize: '10.5px', fontWeight: '800', background: 'rgba(162,76,113,0.14)', color: '#8E3D61', borderRadius: '99px', padding: '2px 8px' } }, 'PLUS') : null)
+    )
+  );
+}
+
+function renderAccount(now) {
+  const lic = getLicense();
+  const ps = profilesState();
+  const limit = tierLimit(lic.tier);
+  // v33 fix pass: matches Settings' secStyle exactly (white card, #EBE3E4 border) — the first
+  // draft invented a translucent variant, correctly flagged as off-system by the Designer.
+  const secStyle = { marginTop: '14px', background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '17px', padding: '14px' };
+  return [
+    h('section', null,
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#A24C71' } }, appIcon('user', 19), h('span', { style: { ...TYPE.label } }, 'Your account')),
+      h('h1', { style: { ...TYPE.display, color: '#2A2127', marginTop: '5px' } }, 'Account'),
+      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px' } }, 'Plan, patient profiles, and data export — everything lives on this device only.')
+    ),
+    // Plan
+    h('section', { style: secStyle },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
+        h('div', null,
+          h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8E3D61' } }, 'Current plan'),
+          h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '4px' } },
+            h('span', { style: { ...TYPE.title, fontSize: '22px', color: '#2A2127' } }, tierLabel(lic.tier)),
+            lic.simulated && TEST_MODE ? h('span', { style: { fontSize: '11px', fontWeight: '700', color: '#9A6419', background: 'rgba(154,100,25,0.12)', borderRadius: '99px', padding: '2px 8px' } }, 'simulated · beta') : null
+          ),
+          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '3px' } }, ps.list.length + ' of ' + (limit === Infinity ? 'unlimited' : limit) + ' profile' + (limit === 1 ? '' : 's') + ' used')
+        ),
+        h('button', { onClick: () => setState({ upgradeOpen: true }), style: { flexShrink: '0', minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1.5px solid rgba(170,83,117,0.35)', color: '#8E3D61', fontSize: '13px', fontWeight: '800' } }, 'View plans')
+      )
+    ),
+    // Profiles
+    h('section', { style: secStyle },
+      h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#8E3D61' } }, 'Patient profiles'),
+      h('div', { style: { marginTop: '10px', borderRadius: '13px', overflow: 'hidden', border: '1px solid #EBE3E4', background: '#FFFFFF' } },
+        ...ps.list.map((p, i) => {
+          const active = p.id === ps.activeId;
+          const pp = profilePrefsFor(p.id);
+          const nm = (p.name || pp.patientName || 'Unnamed').trim() || 'Unnamed';
+          const cnt = profileEntryCountFor(p.id);
+          return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.10)' : 'none', background: active ? 'rgba(162,76,113,0.05)' : '#FFFFFF' } },
+            h('span', { style: { flexShrink: '0', width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(162,76,113,0.14)', color: '#8E3D61', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: '800' } }, nm.charAt(0).toUpperCase()),
+            h('div', { style: { flex: '1', minWidth: '0' } },
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' } },
+                h('span', { style: { ...TYPE.bodyBold, color: '#2A2127' } }, nm),
+                active ? h('span', { style: { fontSize: '10.5px', fontWeight: '800', color: '#0A6B4A', background: 'rgba(15,157,87,0.12)', borderRadius: '99px', padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.04em' } }, 'Active') : null
+              ),
+              h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '2px' } }, treatmentLabel(pp.treatmentType) + ' · ' + cnt + ' entr' + (cnt === 1 ? 'y' : 'ies'))
+            ),
+            !active ? h('button', { onClick: () => switchProfile(p.id), style: { flexShrink: '0', minHeight: '44px', padding: '0 13px', borderRadius: '10px', background: 'rgba(162,76,113,0.08)', border: '1px solid rgba(170,83,117,0.25)', color: '#8E3D61', fontSize: '12.5px', fontWeight: '800' } }, 'Switch') : null
+          );
+        })
+      ),
+      // v33 fix pass (Designer Major 5.3): the add flow now runs right here — same
+      // state.addingProfile + newProfileNameDraft machinery the Settings section uses, so
+      // there's one code path for profile creation no matter which surface starts it.
+      state.addingProfile ? h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
+        h('input', { value: newProfileNameDraft, placeholder: 'Patient name', onInput: (ev) => { newProfileNameDraft = ev.target.value; }, style: { flex: '1', minWidth: '150px', minHeight: '44px', border: '1px solid rgba(212,104,138,0.25)', borderRadius: '11px', padding: '0 11px', fontSize: '13.5px', background: '#FFF9FB' } }),
+        h('button', { onClick: () => { const n = newProfileNameDraft.trim(); if (!n) { setToast('Enter a name for the new profile'); return; } newProfileNameDraft = ''; createProfile(n); }, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800' } }, 'Create'),
+        h('button', { onClick: () => { newProfileNameDraft = ''; setState({ addingProfile: false }); }, style: { minHeight: '44px', padding: '0 12px', borderRadius: '11px', background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(125,105,116,0.2)', color: '#5F4A56', fontSize: '13px', fontWeight: '800' } }, 'Cancel')
+      ) : h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
+        h('button', { onClick: () => { if (ps.list.length >= limit) { setState({ upgradeOpen: true }); } else { setState({ addingProfile: true }); } }, style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, '+ Add profile'),
+        h('div', { style: { ...TYPE.caption, color: '#7A6E76', alignSelf: 'center' } }, 'Rename or delete profiles in Settings.')
+      )
+    ),
+    renderExportSection()
+  ];
+}
+
 function renderBloodPressureReport(now) {
   // v18 (Owner-reported): this function used to return a bare h() node in both branches instead of
   // an array like every sibling report function (renderWeightTrend, renderHistory, etc). renderReportDetail
@@ -4595,19 +4955,55 @@ function renderBloodPressureReport(now) {
         h('div', { className: 'mono', style: { fontSize: '16px', fontWeight: '700', color: '#7B3F6B' } }, e.sys + '/' + e.dia + ' mmHg'),
         h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '1px' } }, new Date(e.ts).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + fmtTime(e.ts))
       ),
-      h('button', { onClick: () => removeEntryDB(e.id), style: { minHeight: '34px', padding: '0 10px', borderRadius: '9px', background: 'rgba(192,69,59,0.08)', border: '1px solid rgba(192,69,59,0.2)', color: '#A5443C', fontSize: '12px', fontWeight: '700' } }, 'Remove')
+      removeBtn(e) // v33 fix pass: BP rows had the same one-tap-delete flaw the Designer caught on the radiation report
     ))
   )];
 }
 
+// app-v33: radiation session report — course summary + every logged session, newest first.
+// Returns an array (sibling-report convention; see renderBloodPressureReport's v18 note).
+function renderRadiationReport(now) {
+  const sessions = radiationSessionsSorted();
+  const planned = radiationPlannedTotal();
+  if (!sessions.length) return [h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '22px 16px', textAlign: 'center', color: '#554A52', fontSize: '13px' } }, 'No radiation sessions logged yet. Log them from the Radiation sessions card on Home.')];
+  const first = sessions[0], last = sessions[sessions.length - 1];
+  const done = planned && sessions.length >= planned;
+  const summary = h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '8px' } },
+    h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' } },
+      h('span', { className: 'mono', style: { fontSize: '26px', fontWeight: '800', color: done ? '#0C7F57' : '#7B3F6B' } }, sessions.length + (planned ? ' / ' + planned : '')),
+      h('span', { style: { fontSize: '13px', fontWeight: '700', color: '#554A52' } }, (planned ? 'sessions' : 'session' + (sessions.length === 1 ? '' : 's')) + ' completed' + (done ? ' — course complete 🎉' : ''))
+    ),
+    planned ? h('div', { style: { height: '8px', borderRadius: '99px', background: 'rgba(162,76,113,0.10)', overflow: 'hidden' } },
+      h('div', { style: { height: '100%', width: Math.min(100, Math.round(sessions.length / planned * 100)) + '%', borderRadius: '99px', background: done ? '#0F9D57' : 'linear-gradient(90deg, #A24C71, #8E3D61)' } })
+    ) : null,
+    h('div', { style: { fontSize: '12.5px', color: '#7A6E76' } }, 'First session ' + new Date(first.ts).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' · most recent ' + new Date(last.ts).toLocaleDateString([], { month: 'short', day: 'numeric' }))
+  );
+  const rows = sessions.map((e, i) => ({ e, n: i + 1 })).reverse();
+  const list = h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '16px', overflow: 'hidden' } },
+    ...rows.map((r, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 14px', borderTop: i > 0 ? '1px solid rgba(212,104,138,0.08)' : 'none' } },
+      h('div', { style: { flex: '1', minWidth: '0' } },
+        h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#7B3F6B' } }, 'Session ' + r.n),
+        h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '1px' } }, new Date(r.e.ts).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + fmtTime(r.e.ts))
+      ),
+      removeBtn(r.e) // shared two-tap confirm pattern (v33 fix pass, Designer Major 4.1)
+    ))
+  );
+  return [summary, list];
+}
+
 function reportDescriptor(type, now) {
   if (type === 'blood_pressure') { const bp = state.entries.filter(e => e.medId === 'blood_pressure').sort((a, b) => b.ts - a.ts)[0]; return { label: 'Blood Pressure', icon: 'chart', description: 'Review blood pressure readings over time.', meta: bp ? (bp.sys + '/' + bp.dia + ' mmHg latest') : 'No readings yet' }; }
-  if (type === 'history') return { label: 'History', icon: 'history', description: 'Review dose, symptom, and vital logs by day.', meta: state.entries.length + ' recorded entries' };
+  if (type === 'history') return { label: 'History', icon: 'history', description: 'Review dose, symptom, and vital logs by day.', meta: state.entries.length + ' recorded ' + (state.entries.length === 1 ? 'entry' : 'entries') };
   if (type === 'weight') { const latestWeight = latest('weight'); return { label: 'Weight', icon: 'chart', description: 'Explore weight readings, trends, and recent changes.', meta: latestWeight ? (dispWeight(latestWeight) + ' ' + weightSuffix() + ' latest') : 'No readings yet' }; }
   if (type === 'cycle') {
     const active = cycleActive();
     const day = daysSinceCycleStart();
     return { label: 'Cycle', icon: 'cycle', description: 'Track period status and cycle history.', meta: active ? ('Active · day ' + day) : 'No active cycle' };
+  }
+  if (type === 'radiation') {
+    const sessions = radiationSessionsSorted();
+    const planned = radiationPlannedTotal();
+    return { label: 'Radiation', icon: 'chart', description: 'Review radiation sessions completed over the course of treatment.', meta: sessions.length ? ('Session ' + sessions.length + (planned ? ' of ' + planned : '') + ' completed') : 'No sessions logged yet' };
   }
   if (type === 'bowel_movement') {
     const bEntries = bowelMovementHistorySorted();
@@ -4620,7 +5016,7 @@ function reportDescriptor(type, now) {
 }
 
 function renderReportsMenu(now) {
-  const reportTypes = ['history', 'weight', 'blood_pressure', 'cycle', 'bowel_movement', 'appetite'].filter(t => t !== 'cycle' || homePref('cycleTracking'));
+  const reportTypes = ['history', 'weight', 'blood_pressure', 'radiation', 'cycle', 'bowel_movement', 'appetite'].filter(t => (t !== 'cycle' || (cycleAllowed() && homePref('cycleTracking'))) && (t !== 'radiation' || hasRadiation()));
   return [
     h('section', null,
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#A24C71' } }, appIcon('chart', 19), h('span', { style: { ...TYPE.label } }, 'Care reports')),
@@ -4646,7 +5042,7 @@ function renderReportsMenu(now) {
 
 function renderReportDetail(type, now) {
   const report = reportDescriptor(type, now);
-  const content = type === 'history' ? renderHistory(now) : type === 'weight' ? renderWeightTrend(now) : type === 'blood_pressure' ? renderBloodPressureReport(now) : type === 'cycle' ? renderCycle(now) : type === 'bowel_movement' ? renderBowelMovementReport(now) : renderAppetite(now);
+  const content = type === 'history' ? renderHistory(now) : type === 'weight' ? renderWeightTrend(now) : type === 'blood_pressure' ? renderBloodPressureReport(now) : type === 'radiation' ? renderRadiationReport(now) : type === 'cycle' ? renderCycle(now) : type === 'bowel_movement' ? renderBowelMovementReport(now) : renderAppetite(now);
   return [
     h('section', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' } },
       h('div', null,
@@ -4914,9 +5310,11 @@ function symptomRow(e) {
       h('div', { style: { minWidth: '0', flex: '1' } },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
           h('span', { style: { fontSize: '15px', fontWeight: '800', color } }, SYMPTOM_TYPES[e.symptomType] || e.symptomType),
-          e.freq ? h('span', { style: { fontSize: '12px', fontWeight: '700', color: '#fff', background: color, borderRadius: '99px', padding: '3px 9px' } }, e.freq + ' episode' + (e.freq === '1' ? '' : 's')) : null
+          e.freq ? h('span', { style: { fontSize: '12px', fontWeight: '700', color: '#fff', background: color, borderRadius: '99px', padding: '3px 9px' } }, e.freq + ' episode' + (e.freq === '1' ? '' : 's')) : null,
+          // v33: skin-reaction severity badge — same pill pattern as the episode-count badge
+          e.severity ? h('span', { style: { fontSize: '12px', fontWeight: '700', color: e.severity === 'severe' ? '#fff' : '#7A5313', background: e.severity === 'severe' ? '#C0453B' : 'rgba(154,100,25,0.14)', borderRadius: '99px', padding: '3px 9px', textTransform: 'capitalize' } }, e.severity) : null
         ),
-        h('div', { className: 'mono', style: { fontSize: '12px', color: '#8A6479', fontWeight: '600', marginTop: '3px' } }, fmtInpatientDateTime(e.ts)),
+        h('div', { className: 'mono', style: { fontSize: '12px', color: '#8A6479', fontWeight: '600', marginTop: '3px' } }, fmtInpatientDateTime(e.ts) + (e.site ? ' · ' + e.site : '')),
         e.note ? h('div', { style: { fontSize: '13.5px', color: '#5A4652', marginTop: '7px', lineHeight: '1.45', whiteSpace: 'pre-wrap' } }, e.note) : null
       ),
       h('div', { style: { display: 'flex', gap: '4px', flexShrink: '0' } },
@@ -5333,6 +5731,9 @@ unsubPrefs = subscribePrefs((prefs) => {
   CONFIG.tempUnit = prefs.tempUnit === 'Celsius' ? 'Celsius' : 'Fahrenheit';
   CONFIG.weightUnit = prefs.weightUnit === 'kg' ? 'kg' : 'lbs';
   CONFIG.patientName = (prefs.patientName || '').trim();
+  // v33: a profile just created via "Add profile" carries the name typed there — prefill the
+  // setup form with it (once; never clobber something the user has since typed on the form).
+  if (!CONFIG.patientName && prefs.pendingName && !setupNameDraft) setupNameDraft = prefs.pendingName;
   setState({ missedClearedAt: prefs.missedClearedAt || 0, dismissedMisses: prefs.dismissedMisses || [], patientName: CONFIG.patientName, prefsLoaded: true, supportPromptAt: prefs.supportPromptAt || 0, supportOptOut: !!prefs.supportOptOut });
 });
 unsub = subscribeEntries((entries) => {
