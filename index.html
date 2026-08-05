@@ -1592,9 +1592,11 @@ function activeSteroidMed() { return state.meds.find(m => !m.paused && STEROID_N
 // FAQ (app-v22, Owner-requested) — app-usage questions only, deliberately not medical advice
 // (that stays in the About & legal disclaimer below it, which this section sits right above).
 const FAQ_ITEMS = [
+  { id: 'who-for', q: 'Who is ChemoWell for?', a: 'ChemoWell is for patients and their personal or family caregivers — a spouse, parent, adult child, or friend helping someone through treatment at home. It isn’t intended for doctors, nurses, or other healthcare professionals, or for use in hospitals, clinics, or any healthcare facility. It’s a personal record-keeping tool, not a medical device, and nothing you enter ever leaves this device.' },
   { id: 'privacy', q: 'Is my data private?', a: 'Yes. Everything you enter stays on this device in local storage — there’s no cloud, no account, and nothing is ever sent anywhere. If you erase this device or uninstall the app, that data is gone, so it’s worth keeping the device backed up the way you normally would.' },
   { id: 'add-med', q: 'How do I add a medication?', a: 'Open the Meds tab and tap Add. Give it a name, choose As needed (a gap timer between doses) or Scheduled (set time windows), and save — it’ll show up on Home right away.' },
   { id: 'switch-profile', q: 'How do I switch or add a profile?', a: 'Open the menu (the three lines, top left) and tap your name at the top, or go to Settings — Profiles. Each profile keeps its own medications and history completely separate on this device.' },
+  { id: 'caregiver-multi', q: 'I’m caring for more than one person — can I track them all?', a: 'Yes — give each person their own profile, and their medications and history stay completely separate. To add or switch, open the menu (the three lines, top left) and tap the name at the top, or go to Settings — Profiles. The Free plan includes 1 profile; Plus (one-time purchase) allows up to 3; Pro allows unlimited profiles.' },
   { id: 'missed-dose', q: 'What happens if I miss a dose?', a: 'Each scheduled reminder stays open — not flagged as missed — until the next reminder for that medication that day, or until midnight if it was the last one, giving real room to log it a little late. Once that cutoff passes with nothing logged, it’s flagged missed and shows up in History, where you can mark it Took later, Skipped, or Clear it if it was logged some other way.' },
   { id: 'treatment-date', q: 'How do I set a treatment (chemo/radiation) date?', a: 'On Home, under Treatment schedule, tap Pick a date. Medications set to "Treatment-day only" or "Excluded near treatment day" use this date to know when to show or hide themselves.' },
   { id: 'weight-reason', q: 'How do I note why weight changed?', a: 'When you log a weight, an optional Reason for change dropdown appears — Paracentesis, fluid retention, appetite changes, and more. Picking Paracentesis reveals a Liters drained field, and there’s a free-text Note too. All of it shows up in the Weight report.' },
@@ -2345,7 +2347,7 @@ function renderUpgradeModal() {
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
         planCard('free', 'Free', '$0', null, [], 'free'),
         planCard('plus', 'Plus', '$4.99', 'one-time', ['Up to 3 patient profiles', 'Printable doctor’s report (print or save as PDF)', 'Backup & transfer to a new phone (coming in beta)'], 'plus'),
-        planCard('pro', 'Pro', '$14.99', 'one-time', ['Unlimited patient profiles', 'Everything in Plus', 'Built for professional and multi-patient caregivers'], 'pro')
+        planCard('pro', 'Pro', '$14.99', 'one-time', ['Unlimited patient profiles', 'Everything in Plus', 'Built for caregivers looking after several people'], 'pro')
       ),
       TEST_MODE ? h('button', { onClick: () => { setLicense({ tier: 'free', simulated: true }); setToast('License reset to Free (beta)'); setState({}); }, style: { marginTop: '12px', width: '100%', minHeight: '44px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: '#6E5A64', background: 'transparent', cursor: 'pointer' } }, 'Reset to Free (beta testing)') : null,
       h('div', { style: { marginTop: '10px', fontSize: '12px', color: '#7A6E76', lineHeight: '1.5' } }, 'Beta build: purchases are simulated so upgrading can be tested end to end. The store version uses real App Store / Google Play purchases.')
@@ -4644,7 +4646,7 @@ function renderCalendarView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v33';
+const APP_VERSION = 'app-v34';
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -4754,6 +4756,8 @@ function renderSettings(now) {
     h('section', { style: secStyle },
       secLabel('About & legal'),
       h('div', { style: { fontSize: '12.5px', color: '#554A52', marginTop: '8px', lineHeight: '1.55' } }, 'ChemoWell ' + APP_VERSION + ' (beta). All data stays on this device \u2014 no cloud, no accounts, no tracking, and the app never sends your information anywhere.'),
+      h('div', { style: { ...TYPE.label, color: '#8E3D61', marginTop: '12px' } }, 'Intended use'),
+      h('div', { style: { fontSize: '12px', color: '#554A52', marginTop: '4px', lineHeight: '1.55' } }, 'ChemoWell is intended for personal and family use only — patients tracking their own treatment, and the personal or family caregivers helping them at home. It is not intended for use by doctors, nurses, or other healthcare professionals, or by hospitals, clinics, or any healthcare facility, and it is not a medical device. ChemoWell stores no information for any organization; everything lives on this one device.'),
       h('div', { style: { ...TYPE.label, color: '#8E3D61', marginTop: '12px' } }, 'Medical disclaimer'),
       h('div', { style: { fontSize: '12px', color: '#554A52', marginTop: '4px', lineHeight: '1.55' } }, 'ChemoWell is a record-keeping tool, not medical advice. Medication schedules, limits, and alerts only reflect what you entered \u2014 always follow the care team\u2019s instructions, confirm doses with a doctor or pharmacist, and never delay care because of anything shown in this app. If this is an emergency, call your local emergency number.')
     ),
