@@ -3998,6 +3998,7 @@ function saveMedicationEditor() {
   setState({ meds, medEditor: null, confirmDeleteMed: null });
   setToast(saved.name + (editor.mode === 'add' ? ' added to medication management.' : ' updated.'));
   tourEvent('med:saved');
+  markNotifDirty(); // v35 (Auditor F1): a saved med may add/remove/reshape windows an armed reminder depends on
 }
 
 // Meds that render as their own standalone Quick Log card on Home (not folded into the Morning
@@ -4027,6 +4028,7 @@ function setMedicationPaused(id, paused) {
   });
   persistMedicationConfig(meds, state.archivedMeds);
   setState({ meds });
+  markNotifDirty(); // v35 (Auditor F1): a paused medication must not keep ringing; resuming may need to re-arm it
 }
 // Swaps two meds' positions directly within state.meds (by id), leaving every other medication's
 // position untouched — including any grouped/managed-only meds that happen to sit between them in
@@ -4067,6 +4069,7 @@ function deleteMedicationConfig(id) {
   persistMedicationConfig(meds, archivedMeds);
   setState({ meds, archivedMeds, confirmDeleteMed: null, medEditor: state.medEditor && state.medEditor.sourceId === id ? null : state.medEditor });
   setToast(med.name + ' was removed from the active list. Existing dose history was preserved.');
+  markNotifDirty(); // v35 (Auditor F1, live-tested blocker): a deleted medication's armed alarms must be cancelled
 }
 
 function toggleMedicationForm(field) {
@@ -5729,6 +5732,13 @@ function dueRemindersAt(nowDate) {
 }
 
 function checkNotifications() {
+  // v35 (Auditor F2, live-tested duplicate): the native engine now pre-arms this exact same dose
+  // window directly with the OS at boot. Without this guard, a caregiver with the app open in the
+  // foreground at the exact instant a window opens got TWO "X Due" notifications for it -- the
+  // AlarmManager alarm v35 armed, plus this reactive path noticing the same window is due ~300ms-1min
+  // later and firing its own, differently-id'd native notification via sendNotif(). On native this
+  // function's job is fully superseded by syncNativeReminders(); this early return is the whole fix.
+  if (isNativeApp()) return;
   // v24 fix (Aaron-reported: "no notifications working"): this used to blanket-return whenever
   // TEST_MODE was true on the web build, full stop -- even on a normal day where Aaron never
   // touched the Beta Date Controls. That made every reminder dead on arrival on the exact build
@@ -5789,6 +5799,11 @@ function reminderTriggerTs(appt) {
   return null; // 'none' or unset
 }
 function checkAppointmentReminders() {
+  // v35 (Auditor F2, same duplicate-notification class as checkNotifications() above): appointment
+  // reminders are now pre-armed natively too, and this function also mutates appt.reminded, which is
+  // reactive-path-only bookkeeping (v35's engine deliberately never reads or writes it). Fully
+  // superseded by syncNativeReminders() on native.
+  if (isNativeApp()) return;
   if (TEST_MODE && !isNativeApp() && !!state.dateOffsetDays) return;
   if (!isNativeApp() && (!('Notification' in window) || Notification.permission !== 'granted')) return;
   const nowTs = Date.now();
@@ -6182,9 +6197,14 @@ setInterval(() => {
   // v35 backstop. Everything that changes the plan already calls markNotifDirty(), but a backstop
   // costs almost nothing here and covers the cases no hook can see: local midnight sliding the 72h
   // horizon, a reminder firing and freeing a slot, or a future change that forgets to add its own
-  // hook. Cheap because syncNativeReminders() builds the plan and compares its signature before
-  // touching the bridge -- an unchanged plan never crosses into native code.
-  if (isNativeApp() && Date.now() - notifLastSyncAt > NOTIF_SYNC_MAX_AGE_MS) syncNativeReminders();
+  // hook. force:true is required here (Auditor F3, live-tested): without it, the signature
+  // short-circuit inside syncNativeReminders() runs BEFORE the permission re-check, so if the OS
+  // permission is silently revoked behind the app's back while the ideal plan's shape happens not to
+  // have changed, this backstop can itself do nothing -- leaving the Settings card claiming
+  // "Notifications are on" indefinitely with no path back to "blocked." force:true makes every field
+  // (including a live permission re-read) genuinely re-checked every time this fires, matching every
+  // other "make sure this really happens" call site in this file.
+  if (isNativeApp() && Date.now() - notifLastSyncAt > NOTIF_SYNC_MAX_AGE_MS) syncNativeReminders({ force: true });
 }, 1000);
 if (!getPrefsDB().tourDone && (getPrefsDB().patientName || '').trim()) { const savedStep = getPrefsDB().tourStep; state.tourStep = (typeof savedStep === 'number' && savedStep >= 0 && savedStep < TOUR_STEPS.length) ? savedStep : 0; }
 render();
