@@ -1,0 +1,55 @@
+CONSOLE ERROR: Failed to load resource: net::ERR_CERT_AUTHORITY_INVALID
+CONSOLE ERROR: Failed to load resource: net::ERR_CERT_AUTHORITY_INVALID
+CONSOLE ERROR: Failed to load resource: net::ERR_FAILED
+CONSOLE ERROR: Failed to load resource: net::ERR_FAILED
+CONSOLE ERROR: Failed to load resource: net::ERR_FAILED
+CONSOLE ERROR: Failed to load resource: net::ERR_FAILED
+First add modal title snippet: ChemoWell
+BETA
+Aaron’s Meds
+Thursday, Au
+Contains original text after first save: true
+Modal heading on second +Add click: Edit note
+Textarea value on second +Add click: "felt nauseous after lunch, took zofran"
+Dead caption still present in DOM text: false
+After cancel, contains ORIGINAL untouched text: true
+After cancel, contains the typed-but-cancelled addition (should be FALSE): false
+Rows containing "· Today" after cancel: 1
+Textarea value on third +Add click (should have original text): "felt nauseous after lunch, took zofran"
+After real save, combined text present: true
+Rows containing "· Today" after real save (should be 1): 1
+localStorage notes array: [{"id":"nmsi4nrzmzsao8n","date":"2026-08-06","text":"felt nauseous after lunch, took zofran Also had a headache in the evening.","createdAt":1786057734514,"updatedAt":1786057736380}]
+Heading before calendar pick (should be Edit note): Edit note
+Textarea before calendar pick (should have text): "felt nauseous after lunch, took zofran Also had a headache i"
+Calendar day buttons found: 31
+Clicked calendar day: 3
+Clicked a blank calendar day: true
+Heading after picking blank date (should be Add note): Add note
+Textarea after picking blank date (should be EMPTY): ""
+Save button label after picking blank date (should be Add): Add
+localStorage notes after backdated save: [
+  {
+    "id": "nmsi4nrzmzsao8n",
+    "date": "2026-08-06",
+    "text": "felt nauseous after lunch, took zofran Also had a headache in the evening.",
+    "createdAt": 1786057734514,
+    "updatedAt": 1786057736380
+  },
+  {
+    "id": "nmsi4nuqn3hns0r",
+    "date": "2026-08-03",
+    "text": "New backdated note - completely different content, ate crackers, felt better by evening",
+    "createdAt": 1786057738079,
+    "updatedAt": 1786057738079
+  }
+]
+Caption text present on reopen-today flow: false
+Spacing info (today reopen, calendar closed): [{"text":"Date","rect":{"x":40,"y":292.03125,"width":310,"height":15.59375,"top":292.03125,"right":350,"bottom":307.625,"left":40}},{"text":"Note","rect":{"x":40,"y":375.625,"width":310,"height":15.59375,"top":375.625,"right":350,"bottom":391.21875,"left":40}}]
+Caption text present on backdate-to-existing flow: false
+Heading on backdate-to-existing flow (should be Edit note): Edit note
+Textarea on backdate-to-existing flow: "New backdated note - completely different content, ate crackers, felt better by "
+Spacing info (backdate to existing, calendar open): [{"text":"Date","rect":{"x":40,"y":292.03125,"width":310,"height":15.59375,"top":292.03125,"right":350,"bottom":307.625,"left":40}},{"text":"Note","rect":{"x":40,"y":375.625,"width":310,"height":15.59375,"top":375.625,"right":350,"bottom":391.21875,"left":40}}]
+Drawer version text found (mobile): ["ChemoWell app-v36"]
+Settings version text found (mobile): ["ChemoWell app-v36 "]
+Spacing info desktop (add modal, calendar open): [{"text":"Date","rect":{"x":470,"y":144.03125,"width":340,"height":15.59375,"top":144.03125,"right":810,"bottom":159.625,"left":470}},{"text":"Note","rect":{"x":470,"y":579.625,"width":340,"height":15.59375,"top":579.625,"right":810,"bottom":595.21875,"left":470}}]
+Drawer version text found (desktop): ["ChemoWell app-v36"]
