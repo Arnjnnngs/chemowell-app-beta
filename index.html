@@ -4668,48 +4668,60 @@ const APP_VERSION = 'app-v35';
 function renderNativeNotifStatusCard() {
   const status = nativeNotifStatus();
   const muted = { fontSize: '12.5px', color: '#6E5A64', lineHeight: '1.45' };
-  const btn = (label, onClick, bg) => h('button', {
-    onClick, disabled: notifActionBusy,
-    style: { marginTop: '10px', minHeight: '44px', padding: '0 16px', borderRadius: '11px', background: bg || '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' }
-  }, label);
-  const pill = (text) => h('div', { style: { marginTop: '10px', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12.5px', fontWeight: '700', color: '#0A6B4A', background: 'rgba(46,125,79,0.10)', padding: '3px 10px', borderRadius: '99px' } }, text);
-  const errBlock = (title, body) => h('div', { style: { marginTop: '10px' } },
+  // disabled must never be passed as a literal `false` -- h() sets it via setAttribute, and
+  // setAttribute('disabled', false) still renders a disabled (and therefore unclickable) button,
+  // because HTML boolean attributes are presence-based, not value-based. Same trap this file's own
+  // arrow-button code already documents (~line 4395); conditionally spread the key in instead.
+  const btn = (label, onClick, bg) => h('button', Object.assign(
+    { onClick, style: { minHeight: '44px', padding: '0 16px', borderRadius: '11px', background: bg || '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } },
+    notifActionBusy ? { disabled: true } : {}
+  ), label);
+  const pill = (text) => h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12.5px', fontWeight: '700', color: '#0A6B4A', background: 'rgba(46,125,79,0.10)', padding: '3px 10px', borderRadius: '99px' } }, text);
+  const errBlock = (title, body) => h('div', null,
     h('div', { style: { fontSize: '12.5px', fontWeight: '700', color: '#A5443C', overflowWrap: 'anywhere' } }, title),
     h('div', { style: { ...muted, marginTop: '3px', overflowWrap: 'anywhere' } }, body)
   );
-  const countLine = () => h('div', { style: muted, }, notifScheduledCount + (notifScheduledCount === 1 ? ' reminder' : ' reminders') + ' scheduled over the next 3 days' + (notifNextAt ? ', next at ' + new Date(notifNextAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) + '.' : '.'));
+  const countLine = () => h('div', { style: muted }, notifScheduledCount + (notifScheduledCount === 1 ? ' reminder' : ' reminders') + ' scheduled over the next 3 days' + (notifNextAt ? ', next at ' + new Date(notifNextAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) + '.' : '.'));
+  // A single top-level wrapper owns the gap from the section's intro sentence above AND the gap
+  // between each state's own children, via flex+gap rather than a per-child marginTop -- so every
+  // state lines up identically instead of drifting depending on which helper its first child came
+  // from (Designer catch: checking/empty/paused_sim/not_asked had 0px here, blocked/failed/on/
+  // on-exact had 10px, purely because only some of the helpers above happened to set marginTop).
+  const card = (...children) => h('div', { style: { marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-start' } }, ...children);
 
-  if (status === 'checking') return h('div', { style: muted }, 'Checking notification status…');
+  if (status === 'checking') return card(h('div', { style: muted }, 'Checking notification status…'));
 
-  if (status === 'paused_sim') return h('div', { style: muted }, 'Reminders are paused while the beta date controls are simulating a date. Reset the date to re-arm them.');
+  if (status === 'paused_sim') return card(h('div', { style: muted }, 'Reminders are paused while the beta date controls are simulating a date. Reset the date to re-arm them.'));
 
-  if (status === 'blocked') return h('div', null,
+  if (status === 'blocked') return card(
     errBlock('Notifications are blocked for ChemoWell', 'Reminders can’t be scheduled until notifications are allowed for this app in your phone’s Settings.'),
     btn('Try again', retryNotifPermission)
   );
 
-  if (status === 'not_asked') return h('div', null,
-    h('div', { style: { fontSize: '12.5px', fontWeight: '700', color: '#9A6419' } }, 'Notifications aren’t turned on yet'),
-    h('div', { style: { ...muted, marginTop: '3px' } }, 'Turn them on so dose and appointment reminders can reach you even when the app is closed.'),
+  if (status === 'not_asked') return card(
+    h('div', null,
+      h('div', { style: { fontSize: '12.5px', fontWeight: '700', color: '#9A6419' } }, 'Notifications aren’t turned on yet'),
+      h('div', { style: { ...muted, marginTop: '3px' } }, 'Turn them on so dose and appointment reminders can reach you even when the app is closed.')
+    ),
     btn('Turn on notifications', retryNotifPermission)
   );
 
-  if (status === 'failed') return h('div', null,
+  if (status === 'failed') return card(
     errBlock('Reminders couldn’t be set on this device', 'Something went wrong scheduling reminders. Your existing reminders are unaffected — this only blocks new ones from being armed until it’s retried.'),
     btn('Try again', () => syncNativeReminders({ force: true }))
   );
 
-  if (status === 'on-exact') return h('div', null,
+  if (status === 'on-exact') return card(
     pill('✓ Notifications are on'),
     countLine(),
-    h('div', { style: { ...muted, marginTop: '8px', color: '#9A6419', fontWeight: '700' } }, 'Exact timing isn’t allowed — reminders may arrive a little early or late.'),
+    h('div', { style: { ...muted, color: '#9A6419', fontWeight: '700' } }, 'Exact timing isn’t allowed — reminders may arrive a little early or late.'),
     btn('Allow exact reminders', changeExactNotificationSetting, '#9A6419')
   );
 
-  if (status === 'empty') return h('div', { style: muted }, 'No reminders are currently due in the next 3 days.');
+  if (status === 'empty') return card(h('div', { style: muted }, 'No reminders are currently due in the next 3 days.'));
 
   // 'on'
-  return h('div', null, pill('✓ Notifications are on'), countLine());
+  return card(pill('✓ Notifications are on'), countLine());
 }
 
 function renderSettings(now) {
