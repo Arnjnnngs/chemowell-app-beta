@@ -155,7 +155,12 @@ function deleteProfile(id) {
   if (id === ps.activeId || ps.list.length <= 1) return; // never delete the active profile
   ps.list = ps.list.filter(p => p.id !== id);
   saveJSON(PROFILES_KEY, ps);
-  ['-entries-v1', '-prefs-v1', '-med-v1'].forEach(sfx => { try { localStorage.removeItem('chemowell-app-p-' + id + sfx); } catch (e) {} });
+  // v36: added '-notes-v1' for the new Notes feature, and also closed a pre-existing gap here --
+  // '-appts-v1' (app-v22) was never included in this cleanup list, so deleting a profile left its
+  // calendar/appointment data orphaned in localStorage forever. Both are 1-line additions to an
+  // existing list with no behavior change to entries/prefs/med, so folding the appts fix in here
+  // rather than opening a separate change for it.
+  ['-entries-v1', '-prefs-v1', '-med-v1', '-appts-v1', '-notes-v1'].forEach(sfx => { try { localStorage.removeItem('chemowell-app-p-' + id + sfx); } catch (e) {} });
   setState({ confirmDeleteProfile: null });
   setToast('Profile deleted');
 }
@@ -248,6 +253,47 @@ function removeAppointment(id) {
   setState({ appts: list, confirmDeleteAppt: null });
   setToast('Appointment removed');
   markNotifDirty(); // v35: a deleted appointment must not still ring
+}
+
+// ---- Notes (app-v36) — a free-text journal, one entry per calendar day. Mirrors the
+// appointments storage pattern above (profile-scoped localStorage, held in state.notes, mutated
+// through these functions + setState) but deliberately simpler: no reminders, no title, just a
+// date and a body of text. Aaron's spec: "editable at all times... it should all roll together in
+// one date it was intended for" -- so unlike appointments (many rows per day are normal), notes
+// are keyed uniquely by dateStr. saveNote() below enforces the one-note-per-day rule itself:
+// saving into a date that already has a note edits that existing entry (by date, not by whatever
+// id happened to be open), so there's no code path that can leave two notes on the same day.
+const NOTES_KEY = 'chemowell-app-p-' + ACTIVE_PROFILE_ID + '-notes-v1';
+function loadNotes() { return loadJSON(NOTES_KEY, []); }
+function persistNotes(list) { saveJSON(NOTES_KEY, list); }
+// dateStr: 'YYYY-MM-DD', the date the note is FOR (not necessarily when it was typed -- this is
+// what makes backdating work: logging today about something from yesterday just targets yesterday's
+// dateStr, and it lands in the same place a note made yesterday would have).
+function saveNote(dateStr, text) {
+  const trimmed = (text || '').trim();
+  const list = loadNotes();
+  const existing = list.find(n => n.date === dateStr);
+  if (!trimmed) {
+    // Saving an empty note deletes it outright rather than leaving a blank entry cluttering the
+    // list -- matches how every other optional-text field in this app treats an emptied value.
+    if (existing) return removeNote(existing.id);
+    return;
+  }
+  if (existing) {
+    existing.text = trimmed;
+    existing.updatedAt = Date.now();
+  } else {
+    list.push({ id: 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), date: dateStr, text: trimmed, createdAt: Date.now(), updatedAt: Date.now() });
+  }
+  persistNotes(list);
+  setState({ notes: list });
+  setToast('Note saved');
+}
+function removeNote(id) {
+  const list = loadNotes().filter(n => n.id !== id);
+  persistNotes(list);
+  setState({ notes: list, confirmDeleteNote: null });
+  setToast('Note deleted');
 }
 
 // Keep two open tabs on the same device in sync.
@@ -531,13 +577,13 @@ const initialMedicationConfig = loadMedicationConfig();
 // through a strict whitelist (anything unexpected falls back to 'home'). Deliberately NOT
 // persisted: reportsView, open modals, drafts, confirms, and the TEST_MODE date offset.
 const UI_VIEW_KEY = 'chemowell-app-ui-view';
-const VALID_VIEWS = ['home', 'meds', 'reports', 'inpatient', 'symptoms', 'settings', 'calendar', 'account'];
+const VALID_VIEWS = ['home', 'meds', 'reports', 'inpatient', 'symptoms', 'settings', 'calendar', 'account', 'notes'];
 function restoreView() {
   try { const v = sessionStorage.getItem(UI_VIEW_KEY); return VALID_VIEWS.indexOf(v) >= 0 ? v : 'home'; }
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, showPastAppts: false, infoModal: null };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, showPastAppts: false, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -2035,6 +2081,11 @@ function renderDrawer() {
   const items = [
     { key: 'account', label: 'Account', icon: 'user', helper: 'Profiles, plan & export' },
     { key: 'calendar', label: 'Calendar', icon: 'calendar', helper: 'Appointments & reminders' },
+    // v36: Notes lives in the drawer rather than the bottom nav -- the bottom nav's 5-column grid
+    // (Home/Meds/Reports/In-Patient/Symptoms) is already full, and squeezing in a 6th tab would
+    // shrink every existing touch target below what the Designer signed off on. The drawer already
+    // houses the app's other "check in on sometimes, not a daily quick-log" destinations.
+    { key: 'notes', label: 'Notes', icon: 'notes', helper: 'Daily journal' },
     { key: 'settings', label: 'Settings', icon: 'gear', helper: 'Units, guide & data' }
   ];
   return h('div', { style: { position: 'fixed', inset: '0', zIndex: '90' } },
@@ -2189,6 +2240,7 @@ function renderContent(now, mg, pct, tyColor, ceiling) {
   if (state.view === 'inpatient') return renderInPatient(now);
   if (state.view === 'symptoms') return renderSymptoms(now);
   if (state.view === 'calendar') return renderCalendarView(now);
+  if (state.view === 'notes') return renderNotesView(now);
   return [...renderToday(now, mg, pct, tyColor, ceiling)];
 }
 
@@ -2571,6 +2623,7 @@ function render() {
     renderTimeModal(),
     renderUpgradeModal(),
     renderApptModal(),
+    renderNoteModal(),
     renderInfoModal(),
     renderDrawer(),
     // v28 (Aaron-reported, couldn't reproduce the exact trigger in testing): raised above the bottom
@@ -4662,7 +4715,133 @@ function renderCalendarView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v35';
+// ---- Notes (app-v36) — modal + list view. Mirrors the appointment modal's date-picker wiring
+// (renderCalendar/calShift/calPillLabel) but with a single textarea instead of title/time/reminder
+// fields, since a note is just "what happened, for this date."
+function openNoteModal(dateOrId) {
+  // Lead Designer catch (v36 chain, pre-push): openNoteModal(null) -- what the primary "+ Add"
+  // button calls -- used to look up an existing note by matching dateOrId itself, which is null on
+  // this path, so it could never find "today already has a note" and always opened a blank editor.
+  // Saving from there did a full silent overwrite of that day's real text (saveNote() replaces the
+  // whole field by design; it doesn't append). Fixed by resolving dateOrId to today's date FIRST
+  // when null, so the same existing-note lookup that already works for the Edit button and the
+  // calendar-repick path also covers the plain "+ Add" button on a day that's already logged.
+  const todayStr = toLocalISO(simNow()).slice(0, 10);
+  const lookupKey = dateOrId == null ? todayStr : dateOrId;
+  const existing = (state.notes || []).find(n => n.id === lookupKey || n.date === lookupKey);
+  if (existing) {
+    setState({ noteModal: { editId: existing.id, dateStr: existing.date, text: existing.text, calOpen: false, calCursor: existing.date.slice(0, 7) } });
+  } else {
+    setState({ noteModal: { editId: null, dateStr: todayStr, text: '', calOpen: false, calCursor: todayStr.slice(0, 7) } });
+  }
+}
+function closeNoteModal() { setState({ noteModal: null }); }
+function confirmNoteModal() {
+  const m = state.noteModal;
+  if (!m.dateStr) { setToast('Pick a date'); return; }
+  if (!(m.text || '').trim()) { setToast('Write something before saving, or Cancel.'); return; }
+  // saveNote keys off dateStr, not editId -- so if this note started as a fresh "Add note" for
+  // today but the person then picked a different date that already has a note, this correctly
+  // edits THAT note instead of creating a second one for the same day (Aaron: "roll together in
+  // one date"). If they instead picked a date that started a brand-new day, it creates fresh.
+  saveNote(m.dateStr, m.text);
+  closeNoteModal();
+}
+function renderNoteModal() {
+  if (!state.noteModal) return null;
+  const m = state.noteModal;
+  return h('div', { style: { position: 'fixed', inset: '0', background: 'rgba(60,30,50,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '60', padding: '20px' }, onClick: (e) => { if (e.target === e.currentTarget) closeNoteModal(); } },
+    h('div', { role: 'dialog', 'aria-modal': 'true', 'aria-label': (m.editId ? 'Edit' : 'Add') + ' note', style: { width: '100%', maxWidth: '380px', maxHeight: '88vh', overflowY: 'auto', background: '#FFFFFF', borderRadius: '22px', padding: '22px 20px', boxShadow: '0 24px 64px rgba(120,60,90,0.18)' } },
+      h('div', { style: { ...TYPE.title, color: '#2A2127', marginBottom: '16px' } }, (m.editId ? 'Edit' : 'Add') + ' note'),
+      h('div', { style: { ...TYPE.label, color: '#8A6479', marginBottom: '8px' } }, 'Date'),
+      h('button', { onClick: () => setState({ noteModal: { ...state.noteModal, calOpen: !state.noteModal.calOpen } }), style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' } },
+        h('span', null, calPillLabel(m.dateStr)),
+        h('span', { style: { fontSize: '12px', color: '#8A6479' } }, m.calOpen ? '▲' : '▼')
+      ),
+      m.calOpen ? h('div', { style: { marginTop: '8px' } },
+        renderCalendar(m.dateStr, m.calCursor, (ds) => {
+          // Picking a date always reflects THAT date's real state, in both directions:
+          // - has a note -> load its text (prevents a half-typed new entry from silently
+          //   overwriting what's already there on Save, since saveNote() is keyed by date).
+          // - has no note -> clear editId/text if we'd been showing a different date's note,
+          //   so the editor doesn't carry that other day's text over onto a blank date (found
+          //   alongside the Lead Designer's v36 chain catch: switching from an auto-loaded
+          //   existing note to a fresh date used to leave its text sitting in the box, which
+          //   Save would have written as an unintended near-duplicate under the new date).
+          const other = (state.notes || []).find(n => n.date === ds);
+          state.noteModal.dateStr = ds;
+          state.noteModal.calOpen = false;
+          if (other) {
+            if (other.id !== state.noteModal.editId) { state.noteModal.editId = other.id; state.noteModal.text = other.text; }
+          } else if (state.noteModal.editId) {
+            state.noteModal.editId = null;
+            state.noteModal.text = '';
+          }
+          setState({ noteModal: state.noteModal });
+        }, (delta) => { state.noteModal.calCursor = calShift(m.calCursor, delta); setState({ noteModal: state.noteModal }); })
+      ) : null,
+      // Lead Designer catch (v36 chain): this used to carry a "this date already has a note --
+      // saving will add to it" caption for the case where dateStr matches an existing note's date
+      // but editId doesn't point at it yet. That case can no longer happen -- both openNoteModal's
+      // initial lookup and the calendar onPick handler above now always sync editId onto an existing
+      // note the instant its date is selected -- so the caption was dead, and its wording was wrong
+      // anyway (saveNote() replaces a day's text, it doesn't append). Removed rather than left in as
+      // unreachable code; the modal's own "Edit note" title already communicates the same thing.
+      h('div', { style: { ...TYPE.label, color: '#8A6479', marginTop: '16px', marginBottom: '8px' } }, 'Note'),
+      h('textarea', { value: m.text, onInput: (e) => { state.noteModal.text = e.target.value; }, rows: 6, placeholder: 'Anything worth remembering about this day...', style: { width: '100%', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '10px 14px', fontSize: '14px', background: '#FFFFFF', color: '#2A2127', resize: 'vertical', fontFamily: 'inherit' } }),
+      h('div', { style: { display: 'flex', gap: '10px', marginTop: '20px' } },
+        h('button', { onClick: closeNoteModal, style: { flex: '1', minHeight: '48px', borderRadius: '13px', background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(125,105,116,0.25)', color: '#5F4A56', fontSize: '14px', fontWeight: '700' } }, 'Cancel'),
+        h('button', { onClick: confirmNoteModal, style: { flex: '1', minHeight: '48px', borderRadius: '13px', background: '#A24C71', color: '#fff', fontSize: '14px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, m.editId ? 'Save' : 'Add')
+      )
+    )
+  );
+}
+function renderNotesView(now) {
+  const all = (state.notes || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const todayStr = toLocalISO(now).slice(0, 10);
+  const noteRow = (note) => {
+    const [y, mo, d] = note.date.split('-').map(Number);
+    const dLabel = new Date(y, mo - 1, d);
+    return h('div', { key: note.id, style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '13px 15px', borderTop: '1px solid rgba(212,104,138,0.08)' } },
+      h('div', { style: { flexShrink: '0', width: '52px', textAlign: 'center' } },
+        h('div', { style: { fontSize: '11px', fontWeight: '800', color: '#A24C71', textTransform: 'uppercase' } }, dLabel.toLocaleDateString([], { month: 'short' })),
+        h('div', { style: { fontSize: '20px', fontWeight: '800', color: '#2A2127', lineHeight: '1.1' } }, dLabel.getDate())
+      ),
+      h('div', { style: { flex: '1', minWidth: '0' } },
+        h('div', { style: { ...TYPE.caption, color: '#7A6E76' } }, dLabel.toLocaleDateString([], { weekday: 'long' }) + (note.date === todayStr ? ' · Today' : '')),
+        h('div', { style: { fontSize: '14px', color: '#2A2127', marginTop: '4px', lineHeight: '1.45', whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }, note.text)
+      ),
+      h('div', { style: { display: 'flex', gap: '4px', flexShrink: '0' } },
+        h('button', { onClick: () => openNoteModal(note.id), 'aria-label': 'Edit note for ' + dLabel.toLocaleDateString(), style: { width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(162,76,113,0.08)', color: '#8E3D61', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('edit', 15)),
+        state.confirmDeleteNote === note.id
+          ? h('button', { onClick: () => removeNote(note.id), 'aria-label': 'Confirm delete', style: { minHeight: '44px', padding: '0 10px', borderRadius: '10px', background: '#C0453B', color: '#fff', fontSize: '12px', fontWeight: '800' } }, 'Delete?')
+          : h('button', { onClick: () => setState({ confirmDeleteNote: note.id }), 'aria-label': 'Delete note for ' + dLabel.toLocaleDateString(), style: { width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(192,69,59,0.08)', color: '#A5443C', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('trash', 15))
+      )
+    );
+  };
+  return [
+    h('section', null,
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' } },
+        h('div', null,
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#A24C71' } }, appIcon('notes', 19), h('span', { style: { ...TYPE.label } }, 'Notes')),
+          h('h1', { style: { ...TYPE.display, color: '#2A2127', marginTop: '5px' } }, 'Notes'),
+          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', maxWidth: '470px', lineHeight: '1.4' } }, 'A day-by-day journal. Always editable — log something late and it lands on the date it happened.')
+        ),
+        h('button', { onClick: () => openNoteModal(null), style: { flexShrink: '0', minHeight: '44px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: '5px', borderRadius: '11px', background: '#A24C71', color: '#fff', fontSize: '12.5px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, appIcon('plus', 16), 'Add')
+      )
+    ),
+    h('section', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(180,130,150,0.10), 0 1px 2px rgba(180,130,150,0.06)' } },
+      all.length
+        ? h('div', null, ...all.map(noteRow))
+        : h('div', { style: { padding: '28px 16px', textAlign: 'center' } },
+            h('div', { style: { ...TYPE.body, color: '#7A6E76' } }, 'No notes yet.'),
+            h('div', { style: { ...TYPE.caption, color: '#8A6479', marginTop: '4px' } }, 'Jot down anything worth remembering — a side effect, a question for the doctor, how the day went.')
+          )
+    )
+  ];
+}
+
+const APP_VERSION = 'app-v36';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -6191,7 +6370,7 @@ setInterval(() => {
   // Schedule windows -- was being torn down and rebuilt every single second while it sat open, which
   // read as the icon "flashing"/disappearing. infoModal (the help-icon's own explanation sheet) gets
   // the same guard for the same reason -- it's a bottom sheet exactly like plans/appt, not a live view.
-  if (!state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.medEditor && !state.infoModal && !isEditing) render();
+  if (!state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.noteModal && !state.medEditor && !state.infoModal && !isEditing) render();
   checkNotifications();
   checkAppointmentReminders();
   // v35 backstop. Everything that changes the plan already calls markNotifDirty(), but a backstop
