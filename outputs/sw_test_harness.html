@@ -1,0 +1,6 @@
+<!doctype html>
+<!-- Minimal same-origin harness for verify_sw_v35.mjs. Isolates the sw.js update-path test from
+     the real app's own inline service-worker bootstrap (index.html registers sw.js itself and
+     reloads on controllerchange), so the test can drive registration/update steps directly
+     without the app's own script racing it. -->
+<html><head><link rel="icon" href="data:,"></head><body>sw test harness</body></html>
