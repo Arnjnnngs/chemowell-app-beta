@@ -1,0 +1,56 @@
+
+=== T1: rapid double-click "Log Zofran" ===
+  PASS T1 — rapid double-click Log Zofran does not create 2 entries or throw
+         found={"ok":true} confirmDialog={"present":true,"found":true} zofranEntryCount=1 cancelledBatches=0 consoleErrors=0
+
+=== T2: dose logged exactly at window end boundary (12:00:00 for 9-12 window) ===
+  PASS T2 — boundary dose logged; whether cancelReminderForEntry treats 12:00:00 as inside 9-12 window
+         loggedFound=true entryTs=null nowTs=1786449605198 cancelBatchesAfter=[] consoleErrors=0
+
+=== T3: clock crosses local midnight while app stays open ===
+  PASS T3 — plan does not error crossing midnight (backstop is 6h so an immediate resync is NOT expected within seconds)
+         {"before":{"pending":9,"syncCalls":1},"after":{"pending":9,"syncCalls":1,"signature":null}} consoleErrors=0
+
+=== T4: deleting a medication with an armed reminder ===
+  FAIL T4 — deleting a medication removes its armed reminders from device pending set
+         editOpened=true deleted={"ok":true} confirmed={"ok":true} beforePendingCount=9 afterPendingCount=9 zofranStillPending=true afterPendingTitles=["Zofran Due","Zofran Due","Dexamethasone Due","Zofran Due","Zofran Due","Dexamethasone Due","Zofran Due","Zofran Due","Dexamethasone Due"] consoleErrors=0
+
+=== T5: reload after boot has armed reminders — no double-arm ===
+  PASS T5 — reload reproduces an identical id set (idempotent plan) rather than drifting/duplicating
+         first={"pending":[1226421813,1404844634,1464373809,1729574536,1817717032,1930285767,2039951627,2142446934,382741378,716698081],"scheduleCalls":2,"cancelCalls":0} second={"pending":[1226421813,1404844634,1464373809,1729574536,1817717032,1930285767,2039951627,2142446934,382741378,716698081],"scheduleCalls":2,"cancelCalls":0} sameIds=true consoleErrors=0
+
+=== T6: malformed appointment reminderCustomValue reaching buildReminderPlan ===
+  PASS T6 — malformed reminderCustomValue produces no garbage-timestamp alarm and no crash
+         pendingCount=1 anyBadTimestamp=false consoleErrors=0
+
+=== T7: window.Capacitor.Plugins.LocalNotifications entirely undefined ===
+  PASS T7 — plugin entirely missing does not throw / does not hang UI in "checking" forever without cause
+         isNative=true consoleErrors=0 cardShowsChecking=true bodySnippet=NOTIFICATIONS
+Dose and appointment reminders are pre-scheduled with your phone, so they still arrive while the app is closed or your phone is locked.
+Checking notification status…
+HOW-TO GUIDE
+Replay the walkthrough
+FAQ
+Who is ChemoWell for?
++
+Is my data private?
++
+How do I add a medication?
++
+How d
+
+=== T8: duplicate-notification risk — reactive checkNotifications() vs v35 pre-armed plan (native, app foregrounded) ===
+  FAIL T8 — reactive checkNotifications() does NOT also schedule a native notification for a window v35 already pre-armed (no duplicate)
+         bootScheduleCalls=1 totalScheduleCallsAfterCross=2 reactivePathFiredSecondSchedule=true duplicateIdReuseCount=0 fullScheduleLog=[{"atCall":1786438740590,"items":[{"id":1930285767,"title":"Zofran Due","body":"Zofran — Morning dose window has opened","at":1786438800000,"extra":{"kind":"dose","profileId":"p1","medId":"m-zof","apptId":null,"dayTs":1786406400000,"at":1786438800000,"pk":"1930285767|1786438800000|Zofran Due|Zofran — Morning dose window has opened"}},{"id":1729574536,"title":"Zofran Due","body":"Zofran — Morning dose window has opened","at":1786525200000,"extra":{"kind":"dose","profileId":"p1","medId":"m-zof","apptId":null,"dayTs":1786492800000,"at":1786525200000,"pk":"1729574536|1786525200000|Zofran Due|Zofran — Morning dose window has opened"}},{"id":1817717032,"title":"Zofran Due","body":"Zofran — Morning dose window has opened","at":1786611600000,"extra":{"kind":"dose","profileId":"p1","medId":"m-zof","apptId":null,"dayTs":1786579200000,"at":1786611600000,"pk":"1817717032|1786611600000|Zofran Due|Zofran — Morning dose window has opened"}}]},{"atCall":1786438832587,"items":[{"id":160329623,"title":"Zofran Due","body":"Zofran — Morning dose window has opened","at":1786438832887,"extra":null}]}]
+
+=== T9: pausing a medication does not promptly cancel its armed native reminder ===
+  FAIL T9 — pausing a med from the editor cancels its already-armed reminders within the debounce window
+         editOpened=true pauseClicked=true zofranPendingBeforePause=6 zofranPendingAfterPause=6 scheduleCallsAfter=1 consoleErrors=0
+
+=== T10: permission silently revoked mid-session, static plan (appt-only) — does the 6h backstop detect it? ===
+  FAIL T10 — the 6h backstop actually re-checks permission (via a forced call) even when the plan signature is unchanged
+         bootPendingCount=1 realPermStateNow=denied(simulated OS revoke) cardShowsBlocked=false cardStillShowsOnStale=true consoleErrors=0
+
+============================================================
+AUDIT LIVE TESTS: FAIL — T4, T8, T9, T10 (10 checks run)
+============================================================

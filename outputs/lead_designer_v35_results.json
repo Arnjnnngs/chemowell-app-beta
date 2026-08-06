@@ -1,0 +1,121 @@
+{
+  "results": [
+    {
+      "id": "A1-blocked",
+      "desc": "\"Try again\" in blocked state is enabled and a real pointer click fires retryNotifPermission (requestPermissions call count increments)",
+      "pass": true
+    },
+    {
+      "id": "A2-failed",
+      "desc": "\"Try again\" in failed state is enabled and a real pointer click fires syncNativeReminders(force) — schedule() re-attempted",
+      "pass": true
+    },
+    {
+      "id": "A3-not_asked",
+      "desc": "\"Turn on notifications\" in not_asked state is enabled and a real pointer click fires retryNotifPermission (requestPermissions call count increments)",
+      "pass": true
+    },
+    {
+      "id": "A4-on-exact",
+      "desc": "\"Allow exact reminders\" in on-exact state is enabled and a real pointer click fires changeExactNotificationSetting (toast observed)",
+      "pass": true
+    },
+    {
+      "id": "B1-spacing",
+      "desc": "gap between intro sentence and card is consistent across states (8/8 measured)",
+      "pass": true
+    },
+    {
+      "id": "C1a-busy-mechanism",
+      "desc": "notifActionBusy DOES reach a genuine async gap and render disabled=true on a live button (proven via a state transition that keeps a button on screen)",
+      "pass": true
+    },
+    {
+      "id": "C1b-busy-visual-affordance",
+      "desc": "INFO (not pass/fail on its own): while genuinely disabled mid-busy, the button is visually IDENTICAL to enabled (opacity 1, same bg, cursor pointer) -- no dimming/spinner, so on the rare occasions this window is wide enough to be seen, a caregiver gets no visual cue anything is happening",
+      "pass": false
+    },
+    {
+      "id": "C1c-busy-common-case",
+      "desc": "INFO: from blocked (permission stays denied), the retry click never visibly disables the button at all -- syncNativeReminders short-circuits before the busy window is wide enough to render",
+      "pass": true
+    },
+    {
+      "id": "C2-320-blocked",
+      "desc": "320px width, blocked state: no horizontal overflow in Notifications section",
+      "pass": true
+    },
+    {
+      "id": "C2-320-not_asked",
+      "desc": "320px width, not_asked state: no horizontal overflow in Notifications section",
+      "pass": true
+    },
+    {
+      "id": "C2-320-on-exact",
+      "desc": "320px width, on-exact state: no horizontal overflow in Notifications section",
+      "pass": true
+    },
+    {
+      "id": "C2-320-failed",
+      "desc": "320px width, failed state: no horizontal overflow in Notifications section",
+      "pass": true
+    },
+    {
+      "id": "C3-contrast",
+      "desc": "amber headline text (\"not_asked\") vs white background computed contrast >= 4.5:1 AA",
+      "pass": true
+    },
+    {
+      "id": "C4-touch-target",
+      "desc": "\"Allow exact reminders\" button height >= 44px",
+      "pass": true
+    },
+    {
+      "id": "C5-copy-tone",
+      "desc": "failed-state body copy freshly read from live DOM contains no stack-trace/jargon leakage",
+      "pass": true
+    }
+  ],
+  "gaps": {
+    "blocked": {
+      "gap": 5,
+      "introText": "NOTIFICATIONS",
+      "cardFirstChildText": "Dose and appointment reminders are pre-scheduled w"
+    },
+    "failed": {
+      "gap": 5,
+      "introText": "NOTIFICATIONS",
+      "cardFirstChildText": "Dose and appointment reminders are pre-scheduled w"
+    },
+    "not_asked": {
+      "gap": 5,
+      "introText": "NOTIFICATIONS",
+      "cardFirstChildText": "Dose and appointment reminders are pre-scheduled w"
+    },
+    "on-exact": {
+      "gap": 5,
+      "introText": "NOTIFICATIONS",
+      "cardFirstChildText": "Dose and appointment reminders are pre-scheduled w"
+    },
+    "empty": {
+      "gap": 5,
+      "introText": "NOTIFICATIONS",
+      "cardFirstChildText": "Dose and appointment reminders are pre-scheduled w"
+    },
+    "checking": {
+      "gap": 5,
+      "introText": "NOTIFICATIONS",
+      "cardFirstChildText": "Dose and appointment reminders are pre-scheduled w"
+    },
+    "paused_sim": {
+      "gap": 5,
+      "introText": "NOTIFICATIONS",
+      "cardFirstChildText": "Dose and appointment reminders are pre-scheduled w"
+    },
+    "on": {
+      "gap": 5,
+      "introText": "NOTIFICATIONS",
+      "cardFirstChildText": "Dose and appointment reminders are pre-scheduled w"
+    }
+  }
+}
