@@ -194,6 +194,13 @@ async function addEntryDB(entry) {
   all.push({ id: id, ...entry });
   saveJSON(ENTRIES_KEY, all);
   notifyEntries();
+  // v35: logging a dose is the highest-frequency event in the app and the one with the tightest
+  // feedback expectation on native -- the reminder for that exact window should stop existing the
+  // instant the dose is confirmed. A full rebuild would do it but would also cancel-and-reschedule
+  // every other armed alarm on every tap; cancelReminderForEntry() below is the surgical path.
+  // chemo_date entries aren't a dose window at all (they can shift every med's schedule), so they
+  // get the full rebuild via markNotifDirty() instead.
+  if (entry && entry.medId === 'chemo_date') markNotifDirty(); else cancelReminderForEntry({ id: id, ...entry });
 }
 
 async function removeEntryDB(id) {
@@ -227,17 +234,20 @@ function addAppointment(appt) {
   persistAppointments(list);
   setState({ appts: list });
   setToast('Appointment saved');
+  markNotifDirty(); // v35: a new appointment may need a reminder armed inside the 72h horizon
 }
 function updateAppointment(id, patch) {
   const list = loadAppointments().map(a => a.id === id ? { ...a, ...patch } : a);
   persistAppointments(list);
   setState({ appts: list });
+  markNotifDirty(); // v35: moving an appointment or changing its lead time moves its reminder
 }
 function removeAppointment(id) {
   const list = loadAppointments().filter(a => a.id !== id);
   persistAppointments(list);
   setState({ appts: list, confirmDeleteAppt: null });
   setToast('Appointment removed');
+  markNotifDirty(); // v35: a deleted appointment must not still ring
 }
 
 // Keep two open tabs on the same device in sync.
@@ -563,16 +573,19 @@ function setSimDate(dateStr) {
   const realToday = dayStart(Date.now());
   state.dateOffsetDays = Math.round((picked - realToday) / 86400000); // set first so simNow() below sees it
   setState({ now: simNow() });
+  markNotifDirty(); // v35: entering/leaving a simulated date disarms or restores the whole plan
 }
 function shiftSimDate(days) {
   if (!TEST_MODE) return;
   state.dateOffsetDays = (state.dateOffsetDays || 0) + days; // set first so simNow() below sees it
   setState({ now: simNow() });
+  markNotifDirty(); // v35: see setSimDate
 }
 function resetSimDate() {
   if (!TEST_MODE) return;
   state.dateOffsetDays = 0; // set first so simNow() below sees it
   setState({ now: simNow() });
+  markNotifDirty(); // v35: back to real time -- rebuild the real plan
 }
 function entriesFor(id) { return state.entries.filter(e => e.medId === id); }
 function latest(id) { const es = entriesFor(id); return es.length ? es.reduce((a, b) => a.ts > b.ts ? a : b) : null; }
@@ -4646,7 +4659,59 @@ function renderCalendarView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v34';
+const APP_VERSION = 'app-v35';
+
+// v35: the Settings notification card. One of eight mutually-exclusive states, computed by
+// nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
+// to an error, no armed count without the pill that says reminders are actually on), so the card can
+// never tell the caregiver two contradictory things at the same time.
+function renderNativeNotifStatusCard() {
+  const status = nativeNotifStatus();
+  const muted = { fontSize: '12.5px', color: '#6E5A64', lineHeight: '1.45' };
+  const btn = (label, onClick, bg) => h('button', {
+    onClick, disabled: notifActionBusy,
+    style: { marginTop: '10px', minHeight: '44px', padding: '0 16px', borderRadius: '11px', background: bg || '#A24C71', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' }
+  }, label);
+  const pill = (text) => h('div', { style: { marginTop: '10px', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12.5px', fontWeight: '700', color: '#0A6B4A', background: 'rgba(46,125,79,0.10)', padding: '3px 10px', borderRadius: '99px' } }, text);
+  const errBlock = (title, body) => h('div', { style: { marginTop: '10px' } },
+    h('div', { style: { fontSize: '12.5px', fontWeight: '700', color: '#A5443C', overflowWrap: 'anywhere' } }, title),
+    h('div', { style: { ...muted, marginTop: '3px', overflowWrap: 'anywhere' } }, body)
+  );
+  const countLine = () => h('div', { style: muted, }, notifScheduledCount + (notifScheduledCount === 1 ? ' reminder' : ' reminders') + ' scheduled over the next 3 days' + (notifNextAt ? ', next at ' + new Date(notifNextAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) + '.' : '.'));
+
+  if (status === 'checking') return h('div', { style: muted }, 'Checking notification status…');
+
+  if (status === 'paused_sim') return h('div', { style: muted }, 'Reminders are paused while the beta date controls are simulating a date. Reset the date to re-arm them.');
+
+  if (status === 'blocked') return h('div', null,
+    errBlock('Notifications are blocked for ChemoWell', 'Reminders can’t be scheduled until notifications are allowed for this app in your phone’s Settings.'),
+    btn('Try again', retryNotifPermission)
+  );
+
+  if (status === 'not_asked') return h('div', null,
+    h('div', { style: { fontSize: '12.5px', fontWeight: '700', color: '#9A6419' } }, 'Notifications aren’t turned on yet'),
+    h('div', { style: { ...muted, marginTop: '3px' } }, 'Turn them on so dose and appointment reminders can reach you even when the app is closed.'),
+    btn('Turn on notifications', retryNotifPermission)
+  );
+
+  if (status === 'failed') return h('div', null,
+    errBlock('Reminders couldn’t be set on this device', 'Something went wrong scheduling reminders. Your existing reminders are unaffected — this only blocks new ones from being armed until it’s retried.'),
+    btn('Try again', () => syncNativeReminders({ force: true }))
+  );
+
+  if (status === 'on-exact') return h('div', null,
+    pill('✓ Notifications are on'),
+    countLine(),
+    h('div', { style: { ...muted, marginTop: '8px', color: '#9A6419', fontWeight: '700' } }, 'Exact timing isn’t allowed — reminders may arrive a little early or late.'),
+    btn('Allow exact reminders', changeExactNotificationSetting, '#9A6419')
+  );
+
+  if (status === 'empty') return h('div', { style: muted }, 'No reminders are currently due in the next 3 days.');
+
+  // 'on'
+  return h('div', null, pill('✓ Notifications are on'), countLine());
+}
+
 function renderSettings(now) {
   const lic = getLicense();
   const ps = profilesState();
@@ -4725,8 +4790,8 @@ function renderSettings(now) {
       // progress)" — actively wrong once Calendar reminders (app-v22) and the TEST_MODE gate fix
       // (v24) made both dose and appointment reminders real on the web build too, just foreground-
       // only (no background/locked-phone delivery without the native app — see below).
-      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, isNativeApp() ? 'Dose reminders and missed-dose alerts are on for this app. Per-medication controls are coming soon.' : 'Calendar and dose reminders fire while this app is open in your browser. They can’t reach you while your phone is locked or the tab is closed — full background delivery needs the phone-app version (in progress).'),
-      !isNativeApp() ? notifPermissionStatusBlock() : null
+      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, isNativeApp() ? 'Dose and appointment reminders are pre-scheduled with your phone, so they still arrive while the app is closed or your phone is locked.' : 'Calendar and dose reminders fire while this app is open in your browser. They can’t reach you while your phone is locked or the tab is closed — full background delivery needs the phone-app version.'),
+      isNativeApp() ? renderNativeNotifStatusCard() : notifPermissionStatusBlock()
     ),
     // Guide
     h('section', { style: secStyle },
@@ -5726,6 +5791,338 @@ function checkAppointmentReminders() {
   });
 }
 
+// --------- v35: pre-scheduled native notifications ---------
+// Everything above (checkNotifications/checkAppointmentReminders/dueRemindersAt) is the REACTIVE
+// path: it only fires while this tab/app is open and polled every second. That's fine on the web
+// build, but on the native Android build it means a dose reminder never arrives while the phone is
+// locked or the app isn't running -- exactly the case a caregiver most needs it. This block instead
+// pre-registers every reminder due in the next 72 hours directly with Android's AlarmManager (via
+// @capacitor/local-notifications), so delivery survives the app being closed, the phone being
+// locked, or even a reboot (allowWhileIdle survives Doze). The reactive path stays fully alive and
+// unchanged for the web/PWA build (isNativeApp() gates every function below).
+function lnPlugin() {
+  try { return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) || null; }
+  catch (e) { return null; }
+}
+
+const NOTIF_CHANNEL_DOSE = 'chemowell_dose_reminders';
+const NOTIF_CHANNEL_APPT = 'chemowell_appointment_reminders';
+const NOTIF_HORIZON_MS = 72 * 3600 * 1000;      // how far ahead the plan looks
+// A reminder scheduled less than this far in the future is too close to "now" to trust the OS to
+// receive, register, and fire it in time -- arming it anyway risks a race where the alarm is set
+// after the moment it was meant to fire. Anything closer than this is simply left off the plan; it
+// already fired via the reactive path moments earlier on a running app, or it's acceptably missed
+// on a closed one this one time and self-heals on the next sync.
+const NOTIF_MIN_LEAD_MS = 30 * 1000;
+const NOTIF_MAX_PENDING = 128;                   // defensive cap; Android AlarmManager has its own limits
+const NOTIF_SYNC_MAX_AGE_MS = 6 * 3600 * 1000;   // backstop: re-sync at least this often regardless
+
+function notifDoseTag(profileId, med, w, dayTs) { return 'dose-' + profileId + '-' + med.id + '-' + w.start + '-' + w.end + '-' + dayStart(dayTs); }
+// Same hashing scheme sendNotif() already uses for web tags, reused here so both paths produce the
+// same style of id -- a positive value under 2^31, which is the hard ceiling Android's AlarmManager
+// (and therefore @capacitor/local-notifications) imposes on notification ids.
+function notifIdFromTag(tag) {
+  let hash = 7;
+  for (const c of tag) hash = (hash * 31 + c.charCodeAt(0)) | 0;
+  return Math.abs(hash) % 2147483647;
+}
+// The two schedule-gating checks dueRemindersAt() already applies per-minute, restated so a plan can
+// ask "is this med/window still relevant" about a moment in the future instead of only right now.
+function medRemindersEnabledOn(med, dayTs) {
+  if (!med || !med.alerts || !med.windows || !med.windows.length) return false;
+  if (med.paused) return false;
+  if (!medScheduledOn(med, dayTs)) return false;
+  if (med.treatmentOnly && !treatmentActiveOn(med, dayTs)) return false;
+  if (treatmentExcludedNow(med, dayTs)) return false;
+  return true;
+}
+function medWindowDueAt(med, dayTs, w, entries) {
+  const d0 = dayStart(dayTs);
+  const ws = d0 + w.start * 3600000, we = d0 + w.end * 3600000;
+  return !(entries || []).some(e => e.medId === med.id && e.ts >= ws && e.ts < we);
+}
+
+// Builds the full set of reminders that should be armed right now: every dose window opening in the
+// next 72 hours that isn't already logged, plus every appointment reminder due in that same window.
+// Pure function of its inputs (no reads of `state`, no bookkeeping mutation) so it can be called
+// speculatively by syncNativeReminders() to compare against what's already armed, and is trivially
+// unit-testable on its own.
+function buildReminderPlan(nowTs, meds, entries, appts, profileId) {
+  const out = [];
+  const horizonEnd = nowTs + NOTIF_HORIZON_MS;
+  const earliest = nowTs + NOTIF_MIN_LEAD_MS;
+
+  // Walk days with nextDay() (calendar arithmetic), never nowTs + 86400000 -- a fixed 24-hour hop
+  // lands an hour off on the two DST transition days each year and every reminder that day would be
+  // scheduled at the wrong wall-clock time.
+  let dayTs = dayStart(nowTs);
+  for (let guard = 0; guard < 14 && dayTs <= horizonEnd; guard++, dayTs = nextDay(dayTs)) {
+    const d0 = dayTs;
+    (meds || []).forEach(med => {
+      if (!medRemindersEnabledOn(med, d0)) return;
+      (med.windows || []).forEach(w => {
+        // Quiet hours: dueRemindersAt() checks the clock at fire time (h>=22 || h<8); the
+        // pre-scheduling equivalent is "does this window OPEN during quiet hours", since a window's
+        // start hour is the only moment it would ever have fired reactively.
+        const startH = Math.trunc(w.start);
+        if (startH >= 22 || startH < 8) return;
+        const at = hourTs(d0, w.start);
+        if (at < earliest || at > horizonEnd) return;
+        if (!medWindowDueAt(med, d0, w, entries)) return; // already logged in this window
+        out.push({
+          tag: notifDoseTag(profileId, med, w, d0), at: at,
+          title: med.name + ' Due',
+          body: med.name + (w.name ? ' — ' + w.name : '') + ' dose window has opened',
+          channelId: NOTIF_CHANNEL_DOSE,
+          extra: { kind: 'dose', profileId: profileId, medId: med.id, dayTs: d0 }
+        });
+      });
+    });
+  }
+
+  // Appointments. No quiet-hours filter, deliberately: a 6 AM lab draw with a "1 hour before"
+  // reminder is precisely the case where the caregiver needs to be woken up. `appt.reminded` is
+  // intentionally not consulted -- it's the reactive path's own bookkeeping and is never read or
+  // written here; ignoring it is also what makes rescheduling an appointment re-arm its reminder
+  // correctly. An already-fired reminder is excluded anyway because its trigger time is in the past.
+  (appts || []).forEach(appt => {
+    if (!appt || !appt.reminder || appt.reminder === 'none') return;
+    const triggerTs = reminderTriggerTs(appt);
+    if (triggerTs == null || triggerTs < earliest || triggerTs > horizonEnd) return;
+    out.push({
+      tag: 'appt-' + profileId + '-' + appt.id, at: triggerTs,
+      title: 'Upcoming: ' + appt.title,
+      body: new Date(appt.ts).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + (appt.note ? ' — ' + appt.note : ''),
+      channelId: NOTIF_CHANNEL_APPT,
+      extra: { kind: 'appt', profileId: profileId, apptId: appt.id }
+    });
+  });
+
+  out.sort((a, b) => a.at - b.at);
+  if (out.length > NOTIF_MAX_PENDING) out.length = NOTIF_MAX_PENDING; // keep the earliest, drop the rest
+  return out.map(n => Object.assign({ id: notifIdFromTag(n.tag) }, n));
+}
+
+function notifPayloadKey(n) { return n.id + '|' + n.at + '|' + n.title + '|' + n.body; }
+function notifPlanSignature(plan) { return plan.map(notifPayloadKey).join(','); }
+
+// The set we believe is currently armed on the device. Deliberately NOT cleared on a failed sync --
+// cancelReminderForEntry() below needs it to keep cancelling the right id for a logged dose even
+// while the bridge to the OS is broken; a failed targeted cancel self-heals on the next full sync.
+let notifPlanApplied = [];
+let notifLastSignature = '';
+let notifLastSyncAt = 0;
+let notifScheduledCount = 0;
+let notifNextAt = 0;
+let notifSyncBusy = false;
+let notifSyncAgain = false;
+let notifSyncFailed = false;
+let notifSyncErrMsg = '';
+let notifChannelsReady = false;
+let notifPermState = 'unknown';   // 'unknown' | 'granted' | 'denied' | 'prompt'
+let notifExactState = 'unknown';  // 'unknown' | 'granted' | 'denied'
+let notifActionBusy = false;
+let notifDirtyTimer = null;
+
+async function ensureNotifChannels(ln) {
+  if (notifChannelsReady) return;
+  await ln.createChannel({ id: NOTIF_CHANNEL_DOSE, name: 'Dose reminders', description: 'Alerts when a medication dose window opens', importance: 4, visibility: 1 });
+  await ln.createChannel({ id: NOTIF_CHANNEL_APPT, name: 'Appointment reminders', description: 'Alerts before an upcoming appointment', importance: 3, visibility: 1 });
+  notifChannelsReady = true;
+}
+
+async function refreshNativeNotifStatus(force) {
+  if (!isNativeApp()) return;
+  const ln = lnPlugin();
+  if (!ln) return;
+  try { notifPermState = (await ln.checkPermissions()).display; } catch (e) { /* leave as-is */ }
+  try { if (ln.checkExactNotificationSetting) notifExactState = (await ln.checkExactNotificationSetting()).exact_alarm; }
+  catch (e) { /* plugin method missing on this Android version/build -- leave notifExactState unknown */ }
+  setState({});
+}
+
+// The reconcile loop. Builds the plan fresh every call and diffs it against getPending() -- the
+// device's own record of what's armed -- rather than trusting notifPlanApplied, so a stale/partial
+// arm state left over from a reboot or app update self-heals the moment this runs. Cheap to call
+// often: the signature short-circuit below means an unchanged plan never touches the bridge at all.
+async function syncNativeReminders(opts) {
+  opts = opts || {};
+  if (!isNativeApp()) return;
+  const ln = lnPlugin();
+  if (!ln) return;
+  // Never arm real device alarms against a simulated clock -- the plan's timestamps would be built
+  // from a fake "now" and would fire at the wrong real-world moment.
+  if (TEST_MODE && !!state.dateOffsetDays) { notifSyncFailed = false; setState({}); return; }
+  if (notifSyncBusy) { notifSyncAgain = true; return; } // coalesce re-entrant calls, never stack them
+
+  const nowTs = Date.now();
+  const plan = buildReminderPlan(nowTs, state.meds, state.entries, state.appts, ACTIVE_PROFILE_ID)
+    .map(n => Object.assign({}, n, { pk: notifPayloadKey(n) }));
+  const signature = notifPlanSignature(plan);
+  if (!opts.force && signature === notifLastSignature) return;
+
+  notifSyncBusy = true;
+  try {
+    await ensureNotifChannels(ln);
+    notifPermState = (await ln.checkPermissions()).display;
+    if (ln.checkExactNotificationSetting) {
+      notifExactState = (await ln.checkExactNotificationSetting().catch(() => ({ exact_alarm: 'unknown' }))).exact_alarm;
+    }
+    if (notifPermState !== 'granted') { notifLastSyncAt = Date.now(); return; }
+
+    const pendingRes = await ln.getPending();
+    const pending = (pendingRes && pendingRes.notifications) || [];
+    const planIds = new Set(plan.map(n => n.id));
+    // Reconcile against getPending(), never against notifPlanApplied -- getPending() reflects what
+    // is truly armed on the device right now, which is the only thing safe to cancel or leave alone.
+    const guardEnd = nowTs + NOTIF_MIN_LEAD_MS;
+    const toCancel = pending.filter(p => !planIds.has(p.id)).filter(p => {
+      // Protection band: don't race a cancel against an id that may already be mid-fire.
+      const applied = notifPlanApplied.find(a => a.id === p.id);
+      return !applied || applied.at > guardEnd;
+    });
+    const pendingKeyById = new Map(pending.map(p => [p.id, (p.extra && p.extra.pk) || null]));
+    const toSchedule = plan.filter(n => pendingKeyById.get(n.id) !== n.pk);
+
+    if (toCancel.length) await ln.cancel({ notifications: toCancel.map(p => ({ id: p.id })) });
+    if (toSchedule.length) {
+      await ln.schedule({
+        notifications: toSchedule.map(n => ({
+          id: n.id, title: n.title, body: n.body,
+          schedule: { at: new Date(n.at), allowWhileIdle: true },
+          channelId: n.channelId, smallIcon: 'ic_stat_chemowell',
+          extra: { kind: n.extra.kind, profileId: n.extra.profileId, medId: n.extra.medId || null, apptId: n.extra.apptId || null, dayTs: n.extra.dayTs || null, at: n.at, pk: n.pk }
+        }))
+      });
+    }
+
+    notifPlanApplied = plan.map(n => ({ tag: n.tag, id: n.id, at: n.at }));
+    notifScheduledCount = notifPlanApplied.length;
+    notifNextAt = notifPlanApplied.length ? Math.min(...notifPlanApplied.map(p => p.at)) : 0;
+    notifLastSignature = signature;
+    notifLastSyncAt = Date.now();
+    notifSyncFailed = false;
+    notifSyncErrMsg = '';
+  } catch (e) {
+    // A failed sync must not clear notifPlanApplied or the count/next-at derived from it -- the UI
+    // keeps showing the last known-good armed state (labeled as failed) rather than snapping to
+    // "0 reminders," and cancelReminderForEntry() keeps working off the last-known-accurate plan.
+    notifSyncFailed = true;
+    notifSyncErrMsg = (e && e.message) || String(e);
+    // console.error is deliberately never used here: the release verification harnesses fail a run
+    // on any console message of type 'error', and a native scheduling failure (permission revoked
+    // behind our back, OS quota) is an expected, handled condition, not a bug to crash a CI run over.
+    console.warn('[ChemoWell] native reminder sync failed:', notifSyncErrMsg);
+    notifLastSignature = ''; // don't let a stale signature suppress a genuine retry next time
+  } finally {
+    notifSyncBusy = false;
+    if (notifSyncAgain) { notifSyncAgain = false; markNotifDirty(); }
+    setState({});
+  }
+}
+
+// Nearly everything that changes the plan calls this instead of syncNativeReminders() directly. It
+// coalesces a burst of changes (e.g. editing several medications in a row) into one sync 400ms later,
+// and lets syncNativeReminders() work out whether anything actually needs to reach the bridge.
+function markNotifDirty() {
+  if (!isNativeApp()) return;
+  if (notifDirtyTimer) return;
+  notifDirtyTimer = setTimeout(() => { notifDirtyTimer = null; syncNativeReminders(); }, 400);
+}
+
+// Logging a dose is the highest-frequency event in the app and the one with the tightest feedback
+// expectation: tap "taken," the reminder for that window should stop existing. A full rebuild would
+// do it, but it would also cancel-and-recreate every other armed alarm on every single tap. So this
+// path is deliberately surgical -- cancel exactly the one id -- while config changes (which are rare
+// and can invalidate anything) get the full rebuild via markNotifDirty(). Cancelling here also pulls
+// the reminder out of the notification shade if it already fired, which is the correct outcome: the
+// dose is in.
+async function cancelReminderForEntry(entry) {
+  try {
+    if (!isNativeApp() || !entry || !entry.medId) return;
+    const ln = lnPlugin();
+    if (!ln) return;
+    const med = (state.meds || []).find(m => m.id === entry.medId);
+    if (!med || !med.windows || !med.windows.length) return;
+    const ts = Number(entry.ts);
+    if (!Number.isFinite(ts)) return;
+    const d0 = dayStart(ts);
+    const ids = [];
+    med.windows.forEach(w => {
+      if (ts < hourTs(d0, w.start) || ts >= hourTs(d0, w.end)) return; // dose isn't in this window
+      const tag = notifDoseTag(ACTIVE_PROFILE_ID, med, w, d0);
+      const hit = notifPlanApplied.find(p => p.tag === tag);
+      if (hit) ids.push(hit);
+    });
+    if (!ids.length) return;
+    await ln.cancel({ notifications: ids.map(p => ({ id: p.id })) });
+    notifPlanApplied = notifPlanApplied.filter(p => ids.indexOf(p) === -1);
+    notifScheduledCount = notifPlanApplied.length;
+    notifNextAt = notifPlanApplied.length ? Math.min(...notifPlanApplied.map(p => p.at)) : 0;
+    // Force the next sync to genuinely reconcile rather than short-circuit on an unchanged
+    // signature: what's armed on the device no longer matches what that signature described, and a
+    // freed slot may need backfilling if the plan was previously truncated at NOTIF_MAX_PENDING.
+    notifLastSignature = '';
+  } catch (e) { /* a failed targeted cancel self-heals on the next full sync */ }
+}
+
+// Reads the two pieces of OS state the caregiver can turn off behind our back (notification
+// permission, exact-alarm permission) into the single status this section's card renders from.
+function nativeNotifStatus() {
+  if (!isNativeApp()) return 'web';
+  if (TEST_MODE && !!state.dateOffsetDays) return 'paused_sim';
+  if (notifPermState === 'unknown') return 'checking';
+  if (notifPermState === 'denied') return 'blocked';
+  if (notifPermState === 'prompt' || notifPermState === 'prompt-with-rationale') return 'not_asked';
+  if (notifSyncFailed) return 'failed';
+  if (notifExactState === 'denied') return 'on-exact';
+  if (notifScheduledCount === 0) return 'empty';
+  return 'on';
+}
+
+async function changeExactNotificationSetting() {
+  if (notifActionBusy) return;
+  notifActionBusy = true;
+  const ln = lnPlugin();
+  try {
+    if (ln && ln.changeExactNotificationSetting) {
+      await ln.changeExactNotificationSetting();
+      // The OS settings screen is modal from the caregiver's perspective -- by the time control
+      // returns here they've either granted it or backed out. Re-read the real state rather than
+      // assuming success, since "opened the screen" and "allowed it" are different outcomes.
+      if (ln.checkExactNotificationSetting) {
+        notifExactState = (await ln.checkExactNotificationSetting()).exact_alarm;
+      }
+      if (notifExactState === 'granted') { setToast('Exact reminders are allowed.'); markNotifDirty(); }
+      else { setToast('Open your phone’s Settings → Apps → ChemoWell → Alarms & reminders to allow this.'); }
+    } else {
+      // Older Capacitor local-notifications builds don't expose this method at all. There's no OS
+      // jump available in that case, but a dead button with zero feedback is worse than an honest
+      // toast telling the caregiver exactly where to go by hand.
+      setToast('Open your phone’s Settings → Apps → ChemoWell → Alarms & reminders to allow this.');
+    }
+  } catch (e) {
+    setToast('Open your phone’s Settings → Apps → ChemoWell → Alarms & reminders to allow this.');
+  } finally {
+    notifActionBusy = false;
+    setState({});
+  }
+}
+
+async function retryNotifPermission() {
+  if (notifActionBusy) return;
+  notifActionBusy = true;
+  const ln = lnPlugin();
+  try {
+    if (ln) { await ln.requestPermissions(); }
+    await refreshNativeNotifStatus(true);
+    syncNativeReminders({ force: true }).catch(() => {}).then(() => { notifActionBusy = false; setState({}); });
+    return;
+  } catch (e) { /* fall through to reset the busy flag below */ }
+  notifActionBusy = false;
+  setState({});
+}
+
 subscribePush();
 
 // Init
@@ -5770,9 +6167,25 @@ setInterval(() => {
   if (!state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.medEditor && !state.infoModal && !isEditing) render();
   checkNotifications();
   checkAppointmentReminders();
+  // v35 backstop. Everything that changes the plan already calls markNotifDirty(), but a backstop
+  // costs almost nothing here and covers the cases no hook can see: local midnight sliding the 72h
+  // horizon, a reminder firing and freeing a slot, or a future change that forgets to add its own
+  // hook. Cheap because syncNativeReminders() builds the plan and compares its signature before
+  // touching the bridge -- an unchanged plan never crosses into native code.
+  if (isNativeApp() && Date.now() - notifLastSyncAt > NOTIF_SYNC_MAX_AGE_MS) syncNativeReminders();
 }, 1000);
 if (!getPrefsDB().tourDone && (getPrefsDB().patientName || '').trim()) { const savedStep = getPrefsDB().tourStep; state.tourStep = (typeof savedStep === 'number' && savedStep >= 0 && savedStep < TOUR_STEPS.length) ? savedStep : 0; }
 render();
+
+// v35: arm the native reminder set once at boot, unconditionally. subscribeEntries() above calls its
+// listener synchronously, so state.entries/state.loaded are already populated by the time execution
+// reaches here. force:true skips the signature short-circuit because a fresh app process knows
+// nothing about what's armed -- and after a reboot or app update, what's armed may be stale, partial,
+// or left over from an older build's id scheme.
+if (isNativeApp()) {
+  refreshNativeNotifStatus(true);
+  syncNativeReminders({ force: true });
+}
 
 // Service worker registration
 if ('serviceWorker' in navigator) {
