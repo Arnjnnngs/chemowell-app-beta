@@ -230,6 +230,21 @@ async function setPrefsDB(patch) {
 // profile-scoped localStorage, held in state.appts, mutated through these functions + setState.
 // Kept fully separate from the medication/dose "entries" store since appointments aren't doses.
 const APPTS_KEY = 'chemowell-app-p-' + ACTIVE_PROFILE_ID + '-appts-v1';
+// v40: appointment colors, for the month-grid Calendar view (Owner-requested — pick a color when
+// adding an appointment, see it as a colored marker on that day in the grid). Deliberately spaced
+// away from the app's semantic hues (danger red ~5°, warning amber ~34-38°, active/success green
+// ~145-165°) so a color choice here is never mistaken for one of those meanings elsewhere in the
+// app — every option here sits in the 0-20 (brand coral) or 175-330 (teal through pink) range.
+const APPT_COLORS = [
+  { id: 'coral', label: 'Coral', hex: '#E46F3C' },
+  { id: 'teal', label: 'Teal', hex: '#12938A' },
+  { id: 'blue', label: 'Blue', hex: '#2F6FE0' },
+  { id: 'indigo', label: 'Indigo', hex: '#5B4FCF' },
+  { id: 'purple', label: 'Purple', hex: '#9247D6' },
+  { id: 'pink', label: 'Pink', hex: '#D6478F' }
+];
+const DEFAULT_APPT_COLOR = 'coral';
+function apptColorHex(id) { const c = APPT_COLORS.find(c => c.id === id); return c ? c.hex : APPT_COLORS[0].hex; }
 function loadAppointments() { return loadJSON(APPTS_KEY, []); }
 function persistAppointments(list) { saveJSON(APPTS_KEY, list); }
 function addAppointment(appt) {
@@ -583,7 +598,7 @@ function restoreView() {
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, showPastAppts: false, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -4672,7 +4687,7 @@ function apptReminderLabel(appt) {
   return r ? r.label : 'No reminder';
 }
 
-function openApptModal(editId) {
+function openApptModal(editId, presetDateStr) {
   if (editId) {
     const appt = (state.appts || []).find(a => a.id === editId);
     if (!appt) return;
@@ -4680,10 +4695,17 @@ function openApptModal(editId) {
     // v24: seed customValue/customUnit from the appointment so re-opening an edit shows the lead
     // time Aaron actually set, same as every other field here — default to 30 minutes if this
     // appointment has never used the custom option, so the fields aren't blank if he switches to it.
-    setState({ apptModal: { editId, title: appt.title, note: appt.note || '', reminder: appt.reminder || 'none', dateStr: toLocalISO(appt.ts).slice(0, 10), time: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'), calOpen: false, calCursor: toLocalISO(appt.ts).slice(0, 7), customValue: Number.isFinite(appt.reminderCustomValue) ? appt.reminderCustomValue : 30, customUnit: appt.reminderCustomUnit || 'minutes' } });
+    setState({ apptModal: { editId, title: appt.title, note: appt.note || '', reminder: appt.reminder || 'none', dateStr: toLocalISO(appt.ts).slice(0, 10), time: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'), calOpen: false, calCursor: toLocalISO(appt.ts).slice(0, 7), customValue: Number.isFinite(appt.reminderCustomValue) ? appt.reminderCustomValue : 30, customUnit: appt.reminderCustomUnit || 'minutes', color: appt.color || DEFAULT_APPT_COLOR } });
   } else {
     const todayStr = toLocalISO(simNow()).slice(0, 10);
-    setState({ apptModal: { editId: null, title: '', note: '', reminder: 'none', dateStr: '', time: '09:00', calOpen: false, calCursor: todayStr.slice(0, 7), customValue: 30, customUnit: 'minutes' } });
+    // v40: only pre-fill the date field when opened from the Calendar month-grid's day panel
+    // ("+ Add" for a specific selected day) -- that's a deliberate choice the user already made by
+    // navigating to and tapping that day, so re-showing it here saves a redundant re-pick. The
+    // header's plain "+ Add" button (no presetDateStr) deliberately keeps the ORIGINAL blank-date,
+    // forced-pick behavior: silently defaulting every new appointment to "today" would risk saving
+    // the wrong date if someone fills in the title, forgets to touch the date field, and taps Add --
+    // a real risk for a medical appointment, not just a UX nicety.
+    setState({ apptModal: { editId: null, title: '', note: '', reminder: 'none', dateStr: presetDateStr || '', time: '09:00', calOpen: false, calCursor: (presetDateStr || todayStr).slice(0, 7), customValue: 30, customUnit: 'minutes', color: DEFAULT_APPT_COLOR } });
   }
 }
 function closeApptModal() { setState({ apptModal: null }); }
@@ -4703,7 +4725,7 @@ function confirmApptModal() {
     return;
   }
   const noteTrimmed = (m.note || '').trim();
-  const payload = { title, note: noteTrimmed, reminder: m.reminder || 'none', ts };
+  const payload = { title, note: noteTrimmed, reminder: m.reminder || 'none', ts, color: m.color || DEFAULT_APPT_COLOR };
   if (m.reminder === 'custom') {
     payload.reminderCustomValue = Number(m.customValue);
     payload.reminderCustomUnit = m.customUnit || 'minutes';
@@ -4746,6 +4768,15 @@ function renderApptModal() {
       h('div', { style: { ...TYPE.title, color: '#2A2127', marginBottom: '16px' } }, (m.editId ? 'Edit' : 'Add') + ' appointment'),
       h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '8px' } }, 'Title'),
       h('input', { value: m.title, onInput: (e) => { state.apptModal.title = e.target.value; }, placeholder: 'e.g. Infusion, lab draw, oncologist visit', style: { width: '100%', minHeight: '48px', border: '1px solid rgba(246,108,49,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127', marginBottom: '16px' } }),
+      h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '8px' } }, 'Color'),
+      h('div', { role: 'radiogroup', 'aria-label': 'Appointment color', style: { display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' } },
+        ...APPT_COLORS.map(c => {
+          const selected = (m.color || DEFAULT_APPT_COLOR) === c.id;
+          return h('button', { key: c.id, onClick: () => { state.apptModal.color = c.id; setState({ apptModal: state.apptModal }); }, role: 'radio', 'aria-checked': selected ? 'true' : 'false', 'aria-label': c.label, style: { width: '40px', height: '40px', minWidth: '40px', minHeight: '40px', borderRadius: '50%', background: c.hex, border: selected ? '3px solid #2A2127' : '1px solid rgba(0,0,0,0.12)', boxShadow: selected ? '0 0 0 2px #FFFFFF, 0 0 0 3px ' + c.hex : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+            selected ? h('span', { 'aria-hidden': 'true', style: { color: '#fff', fontSize: '16px', fontWeight: '900', textShadow: '0 1px 2px rgba(0,0,0,0.35)' } }, '✓') : null
+          );
+        })
+      ),
       h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '8px' } }, 'Date'),
       h('button', { onClick: () => setState({ apptModal: { ...state.apptModal, calOpen: !state.apptModal.calOpen } }), style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '44px', border: '1px solid rgba(246,108,49,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' } },
         h('span', null, calPillLabel(m.dateStr)),
@@ -4787,27 +4818,43 @@ function renderApptModal() {
   );
 }
 
+// v40: month-grid Calendar (Owner-requested — was a flat Upcoming/Past list). Groups appointments
+// by local calendar day for O(1) day-cell lookup instead of filtering the full list per cell.
+function apptsByDateMap() {
+  const map = {};
+  (state.appts || []).forEach(a => {
+    const ds = toLocalISO(a.ts).slice(0, 10);
+    (map[ds] = map[ds] || []).push(a);
+  });
+  return map;
+}
+
 function renderCalendarView(now) {
-  const all = (state.appts || []).slice().sort((a, b) => a.ts - b.ts);
-  const dayStartNow = dayStart(now);
-  const upcoming = all.filter(a => a.ts >= dayStartNow);
-  const past = all.filter(a => a.ts < dayStartNow).reverse();
+  const todayStr = toLocalISO(now).slice(0, 10);
+  const cursorStr = state.calendarCursor || todayStr.slice(0, 7);
+  // Which day's appointments show in the detail panel below the grid — independent of which month
+  // is currently displayed, so paging through months to browse doesn't lose your selection (matches
+  // how a real calendar app behaves: browsing != re-selecting).
+  const selectedStr = state.calendarSelectedDate || todayStr;
+  const [cy, cm] = cursorStr.split('-').map(Number);
+  const first = new Date(cy, cm - 1, 1);
+  const startWeekday = first.getDay();
+  const daysInMonth = new Date(cy, cm, 0).getDate();
+  const monthLabel = first.toLocaleDateString([], { month: 'long', year: 'numeric' });
+  const byDate = apptsByDateMap();
+  const dstr = (d) => cy + '-' + String(cm).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
   const apptRow = (appt) => {
     const d = new Date(appt.ts);
-    return h('div', { key: appt.id, style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '13px 15px', borderTop: '1px solid rgba(246,108,49,0.08)' } },
-      h('div', { style: { flexShrink: '0', width: '52px', textAlign: 'center' } },
-        h('div', { style: { fontSize: '11px', fontWeight: '800', color: '#BF4C1A', textTransform: 'uppercase' } }, d.toLocaleDateString([], { month: 'short' })),
-        h('div', { style: { fontSize: '20px', fontWeight: '800', color: '#2A2127', lineHeight: '1.1' } }, d.getDate())
-      ),
+    return h('div', { key: appt.id, style: { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '13px 15px', borderTop: '1px solid rgba(246,108,49,0.08)' } },
+      h('span', { 'aria-hidden': 'true', style: { flexShrink: '0', width: '10px', height: '10px', borderRadius: '50%', background: apptColorHex(appt.color), marginTop: '5px' } }),
       h('div', { style: { flex: '1', minWidth: '0' } },
-        h('div', { style: { ...TYPE.title, fontSize: '15px', color: '#2A2127' } }, appt.title),
+        h('div', { style: { ...TYPE.title, fontSize: '15px', color: '#2A2127', wordBreak: 'break-word', overflowWrap: 'anywhere' } }, appt.title),
         h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' } },
-          h('span', null, d.toLocaleDateString([], { weekday: 'short' }) + ' · ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })),
-          // v24 Designer finding: was alignItems:'center', which centers the icon against the whole
-          // wrapped text block instead of line 1 -- a custom reminder label (e.g. "999 minutes
-          // before") can now wrap to 2 lines at these widths, which the 3 old fixed-length options
-          // never did, leaving the bell floating in the gap between lines. flex-start + a small
-          // top nudge lines it up with line 1's cap-height instead.
+          h('span', null, d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })),
           (appt.reminder && appt.reminder !== 'none') ? h('span', { style: { display: 'inline-flex', alignItems: 'flex-start', gap: '3px' } }, h('span', { style: { marginTop: '2px', flexShrink: '0' } }, appIcon('bell', 12, { color: '#915E48' })), apptReminderLabel(appt)) : null
         ),
         appt.note ? h('div', { style: { fontSize: '12.5px', color: '#593E32', marginTop: '4px', fontStyle: 'italic', lineHeight: '1.4' } }, appt.note) : null
@@ -4820,6 +4867,33 @@ function renderCalendarView(now) {
       )
     );
   };
+
+  const dayCell = (d) => {
+    if (d === null) return h('div', { key: 'blank-' + Math.random() });
+    const ds = dstr(d);
+    const dayAppts = byDate[ds] || [];
+    const isToday = ds === todayStr;
+    const isSelected = ds === selectedStr;
+    return h('button', {
+      key: ds, onClick: () => setState({ calendarSelectedDate: ds }),
+      'aria-label': new Date(cy, cm - 1, d).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }) + (dayAppts.length ? ', ' + dayAppts.length + ' appointment' + (dayAppts.length === 1 ? '' : 's') : ''),
+      'aria-pressed': isSelected ? 'true' : 'false',
+      style: { minHeight: '52px', borderRadius: '11px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', gap: '4px', padding: '6px 2px 5px', background: isSelected ? '#BF4C1A' : (isToday ? 'rgba(228,111,60,0.14)' : 'transparent'), border: isToday && !isSelected ? '1px solid rgba(228,111,60,0.5)' : '1px solid transparent' }
+    },
+      h('span', { style: { fontSize: '13px', fontWeight: isSelected || isToday ? '800' : '600', color: isSelected ? '#fff' : '#2A2127' } }, String(d)),
+      dayAppts.length
+        ? h('div', { style: { display: 'flex', gap: '2px', flexWrap: 'wrap', justifyContent: 'center', maxWidth: '36px' } },
+            ...dayAppts.slice(0, 3).map(a => h('span', { key: a.id, 'aria-hidden': 'true', style: { width: '12px', height: '3px', borderRadius: '2px', background: isSelected ? 'rgba(255,255,255,0.85)' : apptColorHex(a.color) } })),
+            dayAppts.length > 3 ? h('span', { 'aria-hidden': 'true', style: { fontSize: '8px', fontWeight: '800', color: isSelected ? '#fff' : '#915E48' } }, '+' + (dayAppts.length - 3)) : null
+          )
+        : h('div', { style: { height: '3px' } })
+    );
+  };
+
+  const selectedAppts = (byDate[selectedStr] || []).slice().sort((a, b) => a.ts - b.ts);
+  const [sy, smo, sd] = selectedStr.split('-').map(Number);
+  const selectedLabel = new Date(sy, smo - 1, sd).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }) + (selectedStr === todayStr ? ' · Today' : '');
+
   return [
     h('section', null,
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' } },
@@ -4831,20 +4905,30 @@ function renderCalendarView(now) {
         h('button', { onClick: () => openApptModal(null), style: { flexShrink: '0', minHeight: '44px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: '5px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '12.5px', fontWeight: '800', boxShadow: '0 6px 18px rgba(168,61,15,0.32)' } }, appIcon('plus', 16), 'Add')
       )
     ),
-    h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
-      upcoming.length
-        ? h('div', null, ...upcoming.map(apptRow))
-        : h('div', { style: { padding: '28px 16px', textAlign: 'center' } },
-            h('div', { style: { ...TYPE.body, color: '#7A6E76' } }, 'No upcoming appointments yet.'),
-            h('div', { style: { ...TYPE.caption, color: '#915E48', marginTop: '4px' } }, 'Add your next infusion, lab draw, or visit — with an optional reminder.')
-          )
-    ),
-    past.length ? h('section', null,
-      h('button', { onClick: () => setState({ showPastAppts: !state.showPastAppts }), style: { display: 'flex', alignItems: 'center', gap: '6px', color: '#915E48', fontSize: '13px', fontWeight: '700' } },
-        h('span', null, (state.showPastAppts ? '▾' : '▸') + ' Past appointments (' + past.length + ')')
+    h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '18px', padding: '12px 10px 10px', boxShadow: '0 4px 24px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
+      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', padding: '0 4px' } },
+        h('button', { onClick: () => setState({ calendarCursor: calShift(state.calendarCursor || todayStr.slice(0, 7), -1) }), 'aria-label': 'Previous month', style: { minHeight: '44px', minWidth: '44px', borderRadius: '10px', background: 'rgba(246,108,49,0.1)', color: '#BF4C1A', fontSize: '18px', fontWeight: '700' } }, '‹'),
+        h('div', { style: { fontSize: '15px', fontWeight: '800', color: '#2A2127' } }, monthLabel),
+        h('button', { onClick: () => setState({ calendarCursor: calShift(state.calendarCursor || todayStr.slice(0, 7), 1) }), 'aria-label': 'Next month', style: { minHeight: '44px', minWidth: '44px', borderRadius: '10px', background: 'rgba(246,108,49,0.1)', color: '#BF4C1A', fontSize: '18px', fontWeight: '700' } }, '›')
       ),
-      state.showPastAppts ? h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '18px', overflow: 'hidden', marginTop: '10px', opacity: '0.75' } }, ...past.map(apptRow)) : null
-    ) : null
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', marginBottom: '2px' } },
+        ...['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((l, i) => h('div', { key: i, style: { textAlign: 'center', fontSize: '11.5px', fontWeight: '700', color: '#915E48', padding: '2px 0' } }, l))
+      ),
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '3px' } },
+        ...cells.map(dayCell)
+      )
+    ),
+    h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
+      h('div', { style: { padding: '13px 15px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' } },
+        h('div', { style: { fontSize: '13.5px', fontWeight: '800', color: '#2A2127' } }, selectedLabel),
+        h('button', { onClick: () => openApptModal(null, selectedStr), style: { flexShrink: '0', minHeight: '36px', padding: '0 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', borderRadius: '9px', background: 'rgba(228,111,60,0.10)', border: '1px solid rgba(228,111,60,0.3)', color: '#BF4C1A', fontSize: '12px', fontWeight: '800' } }, appIcon('plus', 13), 'Add')
+      ),
+      selectedAppts.length
+        ? h('div', null, ...selectedAppts.map(apptRow))
+        : h('div', { style: { padding: '18px 16px 24px', textAlign: 'center' } },
+            h('div', { style: { ...TYPE.caption, color: '#7A6E76' } }, 'Nothing scheduled this day.')
+          )
+    )
   ];
 }
 
