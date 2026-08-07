@@ -4685,6 +4685,7 @@ function openApptModal(editId) {
 function closeApptModal() { setState({ apptModal: null }); }
 function confirmApptModal() {
   const m = state.apptModal;
+  if (!m) return;
   const title = (m.title || '').trim();
   if (!title) { setToast('Enter a title for this appointment'); return; }
   if (!m.dateStr) { setToast('Pick a date'); return; }
@@ -4866,6 +4867,7 @@ function openNoteModal(dateOrId) {
 function closeNoteModal() { setState({ noteModal: null }); }
 function confirmNoteModal() {
   const m = state.noteModal;
+  if (!m) return;
   if (!m.dateStr) { setToast('Pick a date'); return; }
   if (!(m.text || '').trim()) { setToast('Write something before saving, or Cancel.'); return; }
   // saveNote keys off dateStr, not editId -- so if this note started as a fresh "Add note" for
