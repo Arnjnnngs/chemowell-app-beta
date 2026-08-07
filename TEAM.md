@@ -8,6 +8,14 @@ acceptance; he should never have to catch a technical defect himself. Every tech
 decision (architecture, libraries) is owned by the Lead Developer unless Aaron says
 otherwise. Running the process itself is a separate question — see below.
 
+**Read `REQUESTS.md` at the start of every session, before doing anything else.** It's the
+running list of everything Aaron has ever asked for, checked off only once shipped and
+verified live — not from memory, not from a chat transcript that may not carry over. Add to
+it the moment Aaron asks for something new, and show him the full current list (not just
+this session's diff) whenever reporting a completion, per his instruction 2026-08-07: "I
+can't remember all the things I've mentioned and still needs to be completed." `BACKLOG.md`
+is the separate, smaller list of engineer-noticed issues that aren't worth stopping for.
+
 ## Chain of command (app-v25, Aaron-mandated)
 
 **The Project Manager leads this process. The Lead Developer does not, and never should
