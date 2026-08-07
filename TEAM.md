@@ -129,8 +129,17 @@ defect.
 
 ## Release mechanics checklist
 
+- **Run `./release_check.sh` and confirm it exits 0 before every single GitHub web-upload,
+  no exceptions.** This replaced a plain-prose reminder ("bump the version") that was written
+  down right here and still got skipped across several same-day pushes in app-v40 — Aaron saw
+  zero updates all day because index.html kept changing while sw.js's CACHE constant didn't,
+  and the service worker (cache-first) never knew a new version existed. A checklist item is
+  something a rushed agent can forget to re-read; a script that hard-fails the release is not.
+  If the script fails, fix what it says before doing anything else — do not work around it or
+  push anyway.
 - Version bump (`APP_VERSION` in index.html) and service worker cache name bump for any
-  change that ships to users.
+  change that ships to users. (This is what the script above enforces mechanically — the bullet
+  stays here as the human-readable explanation of *why*, not as the actual safeguard.)
 - README.md version history entry.
 - Push to GitHub, then live-verify the actual deployed site (not just localhost) with a
   cache-buster query param, since the service worker caches aggressively. Batch a release's
