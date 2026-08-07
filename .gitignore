@@ -15,3 +15,9 @@ outputs/**/*.mjs
 # capacitor.config.ts + app-icons/ — not committed, so it never drifts from the pinned Capacitor
 # version. See .github/workflows/android-build.yml.
 android/
+
+# Color-direction exploration mockups (throwaway full-app copies with hue-rotated colors, used to
+# generate Home-screen screenshots for Aaron to pick a direction from) — not part of the shipped
+# app and not meant to be edited/shipped as-is. Once a direction is chosen, the real color change
+# gets implemented as a clean edit to index.html itself, not by resurrecting one of these copies.
+color-mockups/
