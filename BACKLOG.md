@@ -25,11 +25,18 @@ when you're about to touch the relevant code; delete the line once it's actually
   `confirmDeleteMed` (resets on nav away) and entries (6s auto-timeout). Found during the v36 Notes
   audit (2026-08-06). Worth picking ONE pattern and applying it everywhere delete-confirm shows up,
   rather than three different behaviors across the app.
-- **Onboarding has no "none of these" option for treatment type** — the welcome screen forces a
-  choice of Chemo / Radiation / Both before "Get started" unlocks; there's no way to set up a
-  profile for someone who isn't a cancer patient at all. Directly relevant to Aaron's broader
-  positioning ask (see task "Scope: broaden ChemoWell positioning beyond chemo/radiation") — flagged
-  here as the concrete first thing that breaks if that direction moves forward. Found 2026-08-06.
+- ~~**Onboarding has no "none of these" option for treatment type**~~ — FIXED in v39 (2026-08-07):
+  added a 4th "Other" chip to both onboarding surfaces (welcome screen + legacy-migration card),
+  `treatmentLabel()` gives it a real label instead of "Not set". Chain-verified end-to-end
+  (Developer/Designer/Lead Designer/Auditor/Lead Auditor/PM). Leaving this line struck through
+  instead of deleting until the v39 changes are actually committed/pushed.
+- **`manifest.webmanifest` and `package.json` still describe the app as being "for chemo
+  patients"/"chemo medication tracker"** — now inaccurate given v39 broadens onboarding to any
+  chronic illness / long-term treatment via the "Other" option. Explicitly OUT OF SCOPE for v39
+  per Aaron's own "start small" instruction (onboarding-option-only, no rebrand/rename this round).
+  Revisit if/when Aaron decides to move forward with a fuller positioning update. Found 2026-08-07
+  during the v39 PM gate (the v39 dev brief said this was already logged here — it wasn't; this
+  entry corrects that).
 - **CSV export needs a true native path once the app is actually Capacitor-wrapped** — the 2026-08-06
   CSV export fix (downloadEntriesCSV) uses the Web Share API with a blob-download fallback, which
   fully covers today's reality (web/PWA on Aaron's phone — this repo has `capacitor.config.ts` but no

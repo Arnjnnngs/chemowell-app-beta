@@ -1458,7 +1458,7 @@ const HOME_PREF_DEFAULTS = { showTemperature: true, showWeight: true, showBloodP
 // those keep today's behavior until answered via the finish-setup card on Home, so nothing a
 // legacy user relies on disappears out from under them.
 function profileSex() { return getPrefsDB().sex || ''; }        // 'male' | 'female' | ''
-function treatmentType() { return getPrefsDB().treatmentType || ''; } // 'chemo' | 'radiation' | 'both' | ''
+function treatmentType() { return getPrefsDB().treatmentType || ''; } // 'chemo' | 'radiation' | 'both' | 'other' | ''
 function hasRadiation() { const t = treatmentType(); return t === 'radiation' || t === 'both'; }
 // Unset treatment (legacy profile) is treated as chemo — that's what every pre-v33 profile was.
 function isRadiationOnly() { return treatmentType() === 'radiation'; }
@@ -1786,7 +1786,7 @@ const FAQ_ITEMS = [
   { id: 'switch-profile', q: 'How do I switch or add a profile?', a: 'Open the menu (the three lines, top left) and tap your name at the top, or go to Settings — Profiles. Each profile keeps its own medications and history completely separate on this device.' },
   { id: 'caregiver-multi', q: 'I’m caring for more than one person — can I track them all?', a: 'Yes — give each person their own profile, and their medications and history stay completely separate. To add or switch, open the menu (the three lines, top left) and tap the name at the top, or go to Settings — Profiles. The Free plan includes 1 profile; Plus (one-time purchase) allows up to 3; Pro allows unlimited profiles.' },
   { id: 'missed-dose', q: 'What happens if I miss a dose?', a: 'Each scheduled reminder stays open — not flagged as missed — until the next reminder for that medication that day, or until midnight if it was the last one, giving real room to log it a little late. Once that cutoff passes with nothing logged, it’s flagged missed and shows up in History, where you can mark it Took later, Skipped, or Clear it if it was logged some other way.' },
-  { id: 'treatment-date', q: 'How do I set a treatment (chemo/radiation) date?', a: 'On Home, under Treatment schedule, tap Pick a date. Medications set to "Treatment-day only" or "Excluded near treatment day" use this date to know when to show or hide themselves.' },
+  { id: 'treatment-date', q: 'How do I set a treatment date?', a: 'On Home, under Treatment schedule, tap Pick a date. Medications set to "Treatment-day only" or "Excluded near treatment day" use this date to know when to show or hide themselves.' },
   { id: 'weight-reason', q: 'How do I note why weight changed?', a: 'When you log a weight, an optional Reason for change dropdown appears — Paracentesis, fluid retention, appetite changes, and more. Picking Paracentesis reveals a Liters drained field, and there’s a free-text Note too. All of it shows up in the Weight report.' },
   { id: 'calendar', q: 'How do I get a reminder for an appointment?', a: 'Open the menu and tap Calendar, then Add. Give it a title, date, and time, then choose when to be reminded — right at the time, 1 hour before, the morning of, 1 day before, or a custom lead time you set yourself. One thing to know: reminders only fire while ChemoWell is open in your browser, so they won’t reach you if your phone is locked or the tab is closed. You’ll also need to allow notifications when your browser asks.' },
   { id: 'schedule-windows', q: 'What does “Reminds at” mean on a scheduled medication?', a: 'Each row under Schedule windows is one reminder — a single time of day, not a start-and-end range. Tap the “?” next to Schedule windows in the medication editor for the full explanation of how that time relates to missed-dose tracking.' },
@@ -2421,7 +2421,7 @@ function renderSetup() {
       h('div', { style: { fontSize: '40px', marginBottom: '10px' } }, '\u2764\uFE0F'),
       h('div', { style: { ...TYPE.display, color: '#A24C71', marginBottom: '6px' } }, 'Welcome to ChemoWell'),
       h('div', { style: { ...TYPE.body, color: '#7A5E74', marginBottom: '20px' } },
-        'A private medication and symptom tracker for chemo and radiation patients and their caregivers. Everything you log stays on this device \u2014 nothing is sent to the cloud.'),
+        'A private medication and symptom tracker for people managing chemo, radiation, or another ongoing treatment \u2014 and their caregivers. Everything you log stays on this device \u2014 nothing is sent to the cloud.'),
       h('label', { style: { display: 'block', textAlign: 'left', fontSize: '12.5px', fontWeight: '700', color: '#8A6B82', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' } }, 'Patient name'),
       h('input', {
         value: setupNameDraft,
@@ -2431,7 +2431,7 @@ function renderSetup() {
         style: { width: '100%', boxSizing: 'border-box', padding: '13px 14px', fontSize: '16px', border: '1.5px solid #E5C9D6', borderRadius: '12px', outline: 'none', marginBottom: '16px', background: '#FFF9FB' }
       }),
       setupChipRow('Patient is', [['male', 'Male'], ['female', 'Female']], setupSexDraft, (v) => { setupSexDraft = v; render(); }),
-      setupChipRow('Treatment type', [['chemo', 'Chemo'], ['radiation', 'Radiation'], ['both', 'Both']], setupTreatmentDraft, (v) => { setupTreatmentDraft = v; render(); }),
+      setupChipRow('Treatment type', [['chemo', 'Chemo'], ['radiation', 'Radiation'], ['both', 'Both'], ['other', 'Other']], setupTreatmentDraft, (v) => { setupTreatmentDraft = v; render(); }),
       h('button', {
         onClick: completeSetup,
         style: { width: '100%', padding: '14px', fontSize: '16px', fontWeight: '800', color: '#FFFFFF', background: 'linear-gradient(135deg, #A24C71 0%, #8E3D61 100%)', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 8px 22px rgba(170,83,117,0.35)' } }, 'Get started'),
@@ -3115,7 +3115,8 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('div', { style: { display: 'flex', gap: '8px', marginBottom: '10px' } },
         chipBtn(curTreat === 'chemo', 'Chemo', () => { migrateTreatDraft = 'chemo'; setState({}); }),
         chipBtn(curTreat === 'radiation', 'Radiation', () => { migrateTreatDraft = 'radiation'; setState({}); }),
-        chipBtn(curTreat === 'both', 'Both', () => { migrateTreatDraft = 'both'; setState({}); })
+        chipBtn(curTreat === 'both', 'Both', () => { migrateTreatDraft = 'both'; setState({}); }),
+        chipBtn(curTreat === 'other', 'Other', () => { migrateTreatDraft = 'other'; setState({}); })
       ),
       // Full-strength fill always (v33 fix pass): the 35%-alpha "waiting" state read as a broken
       // disabled button while still being tappable — the tap-with-guidance toast covers the
@@ -4968,7 +4969,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v37';
+const APP_VERSION = 'app-v39';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -5188,7 +5189,10 @@ function renderSettings(now) {
 // the formatted printable doctor's report is the Plus/Pro perk.
 function profilePrefsFor(id) { return loadJSON('chemowell-app-p-' + id + '-prefs-v1', {}); }
 function profileEntryCountFor(id) { return loadJSON('chemowell-app-p-' + id + '-entries-v1', []).filter(e => e.medId !== 'chemo_date').length; }
-function treatmentLabel(t) { return t === 'chemo' ? 'Chemo' : t === 'radiation' ? 'Radiation' : t === 'both' ? 'Chemo + Radiation' : 'Not set'; }
+// short=true is for tight layouts (Account profile-list rows) where the fuller wording wraps to
+// a second line next to single-line siblings like "Chemo"/"Radiation" -- see Lead Designer v39
+// review. Only 'other' has a shorter form; the rest are already short enough not to need one.
+function treatmentLabel(t, short) { return t === 'chemo' ? 'Chemo' : t === 'radiation' ? 'Radiation' : t === 'both' ? 'Chemo + Radiation' : t === 'other' ? (short ? 'Other' : 'Other treatment') : 'Not set'; }
 
 function csvField(v) {
   v = (v === null || v === undefined) ? '' : String(v);
@@ -5357,7 +5361,7 @@ function renderAccount(now) {
                 h('span', { style: { ...TYPE.bodyBold, color: '#2A2127' } }, nm),
                 active ? h('span', { style: { fontSize: '10.5px', fontWeight: '800', color: '#0A6B4A', background: 'rgba(15,157,87,0.12)', borderRadius: '99px', padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.04em' } }, 'Active') : null
               ),
-              h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '2px' } }, treatmentLabel(pp.treatmentType) + ' · ' + cnt + ' entr' + (cnt === 1 ? 'y' : 'ies'))
+              h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '2px' } }, treatmentLabel(pp.treatmentType, true) + ' · ' + cnt + ' entr' + (cnt === 1 ? 'y' : 'ies'))
             ),
             !active ? h('button', { onClick: () => switchProfile(p.id), style: { flexShrink: '0', minHeight: '44px', padding: '0 13px', borderRadius: '10px', background: 'rgba(162,76,113,0.08)', border: '1px solid rgba(170,83,117,0.25)', color: '#8E3D61', fontSize: '12.5px', fontWeight: '800' } }, 'Switch') : null
           );
