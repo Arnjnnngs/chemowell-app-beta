@@ -8,13 +8,32 @@ acceptance; he should never have to catch a technical defect himself. Every tech
 decision (architecture, libraries) is owned by the Lead Developer unless Aaron says
 otherwise. Running the process itself is a separate question — see below.
 
-**Read `REQUESTS.md` at the start of every session, before doing anything else.** It's the
-running list of everything Aaron has ever asked for, checked off only once shipped and
-verified live — not from memory, not from a chat transcript that may not carry over. Add to
-it the moment Aaron asks for something new, and show him the full current list (not just
-this session's diff) whenever reporting a completion, per his instruction 2026-08-07: "I
-can't remember all the things I've mentioned and still needs to be completed." `BACKLOG.md`
-is the separate, smaller list of engineer-noticed issues that aren't worth stopping for.
+## Scribe — mandatory, every release
+
+**Read `REQUESTS.md`, `BACKLOG.md`, and this file at the start of every session, before
+doing anything else — that's what makes them worth having.** Scribe is the name Aaron uses
+across his projects for this responsibility (carried over from another project's process,
+2026-08-07); it's not a separate spawned agent by default, just like `release_check.sh`
+below isn't — it's a mandatory step whoever is doing the work runs every single release, so
+it can't be skipped the way a remembered checklist item can be. For a release big enough to
+already be running a Developer/Auditor/PM as separate agents, Scribe can be its own fresh
+agent pass too, the same way Lead Auditor/Lead Designer scale up — but it never skips.
+
+Scribe's job every release:
+- Check off anything in `REQUESTS.md` that just shipped and was verified live; add any new
+  request Aaron made this session, the moment he makes it, not at the end.
+- Log anything genuinely new found in `BACKLOG.md` (small issues not worth stopping for).
+- Add the README.md version-history entry for what shipped.
+- Update this file (TEAM.md) itself when the process changes, so the next session — or a
+  fresh chat Aaron pulls this project's docs into — reads the current process, not a stale
+  one.
+- Show Aaron the current, full `REQUESTS.md` list (not just this session's diff) whenever
+  reporting a completion — per his instruction 2026-08-07: "I can't remember all the things
+  I've mentioned and still needs to be completed."
+
+This is what lets Aaron open a brand-new chat, point it at this repo, and have it pick up
+exactly where things left off — the documents carry the context, not his memory or a chat
+transcript that may not carry over.
 
 ## Chain of command (app-v25, Aaron-mandated)
 
