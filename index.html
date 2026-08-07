@@ -583,7 +583,7 @@ function restoreView() {
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, showPastAppts: false, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, confirmEraseAll: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, showPastAppts: false, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -1479,12 +1479,144 @@ function setHomePref(key, value) {
   setState({});
 }
 
-function dailyAlertLevel(now) {
-  // Never escalate on install day — a 7 PM install must not open to urgent red alerts (audit 2.1/2.2)
-  if (dayStart(now) === dayStart(MISSED_TRACK_SINCE)) return 0;
-  const hourNow = new Date(now).getHours();
-  return hourNow >= 18 ? 2 : hourNow >= 12 ? 1 : 0; // 0 quiet, 1 firm, 2 urgent
+// ---- Daily check-in (app-v37) — reuses the existing appetiteCheckin/bowelCheckin/
+// dailyWeightCheckin toggles, but their meaning changes from "show a nagging banner about
+// yesterday for this metric" to "include this metric in the once-a-day check-in". A plain top-
+// level pref (not a homeCards boolean, since it's a time string) holds when that check-in fires.
+function getDailyCheckinTime() { return getPrefsDB().dailyCheckinTime || '19:00'; }
+function setDailyCheckinTime(v) { setPrefsDB({ dailyCheckinTime: v }); markNotifDirty(); }
+function checkinEnabledToday() { return homePref('appetiteCheckin') || homePref('bowelCheckin') || homePref('dailyWeightCheckin'); }
+// Explicit per-day completion flag, set by confirmCheckinModal() the moment the caregiver hits
+// Save -- regardless of which fields they actually filled in. This is deliberate: the modal's own
+// caption says "Skip anything that doesn't apply," so submitting it must count as done even with
+// every field left blank, or the Home card would keep reappearing that day despite the modal
+// explicitly inviting the skip -- silently reintroducing the exact daily nagging Aaron asked to
+// remove. Keyed by local-ISO date string, same key shape Notes already uses.
+function markCheckinCompletedToday() {
+  const dayStr = toLocalISO(dayStart(simNow())).slice(0, 10);
+  const done = Object.assign({}, getPrefsDB().checkinCompletedDays || {});
+  done[dayStr] = true;
+  setPrefsDB({ checkinCompletedDays: done });
 }
+// A day's check-in is "done" once the caregiver has explicitly completed that day's check-in flow
+// (see markCheckinCompletedToday), OR -- for a day the modal was never opened at all -- once every
+// metric the caregiver opted into already has an entry logged some other way (e.g. through the
+// normal Quick Log flow). Metrics left off don't block completion either way, so turning off Weight
+// (say) doesn't leave the card stuck open forever waiting on a field nobody asked to track.
+function checkinDoneForDay(dayTs) {
+  const dayStr = toLocalISO(dayTs).slice(0, 10);
+  if ((getPrefsDB().checkinCompletedDays || {})[dayStr]) return true;
+  if (homePref('appetiteCheckin') && !appetiteFor(dayTs)) return false;
+  if (homePref('bowelCheckin') && !bowelMovementFor(dayTs)) return false;
+  if (homePref('dailyWeightCheckin') && !state.entries.some(e => e.medId === 'weight' && dayStart(e.ts) === dayTs)) return false;
+  return true;
+}
+// Audit fix (v37, F2): the most-recent weight entry for a day, mirroring appetiteFor()/
+// bowelMovementFor()'s "latest entry wins" semantics -- there was no such helper for weight before
+// (the full Quick Log weight flow never needed one), so the check-in modal always opened with the
+// Weight field blank even when weight had already been logged that day, unlike Appetite/Bowel which
+// correctly pre-filled. That invited re-entering it and silently writing a second, conflicting entry.
+function weightEntryFor(dayStartTs) {
+  let latest = null;
+  state.entries.forEach(e => { if (e.medId === 'weight' && dayStart(e.ts) === dayStartTs && (!latest || e.ts >= latest.ts)) latest = e; });
+  return latest;
+}
+function openCheckinModal() {
+  const todayStart = dayStart(simNow());
+  const existingNote = (state.notes || []).find(n => n.date === toLocalISO(todayStart).slice(0, 10));
+  const existingWeight = weightEntryFor(todayStart);
+  setState({ checkinModal: {
+    appetite: appetiteFor(todayStart) ? appetiteFor(todayStart).value : '',
+    bowel: bowelMovementFor(todayStart) ? bowelMovementFor(todayStart).value : '',
+    weight: existingWeight ? String(existingWeight.weight) : '',
+    note: existingNote ? existingNote.text : ''
+  } });
+}
+function closeCheckinModal() { setState({ checkinModal: null }); }
+// Audit fix (v37, F1): a rapid double-tap on Save could re-enter this function while the first
+// call's awaits (logAppetite/logBowelMovement/addEntryDB) were still in flight, since nothing
+// blocked re-entry until closeCheckinModal() ran at the very end -- confirmed live, produced
+// duplicate entries for every enabled metric. checkinSaveBusy mirrors the existing notifSyncBusy /
+// notifActionBusy guard pattern already used elsewhere in this file for the same class of problem.
+let checkinSaveBusy = false;
+async function confirmCheckinModal() {
+  if (checkinSaveBusy) return;
+  const m = state.checkinModal;
+  if (!m) return;
+  checkinSaveBusy = true;
+  try {
+    const todayStart = dayStart(simNow());
+    const midday = todayStart + 12 * 3600000;
+    if (homePref('appetiteCheckin') && m.appetite) await logAppetite(m.appetite, todayStart, '');
+    if (homePref('bowelCheckin') && m.bowel) await logBowelMovement(m.bowel, todayStart);
+    // Audit fix (v37, F2): only write a weight entry if it's new information -- either nothing was
+    // logged yet today, or the caregiver actually changed the pre-filled value (a real correction).
+    // Re-saving an unchanged pre-filled value (e.g. just adding a note and hitting Save) must not
+    // silently create a second identical entry for the same day.
+    if (homePref('dailyWeightCheckin') && m.weight !== '' && !isNaN(parseFloat(m.weight))) {
+      const existingWeight = weightEntryFor(todayStart);
+      if (!existingWeight || parseFloat(existingWeight.weight) !== parseFloat(m.weight)) {
+        await addEntryDB({ medId: 'weight', weight: parseFloat(m.weight), unit: CONFIG.weightUnit, dose: parseFloat(m.weight) + ' ' + weightSuffix(), mg: 0, ts: midday });
+      }
+    }
+    const noteText = (m.note || '').trim();
+    if (noteText) saveNote(toLocalISO(todayStart).slice(0, 10), noteText);
+    markCheckinCompletedToday();
+    closeCheckinModal();
+    setToast('Check-in saved');
+  } finally {
+    checkinSaveBusy = false;
+  }
+}
+function renderCheckinModal() {
+  if (!state.checkinModal) return null;
+  const m = state.checkinModal;
+  // Design review fix (v37): the modal's own caption invites skipping fields ("Skip anything that
+  // doesn't apply"), so an unanswered select must actually look unanswered -- gray placeholder-style
+  // text, same as the Weight input's native placeholder -- instead of rendering in the same solid
+  // ink as a real answer, which made every field look filled in at a glance.
+  const answerColor = (v) => v ? '#2A2127' : '#7A6E76';
+  return h('div', { style: { position: 'fixed', inset: '0', background: 'rgba(60,30,50,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '60', padding: '20px' }, onClick: (e) => { if (e.target === e.currentTarget) closeCheckinModal(); } },
+    h('div', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Daily check-in', style: { width: '100%', maxWidth: '380px', maxHeight: '88vh', overflowY: 'auto', background: '#FFFFFF', borderRadius: '22px', padding: '22px 20px', boxShadow: '0 24px 64px rgba(120,60,90,0.18)' } },
+      h('div', { style: { ...TYPE.title, color: '#2A2127', marginBottom: '4px' } }, 'Daily check-in'),
+      h('div', { style: { ...TYPE.caption, color: '#8A6479', marginBottom: '16px' } }, 'For today. Skip anything that doesn’t apply.'),
+      homePref('appetiteCheckin') ? h('div', { style: { marginBottom: '16px' } },
+        fieldLabel('Appetite'),
+        h('select', { value: m.appetite, onChange: (e) => { state.checkinModal.appetite = e.target.value; setState({ checkinModal: state.checkinModal }); }, className: 'mono', style: selectFix({ width: '100%', minHeight: '48px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: answerColor(m.appetite) }) },
+          h('option', { value: '' }, 'Not answered'),
+          h('option', { value: 'normal' }, 'Normal'),
+          h('option', { value: 'little' }, 'Little to none'),
+          h('option', { value: 'none' }, 'No Appetite')
+        )
+      ) : null,
+      homePref('bowelCheckin') ? h('div', { style: { marginBottom: '16px' } },
+        fieldLabel('Bowel movement'),
+        h('select', { value: m.bowel, onChange: (e) => { state.checkinModal.bowel = e.target.value; setState({ checkinModal: state.checkinModal }); }, className: 'mono', style: selectFix({ width: '100%', minHeight: '48px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: answerColor(m.bowel) }) },
+          h('option', { value: '' }, 'Not answered'),
+          h('option', { value: 'normal' }, 'Normal'),
+          h('option', { value: 'very_little' }, 'Very little'),
+          h('option', { value: 'none' }, 'None'),
+          h('option', { value: 'diarrhea' }, 'Diarrhea')
+        )
+      ) : null,
+      homePref('dailyWeightCheckin') ? h('div', { style: { marginBottom: '16px' } },
+        fieldLabel('Weight (' + weightSuffix() + ')'),
+        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', value: m.weight, onInput: (e) => { state.checkinModal.weight = e.target.value; }, placeholder: 'Not answered', className: 'mono', style: { width: '100%', minHeight: '48px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: '#2A2127' } })
+      ) : null,
+      // Design review fix (v37): this was its own single-purpose label rendered entirely in shouting
+      // uppercase (label + helper text run together in one caps-and-letter-spaced line). Switched to
+      // the shared two-tier fieldLabel(text, helper) the rest of the app already uses for this exact
+      // pattern -- caps label, sentence-case helper below it.
+      fieldLabel('Anything else?', 'Goes to today’s Notes, always editable later.'),
+      h('textarea', { value: m.note, onInput: (e) => { state.checkinModal.note = e.target.value; }, rows: 4, placeholder: 'Anything worth remembering about today...', style: { width: '100%', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '13px', padding: '10px 14px', fontSize: '14px', background: '#FFFFFF', color: '#2A2127', resize: 'vertical', fontFamily: 'inherit', marginTop: '8px' } }),
+      h('div', { style: { display: 'flex', gap: '10px', marginTop: '20px' } },
+        h('button', { onClick: closeCheckinModal, style: { flex: '1', minHeight: '48px', borderRadius: '13px', background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(125,105,116,0.25)', color: '#5F4A56', fontSize: '14px', fontWeight: '700' } }, 'Cancel'),
+        h('button', { onClick: confirmCheckinModal, style: { flex: '1', minHeight: '48px', borderRadius: '13px', background: '#A24C71', color: '#fff', fontSize: '14px', fontWeight: '700', boxShadow: '0 2px 8px rgba(142,61,97,0.22)' } }, 'Save')
+      )
+    )
+  );
+}
+
 // Unified notice/banner tones (design batch 2, item 6): tone is an accent on a white card,
 // never a flood. accent drives the 4px left border and solid action buttons; chipBg/chipFg
 // drive the tinted icon chip. Shared geometry lives at each banner's container.
@@ -1493,9 +1625,6 @@ const NOTICE_TONES = {
   attention: { accent: '#B5761E', chipBg: 'rgba(181,118,30,0.14)', chipFg: '#8C5900' },
   urgent:    { accent: '#C0453B', chipBg: 'rgba(192,69,59,0.12)',  chipFg: '#A5443C' }
 };
-function dailyAlertStyle(level) {
-  return NOTICE_TONES[level === 2 ? 'urgent' : level === 1 ? 'attention' : 'info'];
-}
 function bowelMovementEntriesByDay() {
   const map = new Map();
   state.entries.filter(e => e.medId === 'bowel_movement').forEach(e => {
@@ -2571,12 +2700,33 @@ function positionTour() {
   const isNewStep = tourLastPositionedStep !== state.tourStep;
   tourLastPositionedStep = state.tourStep;
   if (banner) {
-    // v12: slim banner mode — stays pinned at the very top, deliberately overlapping the header's
-    // brand row (not needed mid-step) so it NEVER covers page content the user must touch. No
-    // repositioning, no scrollIntoView: the page content scrolls freely beneath the sticky header.
+    // v12: slim banner mode — deliberately keeps the background tappable so the user can touch the
+    // real target while it's up (unlike the scrimmed card branch below). v37 (Aaron-requested, a
+    // repeat ask): it used to unconditionally pin to the very top regardless of where its target
+    // actually was, which put it as far as possible from a bottom-nav target (the Meds/Home tab
+    // steps) -- the opposite of "the pop-up should show right above where the user needs to click."
+    // A bottom-nav button is short (unlike med-editor's full scrollable form) and sits low on screen,
+    // so for that shape of target, dock the banner just above it instead. Anything else -- a target
+    // already near the top (meds-add), or one that fills most of the screen (med-editor), or simply
+    // not enough room to dock above it without going off-screen -- keeps the safe top-pinned default,
+    // which for those cases either is already close or is the only place guaranteed not to cover the
+    // target ("if the box is in the way, move it back to the top", per Aaron).
+    banner.style.top = 'calc(8px + var(--safe-top))';
+    banner.style.bottom = 'auto';
     if (step.target) {
       const targetEl = document.querySelector('[data-tour="' + step.target + '"]');
-      if (targetEl) applyTourHighlight(targetEl);
+      if (targetEl) {
+        applyTourHighlight(targetEl);
+        const r = targetEl.getBoundingClientRect();
+        const bannerH = banner.offsetHeight || 90;
+        const isCompactTarget = r.height < 120;
+        const isLowOnScreen = r.top > window.innerHeight * 0.6;
+        const roomToDockAbove = r.top - 8 > bannerH + 16;
+        if (isCompactTarget && isLowOnScreen && roomToDockAbove) {
+          banner.style.top = 'auto';
+          banner.style.bottom = Math.max(8, window.innerHeight - r.top + 10) + 'px';
+        }
+      }
     }
     return;
   }
@@ -2624,6 +2774,7 @@ function render() {
     renderUpgradeModal(),
     renderApptModal(),
     renderNoteModal(),
+    renderCheckinModal(),
     renderInfoModal(),
     renderDrawer(),
     // v28 (Aaron-reported, couldn't reproduce the exact trigger in testing): raised above the bottom
@@ -3138,94 +3289,25 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     ));
   }
 
-  // Bowel Movement retrospective check-in — persistent on Home until answered for YESTERDAY,
-  // escalating urgency through the day using the same rules as Daily Weight below. Disappears
-  // entirely once yesterday's entry exists; the answer then lives in Reports > Bowel Movement.
-  // To correct a wrong answer after it's been logged, remove it from that Reports history list —
-  // this alert reappears immediately since the day is unanswered again.
-  {
-    const bmYStart = yesterdayStart(now);
-    const bmYEntry = bowelMovementFor(bmYStart);
-    if (homePref('bowelCheckin') && !bmYEntry && bmYStart >= dayStart(MISSED_TRACK_SINCE)) { // never ask about days before the app was installed
-      const level = dailyAlertLevel(now);
-      const s = dailyAlertStyle(level);
-      const bmYLabel = new Date(bmYStart).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
-      const bmMsgPre = level === 2 ? 'Still not logged for ' : level === 1 ? 'No bowel movement status logged for ' : '';
-      const bmMsgPost = level === 2 ? ' — please answer before the day ends.' : level === 1 ? ' yet.' : '’s bowel movement hasn’t been logged yet.';
-      const bmSelectValue = state.bowelInput !== undefined ? state.bowelInput : '';
-      parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderLeft: '4px solid ' + s.accent, borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', boxShadow: '0 2px 10px rgba(180,130,150,0.10)' } },
-        h('div', { style: { display: 'flex', gap: '12px', alignItems: 'center' } },
-          h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: s.chipBg, color: s.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, 'B'),
-          h('div', { style: { flex: '1' } },
-            h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127', marginBottom: '2px' } }, 'Bowel movement'),
-            h('div', { style: { ...TYPE.caption, color: '#554A52' } }, bmMsgPre, h('span', { style: { fontWeight: '700', color: '#2A2127', whiteSpace: 'nowrap' } }, bmYLabel), bmMsgPost)
-          )
-        ),
-        h('div', { style: { display: 'flex', gap: '8px' } },
-          h('select', { value: bmSelectValue, onChange: (e) => { state.bowelInput = e.target.value; }, className: 'mono', style: selectFix({ flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: '#FFFFFF', color: '#2A2127' }) },
-            h('option', { value: '' }, 'Select...'),
-            h('option', { value: 'normal' }, 'Normal'),
-            h('option', { value: 'very_little' }, 'Very little'),
-            h('option', { value: 'none' }, 'None'),
-            h('option', { value: 'diarrhea' }, 'Diarrhea')
-          ),
-          h('button', { onClick: () => submitBowelMovement(bmYStart), style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: s.accent, color: '#fff', fontSize: '13px', fontWeight: '700' } }, 'Log')
-        )
-      ));
-    }
-  }
-
-  // Appetite retrospective check-in — same persistent/escalating rules as Bowel Movement and
-  // Daily Weight, asking about YESTERDAY. Disappears once answered; the answer lands in
-  // Reports > Appetite (history-only there — no separate input card on that page).
-  {
-    const apYStart = yesterdayStart(now);
-    const apYEntry = appetiteFor(apYStart);
-    if (homePref('appetiteCheckin') && !apYEntry && apYStart >= dayStart(MISSED_TRACK_SINCE)) { // never ask about days before the app was installed
-      const level = dailyAlertLevel(now);
-      const s = dailyAlertStyle(level);
-      const apYLabel = new Date(apYStart).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
-      const apMsgPre = level === 2 ? 'Still not logged for ' : level === 1 ? 'No appetite status logged for ' : '';
-      const apMsgPost = level === 2 ? ' — please answer before the day ends.' : level === 1 ? ' yet.' : '’s appetite hasn’t been logged yet.';
-      const apSelectValue = state.appetiteInput !== undefined ? state.appetiteInput : '';
-      const apNoteValue = state.appetiteNoteInput !== undefined ? state.appetiteNoteInput : '';
-      parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderLeft: '4px solid ' + s.accent, borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', boxShadow: '0 2px 10px rgba(180,130,150,0.10)' } },
-        h('div', { style: { display: 'flex', gap: '12px', alignItems: 'center' } },
-          h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: s.chipBg, color: s.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, 'A'),
-          h('div', { style: { flex: '1' } },
-            h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127', marginBottom: '2px' } }, 'Appetite'),
-            h('div', { style: { ...TYPE.caption, color: '#554A52' } }, apMsgPre, h('span', { style: { fontWeight: '700', color: '#2A2127', whiteSpace: 'nowrap' } }, apYLabel), apMsgPost)
-          )
-        ),
-        h('div', { style: { display: 'flex', gap: '8px' } },
-          h('select', { value: apSelectValue, onChange: (e) => { state.appetiteInput = e.target.value; }, className: 'mono', style: selectFix({ flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: '#FFFFFF', color: '#2A2127' }) },
-            h('option', { value: '' }, 'Select...'),
-            h('option', { value: 'normal' }, 'Normal'),
-            h('option', { value: 'little' }, 'Little to none'),
-            h('option', { value: 'none' }, 'No Appetite')
-          ),
-          h('button', { onClick: () => submitAppetite(apYStart), style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: s.accent, color: '#fff', fontSize: '13px', fontWeight: '700' } }, 'Log')
-        ),
-        h('textarea', { value: apNoteValue, onInput: (e) => { state.appetiteNoteInput = e.target.value; }, rows: 2, placeholder: 'Reason (optional)', style: { width: '100%', border: '1px solid #EBE3E4', borderRadius: '11px', padding: '9px 10px', fontSize: '13.5px', background: 'rgba(255,255,255,0.7)', color: '#2A2127', resize: 'vertical', fontFamily: 'inherit' } })
-      ));
-    }
-  }
-
-  // Weight-not-logged-today alert — persistent, and visually escalates as the day goes on
-  // without a reading: quiet reminder in the morning, firmer by afternoon, urgent by evening.
-  // (Shares its escalation rules with the Bowel Movement and Appetite alerts above via
-  // dailyAlertLevel()/dailyAlertStyle() — all three "must be answered" cards behave identically.)
-  const weightLoggedToday = state.entries.some(e => e.medId === 'weight' && e.ts >= dayStart(now));
-  if (homePref('dailyWeightCheckin') && !weightLoggedToday) {
-    const level = dailyAlertLevel(now);
-    const s = dailyAlertStyle(level);
-    const wMsg = level === 2 ? 'Still no weight logged today — please log it before the day ends.' : level === 1 ? 'No weight logged yet today. A daily reading helps track trends.' : 'Weight hasn’t been logged yet today.';
-    parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderLeft: '4px solid ' + s.accent, borderRadius: '14px', padding: '14px 16px', display: 'flex', gap: '12px', alignItems: 'center', boxShadow: '0 2px 10px rgba(180,130,150,0.10)' } },
-      h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: s.chipBg, color: s.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, '⚖'),
+  // Daily check-in card (app-v37, replacing three separate persistent/escalating banners: Bowel
+  // Movement retrospective, Appetite retrospective, and Weight-not-logged-today). Aaron's own
+  // complaint about the old design: it asked about YESTERDAY, stayed on Home nagging with rising
+  // urgency (an hour-of-day escalation, since removed) until answered, and did this for up to three
+  // separate metrics as three separate cards. Replaced with one calm, non-escalating, single card
+  // that opens a guided check-in for TODAY (see openCheckinModal/renderCheckinModal) covering
+  // whichever of Appetite/Bowel/Weight the caregiver has opted into, plus a free-text field that
+  // becomes today's Notes entry. The real reminder now lives in a scheduled notification at a
+  // caregiver-chosen time (see buildReminderPlan's 'checkin' kind) instead of a banner that
+  // silently sits there getting louder -- opt in once in Settings, get pinged once a day, done.
+  if (checkinEnabledToday() && !checkinDoneForDay(dayStart(now))) {
+    const cTone = NOTICE_TONES.info;
+    parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #EBE3E4', borderLeft: '4px solid ' + cTone.accent, borderRadius: '14px', padding: '14px 16px', display: 'flex', gap: '12px', alignItems: 'center', boxShadow: '0 2px 10px rgba(180,130,150,0.10)' } },
+      h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: cTone.chipBg, color: cTone.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, appIcon('notes', 17)),
       h('div', { style: { flex: '1' } },
-        h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127', marginBottom: '2px' } }, 'Daily weight'),
-        h('div', { style: { ...TYPE.caption, color: '#554A52' } }, wMsg)
-      )
+        h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127', marginBottom: '2px' } }, 'Daily check-in'),
+        h('div', { style: { ...TYPE.caption, color: '#554A52' } }, 'A couple quick questions about today, whenever you have a minute.')
+      ),
+      h('button', { onClick: openCheckinModal, style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: cTone.accent, color: '#fff', fontSize: '13px', fontWeight: '700' } }, 'Start')
     ));
   }
 
@@ -3843,6 +3925,17 @@ function parseDoseOptions(text) {
   });
 }
 
+// v38 (Aaron-requested): whether Dosage options actually carries an amount in the currently-picked
+// Limit unit -- pulled out of dailyLimitPreview so it can gate the Daily limit input itself (see
+// renderMedicationEditor) and not just explain a mismatch after the fact. Deliberately independent
+// of whether a Daily limit value has been typed yet, unlike the old inline check inside
+// dailyLimitPreview -- Aaron: "you should not be able to progress to 'Daily Limit' if it's not
+// indicated correctly," i.e. the field should be gated up front, not just validated after entry.
+function dosageOptionsCarryLimitUnit(form) {
+  const unit = form.dailyLimitUnit;
+  const testDoses = parseDoseOptions(form.dosesText);
+  return unit === 'mg' ? testDoses.some(d => d.mg > 0) : testDoses.some(d => d.pills > 0);
+}
 // v25 (Aaron-reported: "Limit Unit doesn't entirely make sense... it's not clear"): a live,
 // plain-language line under Daily limit/Limit unit stating the ACTUAL rule that will be enforced,
 // same pattern as the Schedule-windows preview below it -- states the resulting behavior instead of
@@ -3851,10 +3944,8 @@ function parseDoseOptions(text) {
 // BEFORE Save is tapped, instead of only failing at save time with no visible cause.
 function dailyLimitPreview(form) {
   const dailyLimit = Number(form.dailyLimit) || 0;
-  if (!dailyLimit) return null;
   const unit = form.dailyLimitUnit;
-  const testDoses = parseDoseOptions(form.dosesText);
-  const carries = unit === 'mg' ? testDoses.some(d => d.mg > 0) : testDoses.some(d => d.pills > 0);
+  const carries = dosageOptionsCarryLimitUnit(form);
   if (!carries) {
     // v25 audit fix (Finding 2): this used to be a two-way mg/pills ternary, so "Number of
     // applications" medications (patches, sprays, creams) were incorrectly told to add "a pill
@@ -3864,10 +3955,21 @@ function dailyLimitPreview(form) {
     // v26 (Aaron-requested): the plain amber-on-cream text line was easy to miss against the
     // editor's background. Solid fill + border + a filled "!" badge instead of relying on color
     // alone to signal "this is a warning."
+    // v38 (Aaron-requested): this now also shows with no Daily limit typed yet -- Daily limit is
+    // disabled below until Dosage options carries the picked unit (see renderMedicationEditor), and
+    // this line is what explains why. Wording branches so it doesn't read as an alarm before the
+    // caregiver has even tried to set a limit: "not unlocked yet" (nothing typed) vs. "won't work"
+    // (a limit was typed against Dosage options that doesn't support it -- shouldn't be reachable
+    // once the field is disabled, but kept as a second line of defense, e.g. right after switching
+    // Limit unit to something Dosage options no longer matches).
+    const tail = dailyLimit
+      ? ' — this limit won’t work until they do.'
+      : ' — add one to set a daily limit for this medication.';
     return h('div', { style: { gridColumn: '1 / -1', display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '12.5px', fontWeight: '700', color: '#8C5900', background: '#FBEBD2', border: '1.5px solid #C77800', borderRadius: '11px', padding: '10px 11px', lineHeight: '1.4' } },
       h('span', { 'aria-hidden': 'true', style: { flexShrink: '0', width: '18px', height: '18px', borderRadius: '50%', background: '#C77800', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '12px', marginTop: '1px' } }, '!'),
-      h('span', null, 'Dosage options don’t include ' + missingWord + ' yet — this limit won’t work until they do.'));
+      h('span', null, 'Dosage options don’t include ' + missingWord + ' yet' + tail));
   }
+  if (!dailyLimit) return null; // unlocked and ready, but no limit set -- nothing to preview yet
   const unitWord = unit === 'mg' ? 'mg' : (unit === 'pills' ? (dailyLimit === 1 ? 'pill' : 'pills') : (dailyLimit === 1 ? 'application' : 'applications'));
   const verb = unit === 'mg' ? 'is' : 'are';
   return h('div', { style: { gridColumn: '1 / -1', fontSize: '12px', fontWeight: '600', color: '#7A6E76' } },
@@ -3974,7 +4076,7 @@ function saveMedicationEditor() {
   // just sits on "Available" forever, which looked broken (Owner bug report: Zofran/Iron/Compazine
   // stayed "Available" right after being logged). A gap-timer medication now requires an actual
   // gap value before it can be saved.
-  if (type === 'gap' && gapH <= 0) { setToast('Enter a minimum gap in hours (e.g. 4) before saving an \u201cas needed\u201d medication \u2014 without one, the card never locks after logging.'); return; }
+  if (type === 'gap' && gapH <= 0) { setToast('Enter a minimum gap in hours (for example, 4) before saving an \u201cas needed\u201d medication \u2014 without one, the card never locks after logging.'); return; }
   let scheduleDays;
   if (form.scheduleMode === 'asneeded') {
     scheduleDays = { mode: 'asneeded' };
@@ -3996,7 +4098,7 @@ function saveMedicationEditor() {
     // "applications"-unit medication (patch/spray/cream) gets its own correct example text instead
     // of being told to add "a pill count."
     if (!carries) {
-      const addWhat = unit === 'mg' ? 'an mg amount to Dosage options (e.g. "500 mg")' : unit === 'pills' ? 'a pill count to Dosage options (e.g. "1 pill")' : 'an application count to Dosage options (e.g. "1 application")';
+      const addWhat = unit === 'mg' ? 'an mg amount to Dosage options (such as "500 mg")' : unit === 'pills' ? 'a pill count to Dosage options (such as "1 pill")' : 'an application count to Dosage options (such as "1 application")';
       setToast('Add ' + addWhat + ', or change Limit unit to match, before saving this daily limit.');
       return;
     }
@@ -4275,6 +4377,14 @@ function renderMedicationEditor() {
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: '11px' } },
       h('label', null, fieldLabel('Medication name'), formInput({ value: form.name, placeholder: 'Medication name', onInput: event => updateMedicationForm('name', event.target.value) })),
       h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, placeholder: 'Generic name', onInput: event => updateMedicationForm('sub', event.target.value) })),
+      // v38 (Aaron-requested reorder): Schedule type now sits right under Generic name instead of
+      // after Daily limit/Limit unit, several fields away.
+      h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }) }, h('option', { value: 'gap' }, 'As needed \u2014 wait a set number of hours between doses'), h('option', { value: 'win' }, 'Scheduled \u2014 remind me at specific times'))),
+      // v38 (Aaron-requested reorder): Limit unit now comes BEFORE Dosage options, so the unit a
+      // daily limit will be measured in is established first -- Aaron: "eliminates the need for the
+      // actual 'MG'" i.e. the caregiver picks pills/applications/mg up front instead of writing
+      // dosage amounts not yet knowing which unit they need to match.
+      h('label', null, fieldLabel('Limit unit', 'What a daily limit below (optional) will count.'), h('select', { id: 'med-daily-limit-unit', value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' }) }, h('option', { value: 'mg' }, 'Total milligrams (mg)'), h('option', { value: 'pills' }, 'Number of pills / doses'), h('option', { value: 'applications' }, 'Number of applications'))),
       // v25 audit fix (Finding 1): these three fields drive dailyLimitPreview() below, and the
       // preview is supposed to update live as the user types/picks -- but this renderer does a full
       // root.innerHTML rebuild on every setState() (see render()), so passing rerender:true here
@@ -4294,9 +4404,22 @@ function renderMedicationEditor() {
       // inputs, and every consumer of this value already goes through Number(...) parsing (see
       // dailyLimitPreview / saveMedicationEditor), never the type="number"-only valueAsNumber, so
       // this is a purely additive fix with no other behavior change.
-      h('label', null, fieldLabel('Daily limit', 'Blocks logging more doses once this many are reached for the day. Leave blank for no limit.'), formInput({ id: 'med-daily-limit', type: 'text', inputMode: 'decimal', value: String(form.dailyLimit), placeholder: 'No limit', onInput: event => updateMedicationForm('dailyLimit', event.target.value, 'debounced') })),
-      h('label', null, fieldLabel('Limit unit', 'What the number above counts.'), h('select', { id: 'med-daily-limit-unit', value: form.dailyLimitUnit, onChange: event => updateMedicationForm('dailyLimitUnit', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' }) }, h('option', { value: 'mg' }, 'Total milligrams (mg)'), h('option', { value: 'pills' }, 'Number of pills / doses'), h('option', { value: 'applications' }, 'Number of applications'))),
-      h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }) }, h('option', { value: 'gap' }, 'As needed \u2014 wait a set number of hours between doses'), h('option', { value: 'win' }, 'Scheduled \u2014 remind me at specific times'))),
+      // v38 (Aaron-requested): disabled until Dosage options actually carries the picked Limit unit
+      // -- previously this field was always editable and a mismatch only surfaced as a warning (or,
+      // if missed, a blocked Save) after the caregiver had already typed a number. Aaron: "you should
+      // not be able to progress to 'Daily Limit' if it's not indicated correctly."
+      (() => {
+        const limitReady = dosageOptionsCarryLimitUnit(form);
+        return h('label', null,
+          fieldLabel('Daily limit', limitReady ? 'Blocks logging more doses once this many are reached for the day. Leave blank for no limit.' : 'Add a matching amount to Dosage options above first.'),
+          // h() sets any passed attribute via setAttribute(k, v) unless specially handled -- and
+          // setAttribute('disabled', false) still sets the attribute (its string value doesn't
+          // matter to the browser, only its presence), which would leave this permanently disabled.
+          // Must be omitted entirely when not disabled, matching the same fix already applied to the
+          // medication-reorder arrow buttons elsewhere in this file.
+          formInput({ id: 'med-daily-limit', type: 'text', inputMode: 'decimal', ...(limitReady ? {} : { disabled: true }), value: String(form.dailyLimit), placeholder: limitReady ? 'No limit' : 'Locked', onInput: event => updateMedicationForm('dailyLimit', event.target.value, 'debounced'), style: limitReady ? {} : { opacity: '0.55', cursor: 'not-allowed' } })
+        );
+      })(),
       h('div', { style: { gridColumn: '1 / -1' } },
         fieldLabel('Days taken', 'Not every medication is daily \u2014 pick which days this one is given.'),
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
@@ -4304,7 +4427,7 @@ function renderMedicationEditor() {
             h('option', { value: 'daily' }, 'Every day'),
             h('option', { value: 'asneeded' }, form.type === 'win' ? 'As needed \u2014 don\u2019t flag missed doses' : 'No set days'),
             h('option', { value: 'weekly' }, 'Specific days of the week'),
-            h('option', { value: 'interval' }, 'Every few days (e.g. every other day)')
+            h('option', { value: 'interval' }, 'Every few days (for example, every other day)')
           ),
           form.scheduleMode === 'interval' ? h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
             h('span', { style: { fontSize: '12.5px', color: '#554A52', fontWeight: '700' } }, 'every'),
@@ -4355,7 +4478,7 @@ function renderMedicationEditor() {
               // rather than a dropdown (Aaron's alternate suggestion) since a window's label is
               // whatever the caregiver wants to call it ("With breakfast", "Post-chemo") -- a fixed
               // list of options couldn't cover that.
-              formInput({ id: 'med-window-name-' + i, value: row.name, placeholder: 'e.g. Morning, With breakfast', onInput: event => updateWindowRow(i, 'name', event.target.value) }),
+              formInput({ id: 'med-window-name-' + i, value: row.name, placeholder: 'Morning, With breakfast', onInput: event => updateWindowRow(i, 'name', event.target.value) }),
               // Live plain-language preview -- recomputed on every change, no separate preview step,
               // same interaction as the treatment-window "Active window: N days..." summary below.
               // v25 PM-gate fix (DEV_BRIEF_v25.md section 3d, PM_GATE_v25.md Finding PM-1): this used
@@ -4388,8 +4511,12 @@ function renderMedicationEditor() {
             ),
             formInput({ type: 'number', min: '0', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'No extra gap', onInput: event => updateMedicationForm('gapH', event.target.value) })
           )
-        : h('label', null, fieldLabel('Hours between doses', 'How long to wait after the last dose before this can be logged again. Required for an as-needed medication.'), formInput({ type: 'number', min: '0.5', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'e.g. 4', onInput: event => updateMedicationForm('gapH', event.target.value) })),
-      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Notes'), h('textarea', { placeholder: 'e.g. Take with food \u00b7 From Dr. Kim \u00b7 Crush if needed', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, form.note))
+        // v38 (Aaron-requested): placeholder now reads "For example, 4 hours" instead of the bare
+        // "e.g. 4" -- Aaron: "I don't even know what 'e.g' means," and the old placeholder didn't
+        // even repeat the unit the label states, which mattered more once it was the only on-field
+        // hint of what a plain number here means.
+        : h('label', null, fieldLabel('Hours between doses', 'How long to wait after the last dose before this can be logged again. Required for an as-needed medication.'), formInput({ type: 'number', min: '0.5', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'For example, 4 hours', onInput: event => updateMedicationForm('gapH', event.target.value) })),
+      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Notes'), h('textarea', { placeholder: 'Take with food \u00b7 From Dr. Kim \u00b7 Crush if needed', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(212,104,138,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, form.note))
     ),
     h('div', { style: { marginTop: '12px' } },
       fieldLabel('Home screen placement', 'Where this medication\u2019s logging buttons live.'),
@@ -4841,7 +4968,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v36';
+const APP_VERSION = 'app-v37';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -4953,18 +5080,39 @@ function renderSettings(now) {
     // Home screen & daily check-ins
     h('section', { style: secStyle },
       secLabel('Home screen'),
-      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, 'Choose what appears on Home. Daily check-ins ask once a day and escalate if unanswered \u2014 turn on only what the care team wants tracked.'),
+      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, 'Choose what appears on Home. Daily check-ins ask once, calmly, about today \u2014 turn on only what the care team wants tracked.'),
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '10px' } },
         toggle('showTemperature', 'Temperature card', 'Quick temperature logging on Home.'),
         toggle('showWeight', 'Weight card', 'Quick weight logging on Home.'),
         toggle('showBloodPressure', 'Blood pressure card', 'Quick BP logging on Home; readings appear in Reports.'),
         !isRadiationOnly() ? toggle('showChemoSchedule', 'Treatment schedule card', 'Countdown and reminders around treatment dates.') : null,
         hasRadiation() ? toggle('showRadiationSessions', 'Radiation sessions card', 'Session counter and quick logging on Home.') : null,
-        toggle('dailyWeightCheckin', 'Daily weight check-in', 'Reminds every day until a weight is logged.'),
-        toggle('bowelCheckin', 'Bowel movement check-in', 'Asks about the previous day, once a day.'),
-        toggle('appetiteCheckin', 'Appetite check-in', 'Asks about the previous day, once a day.'),
         cycleAllowed() ? toggle('cycleTracking', 'Menstrual cycle tracking', 'Period banner on Home and the Cycle report.') : null
-      )
+      ),
+      // Design review fix (v37): the check-in toggles used to sit in the same grid as the card-
+      // visibility toggles above with no visual separation -- e.g. "Weight card" and "Weight in
+      // daily check-in" could land diagonally adjacent on desktop, reading as one confusing group.
+      // Split into its own labeled sub-section instead.
+      h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A2879A', marginTop: '16px' } }, 'Daily check-in'),
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '8px' } },
+        toggle('dailyWeightCheckin', 'Weight in daily check-in', 'Include a weight question in the daily check-in below.'),
+        toggle('bowelCheckin', 'Bowel movement in daily check-in', 'Include a bowel movement question in the daily check-in below.'),
+        toggle('appetiteCheckin', 'Appetite in daily check-in', 'Include an appetite question in the daily check-in below.')
+      ),
+      // app-v37: one shared reminder time for the daily check-in (Appetite/Bowel/Weight above, plus
+      // a free-text Notes field), replacing three separate banners that used to nag with rising
+      // urgency about YESTERDAY until answered. Only shown once at least one metric is opted in —
+      // no point offering a reminder time for a check-in that would open completely empty.
+      checkinEnabledToday() ? h('div', { style: { marginTop: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' } },
+        h('div', null,
+          h('div', { style: { fontSize: '12.5px', fontWeight: '800', color: '#5F4A56' } }, 'Daily check-in reminder time'),
+          h('div', { style: { fontSize: '12px', color: '#745D69', marginTop: '1px', fontWeight: '600' } }, 'One reminder a day, about today — not a running nag about yesterday. Between 8 AM and 10 PM only.')
+        ),
+        // Audit fix (v37, F3): min/max is a UI-level nudge toward a reasonable hour (enforcement
+        // that actually blocks an overnight notification firing lives in buildReminderPlan's
+        // quiet-hours check, since min/max on a native time input isn't reliably enforced everywhere).
+        h('input', { type: 'time', min: '08:00', max: '21:59', value: getDailyCheckinTime(), onInput: (e) => setDailyCheckinTime(e.target.value), className: 'mono', style: { minHeight: '44px', border: '1px solid rgba(212,104,138,0.2)', borderRadius: '11px', padding: '0 12px', fontSize: '14px', background: '#FFFFFF', color: '#2A2127', colorScheme: 'light' } })
+      ) : null
     ),
     // Units
     h('section', { style: secStyle },
@@ -5072,19 +5220,48 @@ function buildExportRows() {
     return [d.toLocaleDateString('en-CA'), fmtTime(e.ts), nameOf(e.medId), detail, note];
   });
 }
-function downloadEntriesCSV() {
+// v37 fix (Aaron, 2026-08-06): "says 2 CSV entries exported, but where does that go... no pop up
+// or anything saying where that file lives." Root cause -- a plain Blob + <a download> click gives
+// zero visible confirmation on a phone: Android Chrome silently drops it into Downloads with no
+// on-screen indicator unless the user opens the browser's own downloads tray, and an installed
+// iOS/Android PWA (standalone mode, no browser chrome at all) can no-op the click entirely with no
+// error and no fallback UI. The fix is to prefer the Web Share API's file-sharing path when the
+// platform supports it: navigator.share() pops the OS share sheet, which is an unmissable, visible
+// answer to "where does that go" (Files, Drive, Mail, AirDrop, etc., user's choice). Desktop
+// browsers generally don't support sharing files, so they fall back to the original blob-download
+// link, with clearer toast copy pointing at the Downloads folder instead of leaving it unsaid.
+async function downloadEntriesCSV() {
   const rows = buildExportRows();
   if (!rows.length) { setToast('Nothing to export yet — log something first'); return; }
   const header = ['Date', 'Time', 'Type', 'Detail', 'Note'];
   const csv = [header, ...rows].map(r => r.map(csvField).join(',')).join('\r\n');
+  const filename = 'chemowell-' + ((CONFIG.patientName || 'export').replace(/[^a-z0-9]/gi, '-').toLowerCase()) + '-' + new Date(simNow()).toLocaleDateString('en-CA') + '.csv';
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }); // BOM so Excel opens UTF-8 correctly
   try {
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }); // BOM so Excel opens UTF-8 correctly
+    if (navigator.share && navigator.canShare) {
+      const file = new File([blob], filename, { type: 'text/csv' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+        setToast(rows.length + ' entries exported — pick where to save it');
+        return;
+      }
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return; // user closed the share sheet without picking anything -- not a failure
+    // Any other share failure (e.g. a flaky platform implementation) falls through to the classic
+    // download link below rather than leaving the export stuck.
+  }
+  try {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'chemowell-' + ((CONFIG.patientName || 'export').replace(/[^a-z0-9]/gi, '-').toLowerCase()) + '-' + new Date(simNow()).toLocaleDateString('en-CA') + '.csv';
+    a.download = filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    setToast(rows.length + ' entries exported to CSV');
+    // Design review fix (v37): the fuller "exported to CSV — check your Downloads folder" wording
+    // wrapped to 4 lines in the toast's 340px cap on mobile, visually overlapping the section below
+    // it -- shortened (still wraps to a few lines on narrow phones, just no longer overlapping
+    // content below it) rather than resizing the shared toast component used everywhere else.
+    setToast(rows.length + ' entries exported — check Downloads');
   } catch (e) { setToast('Export failed on this device — try the printable report instead'); }
 }
 function escHtml(s) { return String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -6013,6 +6190,7 @@ function lnPlugin() {
 
 const NOTIF_CHANNEL_DOSE = 'chemowell_dose_reminders';
 const NOTIF_CHANNEL_APPT = 'chemowell_appointment_reminders';
+const NOTIF_CHANNEL_CHECKIN = 'chemowell_daily_checkin';
 const NOTIF_HORIZON_MS = 72 * 3600 * 1000;      // how far ahead the plan looks
 // A reminder scheduled less than this far in the future is too close to "now" to trust the OS to
 // receive, register, and fire it in time -- arming it anyway risks a race where the alarm is set
@@ -6084,6 +6262,29 @@ function buildReminderPlan(nowTs, meds, entries, appts, profileId) {
         });
       });
     });
+    // Daily check-in reminder: one per day within the horizon, at the caregiver-chosen time, only
+    // while at least one of Appetite/Bowel/Weight check-in toggles is on. Skipped once that day's
+    // check-in is already fully done (covers "today" if it's already been filled in before the
+    // reminder time arrives) -- future days in the horizon never have entries yet, so they always
+    // get scheduled, which is exactly the daily-reminder behavior Aaron asked for.
+    // Audit fix (v37, F3): same quiet-hours gate dose reminders already apply (22:00-08:00) --
+    // originally missing here, so a caregiver picking e.g. 2 AM (the time input had no min/max) would
+    // have gotten scheduled for it. This is meant to be a calm, once-a-day nudge, never a middle-of-
+    // the-night wake-up -- unlike a dose reminder, there's no medical reason to ever override this.
+    // The Settings time input also gets min/max clamps as a UI-level nudge; this is the enforcement.
+    const checkinHour = timeValueToDecimalHour(getDailyCheckinTime());
+    if (checkinEnabledToday() && !checkinDoneForDay(d0) && checkinHour >= 8 && checkinHour < 22) {
+      const at = hourTs(d0, checkinHour);
+      if (at >= earliest && at <= horizonEnd) {
+        out.push({
+          tag: 'checkin-' + profileId + '-' + d0, at: at,
+          title: 'Daily check-in',
+          body: 'A couple quick questions about today — takes under a minute.',
+          channelId: NOTIF_CHANNEL_CHECKIN,
+          extra: { kind: 'checkin', profileId: profileId, dayTs: d0 }
+        });
+      }
+    }
   }
 
   // Appointments. No quiet-hours filter, deliberately: a 6 AM lab draw with a "1 hour before"
@@ -6134,6 +6335,7 @@ async function ensureNotifChannels(ln) {
   if (notifChannelsReady) return;
   await ln.createChannel({ id: NOTIF_CHANNEL_DOSE, name: 'Dose reminders', description: 'Alerts when a medication dose window opens', importance: 4, visibility: 1 });
   await ln.createChannel({ id: NOTIF_CHANNEL_APPT, name: 'Appointment reminders', description: 'Alerts before an upcoming appointment', importance: 3, visibility: 1 });
+  await ln.createChannel({ id: NOTIF_CHANNEL_CHECKIN, name: 'Daily check-in', description: 'A reminder to fill out the daily check-in', importance: 3, visibility: 1 });
   notifChannelsReady = true;
 }
 
@@ -6370,7 +6572,7 @@ setInterval(() => {
   // Schedule windows -- was being torn down and rebuilt every single second while it sat open, which
   // read as the icon "flashing"/disappearing. infoModal (the help-icon's own explanation sheet) gets
   // the same guard for the same reason -- it's a bottom sheet exactly like plans/appt, not a live view.
-  if (!state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.noteModal && !state.medEditor && !state.infoModal && !isEditing) render();
+  if (!state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.noteModal && !state.checkinModal && !state.medEditor && !state.infoModal && !isEditing) render();
   checkNotifications();
   checkAppointmentReminders();
   // v35 backstop. Everything that changes the plan already calls markNotifDirty(), but a backstop

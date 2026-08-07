@@ -7,6 +7,9 @@ node_modules/
 verify_*.mjs
 audit_*.mjs
 designer_*.mjs
+lead_auditor_*.mjs
+lead_designer_*.mjs
+outputs/**/*.mjs
 
 # Native Android project is generated fresh by CI (npx cap add android) from package.json +
 # capacitor.config.ts + app-icons/ — not committed, so it never drifts from the pinned Capacitor
