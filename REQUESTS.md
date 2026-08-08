@@ -34,6 +34,22 @@ new session the way a committed file does; see TEAM.md's opening note.
   storage, so this needs an actual backend/sync layer. Gets the full Quality Chain when
   started, not solo Lead Developer work, given the stakes (real data, real risk of
   conflicts/loss).
+- [ ] **Permanent-delete screen keeps refreshing/flickering, and "Erase" still needs the
+  second "this is permanent, can't be undone" confirmation** — added 2026-08-08. Aaron: "when
+  trying to permanently delete things, the screen keeps refreshing constantly. when I do click
+  erase, I mentioned before there should be another pop up to say that this is permanent and
+  can't be undone." Note: a two-step warning was already shipped for "Reset everything" in Account
+  (app-v40, marked Completed below) — this report suggests either a different "Erase" control
+  that didn't get the same treatment, or a regression/gap in that flow. Needs investigation before
+  a fix, not assumed to be the same already-shipped work.
+- [ ] **How does a Plus/Pro caregiver actually back up and move to a new phone?** — added
+  2026-08-08. Aaron: "if they have the higher tier plans, we need to figure out how would they
+  backup to move to another phone if it's all on one device and they aren't logging in." Real
+  open question: the app has no accounts/login (on-device only), and Plus's advertised "backup &
+  transfer to a new phone" benefit is currently marked "(coming in beta)" with no mechanism built
+  yet. Needs a concrete, no-login design (most likely a manual export/import file the caregiver
+  saves and restores from, distinct from Pro's live multi-device sync work above) before Plus's
+  pricing-card promise is accurate.
 - [ ] **Redeem-code section under Account** — added 2026-08-07. A field where Aaron can hand
   someone (a caregiver, a tester) a code that unlocks a specific plan tier. Aaron explicitly
   said this "may be for later" — kept open and not scheduled; revisit when he says go.
@@ -73,9 +89,57 @@ new session the way a committed file does; see TEAM.md's opening note.
   safety-relevant advice to cancer patients on complex regimens) rather than something to
   quietly add to a feature list. Revisit only if Aaron decides he wants that exposure and
   commits to sourcing it properly.
+- [ ] **Expand Limit Unit list to be universal** — added 2026-08-08. Aaron: "this should be
+  catered to all medications so it's universal," not just mg/pills/applications. Needs mcg, mL,
+  patches, puffs, drops, sprays, IU/units, injections, suppositories added to the medication
+  editor's Limit Unit dropdown. Touches medication daily-limit-enforcement logic at 6+ call sites
+  (`parseDoseOptions`, `dosageOptionsCarryLimitUnit`, `dailyLimitPreview`, plus every place that
+  reads `med.ceilingUnit`) — medication-safety logic, not a cosmetic dropdown change, so this gets
+  its own careful, fully-tested pass rather than being bundled into a simultaneous multi-item
+  edit. A likely pre-existing CSV export bug was found while investigating this (redundant/wrong
+  "N pill(s)" text appended in `buildExportRows()` regardless of actual unit) — will fix as part
+  of the same pass since expanding units makes it more visibly wrong.
+- [ ] **Reword "Treatment day" section to be adaptive** — added 2026-08-08. Aaron: "treatment day
+  can be reworded bc if someone chooses other and they don't have a major illness, treatment day
+  might be confusing... I don't have treatment days aside dr visits." Plan: keep the feature and
+  its current copy for chemo/radiation treatment types, use more general language when the
+  onboarding treatment type is "Other."
+- [ ] **Move "Minimum gap between doses" field, add "(hours)" to its label** — added 2026-08-08.
+  Currently sits near the end of the medication editor, after Schedule windows; reorder it nearer
+  Dosage options where the related dosing questions are, and make the unit explicit in the label.
+- [ ] **Add an on-screen explainer to the In-Patient tab** — added 2026-08-08. Confirmed via code
+  read that this screen currently has zero on-screen explanation (only a separate FAQ entry
+  explains it) — add a "?" helpIcon directly on the tab, same pattern used elsewhere.
+- [ ] **Lighten the Sunset Glass color palette** — added 2026-08-08. Aaron reports the current
+  colors are too dark/hard to read.
+- [ ] **Restructure Pro tier bullets** — added 2026-08-08. Aaron: "there still needs to be a real
+  gap between plus and pro. i'm still not seeing it. still need to remove priority access to new
+  features unless you tell me what you envision with that," plus his own proposed lead order
+  ("highest tier should lead with all the exports, back up and then last bullet point should be
+  the unlimited profiles"). Needs: reordered bullets (exports/backup/insights lead, unlimited
+  profiles last), a real differentiation from Plus's existing "backup & transfer to a new phone,"
+  and a decision on "priority access to new features" (recommend dropping it — no concrete
+  deliverable exists to back the claim — unless Aaron has a specific feature in mind for it).
+- [ ] **Build the 3 workshopped Pro-tier features (confirmed "build it" 2026-08-08)** — the
+  comprehensive export (bundling Appointments + Notes with the existing entries CSV), chemo/
+  treatment trend insights, and the MedlinePlus-sourced med-info lookup link (see the item above)
+  — queued behind the sync architecture item above, per Aaron's own priority order.
 
 ## Completed
 
+- [x] **Medication dose reminders silently blocked 10 PM–8 AM ("quiet hours")** — found live
+  2026-08-08 via Aaron's real APK test (10:30 PM med, app closed, no notification). Root cause:
+  a "quiet hours" rule silently dropped any dose reminder in that window on both the in-app and
+  closed-app/native paths, with no on-screen warning. Per Aaron's decision, quiet hours removed
+  for dose reminders entirely (now fire any hour, matching how appointment reminders already
+  behave); the daily check-in's own separate 8 AM–10 PM window is untouched. Verified live: a
+  10:31 PM and a 3:01 AM dose window both correctly fire a reminder through the real notification
+  pipeline. Shipped app-v41, verified live.
+- [x] **Dosage options comma explainer** — added a "?" explaining that the comma between multiple
+  strengths (e.g. "500 mg, 1000 mg") lists different strengths of the same medication, each its
+  own tap-to-log button sharing one schedule and one daily limit. Aaron confirmed multiple
+  strengths is intentional ("it was always my intent to have different strengths") — only the
+  wording needed fixing. Shipped app-v41, verified live.
 - [x] **Sunset Glass color palette** across the app, replacing the prior brand colors — added
   and shipped 2026-08-07 (app-v40), verified live.
 - [x] **Active tab highlight (Home/Meds/etc.) in light green** — added and shipped 2026-08-07

@@ -4411,7 +4411,18 @@ function renderMedicationEditor() {
       // (needed for the preview to actually refresh) would otherwise destroy and recreate the input
       // out from under the user's cursor on every keystroke. Stable ids let render() find the same
       // logical field again after rebuild and restore focus + cursor position onto it.
-      h('label', null, fieldLabel('Dosage options', 'Separate choices with commas.'), formInput({ id: 'med-doses-text', value: form.dosesText, placeholder: '500 mg, 1000 mg', onInput: event => updateMedicationForm('dosesText', event.target.value, 'debounced') })),
+      // v41 (Aaron-requested): the comma between multiple dosage strengths ("500 mg, 1000 mg")
+      // read as confusing without explanation -- a "?" (same helpIcon pattern already used for
+      // Schedule windows / Minimum gap) spells out what the comma means and what happens with
+      // each strength listed. Aaron confirmed multiple strengths is intentional and should stay:
+      // "it was always my intent to have different strengths."
+      h('label', null,
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '2px', marginBottom: '2px' } },
+          fieldLabel('Dosage options', 'Separate choices with commas.'),
+          helpIcon('Dosage options', 'List every strength or amount this medication comes in, separated by commas — for example "500 mg, 1000 mg" for two pill strengths, or "1 patch, 2 patches" for a patch medication.\n\nEach one becomes its own tap-to-log button on Home, so whoever is logging picks whichever strength was actually taken that time. They all share the one reminder schedule and one daily limit set below — this field only lists the different amounts, not different schedules or different limits.')
+        ),
+        formInput({ id: 'med-doses-text', value: form.dosesText, placeholder: '500 mg, 1000 mg', onInput: event => updateMedicationForm('dosesText', event.target.value, 'debounced') })
+      ),
       // v26 (Aaron-requested): this warning explains Dosage options, so it now renders right under
       // that field instead of after Schedule type, several fields away from what it's about.
       dailyLimitPreview(form),
@@ -5059,7 +5070,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v40';
+const APP_VERSION = 'app-v41';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -6181,7 +6192,15 @@ function dueRemindersAt(nowDate) {
   const h = nowDate.getHours(), m = nowDate.getMinutes();
   const d0 = dayStart(nowTs);
   const due = [];
-  if (h >= 22 || h < 8) return due; // quiet hours: no notifications 10 PM-8 AM
+  // v42 (Aaron-requested, 2026-08-08): dose reminders used to go silent 10 PM-8 AM ("quiet
+  // hours"), with no warning anywhere that a chosen time would never fire -- found via a live
+  // APK test where a 10:30 PM dose never notified. Appointment reminders were always deliberately
+  // exempt from this same gate (see buildReminderPlan below), on the reasoning that a caregiver
+  // needs to be woken for a time-sensitive appointment; a medication dose is at least as
+  // time-sensitive, so the inconsistency is removed rather than papered over with a warning.
+  // Dose reminders now fire any hour, same as appointments. The daily check-in nudge (a
+  // non-critical, once-a-day prompt, not a medication safety mechanism) intentionally keeps its
+  // own separate 8 AM-10 PM window further down in this file.
   state.meds.filter(med => med.alerts && med.windows && med.windows.length).forEach(med => {
     if (med.paused) return; // v20: don't remind for a currently-paused medication
     if (!medScheduledOn(med, nowTs)) return; // off-day for this medication's own schedule
@@ -6368,11 +6387,9 @@ function buildReminderPlan(nowTs, meds, entries, appts, profileId) {
     (meds || []).forEach(med => {
       if (!medRemindersEnabledOn(med, d0)) return;
       (med.windows || []).forEach(w => {
-        // Quiet hours: dueRemindersAt() checks the clock at fire time (h>=22 || h<8); the
-        // pre-scheduling equivalent is "does this window OPEN during quiet hours", since a window's
-        // start hour is the only moment it would ever have fired reactively.
-        const startH = Math.trunc(w.start);
-        if (startH >= 22 || startH < 8) return;
+        // v42 (Aaron-requested, 2026-08-08): quiet-hours gate removed here to match the reactive
+        // path above -- dose reminders now arm at any hour, same as appointment reminders always
+        // have. See the v42 comment in dueRemindersAt() for the full reasoning.
         const at = hourTs(d0, w.start);
         if (at < earliest || at > horizonEnd) return;
         if (!medWindowDueAt(med, d0, w, entries)) return; // already logged in this window
