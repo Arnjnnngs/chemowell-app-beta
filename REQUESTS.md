@@ -99,14 +99,6 @@ new session the way a committed file does; see TEAM.md's opening note.
   edit. A likely pre-existing CSV export bug was found while investigating this (redundant/wrong
   "N pill(s)" text appended in `buildExportRows()` regardless of actual unit) — will fix as part
   of the same pass since expanding units makes it more visibly wrong.
-- [ ] **Reword "Treatment day" section to be adaptive** — added 2026-08-08. Aaron: "treatment day
-  can be reworded bc if someone chooses other and they don't have a major illness, treatment day
-  might be confusing... I don't have treatment days aside dr visits." Plan: keep the feature and
-  its current copy for chemo/radiation treatment types, use more general language when the
-  onboarding treatment type is "Other."
-- [ ] **Move "Minimum gap between doses" field, add "(hours)" to its label** — added 2026-08-08.
-  Currently sits near the end of the medication editor, after Schedule windows; reorder it nearer
-  Dosage options where the related dosing questions are, and make the unit explicit in the label.
 - [ ] **Add an on-screen explainer to the In-Patient tab** — added 2026-08-08. Confirmed via code
   read that this screen currently has zero on-screen explanation (only a separate FAQ entry
   explains it) — add a "?" helpIcon directly on the tab, same pattern used elsewhere.
@@ -127,6 +119,19 @@ new session the way a committed file does; see TEAM.md's opening note.
 
 ## Completed
 
+- [x] **Reworded "Treatment day" section to be adaptive for "Other" treatment type** — Aaron:
+  "treatment day can be reworded bc if someone chooses other and they don't have a major
+  illness, treatment day might be confusing... I don't have treatment days aside dr visits."
+  Every user-facing "treatment day" string (medication editor's availability section, Home
+  card captions, the treatment-plan banner, the FAQ) now reads as "your date" for an "Other"
+  profile; chemo and radiation profiles keep the exact original wording, byte-for-byte —
+  verified both variants live with a real profile of each type, plus confirmed no regression
+  in the unchanged chemo/radiation copy. Shipped app-v42, verified live.
+- [x] **Moved "Minimum gap between doses" field, added "(hours)" to its label** — was near the
+  end of the medication editor, after Schedule windows; now sits right after Dosage options
+  with the other dosing questions, and the scheduled-medication variant's label now reads
+  "Minimum gap between doses (hours, optional)." Verified live for both as-needed and scheduled
+  medication types. Shipped app-v42, verified live.
 - [x] **Medication dose reminders silently blocked 10 PM–8 AM ("quiet hours")** — found live
   2026-08-08 via Aaron's real APK test (10:30 PM med, app closed, no notification). Root cause:
   a "quiet hours" rule silently dropped any dose reminder in that window on both the in-app and

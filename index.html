@@ -1481,6 +1481,13 @@ function isRadiationOnly() { return treatmentType() === 'radiation'; }
 // behavior (toggle available) so existing users' cycle history never vanishes before they answer.
 function cycleAllowed() { return profileSex() !== 'male'; }
 function needsProfileCompletion() { const p = getPrefsDB(); return !!(p.patientName || '').trim() && (!p.sex || !p.treatmentType); }
+// v41 (Aaron-requested): "treatment day" reads as chemo/radiation-specific and confused Aaron
+// himself picturing his own non-chemo medications ("I could use this app for my own meds...but
+// I don't have treatment days aside dr visits"). For an "Other" treatment type, the handful of
+// user-facing "treatment day" strings below swap to more general "your date" language; chemo and
+// radiation profiles keep the exact original wording, since "treatment day" is accurate and
+// familiar for them and this is a pure copy change with zero behavior difference either way.
+function isOtherTreatmentType() { return treatmentType() === 'other'; }
 function homePref(key) {
   const prefs = getPrefsDB();
   const saved = prefs.homeCards || {};
@@ -1801,7 +1808,7 @@ const FAQ_ITEMS = [
   { id: 'switch-profile', q: 'How do I switch or add a profile?', a: 'Open the menu (the three lines, top left) and tap your name at the top, or go to Settings — Profiles. Each profile keeps its own medications and history completely separate on this device.' },
   { id: 'caregiver-multi', q: 'I’m caring for more than one person — can I track them all?', a: 'Yes — give each person their own profile, and their medications and history stay completely separate. To add or switch, open the menu (the three lines, top left) and tap the name at the top, or go to Settings — Profiles. The Free plan includes 1 profile; Plus (one-time purchase) allows up to 3; Pro allows unlimited profiles.' },
   { id: 'missed-dose', q: 'What happens if I miss a dose?', a: 'Each scheduled reminder stays open — not flagged as missed — until the next reminder for that medication that day, or until midnight if it was the last one, giving real room to log it a little late. Once that cutoff passes with nothing logged, it’s flagged missed and shows up in History, where you can mark it Took later, Skipped, or Clear it if it was logged some other way.' },
-  { id: 'treatment-date', q: 'How do I set a treatment date?', a: 'On Home, under Treatment schedule, tap Pick a date. Medications set to "Treatment-day only" or "Excluded near treatment day" use this date to know when to show or hide themselves.' },
+  { id: 'treatment-date', q: 'How do I set a treatment date?', a: 'On Home, under Treatment schedule, tap Pick a date. A medication set to be only available, or specifically excluded, near that date (see its editor) uses this date to know when to show or hide itself.' },
   { id: 'weight-reason', q: 'How do I note why weight changed?', a: 'When you log a weight, an optional Reason for change dropdown appears — Paracentesis, fluid retention, appetite changes, and more. Picking Paracentesis reveals a Liters drained field, and there’s a free-text Note too. All of it shows up in the Weight report.' },
   { id: 'calendar', q: 'How do I get a reminder for an appointment?', a: 'Open the menu and tap Calendar, then Add. Give it a title, date, and time, then choose when to be reminded — right at the time, 1 hour before, the morning of, 1 day before, or a custom lead time you set yourself. One thing to know: reminders only fire while ChemoWell is open in your browser, so they won’t reach you if your phone is locked or the tab is closed. You’ll also need to allow notifications when your browser asks.' },
   { id: 'schedule-windows', q: 'What does “Reminds at” mean on a scheduled medication?', a: 'Each row under Schedule windows is one reminder — a single time of day, not a start-and-end range. Tap the “?” next to Schedule windows in the medication editor for the full explanation of how that time relates to missed-dose tracking.' },
@@ -2312,7 +2319,7 @@ function renderGroupedMedsCard(title, meds, now) {
           return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(246,108,49,0.08)' : 'none', opacity: '0.65' } },
             h('div', { style: { flex: '1', minWidth: '0' } },
               h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name),
-              h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px' } }, med.treatmentOnly ? 'Outside its treatment-day window' : 'Excluded near treatment day')
+              h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px' } }, med.treatmentOnly ? (isOtherTreatmentType() ? 'Outside its date window' : 'Outside its treatment-day window') : (isOtherTreatmentType() ? 'Excluded near your date' : 'Excluded near treatment day'))
             )
           );
         }
@@ -3197,7 +3204,16 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   if (!isRadiationOnly() && chemoOffNow !== null && chemoOffNow >= -2 && chemoOffNow <= 1) {
     const cLabel = new Date(dayStart(nextChemoTs())).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' });
     let cTitle = '', cBody = '';
-    if (chemoOffNow === -2) { cTitle = 'Treatment on ' + cLabel; cBody = 'Treatment session is in two days. If the care team prescribed pre-treatment medications, they may need to start the day before \u2014 follow the care team\u2019s plan.'; }
+    // v41 (Aaron-requested): this banner's original copy presumes an oncology regimen ("pre-
+    // treatment medications," "the care team"), which read as confusing/inapplicable for an
+    // "Other" profile using this card for a personal doctor visit rather than chemo/radiation.
+    // Chemo/radiation profiles keep the exact original copy below, unchanged.
+    if (isOtherTreatmentType()) {
+      if (chemoOffNow === -2) { cTitle = cLabel + ' \u2014 in 2 days'; cBody = 'Your date is coming up in two days \u2014 a good time to double-check anything that needs to start beforehand.'; }
+      else if (chemoOffNow === -1) { cTitle = 'Tomorrow'; cBody = 'Your date is tomorrow.'; }
+      else if (chemoOffNow === 0) { cTitle = 'Today'; cBody = 'Today\u2019s the day \u2014 log doses and symptoms as they happen.'; }
+      else { cTitle = 'Following day'; cBody = 'Keep logging symptoms and any as-needed medications.'; }
+    } else if (chemoOffNow === -2) { cTitle = 'Treatment on ' + cLabel; cBody = 'Treatment session is in two days. If the care team prescribed pre-treatment medications, they may need to start the day before \u2014 follow the care team\u2019s plan.'; }
     else if (chemoOffNow === -1) { cTitle = 'Treatment tomorrow'; cBody = 'Treatment session is tomorrow. Follow the care team\u2019s instructions for any pre-treatment medications.'; }
     else if (chemoOffNow === 0) { cTitle = 'Treatment day'; cBody = 'Treatment day. Log doses and symptoms as they happen \u2014 the care team will want the record.'; }
     else { cTitle = 'Recovery day'; cBody = 'Recovery day. Keep logging symptoms, appetite, and any as-needed medications.'; }
@@ -3579,7 +3595,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       // this one, matching every other guard's ordering in the file.
       return h('div', { style: { background: 'rgba(124,97,86,0.06)', border: '1.5px dashed rgba(124,97,86,0.30)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
         h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name),
-        h('div', { style: { fontSize: '12px', color: '#7A6E76' } }, 'Excluded near treatment day')
+        h('div', { style: { fontSize: '12px', color: '#7A6E76' } }, isOtherTreatmentType() ? 'Excluded near your date' : 'Excluded near treatment day')
       );
     }
     if (inpatientActiveNow) {
@@ -4290,15 +4306,27 @@ const PLACEMENT_OPTIONS = [
 // -- no validation code needed to reject a contradictory combination, and no risk of the same shared
 // days-before/after fields silently meaning two different things at once. Matches the same
 // radiogroup pattern the v13 Home-placement picker already established (see PLACEMENT_OPTIONS above).
-const TREATMENT_MODE_OPTIONS = [
-  { key: 'none', label: 'Always available', helper: 'No treatment-day restriction.' },
-  { key: 'only', label: 'Only near treatment day', helper: 'Only appears on Home for a window of days around your treatment date — hidden the rest of the time.' },
-  // v24 Auditor finding: copy previously said "Hidden," but the Home card deliberately stays
-  // visible-but-inert during the excluded window (a v20 design choice so a caregiver never sees a
-  // medication silently vanish and wonders if data was lost) — the sibling "Only" mode above
-  // genuinely does hide the card, so this needed to say something different, not the same word.
-  { key: 'excluded', label: 'Excluded near treatment day', helper: 'Grayed out and can’t be logged for a window of days around your treatment date — available the rest of the time.' }
-];
+// v41: was a static array; now a function so the wording can depend on treatmentType() (see
+// isOtherTreatmentType() above) -- chemo/radiation profiles get the exact original copy below,
+// unchanged.
+function treatmentModeOptions() {
+  if (isOtherTreatmentType()) {
+    return [
+      { key: 'none', label: 'Always available', helper: 'No restriction based on your date.' },
+      { key: 'only', label: 'Only near your date', helper: 'Only appears on Home for a window of days around your date — hidden the rest of the time.' },
+      { key: 'excluded', label: 'Excluded near your date', helper: 'Grayed out and can’t be logged for a window of days around your date — available the rest of the time.' }
+    ];
+  }
+  return [
+    { key: 'none', label: 'Always available', helper: 'No treatment-day restriction.' },
+    { key: 'only', label: 'Only near treatment day', helper: 'Only appears on Home for a window of days around your treatment date — hidden the rest of the time.' },
+    // v24 Auditor finding: copy previously said "Hidden," but the Home card deliberately stays
+    // visible-but-inert during the excluded window (a v20 design choice so a caregiver never sees a
+    // medication silently vanish and wonders if data was lost) — the sibling "Only" mode above
+    // genuinely does hide the card, so this needed to say something different, not the same word.
+    { key: 'excluded', label: 'Excluded near treatment day', helper: 'Grayed out and can’t be logged for a window of days around your treatment date — available the rest of the time.' }
+  ];
+}
 function setTreatmentMode(key) {
   if (!state.medEditor) return;
   state.medEditor.form.treatmentMode = key;
@@ -4426,6 +4454,34 @@ function renderMedicationEditor() {
       // v26 (Aaron-requested): this warning explains Dosage options, so it now renders right under
       // that field instead of after Schedule type, several fields away from what it's about.
       dailyLimitPreview(form),
+      // v41 (Aaron-requested reorder): Minimum gap / Hours between doses used to sit near the end
+      // of the form, after Schedule windows, disconnected from the other dosing questions several
+      // fields above it. Moved up next to Dosage options/Daily limit, where it reads as part of the
+      // same "how much, how often" cluster instead of a stray field discovered at the bottom.
+      // v23 (Aaron-requested -- "scheduled meds still could have gap timers"): a scheduled medication
+      // can now ALSO carry an optional minimum-gap lockout on top of its time windows, so logging a
+      // dose too soon after the last one is blocked the same way it is for as-needed meds (see
+      // status()). Unlike the as-needed field, this one is optional -- 0/blank just means no extra gap.
+      // v28 (Aaron-reported): the one-line helper alone still wasn't landing as an explanation of what
+      // this does differently from the reminder windows above it -- added a "?" (same pattern as
+      // Schedule windows) with a concrete example, and reworded the label/helper to lead with "on top
+      // of the reminder times above" so the relationship to the windows is explicit up front.
+      // v41 (Aaron-requested): "(hours)" added explicitly to the label -- the as-needed version
+      // below already spells out "Hours between doses," but this scheduled-med version only said
+      // "(optional)," leaving the unit implicit.
+      scheduled
+        ? h('label', null,
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: '2px', marginBottom: '2px' } },
+              fieldLabel('Minimum gap between doses (hours, optional)', 'On top of the reminder times above -- stops a dose from being logged again too soon after the last one.'),
+              helpIcon('Minimum gap between doses', 'The reminder windows above tell this medication WHEN to remind you. This field is a separate, optional safety rule on top of that: even if a reminder window is currently open, logging is still blocked until this many hours have passed since the last dose.\n\nExample: two reminder windows at 8 AM and 10 AM, with a 6-hour minimum gap set. If the 8 AM dose is logged late, at 10:30 AM, the 10 AM window is technically open -- but logging is still blocked until 2:30 PM, since only 2 of the required 6 hours have passed.\n\nLeave this blank if you only want the reminder windows to control timing, with no extra rule on top.')
+            ),
+            formInput({ type: 'number', min: '0', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'No extra gap', onInput: event => updateMedicationForm('gapH', event.target.value) })
+          )
+        // v38 (Aaron-requested): placeholder now reads "For example, 4 hours" instead of the bare
+        // "e.g. 4" -- Aaron: "I don't even know what 'e.g' means," and the old placeholder didn't
+        // even repeat the unit the label states, which mattered more once it was the only on-field
+        // hint of what a plain number here means.
+        : h('label', null, fieldLabel('Hours between doses', 'How long to wait after the last dose before this can be logged again. Required for an as-needed medication.'), formInput({ type: 'number', min: '0.5', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'For example, 4 hours', onInput: event => updateMedicationForm('gapH', event.target.value) })),
       // v25 audit re-verify fix (Finding A): type="number" inputs throw on setSelectionRange in
       // Chrome, which the new render()-time cursor-restore logic silently swallows -- with no
       // fallback, a freshly-refocused number input's cursor resets to position 0 after every
@@ -4526,27 +4582,6 @@ function renderMedicationEditor() {
           h('button', { type: 'button', onClick: addWindowRow, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.65)', border: '1px solid #E9D8D1', color: '#554A52', fontSize: '13px', fontWeight: '800', alignSelf: 'flex-start' } }, '+ Add another time window')
         )
       ) : null,
-      // v23 (Aaron-requested -- "scheduled meds still could have gap timers"): a scheduled medication
-      // can now ALSO carry an optional minimum-gap lockout on top of its time windows, so logging a
-      // dose too soon after the last one is blocked the same way it is for as-needed meds (see
-      // status()). Unlike the as-needed field, this one is optional -- 0/blank just means no extra gap.
-      // v28 (Aaron-reported): the one-line helper alone still wasn't landing as an explanation of what
-      // this does differently from the reminder windows above it -- added a "?" (same pattern as
-      // Schedule windows) with a concrete example, and reworded the label/helper to lead with "on top
-      // of the reminder times above" so the relationship to the windows is explicit up front.
-      scheduled
-        ? h('label', null,
-            h('div', { style: { display: 'flex', alignItems: 'center', gap: '2px', marginBottom: '2px' } },
-              fieldLabel('Minimum gap between doses (optional)', 'On top of the reminder times above -- stops a dose from being logged again too soon after the last one.'),
-              helpIcon('Minimum gap between doses', 'The reminder windows above tell this medication WHEN to remind you. This field is a separate, optional safety rule on top of that: even if a reminder window is currently open, logging is still blocked until this many hours have passed since the last dose.\n\nExample: two reminder windows at 8 AM and 10 AM, with a 6-hour minimum gap set. If the 8 AM dose is logged late, at 10:30 AM, the 10 AM window is technically open -- but logging is still blocked until 2:30 PM, since only 2 of the required 6 hours have passed.\n\nLeave this blank if you only want the reminder windows to control timing, with no extra rule on top.')
-            ),
-            formInput({ type: 'number', min: '0', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'No extra gap', onInput: event => updateMedicationForm('gapH', event.target.value) })
-          )
-        // v38 (Aaron-requested): placeholder now reads "For example, 4 hours" instead of the bare
-        // "e.g. 4" -- Aaron: "I don't even know what 'e.g' means," and the old placeholder didn't
-        // even repeat the unit the label states, which mattered more once it was the only on-field
-        // hint of what a plain number here means.
-        : h('label', null, fieldLabel('Hours between doses', 'How long to wait after the last dose before this can be logged again. Required for an as-needed medication.'), formInput({ type: 'number', min: '0.5', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'For example, 4 hours', onInput: event => updateMedicationForm('gapH', event.target.value) })),
       h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Notes'), h('textarea', { placeholder: 'Take with food \u00b7 From Dr. Kim \u00b7 Crush if needed', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(246,108,49,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, form.note))
     ),
     h('div', { style: { marginTop: '12px' } },
@@ -4562,9 +4597,9 @@ function renderMedicationEditor() {
       )
     ),
     h('div', { style: { marginTop: '10px' } },
-      fieldLabel('Treatment-day availability', 'Whether this medication is only available, or specifically excluded, near your treatment date.'),
-      h('div', { role: 'radiogroup', 'aria-label': 'Treatment-day availability', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px' } },
-        ...TREATMENT_MODE_OPTIONS.map(opt => {
+      fieldLabel(isOtherTreatmentType() ? 'Availability near your date' : 'Treatment-day availability', isOtherTreatmentType() ? 'Whether this medication is only available, or specifically excluded, near your date.' : 'Whether this medication is only available, or specifically excluded, near your treatment date.'),
+      h('div', { role: 'radiogroup', 'aria-label': isOtherTreatmentType() ? 'Availability near your date' : 'Treatment-day availability', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px' } },
+        ...treatmentModeOptions().map(opt => {
           const on = (form.treatmentMode || 'none') === opt.key;
           return h('button', { type: 'button', role: 'radio', 'aria-checked': on ? 'true' : 'false', onClick: () => setTreatmentMode(opt.key), style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', width: '100%', minHeight: '44px', borderRadius: '12px', padding: '9px 12px', background: on ? 'rgba(200,83,32,0.13)' : 'rgba(255,255,255,0.48)', border: '1px solid ' + (on ? 'rgba(200,83,32,0.30)' : 'rgba(246,108,49,0.18)'), color: on ? '#A83D0F' : '#5E4337', textAlign: 'left' } },
             h('span', { style: { fontSize: '13px', fontWeight: '800' } }, (on ? '◉ ' : '○ ') + opt.label),
@@ -4579,10 +4614,14 @@ function renderMedicationEditor() {
         // fields also pass rerender:true on every keystroke) -- fixed the same way, plus a stable id
         // so render()'s cursor-restore logic can find them again after rebuild (they previously had
         // none, so they were losing focus entirely on every keystroke, not just scrambling digits).
-        h('label', null, fieldLabel('Days before treatment', 'Becomes active this many days before treatment day (0 = starts on treatment day itself).'), formInput({ id: 'med-treatment-days-before', type: 'text', inputMode: 'numeric', value: String(form.treatmentDaysBefore), onInput: event => updateMedicationForm('treatmentDaysBefore', event.target.value, true) })),
-        h('label', null, fieldLabel('Days after treatment', 'Stays active through this many days after treatment day (0 = treatment day only).'), formInput({ id: 'med-treatment-days-after', type: 'text', inputMode: 'numeric', value: String(form.treatmentDaysAfter), onInput: event => updateMedicationForm('treatmentDaysAfter', event.target.value, true) }))
+        isOtherTreatmentType()
+          ? h('label', null, fieldLabel('Days before', 'Becomes active this many days before your date (0 = starts on your date itself).'), formInput({ id: 'med-treatment-days-before', type: 'text', inputMode: 'numeric', value: String(form.treatmentDaysBefore), onInput: event => updateMedicationForm('treatmentDaysBefore', event.target.value, true) }))
+          : h('label', null, fieldLabel('Days before treatment', 'Becomes active this many days before treatment day (0 = starts on treatment day itself).'), formInput({ id: 'med-treatment-days-before', type: 'text', inputMode: 'numeric', value: String(form.treatmentDaysBefore), onInput: event => updateMedicationForm('treatmentDaysBefore', event.target.value, true) })),
+        isOtherTreatmentType()
+          ? h('label', null, fieldLabel('Days after', 'Stays active through this many days after your date (0 = your date only).'), formInput({ id: 'med-treatment-days-after', type: 'text', inputMode: 'numeric', value: String(form.treatmentDaysAfter), onInput: event => updateMedicationForm('treatmentDaysAfter', event.target.value, true) }))
+          : h('label', null, fieldLabel('Days after treatment', 'Stays active through this many days after treatment day (0 = treatment day only).'), formInput({ id: 'med-treatment-days-after', type: 'text', inputMode: 'numeric', value: String(form.treatmentDaysAfter), onInput: event => updateMedicationForm('treatmentDaysAfter', event.target.value, true) }))
       ),
-      h('div', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76', marginTop: '6px', lineHeight: '1.4' } }, (form.treatmentMode === 'excluded' ? 'Excluded window: ' : 'Active window: ') + clampTreatmentDays(form.treatmentDaysBefore) + ' day' + (clampTreatmentDays(form.treatmentDaysBefore) === 1 ? '' : 's') + ' before through ' + clampTreatmentDays(form.treatmentDaysAfter) + ' day' + (clampTreatmentDays(form.treatmentDaysAfter) === 1 ? '' : 's') + ' after treatment day.')
+      h('div', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76', marginTop: '6px', lineHeight: '1.4' } }, (form.treatmentMode === 'excluded' ? 'Excluded window: ' : 'Active window: ') + clampTreatmentDays(form.treatmentDaysBefore) + ' day' + (clampTreatmentDays(form.treatmentDaysBefore) === 1 ? '' : 's') + ' before through ' + clampTreatmentDays(form.treatmentDaysAfter) + ' day' + (clampTreatmentDays(form.treatmentDaysAfter) === 1 ? '' : 's') + (isOtherTreatmentType() ? ' after your date.' : ' after treatment day.'))
     ) : null,
     h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '15px' } },
       h('button', { onClick: () => { setState({ medEditor: null }); tourEvent('medEditor:closed'); }, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.65)', border: '1px solid #E9D8D1', color: '#554A52', fontSize: '13px', fontWeight: '800' } }, 'Discard'),
@@ -4646,11 +4685,11 @@ function renderMedicationManager(now) {
         med.groupedEvening ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(174,88,51,0.12)', color: '#8B3C1B', fontSize: '12px', fontWeight: '700' } }, 'Evening group') : null,
         med.groupedAfternoon ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(174,88,51,0.12)', color: '#8B3C1B', fontSize: '12px', fontWeight: '700' } }, 'Afternoon group') : null,
         med.scheduleDays ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(46,125,79,0.10)', color: '#2E7D4F', fontSize: '12px', fontWeight: '700' } }, scheduleDaysLabel(med)) : null,
-        med.treatmentMode === 'only' ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(192,69,59,0.10)', color: '#A15B56', fontSize: '12px', fontWeight: '700' } }, 'Treatment day −' + clampTreatmentDays(med.treatmentDaysBefore) + '/+' + clampTreatmentDays(med.treatmentDaysAfter)) : null,
+        med.treatmentMode === 'only' ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(192,69,59,0.10)', color: '#A15B56', fontSize: '12px', fontWeight: '700' } }, (isOtherTreatmentType() ? 'Your date ' : 'Treatment day ') + '−' + clampTreatmentDays(med.treatmentDaysBefore) + '/+' + clampTreatmentDays(med.treatmentDaysAfter)) : null,
         // v20 Designer review: "Excluded" gets the amber NOTICE_TONES.attention token (not the same
         // red as "Only"/"Treatment day" above) since the two states are opposites -- available-then
         // vs. withheld-then -- and sharing one color made them indistinguishable at a glance.
-        med.treatmentMode === 'excluded' ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: NOTICE_TONES.attention.chipBg, color: NOTICE_TONES.attention.chipFg, fontSize: '12px', fontWeight: '700' } }, 'Excluded near treatment −' + clampTreatmentDays(med.treatmentDaysBefore) + '/+' + clampTreatmentDays(med.treatmentDaysAfter)) : null,
+        med.treatmentMode === 'excluded' ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: NOTICE_TONES.attention.chipBg, color: NOTICE_TONES.attention.chipFg, fontSize: '12px', fontWeight: '700' } }, (isOtherTreatmentType() ? 'Excluded near your date ' : 'Excluded near treatment ') + '−' + clampTreatmentDays(med.treatmentDaysBefore) + '/+' + clampTreatmentDays(med.treatmentDaysAfter)) : null,
         med.paused ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(124,97,86,0.14)', color: '#583F35', fontSize: '12px', fontWeight: '700' } }, 'Paused') : null
       ),
       deleting ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', paddingTop: '9px', borderTop: '1px solid rgba(192,69,59,0.16)' } },
@@ -5070,7 +5109,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v41';
+const APP_VERSION = 'app-v42';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
