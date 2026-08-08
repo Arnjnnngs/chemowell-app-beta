@@ -1,8 +1,18 @@
-const CACHE = 'chemowell-app-v48-2';
+const CACHE = 'chemowell-app-v48-3';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)));
+  // v48 continued: plain `cache.addAll(SHELL)` fetches with the default cache mode, which lets the
+  // BROWSER's own ordinary HTTP cache (not this Cache Storage API -- a separate, earlier layer)
+  // silently hand back a response it already had on disk for that URL, without a real network round
+  // trip at all, if GitHub Pages' cache-control headers say it's still "fresh enough." Caught live:
+  // even several minutes after a push, with the CDN itself confirmed fully serving the new
+  // index.html (verified with a direct no-store fetch), this install step kept baking the OLD
+  // index.html into a brand-new, correctly-versioned cache -- traced to exactly this, the browser's
+  // HTTP cache, not a CDN propagation delay as first suspected. `{cache:'reload'}` forces each of
+  // these requests to actually hit the network and revalidate, the standard fix for "my service
+  // worker's install step keeps caching stale content" for exactly this reason.
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))));
   self.skipWaiting();
 });
 
@@ -33,8 +43,11 @@ self.addEventListener('fetch', (e) => {
   // original cache-first behavior below -- no reason to hit the network for those every time.
   const isDocRequest = e.request.mode === 'navigate' || e.request.url.endsWith('/index.html') || e.request.url === self.registration.scope;
   if (isDocRequest) {
+    // Same browser-HTTP-cache trap as the install step above -- force a real revalidated network
+    // fetch here too (`fetch(input, init)` with an existing Request as `input` builds a new request
+    // using init's fields, including `cache`, so this genuinely overrides e.request's own mode).
     e.respondWith(
-      fetch(e.request).then(r => {
+      fetch(e.request, { cache: 'reload' }).then(r => {
         const copy = r.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
         return r;
