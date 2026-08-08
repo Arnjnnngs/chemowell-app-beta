@@ -3965,9 +3965,21 @@ function updateMedicationForm(field, value, rerender) {
 function parseDoseOptions(text) {
   return String(text || '').split(',').map(value => value.trim()).filter(Boolean).map(label => {
     const mgMatch = label.match(/(\d+(?:\.\d+)?)\s*mg\b/i);
-    const pillMatch = label.match(/(\d+(?:\.\d+)?)\s*(?:pill|tab|tablet|cap|capsule|application)/i);
+    // v45 (Aaron-reported live bug): this used to require one specific word right after the number
+    // -- pill/tab/tablet/cap/capsule/application -- for a non-mg Dosage options entry to "count"
+    // toward the picked Limit unit. But Limit unit only has three choices (mg/pills/applications)
+    // while Dosage options is free text, and the field's OWN example text ("1 patch, 2 patches" --
+    // see the helpIcon above) doesn't contain any of those words, so following the app's own
+    // suggested format could permanently fail this check. Since dosageOptionsCarryLimitUnit() below
+    // disables Daily limit entirely until this check passes, that meant a caregiver typing a
+    // perfectly reasonable dosage ("1 patch," "2 sprays," "1 drop") could get permanently locked
+    // out of Daily limit with the warning banner showing and no way to dismiss it -- Aaron: "the
+    // dosage option banner pops up and can't be bypassed." Fix: any leading number in a Dosage
+    // options entry now counts as that entry's non-mg amount, whatever word (if any) follows it --
+    // matches how a real person reads "1 patch" or "2 applications" (the number IS the amount).
+    const numMatch = label.match(/(\d+(?:\.\d+)?)/);
     const dose = { label, mg: mgMatch ? Number(mgMatch[1]) : 0 };
-    if (pillMatch) dose.pills = Number(pillMatch[1]);
+    if (numMatch) dose.pills = Number(numMatch[1]);
     return dose;
   });
 }
@@ -5134,7 +5146,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v45';
+const APP_VERSION = 'app-v46';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next

@@ -22,14 +22,6 @@ new session the way a committed file does; see TEAM.md's opening note.
 
 ## Open
 
-- [ ] **Dosage options field still demands "mg" when Limit Unit is "Number of applications"
-  (or presumably any non-mg unit), and the validation banner that blocks it can't be
-  dismissed/bypassed** — added 2026-08-08. Aaron: "Dosage option still waits for 'mg' if Limit
-  Unit is set for Number of applications. should it still wait for 'mg'? the dosage option
-  banner pops up and can't be bypassed. needs to be looked into more." This sounds like it can
-  trap someone mid-edit in the medication editor (a blocking validation state with no way out),
-  which is worse than a cosmetic bug — investigating next, right after the delete-flicker/
-  confirmation fix below ships.
 - [ ] **Multi-device / multi-user sync — NEXT UP, confirmed priority 2026-08-08.** Profiles
   need to auto-refresh (not instant/live, but roughly within a minute) so multiple caregivers
   viewing the same patient profile see each other's updates, without screen flicker or
@@ -98,7 +90,10 @@ new session the way a committed file does; see TEAM.md's opening note.
   its own careful, fully-tested pass rather than being bundled into a simultaneous multi-item
   edit. A likely pre-existing CSV export bug was found while investigating this (redundant/wrong
   "N pill(s)" text appended in `buildExportRows()` regardless of actual unit) — will fix as part
-  of the same pass since expanding units makes it more visibly wrong.
+  of the same pass since expanding units makes it more visibly wrong. Note: a related but distinct
+  bug in the same area (Dosage options permanently locking Daily limit for the units that already
+  exist today) was found and fixed separately — see Completed below, app-v46 — this item is still
+  about adding the additional unit choices themselves.
 - [ ] **Build the 3 workshopped Pro-tier features (confirmed "build it" 2026-08-08)** — the
   comprehensive export (bundling Appointments + Notes with the existing entries CSV), chemo/
   treatment trend insights, and the MedlinePlus-sourced med-info lookup link (see the item above)
@@ -106,6 +101,23 @@ new session the way a committed file does; see TEAM.md's opening note.
 
 ## Completed
 
+- [x] **Fixed the Dosage options field permanently locking Daily limit for non-mg medications.**
+  Aaron: "Dosage option still waits for 'mg' if Limit Unit is set for Number of applications.
+  should it still wait for 'mg'? the dosage option banner pops up and can't be bypassed." Root
+  cause: the field required one of a specific whitelist of words (pill/tab/tablet/cap/capsule/
+  application) to appear directly after the number in a Dosage options entry before it "counted"
+  toward a non-mg Limit unit — but the field's own on-screen example (in its "?" helpIcon) is "1
+  patch, 2 patches," which doesn't contain any of those words. So typing exactly what the app
+  itself suggested could permanently fail the check, lock the Daily limit field, and leave the
+  warning banner showing with genuinely no way to dismiss it — not a false alarm, a real dead
+  end. Fixed by counting any leading number in a Dosage options entry as that entry's amount,
+  regardless of what word (if any) follows — matches how a person actually reads "1 patch" or "2
+  sprays." This doesn't change what units are offered in the Limit unit dropdown itself (still
+  mg / pills / applications) — that's the separate, larger "make Limit Unit universal" item below
+  — it fixes the parsing bug that was trapping people using the units that already exist.
+  Verified live: "1 patch, 2 patches" with Limit unit "Number of applications" now unlocks Daily
+  limit immediately, saves cleanly with no blocking toast, and the existing mg-unit path ("500
+  mg, 1000 mg") still works exactly as before. Shipped app-v46.
 - [x] **Fixed the permanent-delete screen flicker, and confirmed/strengthened the "can't be
   undone" language on every delete flow.** Aaron: "when trying to permanently delete things,
   the screen keeps refreshing constantly. when I do click erase, I mentioned before there
