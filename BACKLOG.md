@@ -37,27 +37,15 @@ when you're about to touch the relevant code; delete the line once it's actually
   Revisit if/when Aaron decides to move forward with a fuller positioning update. Found 2026-08-07
   during the v39 PM gate (the v39 dev brief said this was already logged here — it wasn't; this
   entry corrects that).
-- **CSV export needs a true native path once the app is actually Capacitor-wrapped** — the 2026-08-06
-  CSV export fix (downloadEntriesCSV) uses the Web Share API with a blob-download fallback, which
-  fully covers today's reality (web/PWA on Aaron's phone — this repo has `capacitor.config.ts` but no
-  `android/`/`ios/` project yet, so there is no true native shell to test against). Once `npx cap add
-  android`/`ios` actually happens, revisit whether `navigator.share`/`navigator.canShare` are reliably
-  available inside the Capacitor WebView (inconsistent across Android WebView versions) — if not,
-  switch to `@capacitor/filesystem` + `@capacitor/share` (write the CSV to a real file, then hand off
-  to the native share sheet), matching the pattern `@capacitor/local-notifications` already uses in
-  this app. Gotcha already discovered so it doesn't need rediscovering: the `@capacitor/filesystem`
-  8.x UMD build (`dist/plugin.js`, loaded via a raw `<script src>` CDN tag the same way
-  local-notifications is) references a bare `synapse` global in its closing IIFE call
-  (`})({}, capacitorExports, synapse)`) that a plain CDN include does NOT provide — it throws
-  `ReferenceError: synapse is not defined` and the plugin never registers. `@capacitor/synapse`'s own
-  UMD build doesn't even expose that name (it registers as `window.outsystemsSynapse`). The
-  fix is a small shim script tag BEFORE the filesystem/share plugin scripts:
-  `<script>window.synapse = { exposeSynapse: function(){} };</script>` — a no-op is safe because
-  `exposeSynapse()` only wires up a rarely-used synchronous native-bridge proxy that ordinary async
-  `Filesystem.writeFile()`/`Share.share()` calls don't depend on. Not implemented now because it's
-  unverifiable in this sandbox (no real Android/iOS runtime here) and Aaron's own testing standard
-  requires verifying before calling something done — do this alongside the actual native build/test
-  cycle, not blind.
+- ~~**CSV export needs a true native path once the app is actually Capacitor-wrapped**~~ — DONE,
+  app-v47 (added `@capacitor/filesystem` + `@capacitor/share`, real native share-sheet handoff).
+  The `synapse` gotcha documented here DID hit in production (silently, since app-v47 shipped) —
+  found by a retroactive Zero Day Auditor pass on app-v50 (`outputs/AUDIT_v50.md`) and fixed in
+  app-v51 using exactly the shim already written down here. Leaving this entry struck through
+  rather than deleted as a record that the backlog note was right and should have been acted on
+  sooner — the lesson: a documented-but-unapplied fix for a known live defect should get promoted
+  to REQUESTS.md and scheduled, not left here indefinitely once the underlying feature has
+  actually shipped and is live for real users.
 - **"Welcome to ChemoWell" setup toast can briefly overlap the tour's "Daily limit" field** — during
   the guided tour's "Fill in the details" step (medication editor), the post-`completeSetup()` toast
   is still visible for its last moment or two and sits over the Daily limit field. Pre-existing

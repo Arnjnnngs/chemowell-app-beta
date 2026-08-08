@@ -35,6 +35,28 @@ This is what lets Aaron open a brand-new chat, point it at this repo, and have i
 exactly where things left off — the documents carry the context, not his memory or a chat
 transcript that may not carry over.
 
+## Process-gap incident, 2026-08-08 — read this if you're picking this project up cold
+
+app-v50 shipped self-verified by the Lead Developer only, skipping the two mandatory gates this
+file requires for every release with no exceptions (Zero Day Auditor, Project Manager). Aaron
+caught this by noticing the pattern, not by a defect reaching him — but a real defect was sitting
+there anyway: a retroactive Auditor pass (`outputs/AUDIT_v50.md`) turned up a live, currently-
+shipping bug (a `ReferenceError` breaking the native export share-sheet feature since app-v47)
+that had gone undetected since then specifically because this kind of live-testing gate hadn't
+run in a while. Fixed same-day as app-v51; full retroactive Auditor + PM reports are in
+`outputs/AUDIT_v50.md` and `outputs/PM_GATE_v50.md`.
+
+**The fix here is not a new rule — this file already said "every release, no exceptions" before
+this incident.** The fix is actually running the gates, every time, including for a release that
+feels self-contained or low-risk. If you are the Lead Developer and you're about to mark
+something done off your own self-verification alone: stop and ask whether this is genuinely a
+"quick 1-2 line change" (APP_CLAUDE.md rule 7's bar — small, safe, no real design/architecture
+judgment involved) or whether it's a real release that needs the Auditor + PM gates before it's
+actually done, not after. When genuinely unsure, run the gates — a wasted independent pass costs
+far less than a defect sitting live and undetected. For anything Aaron has flagged explicitly as
+needing "multiple eyes" (the sync feature is the standing example, per his 2026-08-08
+instruction), that's not a judgment call at all — it gets the full chain, full stop.
+
 ## Chain of command (app-v25, Aaron-mandated)
 
 **The Project Manager leads this process. The Lead Developer does not, and never should

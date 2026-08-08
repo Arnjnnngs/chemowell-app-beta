@@ -22,6 +22,17 @@
      the same way notifications already do, letting export/print hand off to the OS's own native
      share sheet instead. Same no-op-on-web guarantee as the two plugins above (isNativeApp() gates
      every call site; the web/PWA build's behavior is untouched). -->
+<!-- app-v51 fix (found by the Zero Day Auditor during app-v50's retroactive audit, root-caused and
+     the fix pre-documented in BACKLOG.md before this): @capacitor/filesystem@8.1.2's own UMD bundle
+     ends with `})({}, capacitorExports, synapse);`, referencing a bare `synapse` global that a plain
+     CDN <script> include never provides -- this threw ReferenceError: synapse is not defined on every
+     single page load and silently kept Filesystem out of window.Capacitor.Plugins entirely, which
+     very plausibly regressed the app-v47 native CSV/PDF export share-sheet fix back to its original
+     bug (fails closed via the app's own null-safe fallback, so no crash, no user-visible error --
+     just silently not working). This shim must load BEFORE the filesystem script below. It's a no-op:
+     exposeSynapse() only wires up a rarely-used synchronous native-bridge proxy that ordinary async
+     Filesystem.writeFile()/Share.share() calls never touch. -->
+<script>window.synapse = { exposeSynapse: function(){} };</script>
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/filesystem@8.1.2/dist/plugin.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/share@8.0.1/dist/plugin.js"></script>
 <style>
@@ -5347,7 +5358,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v50';
+const APP_VERSION = 'app-v51';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next

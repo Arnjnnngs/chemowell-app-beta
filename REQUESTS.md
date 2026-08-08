@@ -20,6 +20,38 @@ new session the way a committed file does; see TEAM.md's opening note.
 - Nothing gets deleted when it's finished — it moves to Completed with a one-line note of
   what shipped and when, so there's a record if a question comes back to it later.
 
+## Next up, in order (read this first — updated 2026-08-08)
+
+For a new chat picking this project up cold: this is the priority order, top to bottom. Full
+detail on each is in the Open list below; this is just the ordering so you don't have to
+reconstruct it from history.
+
+1. **Nothing to build — waiting on Aaron.** app-v51 needs a fresh APK (GitHub Actions builds
+   this automatically off the `main` push) installed on his Galaxy S25 Ultra, then his
+   confirmation of: exact-alarm reminders, the new "Allow background activity" battery control,
+   and — important, re-broke and re-fixed this session — CSV/PDF export actually reaching the
+   native share sheet again. See the Export/printable report item and the Notification item
+   below for exact detail.
+2. **Multi-device/multi-user sync** — confirmed top build priority, App Store blocker. Blocked
+   on Aaron completing 3 one-time Vercel dashboard steps (see the item below for exactly what).
+   Once unblocked: build the pairing UI, sync loop, conflict UI, "last synced" indicator, and
+   Settings entry point (items 4-8 of `outputs/SYNC_DEVELOPER_BRIEF_v2.md` §7). **Gets the full
+   Quality Chain (TEAM.md) when it starts — do not self-verify this one solo, per Aaron's
+   explicit 2026-08-08 instruction that this needs multiple eyes given the stakes.**
+3. **Per-medication "What is this for?" link (MedlinePlus)** — approved, source confirmed, no
+   further sign-off needed. Small and independent of sync — can be picked up any time, including
+   before sync if it's a better use of a shorter session.
+4. **Proposed, NOT yet approved — needs Aaron's go-ahead before building:** dropping the
+   Male/Female question from onboarding entirely and making menstrual-cycle tracking an
+   unconditional Settings toggle instead (off by default). Confirmed safe via a full codebase
+   audit — the `sex` field has exactly two call sites (`cycleAllowed()` and one line in
+   `needsProfileCompletion()`), nothing else touches it. Also proposed alongside it: a closing
+   tour step pointing users to Settings to see what else they can turn on. Paywalling Settings
+   toggles was raised and explicitly decided against 2026-08-08 (Aaron: "don't change anything")
+   — that thread is closed, no action needed, not revisited unless Aaron brings it up again.
+5. Everything else below, in the order it already appears in Open — none of it is currently
+   blocking or time-sensitive.
+
 ## Open
 
 - [ ] **In-app issue/bug logger — testers (including Aaron) can log something that isn't working,
@@ -53,7 +85,8 @@ new session the way a committed file does; see TEAM.md's opening note.
   the existing FAQ array is the right foundation to extend. Not yet started or scoped in detail;
   flagging here so it isn't lost. Will need a working session with Aaron on what "full list of
   issues" should actually cover before writing the content.
-- [ ] **Export/printable report native fix — code shipped (app-v47), waiting on a fresh APK
+- [ ] **Export/printable report native fix — code shipped (app-v47), then found SILENTLY
+  BROKEN again (app-v50 retroactive audit), re-fixed (app-v51), still waiting on a fresh APK
   install + Aaron's real-device confirmation before this can move to Completed.** Root cause
   confirmed: both CSV export and the printable report were built as browser-only tricks (a blob
   `<a download>` click; `window.open()` + `.print()`) that never had a bridge to Android's real
@@ -63,8 +96,15 @@ new session the way a committed file does; see TEAM.md's opening note.
   exact same unchanged behavior on the web/PWA build). This is a NATIVE change, unlike the pure
   content fixes above — it needs a new APK built and reinstalled, not just the app reopened; the
   push to main should trigger that build automatically the same way past native changes did.
-  Per this file's own rule, this can't be marked Completed from a plan or "should work" — needs
-  confirmation from Aaron on the actual device once the new APK is installed.
+  **Update 2026-08-08:** a retroactive Zero Day Auditor pass (run on app-v50, see that entry in
+  README.md and `outputs/AUDIT_v50.md`) found the `@capacitor/filesystem@8.1.2` CDN bundle throws
+  `ReferenceError: synapse is not defined` on every page load, silently keeping `Filesystem` out
+  of `window.Capacitor.Plugins` and very plausibly regressing this exact feature back to going
+  nowhere, invisibly (fails closed, no crash, no visible error). Fixed in app-v51 with a one-line
+  shim script (details in that README entry). Per this file's own rule, this still can't be
+  marked Completed from a plan or "should work" — needs confirmation from Aaron on the actual
+  device, on the app-v51 APK once it's built, that CSV/PDF export actually hands off to the
+  native share sheet.
 - [ ] **Notification "Allow exact reminders" button opens phone Settings but there's no toggle to
   turn it on** — added 2026-08-08. Aaron: "notifications still doesn't work. notification in
   settings says it's on but under it, it says exact timing. when i click it, it takes me to
@@ -195,14 +235,19 @@ new session the way a committed file does; see TEAM.md's opening note.
 - [ ] **Redeem-code section under Account** — added 2026-08-07. A field where Aaron can hand
   someone (a caregiver, a tester) a code that unlocks a specific plan tier. Aaron explicitly
   said this "may be for later" — kept open and not scheduled; revisit when he says go.
-- [ ] **Per-medication "What is this for?" link** — added 2026-08-08. Aaron wants medication
-  info available without ChemoWell itself authoring or asserting any medical claims (explicit
-  liability concern — no interaction checking, no dosing advice, "that's a medical advisor
-  that I can't provide"). Plan: a link on each medication that opens that medication's page on
-  an established external source (MedlinePlus/NIH first choice — free, government-run, built
-  for exactly this; WebMD/Drugs.com as fallback) in the phone's own browser, outside the app.
-  ChemoWell hands off, never displays/hosts the content itself. Small, independent of sync —
-  candidate for right after sync kicks off.
+- [ ] **Per-medication "What is this for?" link — APPROVED, MedlinePlus confirmed, not yet
+  built.** Added 2026-08-08, source confirmed 2026-08-08. Aaron wants medication info available
+  without ChemoWell itself authoring or asserting any medical claims (explicit liability
+  concern — no interaction checking, no dosing advice, "that's a medical advisor that I can't
+  provide"). Plan: a link on each medication that opens that medication's page on MedlinePlus
+  (NIH/National Library of Medicine — free, government-run, no API key, built for exactly this)
+  in the phone's own browser, outside the app. ChemoWell hands off, never displays/hosts the
+  content itself — most likely a generated MedlinePlus search URL built from the medication
+  name (exact match isn't guaranteed since medication names vary/misspell, so this needs a
+  sensible fallback for "no exact drug page found," to be worked out at build time). Small,
+  independent of sync — candidate for right after sync kicks off, or sooner if Aaron wants it
+  bumped up. No further confirmation needed — this is a go, just needs to be scheduled and
+  built.
 - [ ] **Formal Privacy Policy** — added 2026-08-08, surfaced while discussing the liability
   question above. The app already has an in-app medical disclaimer (Settings — confirmed
   present), but the App Store and Google Play both separately require a Privacy Policy URL
@@ -251,6 +296,17 @@ new session the way a committed file does; see TEAM.md's opening note.
 
 ## Completed
 
+- [x] **Retroactive Zero Day Auditor + PM gate run on app-v50, after Aaron flagged the team
+  process wasn't being used** — added and closed 2026-08-08. Aaron: "I've noticed again that you
+  haven't been using the team to check to make sure things are verified correctly... what you're
+  doing is a big change and needs multiple eyes." Correct: app-v50 had shipped self-verified only,
+  skipping TEAM.md's two mandatory every-release gates. Ran both retroactively (`outputs/
+  AUDIT_v50.md`, `outputs/PM_GATE_v50.md`) — clean PASS/GO on app-v50's own diff, but the
+  Auditor's live-testing pass (required by the gate, not something a self-check would have done)
+  surfaced a real, currently-live defect unrelated to app-v50 itself: see the `synapse`/Filesystem
+  finding, fixed same-day as app-v51 (README.md entry, REQUESTS.md export item). TEAM.md updated
+  with a short incident note so a future session doesn't repeat the same self-verification-only
+  shortcut. See TEAM.md's "Process-gap incident, 2026-08-08" section for the full writeup.
 - [x] **Found and fixed a real bug in `sw.js` itself that could make ANY future push look like it
   didn't work, discovered while chasing Aaron's "still showing old wording" report.** Not something
   Aaron directly asked for — surfaced investigating his tour-wording report, and important enough
