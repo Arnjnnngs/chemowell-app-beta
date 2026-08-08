@@ -50,6 +50,19 @@ jobs:
       - name: Generate native Android project
         run: npx cap add android
 
+      # app-v50: the battery-optimization plugin (added to package.json) needs the app itself to
+      # declare REQUEST_IGNORE_BATTERY_OPTIMIZATIONS -- unlike most plugin permissions, this one is
+      # deliberately NOT bundled into the plugin's own manifest fragment by its author, so Android's
+      # standard manifest merge (which `cap sync` below triggers for plugin-declared permissions)
+      # never adds it on its own. Same pattern as the icon-copy step above: edit the freshly generated
+      # file directly, before sync/build, since android/ isn't committed and is regenerated every run.
+      - name: Add battery-optimization permission to the generated manifest
+        run: |
+          set -e
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          grep -q 'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS' "$MANIFEST" || \
+            sed -i 's#<application#<uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />\n    <application#' "$MANIFEST"
+
       - name: Install our real app icon + notification icon (replaces Capacitor's default)
         run: |
           set -e
@@ -59,11 +72,11 @@ jobs:
             # placed in it — a fresh `cap add android` project doesn't create these, so make sure
             # they exist before copying the notification icon in (caught by a local dry run before
             # this ever hit CI: the first version of this step failed here).
-            mkdir -p "$RES/drawable-${d}"
-            cp "app-icons/launcher-${d}.png"       "$RES/mipmap-${d}/ic_launcher.png"
-            cp "app-icons/launcher-round-${d}.png"  "$RES/mipmap-${d}/ic_launcher_round.png"
-            cp "app-icons/launcher-fg-${d}.png"     "$RES/mipmap-${d}/ic_launcher_foreground.png"
-            cp "app-icons/notif-${d}.png"           "$RES/drawable-${d}/ic_stat_chemowell.png"
+            mkdir -p "$RES/drawable-class d extends c{batchLoaders=u;validate(e){if("string"!=typeof e)throw Error("Batch deferred content was not a string")}update(e){let t=(0,i.B)(document,e);this.replaceWith(t)}}"
+            cp "app-icons/launcher-class d extends c{batchLoaders=u;validate(e){if("string"!=typeof e)throw Error("Batch deferred content was not a string")}update(e){let t=(0,i.B)(document,e);this.replaceWith(t)}}.png"       "$RES/mipmap-class d extends c{batchLoaders=u;validate(e){if("string"!=typeof e)throw Error("Batch deferred content was not a string")}update(e){let t=(0,i.B)(document,e);this.replaceWith(t)}}/ic_launcher.png"
+            cp "app-icons/launcher-round-class d extends c{batchLoaders=u;validate(e){if("string"!=typeof e)throw Error("Batch deferred content was not a string")}update(e){let t=(0,i.B)(document,e);this.replaceWith(t)}}.png"  "$RES/mipmap-class d extends c{batchLoaders=u;validate(e){if("string"!=typeof e)throw Error("Batch deferred content was not a string")}update(e){let t=(0,i.B)(document,e);this.replaceWith(t)}}/ic_launcher_round.png"
+            cp "app-icons/launcher-fg-class d extends c{batchLoaders=u;validate(e){if("string"!=typeof e)throw Error("Batch deferred content was not a string")}update(e){let t=(0,i.B)(document,e);this.replaceWith(t)}}.png"     "$RES/mipmap-class d extends c{batchLoaders=u;validate(e){if("string"!=typeof e)throw Error("Batch deferred content was not a string")}update(e){let t=(0,i.B)(document,e);this.replaceWith(t)}}/ic_launcher_foreground.png"
+            cp "app-icons/notif-class d extends c{batchLoaders=u;validate(e){if("string"!=typeof e)throw Error("Batch deferred content was not a string")}update(e){let t=(0,i.B)(document,e);this.replaceWith(t)}}.png"           "$RES/drawable-class d extends c{batchLoaders=u;validate(e){if("string"!=typeof e)throw Error("Batch deferred content was not a string")}update(e){let t=(0,i.B)(document,e);this.replaceWith(t)}}/ic_stat_chemowell.png"
           done
           # Adaptive-icon background: brand background color instead of Capacitor's default white.
           cat > "$RES/values/ic_launcher_background.xml" <<'XML'
