@@ -2603,10 +2603,18 @@ const TOUR_STEPS = [
   { target: 'meds-add', title: 'Add your first medication', text: 'Tap the Add button to create your first medication.', short: 'Tap Add to create your first medication.', advanceOn: 'medEditor:open', wait: 'Tap Add to continue' },
   { target: 'med-editor', title: 'Fill in the details', text: 'Give it a name, then choose how it\u2019s taken. "As needed" uses a gap timer between doses (like Tylenol every 4 hours). "Scheduled" uses set time windows (like 8 AM every morning). You can also add dose buttons and a daily safety limit. Tap Add medication at the bottom when you\u2019re done.', short: 'Fill out the form, then tap Add medication at the bottom.', advanceOn: 'med:saved', backOn: 'medEditor:closed', wait: 'Save the medication to continue' },
   { target: 'nav-home', title: 'Nice work!', text: 'Your first medication is in — add the rest the same way any time. Now tap Home to see your daily view.', short: 'Medication saved! Now tap Home at the bottom.', advanceOn: 'view:home', wait: 'Tap Home to continue' },
-  { target: 'quick-log', title: 'Logging doses', text: 'Every medication gets a card here. When a dose is given, tap its button to log it — ChemoWell tracks timing, gaps between doses, and daily limits, and flags anything missed.', next: 'Next' },
-  { target: 'nav-reports', title: 'Reports', text: 'The full history lives here — every dose, weight, temperature, and symptom, organized day by day.', next: 'Next' },
-  { target: 'nav-inpatient', title: 'In-Patient stays', text: 'Track hospital stays here. While a stay is active, home medication logging pauses, since the hospital handles meds.', next: 'Next' },
-  { target: 'nav-symptoms', title: 'Symptoms', text: 'Log symptoms like nausea, pain, or fever so you have a clear record to share with the care team.', next: 'Next' },
+  // v48 (Aaron-requested): these four trailing informational steps now carry navTarget — the real
+  // view they describe. setTourStep() below navigates there automatically the moment the step
+  // becomes current (both stepping forward via Next and stepping back via Back), instead of leaving
+  // the user parked on Home with only the bottom-nav icon glowing. Aaron: "it just needs to take you
+  // there automatically when it talks about each tab. the user can go back to those tabs on their
+  // own time" -- the scrim that used to block background taps during these steps is removed for the
+  // same reason (see renderTourLayer): once the real page is already showing, there's no more
+  // "wandering off the guided path" risk to guard against.
+  { target: 'quick-log', title: 'Logging doses', text: 'Every medication gets a card here. When a dose is given, tap its button to log it — ChemoWell tracks timing, gaps between doses, and daily limits, and flags anything missed.', next: 'Next', navTarget: 'home' },
+  { target: 'nav-reports', title: 'Reports', text: 'The full history lives here — every dose, weight, temperature, and symptom, organized day by day.', next: 'Next', navTarget: 'reports' },
+  { target: 'nav-inpatient', title: 'In-Patient stays', text: 'Track hospital stays here. While a stay is active, home medication logging pauses, since the hospital handles meds.', next: 'Next', navTarget: 'inpatient' },
+  { target: 'nav-symptoms', title: 'Symptoms', text: 'Log symptoms like nausea, pain, or fever so you have a clear record to share with the care team.', next: 'Next', navTarget: 'symptoms' },
   { target: null, title: 'You\u2019re ready!', text: 'That\u2019s the basics. You can re-run this guide any time from the menu (the three lines, top left) \u2192 Settings \u2192 Replay the walkthrough.', next: 'Finish' }
 ];
 // v12: on form-filling steps the tour renders as a slim banner (see renderTourLayer). tourExpanded
@@ -2615,7 +2623,17 @@ const TOUR_STEPS = [
 let tourExpanded = false;
 function startTour() { tourExpanded = false; setPrefsDB({ tourStep: 0 }); setState({ tourStep: 0 }); }
 function endTour() { tourExpanded = false; setPrefsDB({ tourDone: true, tourStep: null }); setState({ tourStep: null }); tourClearHighlight(); }
-function setTourStep(n) { tourExpanded = false; setPrefsDB({ tourStep: n }); setState({ tourStep: n }); } // progress survives app restarts (audit 2.4)
+function setTourStep(n) {
+  tourExpanded = false;
+  setPrefsDB({ tourStep: n });
+  setState({ tourStep: n }); // progress survives app restarts (audit 2.4)
+  // v48 (Aaron-requested): auto-navigate to the real view a step is about, both stepping forward
+  // and backward, so the tour actually shows the page it's describing instead of leaving the user on
+  // Home looking at a highlighted nav icon. navigateTo() is safe to call even when we're already on
+  // that view (it's just a state assignment + no-op scroll-to-top in that case).
+  const step = TOUR_STEPS[n];
+  if (step && step.navTarget) navigateTo(step.navTarget);
+}
 function advanceTour() {
   const n = (state.tourStep == null ? -1 : state.tourStep) + 1;
   // v28 (Aaron-requested): finishing the guide naturally (tapping "Finish" on the last step) now
@@ -2708,15 +2726,20 @@ function renderTourLayer() {
       )
     );
   }
-  // v28 (Aaron-requested): non-action steps (informational "Next"-only steps like quick-log, the
-  // three trailing nav-tab intros, and the intro/outro cards) don't need the user to touch anything
-  // real underneath -- unlike the wait-required banner steps above, which deliberately leave the
-  // background tappable (see the v12 comment on that branch). Aaron reported users tapping Reports/
-  // In-Patient/Symptoms mid-tour and sidetracking themselves off the guided path. A full-screen scrim
-  // behind the card (auto pointer-events, no scroll target of its own) blocks both background taps
-  // and background scroll for exactly these steps, while the card itself still renders on top of it.
+  // v28 (Aaron-requested, SUPERSEDED by v48 below): non-action steps (informational "Next"-only
+  // steps like quick-log, the three trailing nav-tab intros, and the intro/outro cards) used to
+  // block the background with a full-screen scrim, because at the time these steps left the user
+  // parked on Home with just a highlighted nav icon, and Aaron reported people tapping Reports/
+  // In-Patient/Symptoms mid-tour and sidetracking themselves off the guided path.
+  // v48 (Aaron-requested): that's now backwards from what Aaron wants -- setTourStep() auto-navigates
+  // to the real view each of these steps describes (see its v48 comment and TOUR_STEPS' navTarget),
+  // so the "sidetrack" risk the scrim guarded against no longer applies: the user is already looking
+  // at the real Reports/In-Patient/Symptoms page, and should be free to tap around on it while the
+  // guide card stays up, exactly like the wait-required banner steps above already allow. The scrim
+  // div stays as a purely visual dim (matches the card's z-index framing) but no longer intercepts
+  // taps or scroll -- pointerEvents:'none' lets every gesture pass straight through to the real page.
   return h('div', { id: 'tour-layer', style: { position: 'fixed', inset: '0', zIndex: '80', pointerEvents: 'none' } },
-    h('div', { id: 'tour-scrim', onClick: (e) => e.preventDefault(), style: { position: 'fixed', inset: '0', background: 'rgba(34,14,6,0.28)', pointerEvents: 'auto', touchAction: 'none' } }),
+    h('div', { id: 'tour-scrim', style: { position: 'fixed', inset: '0', background: 'rgba(34,14,6,0.28)', pointerEvents: 'none' } }),
     h('div', { id: 'tour-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': step.title, style: { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 'min(88vw, 330px)', background: '#FFFFFF', borderRadius: '18px', padding: '18px', boxShadow: '0 18px 50px rgba(86,28,4,0.35)', pointerEvents: 'auto', border: '3px solid #2E7D4F', outline: '3px solid #2E7D4F', outlineOffset: '2px', ...tourGlowAnim() } },
       h('div', { style: { fontSize: '12px', fontWeight: '700', color: '#7A6E76', letterSpacing: '0.07em', marginBottom: '6px' } }, 'GUIDE \u00b7 STEP ' + (state.tourStep + 1) + ' OF ' + TOUR_STEPS.length),
       h('div', { style: { ...TYPE.title, color: '#BF4C1A', marginBottom: '6px' } }, step.title),
@@ -5154,7 +5177,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v47';
+const APP_VERSION = 'app-v48';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next

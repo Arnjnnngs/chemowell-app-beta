@@ -22,6 +22,37 @@ new session the way a committed file does; see TEAM.md's opening note.
 
 ## Open
 
+- [ ] **In-app issue/bug logger — testers (including Aaron) can log something that isn't working,
+  building a real list to work from** — added 2026-08-08. Aaron: "I want to be able to have a
+  logger to the app. like if something isn't working correctly, it can be reported there. not sure
+  if you can pick up those logs and see it to fix the issues. that way me or other testers can log
+  stuff and then there is a full list we can work from." Real fork to resolve before building: this
+  app is 100% on-device local storage today (no backend at all — that's exactly what the Multi-
+  device/multi-user sync item below is queued to build). That means a report logged on a tester's
+  phone can't reach me automatically the way a normal bug tracker would; there's no server for it to
+  land on yet. Recommended near-term approach, buildable right now with no backend: an in-app
+  "Report an issue" flow (reachable from Settings/the drawer) where a tester describes what went
+  wrong, and the app bundles that description together with useful diagnostic context it already has
+  on-device (app version, treatment type, native vs. web, recent console errors if any, maybe a
+  screenshot) into one shareable file/text via the same native share sheet the CSV export now uses
+  (app-v47) — the tester then sends that to Aaron (email, text, however) the same way they'd send
+  a screenshot today, and Aaron forwards/pastes it to me. Once the sync backend exists, this could
+  upgrade to actually submitting straight to a place I can read directly, closing the loop for real.
+  Awaiting Aaron's go-ahead on the near-term (share-based) version before building — flagging here so
+  it isn't lost, not yet started.
+- [ ] **In-app troubleshooting "chatbot" — an extensive, walk-through-the-problem list, far beyond
+  today's FAQ** — added 2026-08-08. Aaron: "want to add a chatbot. maybe it can't be something that
+  you can respond to real time, but if not, it should have a very extensive list of problems it can
+  walk a user through. much like the FAQ. but way more details to choose from. needs to be a full
+  list of issues to help with. end to end app coverage." Aaron's own framing already answers the
+  real-time-AI question: not a live model in the app (that would need a paid API connection and a
+  backend this app doesn't have), but a much bigger, more structured version of the FAQ system
+  already built — pick your symptom/problem from a list, get a specific walkthrough, not just one
+  short Q&A entry. This is a large content-authoring effort (needs an actual comprehensive catalog of
+  real problems across every screen, not just a few code changes) more than a hard technical build —
+  the existing FAQ array is the right foundation to extend. Not yet started or scoped in detail;
+  flagging here so it isn't lost. Will need a working session with Aaron on what "full list of
+  issues" should actually cover before writing the content.
 - [ ] **Export/printable report native fix — code shipped (app-v47), waiting on a fresh APK
   install + Aaron's real-device confirmation before this can move to Completed.** Root cause
   confirmed: both CSV export and the printable report were built as browser-only tricks (a blob
@@ -48,20 +79,47 @@ new session the way a committed file does; see TEAM.md's opening note.
   auto-start restrictions (common on Samsung/Xiaomi/Huawei) are a separate, common cause of
   missed background alarms that this permission alone doesn't cover, and there's no cross-OEM API
   to detect or request that one — worth checking directly on his phone.
-- [ ] **"Other" treatment-type medication editor wording still confusing** — added 2026-08-08.
-  Aaron: "I chose other for my profile, when adding a med, it says add to home screen, only near
-  your date, exclude near your date. this makes no sense." The v42 pass (Completed below) made the
-  treatment-day-availability wording adaptive for "Other" profiles, but Aaron's report suggests the
-  combination of that section with the separate "Home screen placement" section above it still
-  doesn't read clearly together. Needs a fresh look at both sections side by side for an "Other"
-  profile, not just re-checking the v42 wording in isolation.
+  Update 2026-08-08: Aaron sent a screenshot of the actual "Alarms & reminders" settings screen
+  the app opens — confirms the app IS correctly reaching Android's real permission screen (not a
+  broken deep link), toggle currently OFF, and the screenshot shows what looks like a completely
+  standard, normally-functional Android switch (styling suggests a Samsung One UI device). Aaron
+  reports being unable to toggle it on but hasn't said what happens when he taps it (nothing
+  visible? toggle bounces back off? phone shows its own error?) or given his phone model/Android
+  version, both asked for and still needed to diagnose further — this is Android's own OS switch,
+  outside the app's control once its settings screen opens, so the app can't be the direct cause of
+  a switch not registering a tap.
+- [ ] **"Other" treatment-type medication editor wording still confusing — re-reported 2026-08-08
+  during the tour ("still showing the open near treatment and exclude near treatment when
+  chemo/radiation isn't selected").** Investigated fresh this session: the actual current code
+  (`isOtherTreatmentType()` / `treatmentModeOptions()`, and every call site — the radiogroup, its
+  field label, the days-before/after labels, the med-card badges, the Home card caption) IS already
+  fully adaptive for an "Other" profile and says "your date," not "treatment" — confirmed by reading
+  the real committed source, not a plan. Aaron seeing the literal old "near treatment" wording most
+  likely means his installed app is running a cached build from before app-v42 shipped this — this
+  app has hit exactly this class of bug before (see the Completed service-worker cache-versioning
+  fix). Asked Aaron to fully close (not just background) and reopen the app, or reinstall if that
+  doesn't clear it, and to check the version number shown at the bottom of Settings against the
+  current app-v47 — not yet confirmed by Aaron. Leaving this open until he confirms either the
+  wording is now correct after a real reload, or that it's still wrong even on a confirmed-current
+  version (which would mean a real remaining bug, not a cache issue).
 - [ ] **Onboarding tour should auto-navigate to the tab it's highlighting, and drop "click this
-  tab" instructional language** — added 2026-08-08. Aaron: "it should highlight the tab it's
-  referring...but it should AUTOMATICALLy take you to that page so they don't have to click on
-  that tab. makes it easier. the on screen should just tell them what to do instead of click
-  'this tab'." Real usability improvement to the guided tour — steps that reference a tab should
-  navigate there for the user, and copy should describe the action to take, not tell them to find
-  and click a UI element themselves.
+  tab" instructional language — root cause found, fix built this session, not yet shipped/verified
+  live.** Original ask 2026-08-08: "it should highlight the tab it's referring...but it should
+  AUTOMATICALLy take you to that page so they don't have to click on that tab." Follow-up
+  2026-08-08 (same day, more severe): "I can't even click on anything during tour after adding med
+  and going back home. after that, can't click on reports, inpatient or symptoms. this is why it
+  just needs to take you there automatically...the user can go back to those tabs on their own
+  time." Root cause: the tour's four trailing informational steps (Logging doses/quick-log,
+  Reports, In-Patient, Symptoms) never actually navigated anywhere — they left the user on Home
+  with only the relevant bottom-nav icon glowing — AND rendered a full-screen invisible overlay
+  that silently blocked every tap and scroll on the page underneath (a deliberate v28 anti-
+  sidetracking measure that became the wrong tradeoff once Aaron wanted real auto-navigation
+  instead). Fix: these four steps now call the app's real navigation the instant they become
+  current (both stepping forward and stepping back), so the user actually sees the real Reports/
+  In-Patient/Symptoms page; the blocking overlay is removed (kept as a purely visual dim, no longer
+  intercepts taps) so the page underneath is fully usable while the guide card is up, matching
+  Aaron's "go back to those tabs on their own time." Built, not yet pushed/live-verified as of this
+  entry.
 - [ ] **Multi-device / multi-user sync — NEXT UP, confirmed priority 2026-08-08.** Profiles
   need to auto-refresh (not instant/live, but roughly within a minute) so multiple caregivers
   viewing the same patient profile see each other's updates, without screen flicker or
