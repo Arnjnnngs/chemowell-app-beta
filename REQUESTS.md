@@ -112,6 +112,29 @@ new session the way a committed file does; see TEAM.md's opening note.
   storage, so this needs an actual backend/sync layer. Gets the full Quality Chain when
   started, not solo Lead Developer work, given the stakes (real data, real risk of
   conflicts/loss).
+  **Architecture decision reached, 2026-08-08:** building any sync backend directly conflicted
+  with `APP_CLAUDE.md`'s original Hard Rule 1 ("no cloud storage, ever — user data never
+  leaves the device") and the app's own "no cloud, no accounts, no tracking" copy shown to
+  users. Raised to Aaron explicitly before writing any code. Aaron's question back: "can
+  something still live on their device but they just share stuff with people? will this
+  change the whole Hippa thing and flag the app for something more serious. I don't want
+  anything with privacy breach." Researched and explained: pure on-device peer-to-peer can't
+  reliably hit "within a minute," so a brief relay is needed; HIPAA itself almost certainly
+  doesn't apply (ChemoWell is consumer-direct, not used by providers) but state
+  consumer-health-data laws — e.g. Washington's My Health My Data Act — can apply regardless
+  of encryption, based on where the user is, not where the company is. Aaron's decision:
+  **"Build it encrypted, get a lawyer before it goes live."** Confirmed direction — end-to-end
+  zero-knowledge encryption (server only ever stores ciphertext + opaque metadata, never a
+  readable copy), and a real privacy-lawyer review is required before the feature is offered
+  to real (non-testing) users, separate from and not blocking the build itself.
+  `APP_CLAUDE.md` Hard Rule 1 has been rewritten to record this scoped exception (backend
+  authorized ONLY for sync, ONLY as a zero-knowledge relay — not a general cloud-services
+  permission). Two Developer-stage architecture briefs are written and committed to
+  `outputs/`: `SYNC_DEVELOPER_BRIEF_v1.md` (initial plain-sync design, Cloudflare
+  Workers + D1, pairing without accounts) and `SYNC_DEVELOPER_BRIEF_v2.md` (revised for
+  E2E encryption — AES-256-GCM data encryption, ECDH+HKDF one-time device pairing, all via
+  the native Web Crypto API, no external libraries). Implementation (Lead Developer stage)
+  has not started yet.
 - [ ] **How does a Plus/Pro caregiver actually back up and move to a new phone?** — added
   2026-08-08. Aaron: "if they have the higher tier plans, we need to figure out how would they
   backup to move to another phone if it's all on one device and they aren't logging in." Real
