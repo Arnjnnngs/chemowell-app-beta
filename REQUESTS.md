@@ -88,38 +88,18 @@ new session the way a committed file does; see TEAM.md's opening note.
   version, both asked for and still needed to diagnose further — this is Android's own OS switch,
   outside the app's control once its settings screen opens, so the app can't be the direct cause of
   a switch not registering a tap.
-- [ ] **"Other" treatment-type medication editor wording still confusing — re-reported 2026-08-08
-  during the tour ("still showing the open near treatment and exclude near treatment when
-  chemo/radiation isn't selected").** Investigated fresh this session: the actual current code
-  (`isOtherTreatmentType()` / `treatmentModeOptions()`, and every call site — the radiogroup, its
-  field label, the days-before/after labels, the med-card badges, the Home card caption) IS already
-  fully adaptive for an "Other" profile and says "your date," not "treatment" — confirmed by reading
-  the real committed source, not a plan. Aaron seeing the literal old "near treatment" wording most
-  likely means his installed app is running a cached build from before app-v42 shipped this — this
-  app has hit exactly this class of bug before (see the Completed service-worker cache-versioning
-  fix). Asked Aaron to fully close (not just background) and reopen the app, or reinstall if that
-  doesn't clear it, and to check the version number shown at the bottom of Settings against the
-  current app-v47 — not yet confirmed by Aaron. Leaving this open until he confirms either the
-  wording is now correct after a real reload, or that it's still wrong even on a confirmed-current
-  version (which would mean a real remaining bug, not a cache issue).
-- [ ] **Onboarding tour should auto-navigate to the tab it's highlighting, and drop "click this
-  tab" instructional language — root cause found, fix built this session, not yet shipped/verified
-  live.** Original ask 2026-08-08: "it should highlight the tab it's referring...but it should
-  AUTOMATICALLy take you to that page so they don't have to click on that tab." Follow-up
-  2026-08-08 (same day, more severe): "I can't even click on anything during tour after adding med
-  and going back home. after that, can't click on reports, inpatient or symptoms. this is why it
-  just needs to take you there automatically...the user can go back to those tabs on their own
-  time." Root cause: the tour's four trailing informational steps (Logging doses/quick-log,
-  Reports, In-Patient, Symptoms) never actually navigated anywhere — they left the user on Home
-  with only the relevant bottom-nav icon glowing — AND rendered a full-screen invisible overlay
-  that silently blocked every tap and scroll on the page underneath (a deliberate v28 anti-
-  sidetracking measure that became the wrong tradeoff once Aaron wanted real auto-navigation
-  instead). Fix: these four steps now call the app's real navigation the instant they become
-  current (both stepping forward and stepping back), so the user actually sees the real Reports/
-  In-Patient/Symptoms page; the blocking overlay is removed (kept as a purely visual dim, no longer
-  intercepts taps) so the page underneath is fully usable while the guide card is up, matching
-  Aaron's "go back to those tabs on their own time." Built, not yet pushed/live-verified as of this
-  entry.
+- [ ] **"Other" treatment-type medication editor wording — real root cause found and fixed, but it
+  wasn't a wording bug.** Re-reported 2026-08-08 during the tour ("still showing the open near
+  treatment and exclude near treatment when chemo/radiation isn't selected"). Investigated fresh:
+  the actual code (`isOtherTreatmentType()` / `treatmentModeOptions()`, and every call site) was
+  already fully adaptive — confirmed by reading the real source AND by testing a real "Other"
+  profile directly against the live deployed site, which correctly showed "Availability near your
+  date" / "Only near your date" / "Excluded near your date" everywhere, zero old wording found. So
+  why would Aaron see the old copy on a real device? Chasing that down found a genuine, previously-
+  unknown bug in `sw.js` (see the Completed entry below) — fixed and verified live. Leaving this
+  open (not re-closing it as a duplicate of something already-completed) only because Aaron hasn't
+  yet confirmed on his own device that the wording now reads correctly — everything on the code and
+  live-site side is confirmed correct as of app-v48.
 - [ ] **Multi-device / multi-user sync — NEXT UP, confirmed priority 2026-08-08.** Profiles
   need to auto-refresh (not instant/live, but roughly within a minute) so multiple caregivers
   viewing the same patient profile see each other's updates, without screen flicker or
@@ -199,6 +179,53 @@ new session the way a committed file does; see TEAM.md's opening note.
 
 ## Completed
 
+- [x] **Found and fixed a real bug in `sw.js` itself that could make ANY future push look like it
+  didn't work, discovered while chasing Aaron's "still showing old wording" report.** Not something
+  Aaron directly asked for — surfaced investigating his tour-wording report, and important enough
+  to fix immediately rather than log-and-defer. While confirming the "Other" wording was already
+  correct in the committed source, testing directly against the real deployed site turned up two
+  stacked problems in `sw.js`'s caching, neither of which is what the pre-existing `release_check.sh`
+  guards against (that only catches forgetting to bump the CACHE version at all): (1) GitHub Pages'
+  CDN can briefly serve an inconsistent snapshot across files right after a push — sw.js updated at
+  one edge node, index.html not yet updated at another — and the service worker's install step was
+  cache-first, so if its one-time fetch landed in that window, it permanently baked the STALE
+  index.html into an otherwise correctly-versioned new cache, serving it to everyone until the next
+  deploy. (2) Worse and more persistent: even minutes later, with the CDN fully settled and serving
+  the new file (confirmed with a direct no-cache fetch), the service worker's `cache.addAll()` kept
+  fetching the OLD version anyway — traced to the browser's own ordinary HTTP cache (a separate,
+  earlier layer than the Cache Storage API this file otherwise manages) silently handing back a
+  disk-cached response instead of a real network request. Both are very plausibly the real
+  explanation behind more than one "why hasn't my fix reached the device" report across this
+  project's history, not just plain stale-service-worker-registration as first assumed. Fixed in
+  two parts: the app's own HTML document now fetches network-first (always tries the real network,
+  falls back to cache only if genuinely offline) instead of cache-first, so a stale bake-in can't
+  become the thing every user gets served; and every shell fetch (both at install time and at
+  runtime) now explicitly forces `{cache:'reload'}`, bypassing the browser's HTTP cache so it can't
+  silently substitute an old disk-cached response for a real network fetch. Verified live, directly
+  against the real deployed site: confirmed the exact failure by inspecting the live Cache Storage
+  contents (caught the stale bake-in happening in real time, twice), then confirmed after the fix
+  that a fresh navigation gets fully current content and the cache itself holds current content too.
+  Shipped as two follow-up commits alongside app-v48.
+- [x] **Onboarding tour now auto-navigates to the tab it's highlighting instead of leaving the user
+  on Home with just a glowing icon, and no longer blocks taps on the real page underneath.**
+  Original ask 2026-08-08: "it should highlight the tab it's referring...but it should
+  AUTOMATICALLy take you to that page so they don't have to click on that tab." Follow-up the same
+  day, more severe: "I can't even click on anything during tour after adding med and going back
+  home. after that, can't click on reports, inpatient or symptoms. this is why it just needs to
+  take you there automatically...the user can go back to those tabs on their own time." Root cause:
+  the tour's four trailing informational steps (Logging doses/quick-log, Reports, In-Patient,
+  Symptoms) never actually navigated anywhere, and rendered a full-screen invisible overlay that
+  silently blocked every tap and scroll on the page underneath — a deliberate v28 anti-sidetracking
+  measure that became the wrong tradeoff once Aaron wanted real auto-navigation instead. Fixed: these
+  four steps now trigger the app's real navigation the instant they become current, both stepping
+  forward and backward, so the tour shows the actual Reports/In-Patient/Symptoms page; the overlay no
+  longer intercepts input, so the real page underneath is fully usable while the guide card is up.
+  Verified live end-to-end directly against the deployed site: fresh "Other" profile through the real
+  setup flow, real Meds→Add→Save, real nav taps, Back/Next in both directions, a background nav tap
+  during a tour step actually navigating — zero console errors throughout. Also directly confirmed
+  live (same session) that the medication editor's "Other"-profile wording (previously flagged as
+  possibly still wrong) is fully correct on the real deployed site — see the sw.js entry above for
+  why it may not have looked that way on Aaron's device. Shipped app-v48.
 - [x] **Fixed the Dosage options field permanently locking Daily limit for non-mg medications.**
   Aaron: "Dosage option still waits for 'mg' if Limit Unit is set for Number of applications.
   should it still wait for 'mg'? the dosage option banner pops up and can't be bypassed." Root
