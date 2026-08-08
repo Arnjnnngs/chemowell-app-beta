@@ -99,14 +99,6 @@ new session the way a committed file does; see TEAM.md's opening note.
   edit. A likely pre-existing CSV export bug was found while investigating this (redundant/wrong
   "N pill(s)" text appended in `buildExportRows()` regardless of actual unit) — will fix as part
   of the same pass since expanding units makes it more visibly wrong.
-- [ ] **Restructure Pro tier bullets** — added 2026-08-08. Aaron: "there still needs to be a real
-  gap between plus and pro. i'm still not seeing it. still need to remove priority access to new
-  features unless you tell me what you envision with that," plus his own proposed lead order
-  ("highest tier should lead with all the exports, back up and then last bullet point should be
-  the unlimited profiles"). Needs: reordered bullets (exports/backup/insights lead, unlimited
-  profiles last), a real differentiation from Plus's existing "backup & transfer to a new phone,"
-  and a decision on "priority access to new features" (recommend dropping it — no concrete
-  deliverable exists to back the claim — unless Aaron has a specific feature in mind for it).
 - [ ] **Build the 3 workshopped Pro-tier features (confirmed "build it" 2026-08-08)** — the
   comprehensive export (bundling Appointments + Notes with the existing entries CSV), chemo/
   treatment trend insights, and the MedlinePlus-sourced med-info lookup link (see the item above)
@@ -114,6 +106,18 @@ new session the way a committed file does; see TEAM.md's opening note.
 
 ## Completed
 
+- [x] **Restructured Pro tier bullets, real gap from Plus, dropped "priority access to new
+  features."** Aaron: "there still needs to be a real gap between plus and pro. i'm still not
+  seeing it. still need to remove priority access to new features unless you tell me what you
+  envision with that." Dropped that bullet outright — no concrete deliverable existed to back it.
+  Plus's backup bullet reworded to be explicitly single-device continuity ("Backup & restore —
+  move your data to a new phone"); Pro's export bullet reworded to be explicitly a different
+  thing — a shareable file for someone else (a doctor, another caregiver), not just a personal
+  restore path. On bullet order: Aaron asked whether exports/backup should lead with unlimited
+  profiles last — recommended (and built) leading with real-time shared caregiver access instead,
+  since Aaron himself named that as the one thing that would actually sell him ("I wouldn't be
+  sold on that besides the shared access"), with the export and trend-insights bullets right
+  behind it, unlimited profiles last as he asked. Verified live. Shipped app-v44.
 - [x] **Added an on-screen explainer to the In-Patient tab** — this screen had zero on-screen
   explanation before (only a separate FAQ entry described it); added a "?" helpIcon next to
   "In-Patient Status," same pattern as the medication editor. Verified live. Shipped app-v43.

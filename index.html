@@ -2565,8 +2565,19 @@ function renderUpgradeModal() {
       h('div', { style: { ...TYPE.caption, color: '#554A52', marginBottom: '12px' } }, 'One-time purchases \u2014 no subscriptions. The free tracker is complete and stays free.'),
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
         planCard('free', 'Free', '$0', null, [], 'free'),
-        planCard('plus', 'Plus', '$4.99', 'one-time', ['Up to 3 patient profiles', 'Printable doctor’s report (print or save as PDF)', 'Backup & transfer to a new phone (coming in beta)'], 'plus'),
-        planCard('pro', 'Pro', '$14.99', 'one-time', ['Unlimited patient profiles — includes everything in Plus', 'Real-time shared access for caregivers, so updates show up on their phone automatically (coming soon)', 'Priority access to new features as they launch'], 'pro')
+        // v43 (Aaron-requested restructure, 2026-08-08): Aaron: "there still needs to be a real
+        // gap between plus and pro. i'm still not seeing it" -- Plus's backup bullet and Pro's old
+        // "unlimited profiles" framing overlapped too much, and "priority access to new features"
+        // was dropped entirely since no concrete feature ever backed that claim. Plus's backup is
+        // now explicitly single-device continuity ("move YOUR data to a new phone"); Pro's export
+        // is explicitly a different thing -- a shareable file for someone ELSE (a doctor, another
+        // caregiver), not just your own restore path. Aaron also asked the highest tier lead with
+        // "all the exports, back up" and close on unlimited profiles -- shared caregiver access
+        // leads instead, since it's the one benefit Aaron himself said would actually sell him
+        // ("I wouldn't be sold on that besides the shared access"), with the export/insights
+        // features he confirmed building right behind it, profiles last as he asked.
+        planCard('plus', 'Plus', '$4.99', 'one-time', ['Up to 3 patient profiles', 'Printable doctor’s report (print or save as PDF)', 'Backup & restore — move your data to a new phone (coming in beta)'], 'plus'),
+        planCard('pro', 'Pro', '$14.99', 'one-time', ['Real-time shared access for caregivers, so updates show up on their phone automatically (coming soon)', 'Complete data export — entries, appointments, and notes bundled into one shareable file for your care team or another caregiver (coming soon)', 'Chemo/treatment trend insights — spot patterns like symptoms peaking a few days after treatment (coming soon)', 'Unlimited patient profiles — includes everything in Plus'], 'pro')
       ),
       TEST_MODE ? h('button', { onClick: () => { setLicense({ tier: 'free', simulated: true }); setToast('License reset to Free (beta)'); setState({}); }, style: { marginTop: '12px', width: '100%', minHeight: '44px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: '#6D5247', background: 'transparent', cursor: 'pointer' } }, 'Reset to Free (beta testing)') : null,
       h('div', { style: { marginTop: '10px', fontSize: '12px', color: '#7A6E76', lineHeight: '1.5' } }, 'Beta build: purchases are simulated so upgrading can be tested end to end. The store version uses real App Store / Google Play purchases.')
@@ -5109,7 +5120,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v43';
+const APP_VERSION = 'app-v44';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
