@@ -43,19 +43,28 @@ caught this by noticing the pattern, not by a defect reaching him — but a real
 there anyway: a retroactive Auditor pass (`outputs/AUDIT_v50.md`) turned up a live, currently-
 shipping bug (a `ReferenceError` breaking the native export share-sheet feature since app-v47)
 that had gone undetected since then specifically because this kind of live-testing gate hadn't
-run in a while. Fixed same-day as app-v51; full retroactive Auditor + PM reports are in
-`outputs/AUDIT_v50.md` and `outputs/PM_GATE_v50.md`.
+run in a while. Fixed same-day as app-v51.
 
-**The fix here is not a new rule — this file already said "every release, no exceptions" before
-this incident.** The fix is actually running the gates, every time, including for a release that
-feels self-contained or low-risk. If you are the Lead Developer and you're about to mark
-something done off your own self-verification alone: stop and ask whether this is genuinely a
-"quick 1-2 line change" (APP_CLAUDE.md rule 7's bar — small, safe, no real design/architecture
-judgment involved) or whether it's a real release that needs the Auditor + PM gates before it's
-actually done, not after. When genuinely unsure, run the gates — a wasted independent pass costs
-far less than a defect sitting live and undetected. For anything Aaron has flagged explicitly as
-needing "multiple eyes" (the sync feature is the standing example, per his 2026-08-08
-instruction), that's not a judgment call at all — it gets the full chain, full stop.
+**Aaron's follow-up, same day, after seeing the first correction attempt still leave room for
+Lead-Developer judgment:** "the whole point of the team was to catch things you don't see. I'm
+not sure I like your judgement that you can handle on your own bc things have obviously been
+skipped or missed... this is an important project and things can't be missed bc this is peoples
+lives at stake." He is right, and this closes the loophole for good:
+
+**There is no more Lead-Developer discretion to skip the Auditor + Project Manager gates, for
+any change to application code or config, regardless of size.** Not a 1-line fix, not a version
+bump, not something that "obviously" works. The first draft of this incident note still framed
+a "genuinely small, safe, 1-2 line fix" as a judgment call the Lead Developer could make solo —
+that framing is exactly what Aaron is overriding here, so it's gone. See APP_CLAUDE.md rule 5
+and rule 7 for the current, tightened wording. In practice: after implementing and
+self-verifying any code change — even one line — spawn a Zero Day Auditor agent and a Project
+Manager agent (via the Agent tool) before telling Aaron it's done. Self-verification is real
+work and still required, but it is never reported to Aaron as equivalent to the independent
+gate. If a task genuinely has no code/config change at all (pure documentation edits to files
+like this one, README.md, REQUESTS.md, BACKLOG.md), the gates don't apply in the same sense —
+but that distinction is not a lever for avoiding the gate on anything that touches
+`index.html`, `sw.js`, `.github/workflows/`, `sync-backend/`, or dependency/config files. When
+genuinely unsure which category something falls into, treat it as code and run the gates.
 
 ## Chain of command (app-v25, Aaron-mandated)
 
