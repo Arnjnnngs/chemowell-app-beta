@@ -135,6 +135,23 @@ new session the way a committed file does; see TEAM.md's opening note.
   E2E encryption — AES-256-GCM data encryption, ECDH+HKDF one-time device pairing, all via
   the native Web Crypto API, no external libraries). Implementation (Lead Developer stage)
   has not started yet.
+  **Lead Developer stage, in progress as of app-v49:** hosting pivoted from the brief's
+  Cloudflare recommendation to Vercel — this environment has zero deploy access to Cloudflare,
+  but does have live Vercel deploy access under Aaron's own account, which is strictly better
+  (build+deploy+test happens in this session instead of handing Aaron code to deploy himself).
+  Built and verified: the on-device crypto module (key generation, record encrypt/decrypt,
+  the full ECDH+HKDF pairing handshake) — 9/9 checks passing in Node, re-confirmed 4/4 in a
+  real browser via Playwright, plus a full setup-flow regression with zero console errors
+  (confirms this is a true no-op on the shipped app so far). Built and deployed: the backend
+  itself (`sync-backend/` in this repo) — pairing + encrypted push/pull endpoints on Vercel,
+  using Vercel Blob's real ETag-based conditional write for the version-conflict compare-and-
+  swap the design calls for. **Blocked on Aaron for 3 one-time Vercel dashboard steps**
+  (create a project named `chemowell-sync`, disable deployment-protection's login wall so the
+  API is actually publicly reachable by the app, connect Blob storage) — this session's
+  Vercel access can deploy code but can't create projects or change project settings.
+  Still to build once unblocked: the pairing UI (Share this profile / Join a shared profile),
+  the sync loop itself, the conflict-detected UI, the "last synced" indicator, and the
+  Settings entry point — items 4-8 of `SYNC_DEVELOPER_BRIEF_v2.md` §7's task breakdown.
 - [ ] **How does a Plus/Pro caregiver actually back up and move to a new phone?** — added
   2026-08-08. Aaron: "if they have the higher tier plans, we need to figure out how would they
   backup to move to another phone if it's all on one device and they aren't logging in." Real

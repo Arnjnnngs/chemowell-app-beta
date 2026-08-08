@@ -180,6 +180,176 @@ function switchProfile(id) {
   location.reload();
 }
 
+// ---- Sync: device identity + per-profile encrypted-sync key storage (v49) ----
+// See outputs/SYNC_DEVELOPER_BRIEF_v2.md for the full design. installId is a stable random
+// identifier for this browser/app installation -- not a user account, purely so another paired
+// device's conflict UI can say "changed on another device" without exposing anything more
+// (§2.3). The per-profile sync key (K) is the profile's durable AES-256 encryption key --
+// generated once locally by whichever device first shares a profile (§2.2 step 0), then copied to
+// each newly-paired device via the one-time handshake in the crypto helpers below. K is stored
+// exactly like every other on-device secret in this app (localStorage, on-device only) -- it is
+// itself never encrypted, because it IS the encryption key for the server-facing copy of the data,
+// not data that needs its own separate protection beyond normal device security.
+const INSTALL_ID_KEY = 'chemowell-app-install-id-v1';
+function getOrCreateInstallId() {
+  let id = null;
+  try { id = localStorage.getItem(INSTALL_ID_KEY); } catch (e) {}
+  if (!id) {
+    id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    try { localStorage.setItem(INSTALL_ID_KEY, id); } catch (e) {}
+  }
+  return id;
+}
+function syncKeyStorageKey(profileId) { return 'chemowell-app-p-' + profileId + '-synckey-v1'; }
+function getDeviceKeyRaw(profileId) { try { return localStorage.getItem(syncKeyStorageKey(profileId)); } catch (e) { return null; } }
+function setDeviceKeyRaw(profileId, base64Key) { try { localStorage.setItem(syncKeyStorageKey(profileId), base64Key); } catch (e) {} }
+function clearDeviceKeyRaw(profileId) { try { localStorage.removeItem(syncKeyStorageKey(profileId)); } catch (e) {} }
+function isProfileShared(profileId) { return !!getDeviceKeyRaw(profileId); }
+// Per-profile sync metadata: server token (opaque lookup id, not secret -- §2.3), last-synced
+// timestamp, and per-record base versions this device last knew about (§3's optimistic-concurrency
+// mechanism). Kept as its own localStorage key, separate from the key itself.
+function syncMetaStorageKey(profileId) { return 'chemowell-app-p-' + profileId + '-syncmeta-v1'; }
+function getSyncMeta(profileId) { return loadJSON(syncMetaStorageKey(profileId), { token: null, lastSyncedAt: 0, versions: {}, devices: [] }); }
+function setSyncMeta(profileId, patch) { saveJSON(syncMetaStorageKey(profileId), { ...getSyncMeta(profileId), ...patch }); }
+function clearSyncMeta(profileId) { try { localStorage.removeItem(syncMetaStorageKey(profileId)); } catch (e) {} }
+
+// ---- Sync: Web Crypto helpers (SYNC_DEVELOPER_BRIEF_v2 §2.1-2.2) ----
+// Three native crypto.subtle primitives, zero external dependency: ECDH(P-256)+HKDF for the
+// one-time pairing handshake, AES-256-GCM for both key-wrapping during pairing and encrypting
+// every medication/entry record before it ever reaches the server. Pure functions -- no
+// localStorage, no fetch -- round-trip tested standalone in Node (9/9 checks passing: encrypt/
+// decrypt round trip, wrong-key fails closed, full two-device handshake produces matching K, an
+// eavesdropper with a different keypair cannot recover K) before being pasted in here, per the
+// brief's own recommended order (task breakdown item 2).
+function syncB64FromBytes(bytes) {
+  let bin = '';
+  const arr = new Uint8Array(bytes);
+  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+  return btoa(bin);
+}
+function syncBytesFromB64(b64) {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+// K generation -- the profile's durable AES-256 sync key (§2.2 step 0).
+async function generateSyncKey() {
+  const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  const raw = await crypto.subtle.exportKey('raw', key);
+  return syncB64FromBytes(raw);
+}
+async function importSyncKey(base64Key) {
+  return crypto.subtle.importKey('raw', syncBytesFromB64(base64Key), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+// AES-GCM encrypt/decrypt of a single JS object -- used both for wrapping K during pairing (§2.2
+// step 5) and for every medication/entry record's content before it's pushed (§2.3). Fresh random
+// IV every call (IVs are not secret, stored alongside the ciphertext).
+async function syncAesEncryptObject(cryptoKey, obj) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plaintext = new TextEncoder().encode(JSON.stringify(obj));
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, plaintext);
+  return { ciphertext: syncB64FromBytes(ciphertext), iv: syncB64FromBytes(iv) };
+}
+async function syncAesDecryptObject(cryptoKey, blob) {
+  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: syncBytesFromB64(blob.iv) }, cryptoKey, syncBytesFromB64(blob.ciphertext));
+  return JSON.parse(new TextDecoder().decode(plaintext));
+}
+// A single medication/entry record, encrypted with the profile's sync key K.
+async function encryptRecord(base64K, obj) {
+  const key = await importSyncKey(base64K);
+  return syncAesEncryptObject(key, obj);
+}
+async function decryptRecord(base64K, blob) {
+  const key = await importSyncKey(base64K);
+  return syncAesDecryptObject(key, blob);
+}
+// ---- Pairing handshake (§2.2 step 1) ----
+// Every new device pairing gets its own fresh, single-use ECDH key pair -- never reused across
+// pairing sessions, discarded once the transport key has done its one job (moving a copy of K).
+async function generateEcdhKeyPair() {
+  return crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+}
+async function exportEcdhPublicKey(keyPair) {
+  const raw = await crypto.subtle.exportKey('raw', keyPair.publicKey);
+  return syncB64FromBytes(raw);
+}
+async function importEcdhPublicKey(base64Key) {
+  return crypto.subtle.importKey('raw', syncBytesFromB64(base64Key), { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+}
+// Both sides independently derive the same one-time transport key from their own private key and
+// the other side's public key -- the actual Diffie-Hellman step. HKDF turns the raw shared secret
+// into a proper AES-256 key; the transport key itself is never transmitted in any form.
+async function deriveTransportKey(myKeyPair, theirPublicKeyB64, salt) {
+  const theirPublicKey = await importEcdhPublicKey(theirPublicKeyB64);
+  const sharedBits = await crypto.subtle.deriveBits({ name: 'ECDH', public: theirPublicKey }, myKeyPair.privateKey, 256);
+  const hkdfKey = await crypto.subtle.importKey('raw', sharedBits, 'HKDF', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: new TextEncoder().encode(salt || 'chemowell-pair-v1'), info: new TextEncoder().encode('sync-key-transport') },
+    hkdfKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+// Inviting device (already holds K): wrap K with the freshly-derived transport key for upload.
+async function wrapSyncKeyForTransport(myKeyPair, theirPublicKeyB64, base64K) {
+  const transportKey = await deriveTransportKey(myKeyPair, theirPublicKeyB64);
+  return syncAesEncryptObject(transportKey, { k: base64K });
+}
+// Joining device: unwrap the downloaded ciphertext with its own independently-derived transport key.
+async function unwrapSyncKeyFromTransport(myKeyPair, theirPublicKeyB64, wrappedBlob) {
+  const transportKey = await deriveTransportKey(myKeyPair, theirPublicKeyB64);
+  const obj = await syncAesDecryptObject(transportKey, wrappedBlob);
+  return obj.k;
+}
+// Debug/test hook only -- this file is a single <script type="module">, so nothing declared in it
+// is reachable from outside (e.g. an automated test harness) without deliberately exposing it.
+// None of these functions hold or expose any secret on their own (they're pure crypto operations
+// callers must supply keys/data to) -- this mirrors the same round-trip test already run standalone
+// in Node before this code was pasted in, so it can be re-verified against the real browser's
+// crypto.subtle implementation too, and reused by future QA/Auditor passes on this feature.
+if (typeof window !== 'undefined') {
+  window.__syncTest = {
+    generateSyncKey, encryptRecord, decryptRecord, generateEcdhKeyPair, exportEcdhPublicKey,
+    wrapSyncKeyForTransport, unwrapSyncKeyFromTransport, getOrCreateInstallId,
+  };
+}
+
+// ---- Sync: backend API layer ----
+// Talks to the zero-knowledge relay in /sync-backend (deployed separately on Vercel -- see
+// outputs/SYNC_DEVELOPER_BRIEF_v2.md). Every call here either sends/receives ciphertext + opaque
+// metadata only, or (for the pairing handshake) an ephemeral ECDH public key -- never plaintext
+// patient data, never K itself, never anything key-equivalent. SYNC_API_BASE is intentionally a
+// single constant to flip once the production backend is live; empty string means "sync isn't
+// reachable yet," which every call below treats as a clean, non-throwing failure so a build with
+// this code merged but no backend configured behaves identically to no sync existing at all.
+const SYNC_API_BASE = ''; // TODO: set to the deployed backend's URL once outputs/SYNC_DEVELOPER_BRIEF_v2.md's Vercel setup is complete (see REQUESTS.md sync entry)
+function syncApiReady() { return !!SYNC_API_BASE; }
+async function syncApiCall(path, opts) {
+  if (!syncApiReady()) throw new Error('sync_backend_not_configured');
+  const res = await fetch(SYNC_API_BASE + path, {
+    method: (opts && opts.method) || 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    body: opts && opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) {
+    const err = new Error((data && data.error) || ('http_' + res.status));
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+function pairCreate(publicKey, profileToken) { return syncApiCall('/api/pair/create', { method: 'POST', body: { publicKey, profileToken } }); }
+function pairRedeem(code, publicKey) { return syncApiCall('/api/pair/redeem', { method: 'POST', body: { code, publicKey } }); }
+function pairUploadKey(sessionId, wrappedKey) { return syncApiCall('/api/pair/upload-key', { method: 'POST', body: { sessionId, wrappedKey } }); }
+function pairStatus(sessionId) { return syncApiCall('/api/pair/status?session=' + encodeURIComponent(sessionId)); }
+function profilePull(token) { return syncApiCall('/api/profile/pull?token=' + encodeURIComponent(token)); }
+function profilePush(payload) { return syncApiCall('/api/profile/push', { method: 'POST', body: payload }); }
+
 const ENTRIES_KEY = 'chemowell-app-p-' + ACTIVE_PROFILE_ID + '-entries-v1';
 const PREFS_KEY = 'chemowell-app-p-' + ACTIVE_PROFILE_ID + '-prefs-v1';
 
@@ -5177,7 +5347,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v48';
+const APP_VERSION = 'app-v49';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
