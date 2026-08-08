@@ -22,6 +22,40 @@ new session the way a committed file does; see TEAM.md's opening note.
 
 ## Open
 
+- [ ] **Export "check Downloads" shows nothing downloaded, and notifications still not firing on
+  the APK — is this an APK/WebView limitation or an HTML issue?** — added 2026-08-08. Aaron:
+  "export says check downloads but I don't see anything in my notifications bar saying anything
+  was downloaded. same for notification still not firing. is this bc it's only an APK or bc it's
+  wrapped around an HTML?" Real, well-founded question — see the direct answer given in chat.
+  Suspected root cause for export: the CSV download falls back to a plain browser blob-download
+  (`<a download>` click) when the Web Share API isn't available/usable, and that fallback is known
+  to be unreliable inside an Android WebView (no native DownloadManager hookup, no OS notification)
+  — Capacitor's shell was never specifically adapted for this, only for notifications. Needs a real
+  fix (likely `@capacitor/filesystem` + `@capacitor/share` so export actually writes a file via the
+  native bridge and hands it to Android's real share/save sheet) plus a native rebuild — bigger than
+  a JS-only patch, and not something verifiable from this sandbox (no Android emulator/device here
+  beyond the CI smoke test). For notifications: confirmed the APK loads the same live GitHub Pages
+  build the web version does (capacitor.config.ts points `server.url` there, not a bundled copy),
+  so the v41/v45/v46 fixes already reach the installed app on next reload — no separate rebuild
+  needed for those. The real unknown is whether the native pre-scheduled reminder path itself
+  (`syncNativeReminders`/the LocalNotifications plugin) is actually succeeding on Aaron's device —
+  pointed him at Account/Settings' own on-screen notification status card, which states plainly
+  whether it's blocked, not yet turned on, failed, or genuinely on with a scheduled count, so this
+  can be diagnosed without guessing.
+- [ ] **"Other" treatment-type medication editor wording still confusing** — added 2026-08-08.
+  Aaron: "I chose other for my profile, when adding a med, it says add to home screen, only near
+  your date, exclude near your date. this makes no sense." The v42 pass (Completed below) made the
+  treatment-day-availability wording adaptive for "Other" profiles, but Aaron's report suggests the
+  combination of that section with the separate "Home screen placement" section above it still
+  doesn't read clearly together. Needs a fresh look at both sections side by side for an "Other"
+  profile, not just re-checking the v42 wording in isolation.
+- [ ] **Onboarding tour should auto-navigate to the tab it's highlighting, and drop "click this
+  tab" instructional language** — added 2026-08-08. Aaron: "it should highlight the tab it's
+  referring...but it should AUTOMATICALLy take you to that page so they don't have to click on
+  that tab. makes it easier. the on screen should just tell them what to do instead of click
+  'this tab'." Real usability improvement to the guided tour — steps that reference a tab should
+  navigate there for the user, and copy should describe the action to take, not tell them to find
+  and click a UI element themselves.
 - [ ] **Multi-device / multi-user sync — NEXT UP, confirmed priority 2026-08-08.** Profiles
   need to auto-refresh (not instant/live, but roughly within a minute) so multiple caregivers
   viewing the same patient profile see each other's updates, without screen flicker or
