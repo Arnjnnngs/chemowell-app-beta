@@ -5347,7 +5347,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v49';
+const APP_VERSION = 'app-v50';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -5399,17 +5399,36 @@ function renderNativeNotifStatusCard() {
     btn('Try again', () => syncNativeReminders({ force: true }))
   );
 
+  // app-v50 (Aaron-requested): a second, independent OS control from exact timing -- surfaced only
+  // when there's something to do (batteryOptState === 'enabled'), never when it's already off,
+  // unsupported, or not yet known, matching this card's existing "only show an action that's real"
+  // rule.
+  const batteryOptBlock = () => {
+    if (batteryOptState !== 'enabled') return [];
+    return [
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+        h('div', { style: muted }, 'Android battery saving may also delay delivery.'),
+        helpIcon('Background reminder reliability', 'This is a separate setting from exact timing above. Some phones aggressively pause apps running in the background to save power, which can delay a reminder reaching you even once it’s armed correctly.\n\nTurning this off just for ChemoWell tells your phone this app is allowed to run reliably in the background. It has very little real effect on battery life for an app that only checks a schedule occasionally — it isn’t constantly running in between.')
+      ),
+      btn('Allow background activity', requestBatteryOptExemption, '#9A6419')
+    ];
+  };
+
   if (status === 'on-exact') return card(
     pill('✓ Notifications are on'),
     countLine(),
-    h('div', { style: { ...muted, color: '#9A6419', fontWeight: '700' } }, 'Exact timing isn’t allowed — reminders may arrive a little early or late.'),
-    btn('Allow exact reminders', changeExactNotificationSetting, '#9A6419')
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+      h('div', { style: { ...muted, color: '#9A6419', fontWeight: '700' } }, 'Exact timing isn’t allowed — reminders are scheduled a few minutes ahead so they land on time rather than late.'),
+      helpIcon('About exact reminder timing', 'Most Android phones let any app request exact-time alarms once you allow it below — this isn’t limited to clock or calendar apps, and it’s worth turning on. A few phones (Samsung devices have reported this) can make the toggle harder to find or behave inconsistently, especially right after declining it once; if "Alarms & reminders" isn’t visible under Settings → Apps → ChemoWell, try again after closing and reopening the app, or check Settings → Apps → (three-dot menu) → Reset app preferences.\n\nEither way, ChemoWell already schedules reminders a few minutes ahead of their real time on your behalf when this is off, so ordinary Android delivery slop lands early rather than late — you don’t need to build in your own buffer. If one specific reminder truly can’t ever be late, setting it a few minutes ahead yourself is still the safest belt-and-suspenders option.'),
+    ),
+    btn('Allow exact reminders', changeExactNotificationSetting, '#9A6419'),
+    ...batteryOptBlock()
   );
 
-  if (status === 'empty') return card(h('div', { style: muted }, 'No reminders are currently due in the next 3 days.'));
+  if (status === 'empty') return card(h('div', { style: muted }, 'No reminders are currently due in the next 3 days.'), ...batteryOptBlock());
 
   // 'on'
-  return card(pill('✓ Notifications are on'), countLine());
+  return card(pill('✓ Notifications are on'), countLine(), ...batteryOptBlock());
 }
 
 function renderFaqView(now) {
@@ -6655,6 +6674,50 @@ function sharePlugin() {
   try { return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share) || null; }
   catch (e) { return null; }
 }
+// app-v50 (Aaron-requested): battery optimization is a separate OS control from both notification
+// permission and exact-alarm permission -- a phone can have both of those granted and still
+// aggressively suspend ChemoWell's background process to save power, delaying when an already-armed
+// reminder actually reaches the screen. Exempting the app from battery optimization asks the OS to
+// stop doing that specifically for ChemoWell. Same accessor pattern as lnPlugin() above; this plugin
+// is Android-only (isNativeApp() gates every call site, same as the rest of this section).
+function batteryPlugin() {
+  try { return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BatteryOptimization) || null; }
+  catch (e) { return null; }
+}
+let batteryOptState = 'unknown'; // 'unknown' | 'enabled' (still restricted -- action available) | 'disabled' (already exempt) | 'unsupported'
+let batteryActionBusy = false;
+async function refreshBatteryOptStatus() {
+  if (!isNativeApp()) return;
+  const bp = batteryPlugin();
+  if (!bp || !bp.isBatteryOptimizationEnabled) { batteryOptState = 'unsupported'; setState({}); return; }
+  try {
+    const r = await bp.isBatteryOptimizationEnabled();
+    batteryOptState = r.enabled ? 'enabled' : 'disabled';
+  } catch (e) { batteryOptState = 'unsupported'; }
+  setState({});
+}
+async function requestBatteryOptExemption() {
+  if (batteryActionBusy) return;
+  batteryActionBusy = true;
+  const bp = batteryPlugin();
+  try {
+    if (bp && bp.requestIgnoreBatteryOptimization) {
+      await bp.requestIgnoreBatteryOptimization();
+      // Same reasoning as changeExactNotificationSetting() below: the OS dialog is modal from the
+      // caregiver's perspective, so re-read the real state instead of assuming the request succeeded.
+      await refreshBatteryOptStatus();
+      if (batteryOptState === 'disabled') setToast('Background reminders are now allowed for ChemoWell.');
+      else setToast('Open your phone’s Settings → Apps → ChemoWell → Battery to finish allowing this.');
+    } else {
+      setToast('Open your phone’s Settings → Apps → ChemoWell → Battery to allow background activity.');
+    }
+  } catch (e) {
+    setToast('Open your phone’s Settings → Apps → ChemoWell → Battery to allow background activity.');
+  } finally {
+    batteryActionBusy = false;
+    setState({});
+  }
+}
 // Converts a Blob to the base64 string Filesystem.writeFile needs (it has no Blob-native overload).
 function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
@@ -6808,8 +6871,43 @@ function buildReminderPlan(nowTs, meds, entries, appts, profileId) {
   return out.map(n => Object.assign({ id: notifIdFromTag(n.tag) }, n));
 }
 
+// app-v50 (Aaron-requested, researched): SCHEDULE_EXACT_ALARM (what this app requests -- see
+// changeExactNotificationSetting() below) genuinely works for ordinary apps once granted; it is
+// NOT restricted to calendar/alarm-clock apps the way the separate, install-time-auto-granted
+// USE_EXACT_ALARM permission is (that one IS gated to that app category by Play policy). So this
+// stays a real, working control worth offering rather than a dead one worth removing. But while it's
+// off (or its state hasn't been confirmed yet), Android's inexact-alarm path is what actually arms
+// the reminder, and that path can be deferred by the OS's own power management -- worse under
+// aggressive per-OEM battery managers -- by anywhere from under a minute to several minutes in
+// practice. `allowWhileIdle: true` (already set below) asks the OS to still fire during Doze, which
+// substantially narrows that window but doesn't eliminate it.
+// Nudging the ARMED time a few minutes earlier spends that uncertainty as "may arrive a little
+// early" instead of "may arrive late" -- the safer direction for a medication reminder, and it
+// changes nothing about what any card or notification body says (those always describe the real,
+// un-padded time; only the moment the OS is asked to fire at moves). Never granted -> never applied.
+const NOTIF_INEXACT_LEAD_MS = 4 * 60 * 1000;
+function applyExactAlarmLeadBuffer(plan, nowTs) {
+  if (notifExactState === 'granted') return plan;
+  // Never pad past nowTs + NOTIF_MIN_LEAD_MS -- padding must never turn a valid future reminder into
+  // one that's already due (or worse, in the past), which some OS schedulers fire immediately or drop.
+  const floor = nowTs + NOTIF_MIN_LEAD_MS;
+  return plan.map(n => Object.assign({}, n, { at: Math.max(n.at - NOTIF_INEXACT_LEAD_MS, floor) }));
+}
 function notifPayloadKey(n) { return n.id + '|' + n.at + '|' + n.title + '|' + n.body; }
 function notifPlanSignature(plan) { return plan.map(notifPayloadKey).join(','); }
+// Debug/test hook only -- same reasoning and same pattern as window.__syncTest earlier in this file:
+// this is a single <script type="module">, so a real (non-simulated) automated harness can't reach
+// module-scoped functions or the module-scoped notifExactState/batteryOptState variables otherwise.
+// Function declarations are hoisted within their module, so this can sit right next to the functions
+// it exposes regardless of definition order elsewhere in the file.
+if (typeof window !== 'undefined') {
+  window.__notifTest = {
+    applyExactAlarmLeadBuffer, buildReminderPlan, batteryPlugin, lnPlugin,
+    getNotifExactState: () => notifExactState,
+    setNotifExactState: (v) => { notifExactState = v; },
+    getBatteryOptState: () => batteryOptState,
+  };
+}
 
 // The set we believe is currently armed on the device. Deliberately NOT cleared on a failed sync --
 // cancelReminderForEntry() below needs it to keep cancelling the right id for a logged dose even
@@ -6862,7 +6960,7 @@ async function syncNativeReminders(opts) {
   if (notifSyncBusy) { notifSyncAgain = true; return; } // coalesce re-entrant calls, never stack them
 
   const nowTs = Date.now();
-  const plan = buildReminderPlan(nowTs, state.meds, state.entries, state.appts, ACTIVE_PROFILE_ID)
+  const plan = applyExactAlarmLeadBuffer(buildReminderPlan(nowTs, state.meds, state.entries, state.appts, ACTIVE_PROFILE_ID), nowTs)
     .map(n => Object.assign({}, n, { pk: notifPayloadKey(n) }));
   const signature = notifPlanSignature(plan);
   if (!opts.force && signature === notifLastSignature) return;
@@ -7102,6 +7200,7 @@ render();
 // or left over from an older build's id scheme.
 if (isNativeApp()) {
   refreshNativeNotifStatus(true);
+  refreshBatteryOptStatus();
   syncNativeReminders({ force: true });
 }
 

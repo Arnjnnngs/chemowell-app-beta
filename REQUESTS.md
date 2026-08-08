@@ -88,6 +88,38 @@ new session the way a committed file does; see TEAM.md's opening note.
   version, both asked for and still needed to diagnose further — this is Android's own OS switch,
   outside the app's control once its settings screen opens, so the app can't be the direct cause of
   a switch not registering a tap.
+  Update 2026-08-08 (phone confirmed: Samsung Galaxy S25 Ultra, One UI 8.5, Android 16): researched
+  whether to remove this control entirely (Aaron's ask: "see if anyone uses that exact firing
+  system thats not a clock/alarm. if not, remove it"). Finding — keep it, it's real: the permission
+  ChemoWell requests (`SCHEDULE_EXACT_ALARM`, user-grantable via this exact settings screen) is NOT
+  restricted to calendar/alarm-clock apps; that restriction only applies to a different, separate,
+  install-time-auto-granted permission (`USE_EXACT_ALARM`) this app doesn't use and couldn't
+  legitimately declare. What Aaron hit instead matches a documented, Samsung-specific One UI quirk
+  (confirmed independently on a Samsung community thread re: Galaxy S24/One UI 6.1, same family of
+  device/OS as Aaron's S25 Ultra/One UI 8.5): the "Alarms & reminders" toggle can behave
+  inconsistently or the whole section can vanish from Settings after being denied once, which reads
+  exactly like "it won't turn on" from the user's side even though the permission itself works
+  normally on most other Android phones.
+  Shipped in app-v50 (code-side improvements only — this needs a fresh APK install + Aaron's
+  on-device confirmation before it can move to Completed, same as the export/printable-report entry
+  above): (1) added a "?" explainer on the exact-timing card covering the above, plus the standard
+  Android fix for the vanished-toggle case (Settings → Apps → ChemoWell → force-stop and reopen, or
+  Settings → Apps → ⋮ → Reset app preferences) — not personally verified against Aaron's exact
+  device state, flagged to him as the thing to check; (2) ChemoWell now automatically arms
+  reminders a few minutes (4 min) ahead of their real time whenever exact alarms aren't confirmed
+  granted, so ordinary Android scheduling slop lands early rather than late — no user action needed,
+  and every displayed time/notification body still shows the real, un-padded time; reverts to
+  exact-as-configured automatically the moment exact alarms are confirmed granted; (3) added a
+  second, independent "Allow background activity" control (new `@capawesome-team/capacitor-
+  android-battery-optimization` plugin) — battery optimization is a separate OS restriction from
+  exact-alarm permission and can delay delivery even when exact timing is granted; the app now
+  detects when it's still restricted and offers a one-tap fix, gated to only appear when there's an
+  actual action to take. Verified in this sandbox: web build zero regressions (Playwright, 0 console
+  errors), new scheduling-buffer logic unit-verified for all three exact-alarm states (denied/
+  unknown/granted) including the floor-clamp guard (never pads a reminder into the past). The native
+  half (manifest permission injection, real plugin behavior, real OS dialogs) can only be verified
+  by this project's GitHub Actions build+emulator-smoke pipeline and, beyond that smoke test, by
+  Aaron's own device — flagging both explicitly rather than claiming untested native behavior works.
 - [ ] **"Other" treatment-type medication editor wording — real root cause found and fixed, but it
   wasn't a wording bug.** Re-reported 2026-08-08 during the tour ("still showing the open near
   treatment and exclude near treatment when chemo/radiation isn't selected"). Investigated fresh:
