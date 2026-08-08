@@ -99,11 +99,6 @@ new session the way a committed file does; see TEAM.md's opening note.
   edit. A likely pre-existing CSV export bug was found while investigating this (redundant/wrong
   "N pill(s)" text appended in `buildExportRows()` regardless of actual unit) — will fix as part
   of the same pass since expanding units makes it more visibly wrong.
-- [ ] **Add an on-screen explainer to the In-Patient tab** — added 2026-08-08. Confirmed via code
-  read that this screen currently has zero on-screen explanation (only a separate FAQ entry
-  explains it) — add a "?" helpIcon directly on the tab, same pattern used elsewhere.
-- [ ] **Lighten the Sunset Glass color palette** — added 2026-08-08. Aaron reports the current
-  colors are too dark/hard to read.
 - [ ] **Restructure Pro tier bullets** — added 2026-08-08. Aaron: "there still needs to be a real
   gap between plus and pro. i'm still not seeing it. still need to remove priority access to new
   features unless you tell me what you envision with that," plus his own proposed lead order
@@ -119,6 +114,15 @@ new session the way a committed file does; see TEAM.md's opening note.
 
 ## Completed
 
+- [x] **Added an on-screen explainer to the In-Patient tab** — this screen had zero on-screen
+  explanation before (only a separate FAQ entry described it); added a "?" helpIcon next to
+  "In-Patient Status," same pattern as the medication editor. Verified live. Shipped app-v43.
+- [x] **Lightened the Sunset Glass color palette** — Aaron reported the background gradient
+  (onboarding + the main app page, behind every card) was too dark/hard to read. Lightened all
+  three gradient stops in HSL space (same hue, +14% lightness): `#FF5F6D → #FFA6AE`,
+  `#FF9A44 → #FFC18B`, `#FFC371 → #FFE1B8`. Verified live on mobile and desktop widths. Header
+  and bottom nav were already on their own separate light background and untouched. Shipped
+  app-v43.
 - [x] **Reworded "Treatment day" section to be adaptive for "Other" treatment type** — Aaron:
   "treatment day can be reworded bc if someone chooses other and they don't have a major
   illness, treatment day might be confusing... I don't have treatment days aside dr visits."

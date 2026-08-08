@@ -2441,7 +2441,7 @@ function setupChipRow(labelText, options, current, onPick) {
 }
 function renderSetup() {
   const root = document.getElementById('root');
-  const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(120deg, #FF5F6D 0%, #FF9A44 55%, #FFC371 100%)', color: '#2A2127', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(24px + var(--safe-top)) 24px 24px' } },
+  const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(120deg, #FFA6AE 0%, #FFC18B 55%, #FFE1B8 100%)', color: '#2A2127', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(24px + var(--safe-top)) 24px 24px' } },
     h('div', { style: { maxWidth: '420px', width: '100%', background: '#FFFFFF', borderRadius: '22px', padding: '30px 26px', boxShadow: '0 18px 50px rgba(200,83,32,0.18)', textAlign: 'center' } },
       h('div', { style: { fontSize: '40px', marginBottom: '10px' } }, '\u2764\uFE0F'),
       h('div', { style: { ...TYPE.display, color: '#BF4C1A', marginBottom: '6px' } }, 'Welcome to ChemoWell'),
@@ -2781,7 +2781,7 @@ function render() {
   const mg = tylenolMg();
   const pct = ceiling > 0 ? Math.min(100, mg / ceiling * 100) : 0;
   const tyColor = mg >= ceiling ? '#C0453B' : pct >= 90 ? '#C0453B' : pct >= 60 ? '#9A6419' : '#BF4C1A';
-  const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(120deg, #FF5F6D 0%, #FF9A44 55%, #FFC371 100%)', color: '#2A2127', paddingBottom: 'calc(90px + env(safe-area-inset-bottom))', position: 'relative' } },
+  const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(120deg, #FFA6AE 0%, #FFC18B 55%, #FFE1B8 100%)', color: '#2A2127', paddingBottom: 'calc(90px + env(safe-area-inset-bottom))', position: 'relative' } },
     renderHeader(now),
     h('main', { style: { position: 'relative', zIndex: '1', maxWidth: '720px', margin: '0 auto', padding: '16px 16px 20px', display: 'flex', flexDirection: 'column', gap: '18px' } }, ...renderContent(now, mg, pct, tyColor, ceiling)),
     // v70: toast now wraps onto multiple lines instead of forcing a single nowrap line -- long
@@ -5109,7 +5109,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v42';
+const APP_VERSION = 'app-v43';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -5850,7 +5850,13 @@ function renderInPatient(now) {
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', minWidth: '0' } },
         h('div', { style: { flexShrink: '0', width: '44px', height: '44px', borderRadius: '13px', background: activeNow ? '#9A6419' : 'rgba(154,100,25,0.12)', color: activeNow ? '#fff' : '#9A6419', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('hospital', 22)),
         h('div', { style: { minWidth: '0' } },
-          h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'In-Patient Status'),
+          // v42 (Aaron-requested): this screen had zero on-screen explanation of what it does --
+          // the only description lived in a separate FAQ entry a caregiver would have to go find.
+          // Same "?" helpIcon pattern already used in the medication editor.
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: '2px' } },
+            h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'In-Patient Status'),
+            helpIcon('In-Patient tracking', 'Use this when a hospital stay begins — tap Log In-Patient Start. While a stay is active, Home medication logging pauses, since the hospital is administering doses, not you, and this screen shows how many days into the stay it’s been.\n\nTap Log In-Patient End when discharged. Every past stay is kept below in In-Patient History, with a running total of stays, total days, longest stay, and stays this year.\n\nUse the “+” button to log a past stay you forgot to record at the time (both a start and an end date).')
+          ),
           activeNow
             ? h('div', { style: { fontSize: '28px', fontWeight: '800', color: '#8B5715', lineHeight: '1.1', marginTop: '2px' } }, ipDayN !== null ? ('Day ' + ipDayN) : 'Active')
             : h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#554A52', marginTop: '3px' } }, 'Not currently in-patient')
