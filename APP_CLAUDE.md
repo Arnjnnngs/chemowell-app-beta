@@ -6,7 +6,29 @@ Instructions for any AI agent working in this repo.
 The **native mobile app** codebase (APP-BETA). Seeded from `chemowell-beta` v71, with Firebase completely removed. Target: Capacitor-wrapped iOS/Android builds for the stores (APP-LIVE later).
 
 ## Hard rules
-1. **No cloud storage. Ever.** The entire product promise is that user data never leaves the device. Do not add Firebase, analytics, remote logging, or any network write of user data.
+1. **No plaintext cloud storage. Ever — updated 2026-08-08, Aaron's explicit sign-off.** The original
+   version of this rule ("no cloud storage, ever... user data never leaves the device") is now
+   superseded for the specific case of the multi-device/multi-caregiver sync feature Aaron confirmed
+   as top priority 2026-08-08 — everything else about this rule (no analytics, no remote logging, no
+   casual network write of user data) is unchanged and still absolute.
+   Context: sync requires data to leave the device for the first time in this project's history, which
+   directly conflicted with this rule and with the app's own "no cloud, no accounts, no tracking"
+   copy shown in Welcome/Settings/About. Raised to Aaron explicitly before any implementation began
+   (not silently overridden). Aaron's own words on the tradeoff: "can something still live on their
+   device but they just share stuff with people? will this change the whole HIPAA thing... I don't
+   want anything with privacy breach." His decision: build it, but end-to-end encrypted, and get a
+   real privacy lawyer's review before it goes live to real users (separate from starting the build).
+   **What's authorized and what isn't:** a backend MAY now exist, but ONLY for the sync feature, and
+   ONLY as a zero-knowledge relay — every write to it is derived/encrypted on-device first, using a
+   key generated from the device-pairing exchange, never transmitted to or derivable by the server.
+   The server may never hold, log, or be able to decrypt plaintext patient data at any point. This is
+   not a general permission to add cloud services, analytics, or any other network data path — any
+   future feature that would write user data off-device needs the same explicit sign-off process this
+   one got, not an assumption that this rule change covers it. HIPAA itself almost certainly does not
+   apply to ChemoWell (consumer-direct app, not used by providers — see the app's own "Intended use"
+   positioning, app-v34) but state consumer-health-data laws (e.g. Washington's My Health My Data Act)
+   may, regardless of encryption — the Formal Privacy Policy REQUESTS.md item now explicitly covers
+   this too, and ships before the sync feature is offered to real (non-testing) users.
 2. This repo must never reference or write to the `caretracker_*` Firestore collections — those belong to WEB-MAIN/WEB-BETA (Brandi's data).
 3. Aaron's 4-target routing: only work here when the task targets **APP-BETA** (or APP-LIVE when it exists). WEB work goes to `care-tracker` / `chemowell-beta`.
 4. Keep `TEST_MODE = true` (date-override controls) until store submission prep.
