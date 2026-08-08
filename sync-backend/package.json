@@ -1,0 +1,10 @@
+{
+  "name": "chemowell-sync-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Zero-knowledge sync relay for ChemoWell (chemowell-app-beta). Stores only ciphertext blobs and opaque, content-blind metadata -- never plaintext patient data, never the encryption key. See SYNC_DEVELOPER_BRIEF_v2.md in the main app repo's outputs/ folder for the full design this implements.",
+  "dependencies": {
+    "@vercel/blob": "latest"
+  }
+}
