@@ -4704,7 +4704,7 @@ function renderMedicationManager(now) {
         med.paused ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(124,97,86,0.14)', color: '#583F35', fontSize: '12px', fontWeight: '700' } }, 'Paused') : null
       ),
       deleting ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', paddingTop: '9px', borderTop: '1px solid rgba(192,69,59,0.16)' } },
-        h('span', { style: { flex: '1', fontSize: '12px', color: '#A15B56', fontWeight: '700', lineHeight: '1.35' } }, 'Existing dose history will remain visible.'),
+        h('span', { style: { flex: '1', fontSize: '12px', color: '#A15B56', fontWeight: '700', lineHeight: '1.35' } }, 'This can’t be undone. Existing dose history will remain visible.'),
         h('button', { onClick: () => setState({ confirmDeleteMed: null }), style: { minHeight: '30px', padding: '0 8px', color: '#745649', fontSize: '12px', fontWeight: '700' } }, 'Keep')
       ) : null
     );
@@ -4910,22 +4910,29 @@ function renderCalendarView(now) {
 
   const apptRow = (appt) => {
     const d = new Date(appt.ts);
-    return h('div', { key: appt.id, style: { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '13px 15px', borderTop: '1px solid rgba(246,108,49,0.08)' } },
-      h('span', { 'aria-hidden': 'true', style: { flexShrink: '0', width: '10px', height: '10px', borderRadius: '50%', background: apptColorHex(appt.color), marginTop: '5px' } }),
-      h('div', { style: { flex: '1', minWidth: '0' } },
-        h('div', { style: { ...TYPE.title, fontSize: '15px', color: '#2A2127', wordBreak: 'break-word', overflowWrap: 'anywhere' } }, appt.title),
-        h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' } },
-          h('span', null, d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })),
-          (appt.reminder && appt.reminder !== 'none') ? h('span', { style: { display: 'inline-flex', alignItems: 'flex-start', gap: '3px' } }, h('span', { style: { marginTop: '2px', flexShrink: '0' } }, appIcon('bell', 12, { color: '#915E48' })), apptReminderLabel(appt)) : null
+    const deleting = state.confirmDeleteAppt === appt.id;
+    return h('div', { key: appt.id, style: { borderTop: '1px solid rgba(246,108,49,0.08)' } },
+      h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '13px 15px' } },
+        h('span', { 'aria-hidden': 'true', style: { flexShrink: '0', width: '10px', height: '10px', borderRadius: '50%', background: apptColorHex(appt.color), marginTop: '5px' } }),
+        h('div', { style: { flex: '1', minWidth: '0' } },
+          h('div', { style: { ...TYPE.title, fontSize: '15px', color: '#2A2127', wordBreak: 'break-word', overflowWrap: 'anywhere' } }, appt.title),
+          h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' } },
+            h('span', null, d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })),
+            (appt.reminder && appt.reminder !== 'none') ? h('span', { style: { display: 'inline-flex', alignItems: 'flex-start', gap: '3px' } }, h('span', { style: { marginTop: '2px', flexShrink: '0' } }, appIcon('bell', 12, { color: '#915E48' })), apptReminderLabel(appt)) : null
+          ),
+          appt.note ? h('div', { style: { fontSize: '12.5px', color: '#593E32', marginTop: '4px', fontStyle: 'italic', lineHeight: '1.4' } }, appt.note) : null
         ),
-        appt.note ? h('div', { style: { fontSize: '12.5px', color: '#593E32', marginTop: '4px', fontStyle: 'italic', lineHeight: '1.4' } }, appt.note) : null
+        h('div', { style: { display: 'flex', gap: '4px', flexShrink: '0' } },
+          h('button', { onClick: () => openApptModal(appt.id), 'aria-label': 'Edit ' + appt.title, style: { width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(191,76,26,0.08)', color: '#A83D0F', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('edit', 15)),
+          deleting
+            ? h('button', { onClick: () => removeAppointment(appt.id), 'aria-label': 'Confirm delete', style: { minHeight: '44px', padding: '0 10px', borderRadius: '10px', background: '#C0453B', color: '#fff', fontSize: '12px', fontWeight: '800' } }, 'Delete?')
+            : h('button', { onClick: () => setState({ confirmDeleteAppt: appt.id }), 'aria-label': 'Delete ' + appt.title, style: { width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(192,69,59,0.08)', color: '#A5443C', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('trash', 15))
+        )
       ),
-      h('div', { style: { display: 'flex', gap: '4px', flexShrink: '0' } },
-        h('button', { onClick: () => openApptModal(appt.id), 'aria-label': 'Edit ' + appt.title, style: { width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(191,76,26,0.08)', color: '#A83D0F', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('edit', 15)),
-        state.confirmDeleteAppt === appt.id
-          ? h('button', { onClick: () => removeAppointment(appt.id), 'aria-label': 'Confirm delete', style: { minHeight: '44px', padding: '0 10px', borderRadius: '10px', background: '#C0453B', color: '#fff', fontSize: '12px', fontWeight: '800' } }, 'Delete?')
-          : h('button', { onClick: () => setState({ confirmDeleteAppt: appt.id }), 'aria-label': 'Delete ' + appt.title, style: { width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(192,69,59,0.08)', color: '#A5443C', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('trash', 15))
-      )
+      deleting ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '0 15px 12px', marginTop: '-4px' } },
+        h('span', { style: { flex: '1', fontSize: '12px', color: '#A15B56', fontWeight: '700', lineHeight: '1.35' } }, 'This can’t be undone.'),
+        h('button', { onClick: () => setState({ confirmDeleteAppt: null }), style: { minHeight: '30px', padding: '0 8px', color: '#745649', fontSize: '12px', fontWeight: '700' } }, 'Keep')
+      ) : null
     );
   };
 
@@ -5081,21 +5088,28 @@ function renderNotesView(now) {
   const noteRow = (note) => {
     const [y, mo, d] = note.date.split('-').map(Number);
     const dLabel = new Date(y, mo - 1, d);
-    return h('div', { key: note.id, style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '13px 15px', borderTop: '1px solid rgba(246,108,49,0.08)' } },
-      h('div', { style: { flexShrink: '0', width: '52px', textAlign: 'center' } },
-        h('div', { style: { fontSize: '11px', fontWeight: '800', color: '#BF4C1A', textTransform: 'uppercase' } }, dLabel.toLocaleDateString([], { month: 'short' })),
-        h('div', { style: { fontSize: '20px', fontWeight: '800', color: '#2A2127', lineHeight: '1.1' } }, dLabel.getDate())
+    const deleting = state.confirmDeleteNote === note.id;
+    return h('div', { key: note.id, style: { borderTop: '1px solid rgba(246,108,49,0.08)' } },
+      h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '13px 15px' } },
+        h('div', { style: { flexShrink: '0', width: '52px', textAlign: 'center' } },
+          h('div', { style: { fontSize: '11px', fontWeight: '800', color: '#BF4C1A', textTransform: 'uppercase' } }, dLabel.toLocaleDateString([], { month: 'short' })),
+          h('div', { style: { fontSize: '20px', fontWeight: '800', color: '#2A2127', lineHeight: '1.1' } }, dLabel.getDate())
+        ),
+        h('div', { style: { flex: '1', minWidth: '0' } },
+          h('div', { style: { ...TYPE.caption, color: '#7A6E76' } }, dLabel.toLocaleDateString([], { weekday: 'long' }) + (note.date === todayStr ? ' · Today' : '')),
+          h('div', { style: { fontSize: '14px', color: '#2A2127', marginTop: '4px', lineHeight: '1.45', whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }, note.text)
+        ),
+        h('div', { style: { display: 'flex', gap: '4px', flexShrink: '0' } },
+          h('button', { onClick: () => openNoteModal(note.id), 'aria-label': 'Edit note for ' + dLabel.toLocaleDateString(), style: { width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(191,76,26,0.08)', color: '#A83D0F', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('edit', 15)),
+          deleting
+            ? h('button', { onClick: () => removeNote(note.id), 'aria-label': 'Confirm delete', style: { minHeight: '44px', padding: '0 10px', borderRadius: '10px', background: '#C0453B', color: '#fff', fontSize: '12px', fontWeight: '800' } }, 'Delete?')
+            : h('button', { onClick: () => setState({ confirmDeleteNote: note.id }), 'aria-label': 'Delete note for ' + dLabel.toLocaleDateString(), style: { width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(192,69,59,0.08)', color: '#A5443C', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('trash', 15))
+        )
       ),
-      h('div', { style: { flex: '1', minWidth: '0' } },
-        h('div', { style: { ...TYPE.caption, color: '#7A6E76' } }, dLabel.toLocaleDateString([], { weekday: 'long' }) + (note.date === todayStr ? ' · Today' : '')),
-        h('div', { style: { fontSize: '14px', color: '#2A2127', marginTop: '4px', lineHeight: '1.45', whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }, note.text)
-      ),
-      h('div', { style: { display: 'flex', gap: '4px', flexShrink: '0' } },
-        h('button', { onClick: () => openNoteModal(note.id), 'aria-label': 'Edit note for ' + dLabel.toLocaleDateString(), style: { width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(191,76,26,0.08)', color: '#A83D0F', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('edit', 15)),
-        state.confirmDeleteNote === note.id
-          ? h('button', { onClick: () => removeNote(note.id), 'aria-label': 'Confirm delete', style: { minHeight: '44px', padding: '0 10px', borderRadius: '10px', background: '#C0453B', color: '#fff', fontSize: '12px', fontWeight: '800' } }, 'Delete?')
-          : h('button', { onClick: () => setState({ confirmDeleteNote: note.id }), 'aria-label': 'Delete note for ' + dLabel.toLocaleDateString(), style: { width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(192,69,59,0.08)', color: '#A5443C', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('trash', 15))
-      )
+      deleting ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '0 15px 12px', marginTop: '-4px' } },
+        h('span', { style: { flex: '1', fontSize: '12px', color: '#A15B56', fontWeight: '700', lineHeight: '1.35' } }, 'This can’t be undone.'),
+        h('button', { onClick: () => setState({ confirmDeleteNote: null }), style: { minHeight: '30px', padding: '0 8px', color: '#745649', fontSize: '12px', fontWeight: '700' } }, 'Keep')
+      ) : null
     );
   };
   return [
@@ -5120,7 +5134,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v44';
+const APP_VERSION = 'app-v45';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -5237,7 +5251,7 @@ function renderSettings(now) {
             ? h('span', { style: { fontSize: '12px', fontWeight: '700', color: '#0A6B4A', background: 'rgba(46,125,79,0.10)', padding: '3px 10px', borderRadius: '99px' } }, 'Active') // v33: #0A6B4A for AA contrast on the tint (Lead Designer catch)
             : state.confirmDeleteProfile === p.id
               ? h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
-                  h('span', { style: { fontSize: '12px', fontWeight: '700', color: '#A5443C' } }, 'Delete forever?'),
+                  h('span', { style: { fontSize: '12px', fontWeight: '700', color: '#A5443C' } }, 'Delete forever? Can’t be undone.'),
                   h('button', { onClick: () => deleteProfile(p.id), style: { minHeight: '44px', padding: '0 10px', borderRadius: '9px', background: '#C0453B', color: '#fff', fontSize: '12px', fontWeight: '800' } }, 'Delete'),
                   h('button', { onClick: () => setState({ confirmDeleteProfile: null }), style: { minHeight: '44px', padding: '0 8px', color: '#745649', fontSize: '12px', fontWeight: '800' } }, 'Keep'))
               : h('div', { style: { display: 'flex', gap: '6px' } },
@@ -6768,7 +6782,14 @@ setInterval(() => {
   // Schedule windows -- was being torn down and rebuilt every single second while it sat open, which
   // read as the icon "flashing"/disappearing. infoModal (the help-icon's own explanation sheet) gets
   // the same guard for the same reason -- it's a bottom sheet exactly like plans/appt, not a live view.
-  if (!state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.noteModal && !state.checkinModal && !state.medEditor && !state.infoModal && !isEditing) render();
+  // v45: this exclusion list is a recurring bug class in this file (v11, v22, v27 all hit the same
+  // thing — a new modal/confirm state gets added somewhere below and nobody remembers to also list it
+  // here, so the 1s tick silently rebuilds the whole DOM under it). Added the "Erase all data" modal
+  // and every tap-to-arm delete-confirm state this time (Aaron's live report: "screen keeps refreshing
+  // constantly" while trying to permanently delete things) — each of these either replays its entrance
+  // animation or just visibly flickers every second while open, since render() tears down and rebuilds
+  // the whole tree regardless of what's showing.
+  if (!state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.noteModal && !state.checkinModal && !state.medEditor && !state.infoModal && !state.eraseAllModalOpen && !state.confirmDeleteMed && !state.confirmDeleteAppt && !state.confirmDeleteNote && !state.confirmDeleteProfile && !state.confirmRemove && !isEditing) render();
   checkNotifications();
   checkAppointmentReminders();
   // v35 backstop. Everything that changes the plan already calls markNotifDirty(), but a backstop

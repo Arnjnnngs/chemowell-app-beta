@@ -22,6 +22,14 @@ new session the way a committed file does; see TEAM.md's opening note.
 
 ## Open
 
+- [ ] **Dosage options field still demands "mg" when Limit Unit is "Number of applications"
+  (or presumably any non-mg unit), and the validation banner that blocks it can't be
+  dismissed/bypassed** — added 2026-08-08. Aaron: "Dosage option still waits for 'mg' if Limit
+  Unit is set for Number of applications. should it still wait for 'mg'? the dosage option
+  banner pops up and can't be bypassed. needs to be looked into more." This sounds like it can
+  trap someone mid-edit in the medication editor (a blocking validation state with no way out),
+  which is worse than a cosmetic bug — investigating next, right after the delete-flicker/
+  confirmation fix below ships.
 - [ ] **Multi-device / multi-user sync — NEXT UP, confirmed priority 2026-08-08.** Profiles
   need to auto-refresh (not instant/live, but roughly within a minute) so multiple caregivers
   viewing the same patient profile see each other's updates, without screen flicker or
@@ -34,14 +42,6 @@ new session the way a committed file does; see TEAM.md's opening note.
   storage, so this needs an actual backend/sync layer. Gets the full Quality Chain when
   started, not solo Lead Developer work, given the stakes (real data, real risk of
   conflicts/loss).
-- [ ] **Permanent-delete screen keeps refreshing/flickering, and "Erase" still needs the
-  second "this is permanent, can't be undone" confirmation** — added 2026-08-08. Aaron: "when
-  trying to permanently delete things, the screen keeps refreshing constantly. when I do click
-  erase, I mentioned before there should be another pop up to say that this is permanent and
-  can't be undone." Note: a two-step warning was already shipped for "Reset everything" in Account
-  (app-v40, marked Completed below) — this report suggests either a different "Erase" control
-  that didn't get the same treatment, or a regression/gap in that flow. Needs investigation before
-  a fix, not assumed to be the same already-shipped work.
 - [ ] **How does a Plus/Pro caregiver actually back up and move to a new phone?** — added
   2026-08-08. Aaron: "if they have the higher tier plans, we need to figure out how would they
   backup to move to another phone if it's all on one device and they aren't logging in." Real
@@ -106,6 +106,25 @@ new session the way a committed file does; see TEAM.md's opening note.
 
 ## Completed
 
+- [x] **Fixed the permanent-delete screen flicker, and confirmed/strengthened the "can't be
+  undone" language on every delete flow.** Aaron: "when trying to permanently delete things,
+  the screen keeps refreshing constantly. when I do click erase, I mentioned before there
+  should be another pop up to say that this is permanent and can't be undone." Root cause of
+  the flicker: the app's 1-second render tick-loop has a guard list of "don't rebuild the whole
+  screen while one of these is open" states, and it was missing the Erase-all modal plus every
+  tap-to-arm delete-confirm state (medication, appointment, note, profile) — so the entire
+  screen was torn down and rebuilt every single second while any delete confirmation was open,
+  which is what read as constant refreshing/flickering (same root-cause pattern as three past
+  bugs in this exact file — v11, v22, v27 — each time a new modal state was added and not added
+  to this same guard list). Fixed by adding all of them to the guard. Separately, confirmed the
+  "Erase all data" flow already has real "this will permanently delete everything... there is
+  no way to bring it back" language (shipped app-v40) — if Aaron still isn't seeing it, his APK
+  build is likely running an older cached version and needs to be refreshed/reinstalled from
+  the current build. As a belt-and-suspenders improvement, also added explicit "This can't be
+  undone" text to the three lighter delete-confirm flows that didn't have it before (medication,
+  appointment, note — profile's "Delete forever?" was strengthened too). Verified live: each
+  confirm dialog's on-screen DOM element now stays stable across multiple 1-second ticks instead
+  of being rebuilt, and the new wording is present in every flow. Shipped app-v45.
 - [x] **Restructured Pro tier bullets, real gap from Plus, dropped "priority access to new
   features."** Aaron: "there still needs to be a real gap between plus and pro. i'm still not
   seeing it. still need to remove priority access to new features unless you tell me what you
