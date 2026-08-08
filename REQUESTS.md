@@ -22,26 +22,32 @@ new session the way a committed file does; see TEAM.md's opening note.
 
 ## Open
 
-- [ ] **Export "check Downloads" shows nothing downloaded, and notifications still not firing on
-  the APK — is this an APK/WebView limitation or an HTML issue?** — added 2026-08-08. Aaron:
-  "export says check downloads but I don't see anything in my notifications bar saying anything
-  was downloaded. same for notification still not firing. is this bc it's only an APK or bc it's
-  wrapped around an HTML?" Real, well-founded question — see the direct answer given in chat.
-  Suspected root cause for export: the CSV download falls back to a plain browser blob-download
-  (`<a download>` click) when the Web Share API isn't available/usable, and that fallback is known
-  to be unreliable inside an Android WebView (no native DownloadManager hookup, no OS notification)
-  — Capacitor's shell was never specifically adapted for this, only for notifications. Needs a real
-  fix (likely `@capacitor/filesystem` + `@capacitor/share` so export actually writes a file via the
-  native bridge and hands it to Android's real share/save sheet) plus a native rebuild — bigger than
-  a JS-only patch, and not something verifiable from this sandbox (no Android emulator/device here
-  beyond the CI smoke test). For notifications: confirmed the APK loads the same live GitHub Pages
-  build the web version does (capacitor.config.ts points `server.url` there, not a bundled copy),
-  so the v41/v45/v46 fixes already reach the installed app on next reload — no separate rebuild
-  needed for those. The real unknown is whether the native pre-scheduled reminder path itself
-  (`syncNativeReminders`/the LocalNotifications plugin) is actually succeeding on Aaron's device —
-  pointed him at Account/Settings' own on-screen notification status card, which states plainly
-  whether it's blocked, not yet turned on, failed, or genuinely on with a scheduled count, so this
-  can be diagnosed without guessing.
+- [ ] **Export/printable report native fix — code shipped (app-v47), waiting on a fresh APK
+  install + Aaron's real-device confirmation before this can move to Completed.** Root cause
+  confirmed: both CSV export and the printable report were built as browser-only tricks (a blob
+  `<a download>` click; `window.open()` + `.print()`) that never had a bridge to Android's real
+  file system from inside the Capacitor native WebView — the same gap on both, not two separate
+  bugs. Fixed by adding `@capacitor/filesystem` + `@capacitor/share` and routing both features
+  through Android's real native share sheet on the native build (falls straight through to the
+  exact same unchanged behavior on the web/PWA build). This is a NATIVE change, unlike the pure
+  content fixes above — it needs a new APK built and reinstalled, not just the app reopened; the
+  push to main should trigger that build automatically the same way past native changes did.
+  Per this file's own rule, this can't be marked Completed from a plan or "should work" — needs
+  confirmation from Aaron on the actual device once the new APK is installed.
+- [ ] **Notification "Allow exact reminders" button opens phone Settings but there's no toggle to
+  turn it on** — added 2026-08-08. Aaron: "notifications still doesn't work. notification in
+  settings says it's on but under it, it says exact timing. when i click it, it takes me to
+  settings, but i can't toggle to turn on." This is Android's separate "schedule exact alarms"
+  permission (a security/battery feature added in Android 12) — without it, reminders still fire,
+  just not necessarily at the exact minute (the OS may batch/delay them). The app can request the
+  OS open the right settings screen but can't force the toggle itself — that's deliberately
+  user-controlled by Android, same for every app that needs it. Needs Aaron's phone
+  manufacturer + Android version to give accurate steps, since this settings screen's layout
+  varies by OEM (Samsung/Xiaomi/Pixel/etc. all lay this out differently) and some older Android
+  versions don't have this permission concept at all. Also flagged to Aaron: OEM battery/
+  auto-start restrictions (common on Samsung/Xiaomi/Huawei) are a separate, common cause of
+  missed background alarms that this permission alone doesn't cover, and there's no cross-OEM API
+  to detect or request that one — worth checking directly on his phone.
 - [ ] **"Other" treatment-type medication editor wording still confusing** — added 2026-08-08.
   Aaron: "I chose other for my profile, when adding a med, it says add to home screen, only near
   your date, exclude near your date. this makes no sense." The v42 pass (Completed below) made the

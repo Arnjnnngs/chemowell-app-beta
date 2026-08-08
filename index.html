@@ -16,6 +16,14 @@
      call site already guards for that, so the app degrades to normal web behavior either way. -->
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/core@8.4.2/dist/capacitor.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/local-notifications@8.2.1/dist/plugin.js"></script>
+<!-- v47 (Aaron-reported: exported CSV and the printable report went nowhere on the installed APK):
+     browser-only download/print tricks (an <a download> click, window.open()+print()) don't reach
+     Android's real file system or print pipeline from inside the native WebView -- these two bridge
+     the same way notifications already do, letting export/print hand off to the OS's own native
+     share sheet instead. Same no-op-on-web guarantee as the two plugins above (isNativeApp() gates
+     every call site; the web/PWA build's behavior is untouched). -->
+<script src="https://cdn.jsdelivr.net/npm/@capacitor/filesystem@8.1.2/dist/plugin.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@capacitor/share@8.0.1/dist/plugin.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{--safe-top:env(safe-area-inset-top,0px);}
@@ -5146,7 +5154,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v46';
+const APP_VERSION = 'app-v47';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -5419,6 +5427,22 @@ async function downloadEntriesCSV() {
   const csv = [header, ...rows].map(r => r.map(csvField).join(',')).join('\r\n');
   const filename = 'chemowell-' + ((CONFIG.patientName || 'export').replace(/[^a-z0-9]/gi, '-').toLowerCase()) + '-' + new Date(simNow()).toLocaleDateString('en-CA') + '.csv';
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }); // BOM so Excel opens UTF-8 correctly
+  // v47 (Aaron-reported: "check Downloads" but nothing appeared): tried first, before the web-only
+  // paths below. navigator.share/canShare and the <a download> blob trick that follow are exactly
+  // what silently failed on his installed APK -- neither one reliably reaches Android's real file
+  // system from inside the native WebView. This writes the file via Filesystem and hands it to
+  // Android's own share sheet via Share instead, which is the same file-export UX every other
+  // Android app uses. No-op (returns false) on the web/PWA build -- falls straight through to the
+  // unchanged behavior below there.
+  try {
+    if (await nativeShareFile(blob, filename, 'text/csv', filename)) {
+      setToast(rows.length + ' entries exported — pick where to save it');
+      return;
+    }
+  } catch (e) {
+    setToast('Export failed on this device — ' + ((e && e.message) || 'please try again'));
+    return;
+  }
   try {
     if (navigator.share && navigator.canShare) {
       const file = new File([blob], filename, { type: 'text/csv' });
@@ -5450,7 +5474,7 @@ function escHtml(s) { return String(s === null || s === undefined ? '' : s).repl
 // Printable doctor's report (Plus/Pro). Opens a print-styled window grouped by day, newest first —
 // the browser's print dialog gives "Save as PDF" on every modern phone/desktop for free, which is
 // how this ships PDF export without a PDF library in a single-file offline app.
-function openPrintReport() {
+async function openPrintReport() {
   if (getLicense().tier === 'free') { setToast('The printable report is part of Plus — CSV export is free below'); setState({ upgradeOpen: true }); return; }
   const rows = buildExportRows();
   if (!rows.length) { setToast('Nothing to report yet — log something first'); return; }
@@ -5478,6 +5502,22 @@ function openPrintReport() {
     + '</div>' + body
     + '<div class="sub" style="margin-top:18px">Patient-logged record from the ChemoWell app. Not a medical document — verify against clinical records.</div>'
     + '</body></html>';
+  // v47 (same root cause as the CSV export fix above): window.open('', '_blank') + win.print() is a
+  // browser-only trick -- opening a blank popup and asking the browser to print it. Android's native
+  // WebView generally has neither a popup surface nor a print pipeline behind that call, so this was
+  // very likely failing silently on the installed APK the same way CSV export was, just not yet
+  // reported. On native, share the generated report as a file instead -- Aaron picks where it goes
+  // (Drive, email, a printer app, etc.) from Android's own share sheet, the same fix as CSV export.
+  const filename = 'chemowell-report-' + ((CONFIG.patientName || 'report').replace(/[^a-z0-9]/gi, '-').toLowerCase()) + '-' + new Date(simNow()).toLocaleDateString('en-CA') + '.html';
+  try {
+    if (await nativeShareFile(new Blob([doc], { type: 'text/html' }), filename, 'text/html', filename)) {
+      setToast('Report ready — pick where to send it (or open it and print from there)');
+      return;
+    }
+  } catch (e) {
+    setToast('Report failed on this device — ' + ((e && e.message) || 'please try again'));
+    return;
+  }
   const win = window.open('', '_blank');
   if (!win) { setToast('Pop-up blocked — allow pop-ups for this app to print the report'); return; }
   win.document.write(doc); win.document.close();
@@ -6410,6 +6450,49 @@ function checkAppointmentReminders() {
 function lnPlugin() {
   try { return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) || null; }
   catch (e) { return null; }
+}
+// v47: same pattern as lnPlugin() above, for the two plugins that let export/print hand a real file
+// to the OS on native (see nativeShareFile below) instead of relying on browser-only tricks that
+// don't reach Android's file system from inside a WebView.
+function fsPlugin() {
+  try { return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) || null; }
+  catch (e) { return null; }
+}
+function sharePlugin() {
+  try { return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share) || null; }
+  catch (e) { return null; }
+}
+// Converts a Blob to the base64 string Filesystem.writeFile needs (it has no Blob-native overload).
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      // reader.result is "data:<mime>;base64,<data>" -- strip the prefix, writeFile wants raw base64.
+      const s = String(reader.result || '');
+      const idx = s.indexOf(',');
+      resolve(idx === -1 ? s : s.slice(idx + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+// v47 (Aaron-reported: CSV export said "check Downloads" but nothing appeared, and the printable
+// report is built on window.open()+print(), neither of which reaches Android's real file system or
+// print pipeline from inside the native WebView -- both are plain browser tricks that were never
+// given a native bridge). Writes the file into the app's own cache dir via @capacitor/filesystem,
+// then hands it to Android's real native share sheet via @capacitor/share -- the same share-sheet
+// UX any Android app uses to let someone save a file to Drive, email it, send it to Files, or open
+// it in another app that can print it. Returns true if the native share path was used (caller skips
+// its own web fallback), false if this isn't native or a required plugin is missing (falls through
+// to the existing web-only path unchanged).
+async function nativeShareFile(blob, filename, mimeType, shareTitle) {
+  if (!isNativeApp()) return false;
+  const fs = fsPlugin(), share = sharePlugin();
+  if (!fs || !share) return false; // older build without these plugins synced in -- fall back to web path
+  const base64 = await blobToBase64(blob);
+  const written = await fs.writeFile({ path: filename, data: base64, directory: 'CACHE' });
+  await share.share({ title: shareTitle || filename, url: written.uri, dialogTitle: shareTitle || filename });
+  return true;
 }
 
 const NOTIF_CHANNEL_DOSE = 'chemowell_dose_reminders';
