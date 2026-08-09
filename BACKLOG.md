@@ -57,6 +57,24 @@ when you're about to touch the relevant code; delete the line once it's actually
   2026-08-09 during the sync-backend provisioning audit. (The *correctness* half of this — silent
   truncation at 1,000 records — was a real bug and is already fixed; this entry is only the
   performance half.)
+- **`sync-backend` never cleans up a COMPLETED pairing handshake** — expired sessions are now
+  deleted when anything touches them, but a handshake that finishes normally leaves its session
+  blob (and its code -> session mapping) sitting in the store until something happens to touch it
+  after the expiry time, which for a completed pairing nothing ever does. Nothing sensitive is
+  readable from it (the wrapped key is ciphertext only the two paired devices can open, and
+  `status` refuses to serve an expired session at all), so this is storage hygiene rather than a
+  security hole — but "we clean up on touch" is only true for the paths that get touched. Right
+  fix is a real sweep (a scheduled job, or an opportunistic sweep of a small number of expired
+  entries on each `pair/create`). Found 2026-08-09 by the PM gate (PM-F2). Deliberately not fixed
+  in the same pass as a High-severity regression, to keep that fix small enough to re-verify
+  cleanly.
+- **Fixing pull's silent truncation makes the latency ceiling the new failure mode** — with paging
+  in place, a very large profile no longer returns a quietly short list; it now takes proportionally
+  longer, and past roughly 1,600 records it would exceed the function timeout and fail outright.
+  That is a strict improvement (a visible failure beats a silent wrong answer) but it means the
+  pull-latency entry above is not merely a performance nicety — it is what stops a hard failure at
+  scale. Raised by the PM gate 2026-08-09 (PM-F3) as a correction to how comfortably the latency
+  item above was originally worded.
 - **`sync-backend` has no revocation path** — if a paired device is lost, stolen, or the caregiver
   relationship ends, there is currently no way to cut that device off: it holds K (so it can
   decrypt everything) and the write token (so it can write). Real revocation means rotating both
