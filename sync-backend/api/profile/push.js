@@ -94,13 +94,25 @@ export default async function handler(req, res) {
         // rejects the second writer instead of letting them stomp each other.
         await putJson(pathname, record, { allowOverwrite: false });
       } catch (e) {
-        // Only a genuine write conflict becomes a 409. The original swallowed EVERY error here and
-        // reported "conflict" -- so a real outage on a first push was reported to the app as a
-        // conflict on a record nobody else had touched, which the client would then try to
-        // reconcile against nothing.
-        if (!isConditionalWriteConflict(e)) throw e;
+        // DECIDE FROM STORAGE STATE, NOT FROM THE ERROR TEXT.
+        //
+        // An allowOverwrite:false collision does NOT surface as BlobPreconditionFailedError, and
+        // it is not reliably identifiable from the message either: @vercel/blob's getBlobError()
+        // has no already-exists case at all, so it falls through to the generic `bad_request` arm.
+        // An earlier version of this handler classified by error shape and got it exactly
+        // backwards -- every losing writer in a new-record race received HTTP 500 instead of a
+        // 409. That is the first-sync-after-pairing path, where every record collides by
+        // definition, so it would have hit real caregivers on their very first sync.
+        //
+        // Re-reading is authoritative and immune to SDK error-shape churn: if the record exists
+        // now, somebody else created it and this is a genuine conflict the client can reconcile.
+        // If it still does not exist, the write really did fail and must surface as an error
+        // rather than as a phantom conflict against a record nobody ever wrote -- which is the
+        // separate defect (F-10) this branch was tightened to fix in the first place. Both
+        // failure modes are handled without either one masking the other.
         const raced = await getJson(pathname);
-        res.status(409).json({ error: 'conflict', current: publicRecord(raced && raced.data) });
+        if (!raced) throw e;
+        res.status(409).json({ error: 'conflict', current: publicRecord(raced.data) });
         return;
       }
       res.status(200).json({ ok: true, record: publicRecord(record) });
@@ -120,14 +132,18 @@ export default async function handler(req, res) {
       // the one place true concurrent-write safety actually lives.
       await putJson(pathname, record, { ifMatch: existing.etag });
     } catch (e) {
-      // Vercel Blob reports a lost conditional write in two different shapes and only one is
-      // BlobPreconditionFailedError; the other is a generic BlobError about a "conflicting
-      // operation." Catching only the first meant roughly a third of losing writers got a 500
-      // with no `current` field, so the app's conflict path never ran and the user's edit was
-      // dropped while they were told the server had failed. isConditionalWriteConflict covers
-      // both -- see _lib/blob.js.
-      if (!isConditionalWriteConflict(e)) throw e;
+      // Same storage-state test as the new-record branch above, and for the same reason. Vercel
+      // Blob reports a lost conditional write in at least two different shapes -- only one of
+      // which is BlobPreconditionFailedError; the other is a generic BlobError about a
+      // "conflicting operation" -- and classifying by error shape is what produced 500s where the
+      // client needed a 409. isConditionalWriteConflict (see _lib/blob.js) is kept as a fast path
+      // for the shapes we know, but the authoritative answer is the record itself: if the stored
+      // version has moved off the baseVersion this caller wrote against, somebody else won, full
+      // stop. If it has NOT moved, the write genuinely failed and must surface as an error rather
+      // than as a phantom conflict the client would try to reconcile against unchanged data.
       const raced = await getJson(pathname);
+      const somebodyElseWon = raced && raced.data.version !== baseVersion;
+      if (!somebodyElseWon && !isConditionalWriteConflict(e)) throw e;
       res.status(409).json({ error: 'conflict', current: publicRecord(raced && raced.data) });
       return;
     }
