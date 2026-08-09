@@ -46,6 +46,14 @@ when you're about to touch the relevant code; delete the line once it's actually
   sooner — the lesson: a documented-but-unapplied fix for a known live defect should get promoted
   to REQUESTS.md and scheduled, not left here indefinitely once the underlying feature has
   actually shipped and is live for real users.
+- **The exact-alarm "?" explainer should tell users to do battery optimization FIRST** — Aaron
+  resolved his own exact-alarm problem on 2026-08-09 by granting battery-optimization exemption,
+  after which the OS-level exact-alarm toggle took and the reminder fired on time. The in-app
+  explainer currently presents "Allow exact reminders" and "Allow background activity" as two
+  independent controls, so a user hitting the same wall gets no hint that one unblocks the other.
+  Reword to lead with battery optimization, and consider ordering the two cards that way on screen.
+  Small copy change, real support value — this is the single most-reported problem in the project's
+  history. (Copy touching a medical reminder = Auditor copy-clarity check applies.)
 - **`sync-backend` profile pull is O(n) sequential reads — fine now, will not stay fine** — the
   Zero Day Auditor measured `GET /api/profile/pull` at 516ms for 10 records, 4,755ms for 100,
   11,163ms for 300 and 36,645ms for 1,000 (roughly 37ms per record, linear), because `listJson`

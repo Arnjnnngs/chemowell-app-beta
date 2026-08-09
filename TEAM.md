@@ -30,6 +30,14 @@ Scribe's job every release:
 - Show Aaron the current, full `REQUESTS.md` list (not just this session's diff) whenever
   reporting a completion — per his instruction 2026-08-07: "I can't remember all the things
   I've mentioned and still needs to be completed."
+  **Restated and tightened 2026-08-09, because this got skipped and he had to ask for it again:**
+  "I need to see the task list that done and what needs to be done after every build or request I
+  ask. that should have been in notes handed off." So the trigger is not just "reporting a
+  completion" — it is **every build AND every request he makes**, including sessions where nothing
+  shipped, where the answer was research, or where a decision changed direction. The list goes in
+  the reply itself as two plain sections (done / still outstanding), not as a link to this repo and
+  not as a diff he has to reconstruct. If a session ends without that list having been shown at
+  least once, the Scribe step did not happen, regardless of how much else got done.
 
 This is what lets Aaron open a brand-new chat, point it at this repo, and have it pick up
 exactly where things left off — the documents carry the context, not his memory or a chat

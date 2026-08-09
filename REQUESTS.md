@@ -112,8 +112,21 @@ reconstruct it from history.
   marked Completed from a plan or "should work" — needs confirmation from Aaron on the actual
   device, on the app-v51 APK once it's built, that CSV/PDF export actually hands off to the
   native share sheet.
-- [ ] **Notification "Allow exact reminders" button opens phone Settings but there's no toggle to
-  turn it on** — added 2026-08-08. Aaron: "notifications still doesn't work. notification in
+- [x] **RESOLVED ON DEVICE 2026-08-09 — Notification "Allow exact reminders" toggle + "Allow
+  background activity."** Aaron, on his Galaxy S25 Ultra running the app-v51 APK: *"doing the
+  battery optimization fixed the exact time option. the toggle turned on and I got the reminder at
+  the exact time."* That is both app-v50 reminder-reliability items confirmed working on real
+  hardware, by the owner, on a real build — not inferred from code. It also confirms the diagnosis
+  behind the fix: the "Allow background activity" control (the `@capawesome-team/capacitor-android-
+  battery-optimization` plugin added in app-v50) was the actual unblocker, and granting battery
+  exemption is what let the OS-level exact-alarm toggle take. The Samsung One UI quirk research was
+  correct that the permission itself was never the problem. **Keep the ordering in mind for support
+  docs and the in-app explainer: battery optimization first, exact alarms second** — that is the
+  sequence that actually worked, and the current "?" explainer presents them as two independent
+  controls rather than one leading to the other. Logged in BACKLOG.md as a copy improvement.
+  Full history of the investigation retained below for the record.
+- [x] ~~**Notification "Allow exact reminders" button opens phone Settings but there's no toggle to
+  turn it on**~~ — added 2026-08-08. Aaron: "notifications still doesn't work. notification in
   settings says it's on but under it, it says exact timing. when i click it, it takes me to
   settings, but i can't toggle to turn on." This is Android's separate "schedule exact alarms"
   permission (a security/battery feature added in Android 12) — without it, reminders still fire,
