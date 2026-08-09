@@ -59,6 +59,30 @@ reconstruct it from history.
 5. Everything else below, in the order it already appears in Open — none of it is currently
    blocking or time-sensitive.
 
+## Decisions taken 2026-08-09 (read before planning any sync/sharing work)
+
+- **Server-based sync is CANCELLED.** Aaron chose device-to-device sharing with no server he
+  controls, after being shown that the app's data (name + treatment type + medication list +
+  symptoms + `sex` + `cycleTracking`) is a named cancer diagnosis plus reproductive-health data,
+  that Washington's My Health My Data Act carries a private right of action and applies based on
+  where the *user* lives, and that encryption does not exempt a collector because the Act regulates
+  collection itself. His framing was "no legal exposure" — and the honest engineering answer is that
+  the only way to get there is not to hold the data. Today ChemoWell holds none of it; that position
+  is preserved. The Vercel project and Blob store built earlier the same day were deleted/emptied.
+  Design: `outputs/SHARING_DEVELOPER_BRIEF_v3.md`.
+- **QR codes: SCRATCHED** (Aaron, 2026-08-09: "Scratch QR code"). Was proposed only as a way to
+  transfer the 10-character key in person — never for the data itself, which is ~300KB against a
+  QR ceiling of ~3KB. Not needed anyway: Android's Nearby Share already appears in the same share
+  sheet, so the in-person case is covered with zero extra permissions and no scanner library. Do
+  not re-propose unless Aaron raises it.
+- **Pro-tier queue: APPROVED TO BUILD** (Aaron, 2026-08-09: "do pro tier queue things").
+- **Limit Unit expansion: APPROVED TO BUILD**, with a confirmed real-world symptom (see below).
+- **In-app issue logger and in-app troubleshooting bot: both CONFIRMED VIABLE with no server**
+  (Aaron asked directly whether they still work without one). The logger reuses the same
+  share-a-file transport just proven on device. The "bot" is a structured offline decision tree over
+  an authored problem catalogue — no model, no API, no network — which is what Aaron originally
+  described anyway ("maybe it can't be something that you can respond to real time").
+
 ## Open
 
 - [ ] **In-app issue/bug logger — testers (including Aaron) can log something that isn't working,
@@ -92,9 +116,28 @@ reconstruct it from history.
   the existing FAQ array is the right foundation to extend. Not yet started or scoped in detail;
   flagging here so it isn't lost. Will need a working session with Aaron on what "full list of
   issues" should actually cover before writing the content.
-- [ ] **Export/printable report native fix — code shipped (app-v47), then found SILENTLY
-  BROKEN again (app-v50 retroactive audit), re-fixed (app-v51), still waiting on a fresh APK
-  install + Aaron's real-device confirmation before this can move to Completed.** Root cause
+- [x] **CONFIRMED WORKING ON DEVICE 2026-08-09 — Export/printable report native fix.** Aaron on the
+  app-v51 APK: *"Settings > Download CSV works."* The share sheet opens and hands off correctly.
+  This closes a defect that shipped broken twice (app-v47 silently, then again through app-v50) and
+  it is the first real-device confirmation. It also de-risks the entire device-to-device sharing
+  feature, which rides on this exact `nativeShareFile()` path — that transport is now proven on real
+  hardware rather than assumed. Two follow-ups Aaron found in the same test, both logged separately
+  below and in BACKLOG.md, neither of which reopens this item:
+  (a) no obvious "save to this phone" target in the share sheet;
+  (b) the CSV detail column reads "500mg, 500 pills" for a 500 mg Tylenol.
+- [ ] **No "save to this phone" option in the export share sheet** — found 2026-08-09 by Aaron
+  during the export test above. Aaron: *"it doesn't look like it has the option to download to
+  phone. but it does work for other options."* Cause is almost certainly that the file is written to
+  the app's *cache* directory and shared as a content URI — cloud/mail targets accept that happily,
+  but a plain "save to device" target often won't appear for a cache-scoped URI. Likely fix: write
+  to the Documents directory instead of cache, and/or offer an explicit "Save to phone" button
+  alongside "Share" rather than relying on a share-sheet target being present. Matters more than it
+  looks: a caregiver who wants to keep their own copy, or hand a file to a doctor, will look for
+  exactly this. Also directly relevant to device-to-device sharing, where saving the share file
+  locally is a legitimate path.
+- [ ] ~~**Export/printable report native fix — code shipped (app-v47), then found SILENTLY
+  BROKEN again (app-v50 retroactive audit), re-fixed (app-v51)**~~ — CLOSED, see the confirmed
+  entry above. Root cause
   confirmed: both CSV export and the printable report were built as browser-only tricks (a blob
   `<a download>` click; `window.open()` + `.print()`) that never had a bridge to Android's real
   file system from inside the Capacitor native WebView — the same gap on both, not two separate
@@ -323,7 +366,21 @@ reconstruct it from history.
   safety-relevant advice to cancer patients on complex regimens) rather than something to
   quietly add to a feature list. Revisit only if Aaron decides he wants that exposure and
   commits to sourcing it properly.
-- [ ] **Expand Limit Unit list to be universal** — added 2026-08-08. Aaron: "this should be
+- [ ] **APPROVED TO BUILD 2026-08-09 (Aaron: "Expand limit unit list"). Now has a confirmed
+  real-world symptom, not just a theoretical one.** Aaron saw the CSV detail column render
+  **"500mg, 500 pills"** for a 500 mg Tylenol. Root cause located at `index.html:5633`
+  (`buildExportRows`): the generic branch does `detail = e.dose; if (e.pills) detail += e.pills +
+  ' pill' + (e.pills === 1 ? '' : 's')` — it appends the literal word "pills" to whatever number is
+  in `e.pills`, with no regard for what unit the medication actually uses. A 500 mg dose therefore
+  exports as "500 pills." Aaron called it "a problem for later when there are other things to add to
+  the logs" and he is right that it gets worse, not better, as units expand — which is exactly why
+  it belongs in this pass rather than after it. The unit has to become a real property that flows
+  through logging, the daily-limit check, and export, instead of being assumed to be "pills"
+  wherever a number appears. **This is medication-safety logic (6+ call sites: `parseDoseOptions`,
+  `dosageOptionsCarryLimitUnit`, `dailyLimitPreview`, plus every reader of `med.ceilingUnit`), so it
+  gets the full minimum-20-test-case Auditor sweep per TEAM.md, and its own pass — not bundled with
+  other edits.**
+- [ ] ~~**Expand Limit Unit list to be universal**~~ — added 2026-08-08. Aaron: "this should be
   catered to all medications so it's universal," not just mg/pills/applications. Needs mcg, mL,
   patches, puffs, drops, sprays, IU/units, injections, suppositories added to the medication
   editor's Limit Unit dropdown. Touches medication daily-limit-enforcement logic at 6+ call sites
