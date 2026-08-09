@@ -20,18 +20,23 @@ new session the way a committed file does; see TEAM.md's opening note.
 - Nothing gets deleted when it's finished — it moves to Completed with a one-line note of
   what shipped and when, so there's a record if a question comes back to it later.
 
-## Next up, in order (read this first — updated 2026-08-08)
+## Next up, in order (read this first — updated 2026-08-09, app-v52)
 
 For a new chat picking this project up cold: this is the priority order, top to bottom. Full
 detail on each is in the Open list below; this is just the ordering so you don't have to
 reconstruct it from history.
 
-1. **Waiting on Aaron (not blocking anything else).** app-v51 needs a fresh APK (GitHub Actions builds
+1. **Waiting on Aaron (not blocking anything else).** app-v52 needs a fresh APK (GitHub Actions builds
    this automatically off the `main` push) installed on his Galaxy S25 Ultra, then his
-   confirmation of: exact-alarm reminders, the new "Allow background activity" battery control,
-   and — important, re-broke and re-fixed this session — CSV/PDF export actually reaching the
-   native share sheet again. See the Export/printable report item and the Notification item
-   below for exact detail.
+   confirmation of: exact-alarm reminders, the "Allow background activity" battery control,
+   and CSV/PDF export actually reaching the native share sheet (still carried over from app-v51 —
+   the fix is in, the on-device half has never been confirmed). See the Export/printable report
+   item and the Notification item below for exact detail. Nothing in app-v52 depends on this;
+   it is the same three on-device confirmations that have been outstanding since app-v50.
+   **Top of the technical-debt list before the next release:** `release_check.sh` only inspects
+   *uncommitted* work (`git diff HEAD`), so once a change is committed it reports
+   "✅ No index.html changes pending" and exits 0 — including for the exact index-without-sw.js-bump
+   case it was written to block (reproduced by the PM, `outputs/PM_v52.md`). See BACKLOG.md.
 2. **Multi-device/multi-user sync — NO LONGER BLOCKED as of 2026-08-09.** The 3 Vercel dashboard
    steps are done (Claude did them directly in Aaron's browser via Claude-in-Chrome, which is what
    made them possible — this environment's Vercel API token can deploy code but cannot create
@@ -422,6 +427,44 @@ reconstruct it from history.
   — queued behind the sync architecture item above, per Aaron's own priority order.
 
 ## Completed
+
+- [x] **Full end-to-end app audit with real test data entered per illness type — and the three
+  defects it found, fixed and shipped as app-v52** — added and closed 2026-08-09. Aaron, spelling
+  out a standing rule that had gone soft: *"you need to have the auditor or someone else do these
+  testing questions... I don't need to be doing that leg work. this auditor needs to also be
+  entering test/fake logs for every case and scenario to ensure everything works. that means doing
+  tour using different things like, chemo, radiation, both and other. there needs to be medication
+  added for each profile thats specific to the treatment. everything needs to be tested."* Done:
+  `outputs/AUDIT_full_app_v51.md` — 82 cases, 4 wiped installs (chemo / radiation / both / Other),
+  each through the full guided tour, with treatment-appropriate medications created by hand and a
+  multi-day logging span checked on Today, History, Reports, Calendar, Notes and a real CSV export.
+  The rule itself is now written into TEAM.md's Auditor section so it can't go soft again. Three
+  real defects came out of it and are fixed in **app-v52** (full detail in README.md's version
+  history): **H-1** a missed-dose alert that could never be cleared (Home counted misses over every
+  calendar day, History only over days that had a logged entry, so the banner and the Review screen
+  contradicted each other and "Clear all" never appeared); **H-2** a medication set "Only near
+  treatment day" vanishing from Home forever when no treatment date existed, with radiation-only
+  profiles having no way anywhere in the app to set one; **H-3** the CSV and the printable doctor's
+  report inventing a pill count — Aaron's own report, *"the detail column had 500mg, 500 pills. the
+  med was Tylenol for 500 mg"*. Re-gated twice by the Auditor (`outputs/AUDIT_v52.md` REJECTED,
+  `outputs/AUDIT_v52_2.md` cleared with one Medium) plus a Designer pass (`outputs/DESIGN_v52.md`)
+  and an independent PM sign-off (`outputs/PM_v52.md`) that re-verified the headline claims itself,
+  including reproducing the last Medium through a real app-v51 → app-v52 upgrade.
+
+- [x] **Near-treatment / exclude removed entirely from the medication editor for "Other" profiles**
+  — added and closed 2026-08-09. Aaron: *"make up some stuff for other, but the whole near treatment
+  and exclude shouldn't be there at all for them."* An "Other" profile has no treatment day in the
+  sense this feature means, so offering to hide a medication around one only ever produced confusion
+  — and, before the H-2 fix above, a medication that silently disappeared. Shipped in **app-v52**:
+  the mode picker, the days-before/after fields, the "Active window: …" summary and the Meds-list
+  restriction chips are all gone for Other, on fresh installs *and* on profiles upgrading from an
+  earlier build (that upgrade case was the one Medium the second Auditor pass left open; it was
+  fixed and then reproduced end-to-end by the PM on a genuine v51→v52 upgrade before sign-off).
+  Any restriction saved by an older build is made inert at runtime rather than left stranded in a
+  state the editor can no longer show or undo. Known follow-up, logged in BACKLOG.md, not a defect
+  today: the old value is still *stored* (just ignored), and there is currently no way to change a
+  profile's treatment type after setup — if type-editing is ever added, that stored value must be
+  cleared on the way out of "Other".
 
 - [x] **Retroactive Zero Day Auditor + PM gate run on app-v50, after Aaron flagged the team
   process wasn't being used** — added and closed 2026-08-08. Aaron: "I've noticed again that you

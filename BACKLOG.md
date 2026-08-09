@@ -6,6 +6,58 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
+- **`release_check.sh` only guards *uncommitted* work — it passes green on the exact bug it exists
+  to block.** Found by the PM gate on app-v52 (2026-08-09) and reproduced directly: the script reads
+  `git diff --name-only HEAD -- index.html` and `git diff HEAD -- sw.js`, so on a clean tree it prints
+  "✅ Release check passed. No index.html changes pending." and exits 0 — even when the committed
+  delta about to be uploaded changes `index.html` without bumping `sw.js`'s CACHE. That is precisely
+  the app-v40 silent-stale-cache failure the script was written to make structurally impossible, and
+  it is reachable through this project's *own documented workflow* (APP_CLAUDE.md rule 8 says commit
+  early and often; pushes are manual GitHub web uploads of already-committed files). app-v52's own
+  version coherence was verified by hand instead (`APP_VERSION` app-v51 → app-v52, CACHE
+  chemowell-app-v51-1 → chemowell-app-v52-4). Fix: diff against the upstream ref, not `HEAD` —
+  `BASE="${BASE_REF:-origin/main}"`, then `git diff --name-only "$BASE" -- index.html` and
+  `git diff "$BASE" -- sw.js`, keeping the existing `HEAD` check as an additional uncommitted-work
+  warning. Deliberately NOT changed inside the PM gate that depends on it: it should go in as its own
+  change with its own Auditor + PM pass. **Do this before the next release.**
+- **History gets very heavy when a large missed-dose backlog is finally listed** (new tail case
+  introduced by app-v52's H-1 fix — History now seeds days that have misses but no entries, where
+  before it rendered nothing for them). PM-measured on this sandbox, 4 window meds, nothing logged:
+  14 days / 56 misses → 83 ms render, 113 ms tap · 45 days / 180 → 135 ms / 198 ms · 120 days / 480 →
+  298 ms / 569 ms · **365 days / 1,460 → 1.5 s render, ~114 k characters of DOM, and the screen
+  effectively stops responding to taps** (a click retried for 20 s without landing). Cause is the
+  1-second `setInterval` in index.html that calls `setState()` and rebuilds the entire tree, which is
+  fine at normal sizes and not at this one — and the user who most needs the "Clear all" button is
+  exactly the one who can't tap it. Realistic backlogs (a patient who stops logging for a few weeks)
+  are comfortably fine, so this is a tail case, not a release blocker. Fix options: cap/paginate the
+  seeded day list, or exclude History from the 1-second tick the way the modals already are.
+- **The near-treatment restriction is still stored on "Other" profiles, just ignored** — app-v52
+  removed the control and made saved values inert (`treatmentOnlyBlocks`/`treatmentExcludedNow` both
+  return false for Other), and re-saving a medication on an Other profile leaves `treatmentMode:"only"`
+  in localStorage. Harmless today *only because there is no UI anywhere to change a profile's
+  treatment type after first-run setup* (`needsProfileCompletion()` gates the one editor, and it only
+  fires when sex or type is missing). If treatment-type editing is ever added — and it probably should
+  be, see the next item — an Other → Chemo switch would silently reactivate a restriction the user has
+  not been able to see since upgrading. Fix: normalise `treatmentMode`/`treatmentOnly` to `none`/false
+  on save when `isOtherTreatmentType()`, and/or clear it when the type changes.
+- **No way to change treatment type after setup** — chemo / radiation / both / Other is asked once on
+  the welcome screen and can then only be changed by the legacy "Finish setting up this profile" card,
+  which only appears when sex or type is *missing*. A user who picks the wrong one, or whose treatment
+  plan changes (very common — chemo then radiation), has no way to correct it short of erasing the
+  profile. Pre-existing, noticed during the app-v52 PM gate.
+- **Dead "Other"-specific copy left behind by app-v52** — `treatmentModeOptions()`'s
+  `isOtherTreatmentType()` branch ("Only near your date" / "Excluded near your date") is now
+  unreachable, since the whole picker is `isOtherTreatmentType() ? null : …`. Three other places still
+  carry `isOtherTreatmentType() ? 'Excluded near your date' : …` ternaries inside expressions that are
+  already guarded by `&& !isOtherTreatmentType()` (index.html ~2548, ~3883, ~5017), so one expression
+  now both excludes Other and branches on it. No behavioural effect; it just misleads the next reader.
+- **The printable doctor's report still prints raw internal override codes** — carried over from
+  `outputs/AUDIT_v52.md` (V52-10) and re-confirmed in `outputs/AUDIT_v52_2.md`: `buildExportRows()`
+  concatenates `'override: ' + e.overrideReason`, so a clinician reads `override: early+overLimit`.
+  The app already has `overrideBadgeLabel()`, which turns exactly that value into "Early · Over limit"
+  for the on-screen badge — the export just doesn't call it. Same document and same audience as the
+  app-v52 H-3 fix (which removed the invented "500 pills" from that column), so it belongs in the next
+  pass over this function. Pure copy, one line.
 - **No year shown on date labels** — `renderNotesView`'s note rows (index.html, "MMM D" date badge)
   and the sibling Calendar/Appointments feature's `calPillLabel` both show only month+day, no year.
   Fine for near-term dates, ambiguous for anything logged more than ~11 months apart (a chemo/rad

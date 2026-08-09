@@ -1006,6 +1006,13 @@ function dexActiveOn(dayTs) { const o = chemoOffsetFor(dayTs); return o !== null
 // medication can ever take (see RESERVED_LEGACY_MED_IDS) -- so every real medication that turned the
 // toggle on silently inherited that fixed window regardless of its actual regimen. treatmentDaysBefore
 // /After are per-medication (editable in the med editor, default 1/1 = today's old fixed behavior).
+// v52 (audit H-2). "Is there a treatment date to compare against at all?" -- deliberately separate
+// from treatmentActiveOn, which answers "is today inside the window" and returns false for BOTH
+// "outside the window" and "there is no window". Those two are not the same thing and must not be
+// treated the same: outside-the-window is a real answer, no-date-at-all is an unanswerable question.
+// Hiding a medication on an unanswerable question is what made a saved medication vanish from Home
+// with no message and no way to get it back.
+function hasTreatmentDate() { return nextChemoTs() !== null; }
 function treatmentActiveOn(med, dayTs) {
   const o = chemoOffsetFor(dayTs);
   if (o === null) return false;
@@ -1016,7 +1023,28 @@ function treatmentActiveOn(med, dayTs) {
 // v20: "excluded near treatment day" — the inverse of treatmentMode:'only'. Reuses treatmentActiveOn's
 // day-window math unchanged; only the caller's interpretation of "active" flips (only = available
 // exactly then, excluded = unavailable exactly then).
+// v52 — THE single place that answers "is this medication currently restricted OUT by its
+// treatment-day window". Every gate must go through this; the first attempt at the H-2 fix added
+// the no-date guard to one call site out of seven, and the other six went on treating "there is no
+// date" as "outside the window" — the exact conflation hasTreatmentDate() exists to prevent. A
+// medication that reads "Available" as a standalone card and "Outside its treatment-day window" in
+// a Morning group on the same screen is worse than either behaviour on its own.
+//
+// Returns false (i.e. does NOT restrict) when:
+//   - the medication has no treatment-only restriction at all;
+//   - the profile's treatment type is "Other" — Aaron, 2026-08-09: "the whole near treatment and
+//     exclude shouldn't be there at all for them". The editor no longer offers these modes to an
+//     Other profile, and this makes any restriction saved before that change inert rather than
+//     stranding a medication in a state its own editor can no longer show or undo;
+//   - no treatment date exists, so the window is unknowable (see hasTreatmentDate).
+function treatmentOnlyBlocks(med, dayTs) {
+  if (!med || !med.treatmentOnly) return false;
+  if (isOtherTreatmentType()) return false;
+  if (!hasTreatmentDate()) return false;
+  return !treatmentActiveOn(med, dayTs);
+}
 function treatmentExcludedNow(med, dayTs) {
+  if (isOtherTreatmentType()) return false;
   return med.treatmentMode === 'excluded' && treatmentActiveOn(med, dayTs);
 }
 // v20: does a calendar day fall inside any of this medication's recorded pause periods (past or
@@ -1080,7 +1108,7 @@ function missedDosesFor(dayTs, now) {
   const out = [];
   state.meds.filter(m => m.alerts && m.windows).forEach(med => {
     if (isPausedOn(med, d0)) return; // v20: skip exactly the days this medication was actually paused
-    if (med.treatmentOnly && !treatmentActiveOn(med, d0)) return;
+    if (treatmentOnlyBlocks(med, d0)) return;
     if (treatmentExcludedNow(med, d0)) return; // v20: excluded near treatment day
     if (!medScheduledOn(med, d0)) return; // not taken on this calendar day — nothing to miss
     const windows = med.id === 'dexamethasone' ? dexWindowsForOffset(chemoOffsetFor(d0)) : med.windows;
@@ -1128,7 +1156,7 @@ function doseProgressToday(now) {
   state.meds.filter(m => m.windows && m.windows.length && medScheduledOn(m, now))
     .forEach(med => {
       if (med.paused) return; // v20: don't count a paused medication as an incomplete dose today
-      if (med.treatmentOnly && !treatmentActiveOn(med, now)) return;
+      if (treatmentOnlyBlocks(med, now)) return;
       if (treatmentExcludedNow(med, now)) return;
       const windows = med.id === 'dexamethasone' ? dexWindowsForOffset(chemoOffsetFor(d0)) : med.windows;
       scheduled += windows.length;
@@ -1276,7 +1304,7 @@ function status(med) {
       return { locked: false, windowName: w.name };
     }
   }
-  const chemoOver = med.treatmentOnly && !treatmentActiveOn(med, d0 + 86400000);
+  const chemoOver = treatmentOnlyBlocks(med, d0 + 86400000);
   if (chemoOver) {
     return { locked: true, courseComplete: true };
   }
@@ -1680,7 +1708,16 @@ function isOtherTreatmentType() { return treatmentType() === 'other'; }
 function homePref(key) {
   const prefs = getPrefsDB();
   const saved = prefs.homeCards || {};
-  return typeof saved[key] === 'boolean' ? saved[key] : HOME_PREF_DEFAULTS[key];
+  if (typeof saved[key] === 'boolean') return saved[key];
+  // v52 (audit H-2): a radiation-only profile defaults the Treatment schedule card OFF, but can now
+  // turn it ON from Settings. Previously the card AND its Settings toggle were both hard-hidden for
+  // radiation-only, which left those profiles with no way anywhere in the app to set a treatment
+  // date -- while the medication editor still happily offered "Only near treatment day". A
+  // medication saved that way then had no date to compare against and silently disappeared from
+  // Home forever. Making this a *default* rather than a hard block keeps radiation-only Home clean
+  // (no chemo countdown they didn't ask for) while removing the dead end.
+  if (key === 'showChemoSchedule' && isRadiationOnly()) return false;
+  return HOME_PREF_DEFAULTS[key];
 }
 function setHomePref(key, value) {
   const prefs = getPrefsDB();
@@ -2479,7 +2516,7 @@ function renderGroupedMedsCard(title, meds, now) {
   const inpatientNow = isInpatientActiveNow();
   // v20: paused and treatment-window-hidden meds are excluded from "due"/"Take all" the same way
   // medCards' upstream filter already excludes them for standalone Quick Log cards.
-  const dueMeds = meds.filter(m => { if (m.paused) return false; if (m.treatmentOnly && !treatmentActiveOn(m, now)) return false; if (treatmentExcludedNow(m, now)) return false; if (!medScheduledOn(m, now)) return false; const s = status(m); return !s.locked; });
+  const dueMeds = meds.filter(m => { if (m.paused) return false; if (treatmentOnlyBlocks(m, now)) return false; if (treatmentExcludedNow(m, now)) return false; if (!medScheduledOn(m, now)) return false; const s = status(m); return !s.locked; });
   return h('section', null,
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
       h('div', { style: { ...TYPE.label, color: '#915E48' } }, title),
@@ -2500,7 +2537,7 @@ function renderGroupedMedsCard(title, meds, now) {
             h('button', { onClick: () => setMedicationPaused(med.id, false), style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '999px', background: '#FFFFFF', border: '1px solid #D7B8AA', color: '#6D5247', fontSize: '13px', fontWeight: '700' } }, 'Resume')
           );
         }
-        if ((med.treatmentOnly && !treatmentActiveOn(med, now)) || treatmentExcludedNow(med, now)) {
+        if (treatmentOnlyBlocks(med, now) || treatmentExcludedNow(med, now)) {
           // v20: this grouped-card path never gated treatmentOnly/excluded at all before this
           // release (a pre-existing gap noted in the schedule-window brief's blast-radius review) --
           // closing it now for both directions rather than leaving grouped placement inconsistent
@@ -2564,6 +2601,13 @@ function renderGroupedMedsCard(title, meds, now) {
           h('div', { style: { flex: '1', minWidth: '0' } },
             h('div', { style: { ...TYPE.title, color: '#2A2127' } }, med.name),
             h('div', { style: { ...TYPE.caption, color: '#7A6E76' } }, med.sub + (med.note ? (' · ' + med.note) : '')),
+            // v52 (Auditor V52.2-2): grouped placements carried none of D-2's explanation, so the
+            // same medication read "Showing every day until you set a treatment date." on a standalone
+            // card and said nothing at all inside a Morning group on the same screen. Inconsistency
+            // between these two placements is exactly what made V52-1 a HIGH; keeping it here would
+            // be the same mistake at lower severity.
+            (med.treatmentOnly && !hasTreatmentDate() && !isOtherTreatmentType())
+              ? h('div', { style: { fontSize: '12px', color: '#8C5900', fontWeight: '600', marginTop: '3px', lineHeight: '1.35' } }, 'No date set — showing every day until you set a treatment date.') : null,
             lastToday ? h('div', { style: { fontSize: '12.5px', color: '#0C7F57', fontWeight: '700', marginTop: '2px' } }, '✓ Logged ' + fmtTime(lastToday.ts)) : null,
             isOv ? h('div', { style: { fontSize: '12px', color: '#A15B56', fontWeight: '600', marginTop: '3px', lineHeight: '1.35' } }, overrideExplain) : null
           ),
@@ -3714,7 +3758,8 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     daysUntil === 1 ? new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' }) + ' · TOMORROW' :
     daysUntil === 0 ? 'TODAY' :
     'Last treatment ' + new Date(dayStart(chemoTs)).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' });
-  if (!isRadiationOnly() && homePref('showChemoSchedule')) parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 3px 14px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
+  const treatmentCardIndex = homePref('showChemoSchedule') ? parts.length : -1;
+  if (homePref('showChemoSchedule')) parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 3px 14px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' } },
       h('div', null,
         h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Treatment schedule'),
@@ -3772,6 +3817,17 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       )
     ));
   }
+  // v52 (Designer D-3): on a radiation-only profile, Radiation sessions is the every-single-day
+  // card -- session counter, progress bar, big "Log today's session" button -- while Treatment
+  // schedule is one the user had to opt into in Settings and is usually empty. Ranking the empty
+  // opt-in card above the daily-use one inverts the hierarchy, and a ghost "Pick a date" row sitting
+  // directly above a gradient primary button makes it read worse still. Scoped to radiation-only on
+  // purpose: on a "both" profile the chemo cycle date legitimately outranks the session counter, so
+  // that order is left alone. Done as a move rather than by reordering the source so the two blocks
+  // keep their existing conditions and neither is duplicated.
+  if (isRadiationOnly() && treatmentCardIndex >= 0 && parts.length > treatmentCardIndex + 1) {
+    parts.push(parts.splice(treatmentCardIndex, 1)[0]);
+  }
 
   // Quick Log section
   const noMedsAtAll = state.meds.length === 0;
@@ -3796,7 +3852,13 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // medication always reaches the .map() regardless of its treatment mode, while a NON-paused
   // treatmentOnly medication outside its window still vanishes exactly as before (unchanged for every
   // state this filter was ever designed to hide).
-  const medCards = state.meds.filter(m => m.quickLog && (m.paused || !m.treatmentOnly || (treatmentActiveOn(m, now) && !status(m).courseComplete))).map(med => {
+  // v52 (audit H-2): `|| !hasTreatmentDate()` added. A treatmentOnly medication is hidden outside its
+  // window ONLY when a treatment date actually exists to define that window. With no date set, the
+  // window is unknowable, so the medication stays visible instead of disappearing -- a vanished card
+  // reads as data loss to this app's anxious-caregiver audience (the same reasoning the `paused`
+  // branch below already documents). This is not specific to radiation-only profiles: a chemo profile
+  // that hadn't set a date yet hit the identical trap.
+  const medCards = state.meds.filter(m => m.quickLog && (m.paused || !treatmentOnlyBlocks(m, now) && !(m.treatmentOnly && status(m).courseComplete))).map(med => {
     if (med.paused) {
       // v20: pause wins over every other card state -- "the user explicitly said stop" outranks
       // "hospital gave it" or "not scheduled today" as the thing to communicate. Card stays visible
@@ -3936,6 +3998,16 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
             h('div', { className: 'mono', innerHTML: lockSVG + ' ' + (st.ceilingHit ? 'Limit' : 'Restricted'), style: { display: 'inline-flex', alignItems: 'center', gap: '5px', height: '26px', background: 'rgba(192,69,59,0.10)', color: '#A5443C', borderRadius: '99px', padding: '0 10px', fontSize: '12px', fontWeight: '700', flexShrink: '0', whiteSpace: 'nowrap' } }) :
             h('div', { className: 'mono', innerHTML: clockSVG + ' ' + (offDay ? 'Not scheduled' : 'Waiting'), style: { display: 'inline-flex', alignItems: 'center', gap: '5px', height: '26px', background: 'rgba(181,118,30,0.12)', color: '#8C5900', borderRadius: '99px', padding: '0 10px', fontSize: '12px', fontWeight: '700', flexShrink: '0', whiteSpace: 'nowrap' } })
           ) :
+          // v52 (Designer D-2): a medication restricted to "Only near treatment day" with NO
+          // treatment date set is now SHOWN rather than hidden (H-2) -- but showing it as an ordinary
+          // bright-green "Available" card says nothing about why the restriction isn't applying. Green
+          // means "go" everywhere else on Home; it is used nowhere else for "we can't tell". A
+          // caregiver reading "Dexamethasone - Steroid - Available - 4 mg" at 2am has no way to know
+          // the oncologist restricted that steroid to treatment day and the app simply has no date to
+          // compare against. Reuses the EXACT amber token already used for "Waiting" above, so no new
+          // colour enters the system.
+          (med.treatmentOnly && !hasTreatmentDate() && !isOtherTreatmentType()) ?
+          h('div', { className: 'mono', innerHTML: clockSVG + ' No date set', style: { display: 'inline-flex', alignItems: 'center', gap: '5px', height: '26px', background: 'rgba(181,118,30,0.12)', color: '#8C5900', borderRadius: '99px', padding: '0 10px', fontSize: '12px', fontWeight: '700', flexShrink: '0', whiteSpace: 'nowrap' } }) :
           h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px', height: '26px', background: 'rgba(15,157,87,0.12)', color: '#0C7F57', borderRadius: '99px', padding: '0 10px', fontSize: '12px', fontWeight: '700', flexShrink: '0', whiteSpace: 'nowrap' } },
             '\u2713',
             'Available'
@@ -3956,6 +4028,10 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         // mentioned in meds" doesn't show up on cards) restores it below, this time visible and
         // wrapping instead of the dead display:none span it used to be.
       ),
+      // v52 (Designer D-2): states the literal truth of what the H-2 filter does, in the same slot
+      // and style as med.note but in the amber "needs attention" colour rather than italic grey.
+      (med.treatmentOnly && !hasTreatmentDate() && !isOtherTreatmentType())
+        ? h('div', { style: { ...TYPE.caption, color: '#8C5900' } }, 'Showing every day until you set a treatment date.') : null,
       med.note ? h('div', { style: { ...TYPE.caption, color: '#7A6E76', fontStyle: 'italic' } }, med.note) : null,
       // Buttons
       buttonArea
@@ -4831,9 +4907,16 @@ function renderMedicationEditor() {
         })
       )
     ),
-    h('div', { style: { marginTop: '10px' } },
-      fieldLabel(isOtherTreatmentType() ? 'Availability near your date' : 'Treatment-day availability', isOtherTreatmentType() ? 'Whether this medication is only available, or specifically excluded, near your date.' : 'Whether this medication is only available, or specifically excluded, near your treatment date.'),
-      h('div', { role: 'radiogroup', 'aria-label': isOtherTreatmentType() ? 'Availability near your date' : 'Treatment-day availability', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px' } },
+    // Aaron, 2026-08-09: "make up some stuff for other, but the whole near treatment and exclude
+    // shouldn't be there at all for them." An "Other" profile has no treatment day in the sense this
+    // feature means, so offering to hide a medication around one only ever produced confusion — and,
+    // before treatmentOnlyBlocks(), a medication that silently disappeared. The whole control is now
+    // absent for Other rather than reworded for it. Existing saved restrictions are made inert by
+    // treatmentOnlyBlocks/treatmentExcludedNow, so nothing is stranded in a state its editor can no
+    // longer display or undo.
+    isOtherTreatmentType() ? null : h('div', { style: { marginTop: '10px' } },
+      fieldLabel('Treatment-day availability', 'Whether this medication is only available, or specifically excluded, near your treatment date.'),
+      h('div', { role: 'radiogroup', 'aria-label': 'Treatment-day availability', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px' } },
         ...treatmentModeOptions().map(opt => {
           const on = (form.treatmentMode || 'none') === opt.key;
           return h('button', { type: 'button', role: 'radio', 'aria-checked': on ? 'true' : 'false', onClick: () => setTreatmentMode(opt.key), style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', width: '100%', minHeight: '44px', borderRadius: '12px', padding: '9px 12px', background: on ? 'rgba(200,83,32,0.13)' : 'rgba(255,255,255,0.48)', border: '1px solid ' + (on ? 'rgba(200,83,32,0.30)' : 'rgba(246,108,49,0.18)'), color: on ? '#A83D0F' : '#5E4337', textAlign: 'left' } },
@@ -4843,7 +4926,14 @@ function renderMedicationEditor() {
         })
       )
     ),
-    (form.treatmentMode || 'none') !== 'none' ? h('div', { style: { marginTop: '8px' } },
+    // v52 (Auditor V52.2-1): the days-before/after block needs the SAME Other guard as the mode
+    // picker above it. Hiding only the picker left an upgraded Other profile showing "Active window:
+    // 2 days before through 1 day after your date." with no control to change or clear it -- an
+    // orphaned rule, and the exact thing the comment above claimed could not happen. Fresh Other
+    // installs were clean, which is why it only reproduces via the real upgrade path. The rule is
+    // already inert at runtime (treatmentOnlyBlocks / treatmentExcludedNow); this stops the editor
+    // asserting a restriction that isn't being applied and can't be removed.
+    (!isOtherTreatmentType() && (form.treatmentMode || 'none') !== 'none') ? h('div', { style: { marginTop: '8px' } },
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: '8px' } },
         // v25 audit re-verify fix: same digit-scrambling class of bug as Finding A above (these two
         // fields also pass rerender:true on every keystroke) -- fixed the same way, plus a stable id
@@ -4920,11 +5010,11 @@ function renderMedicationManager(now) {
         med.groupedEvening ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(174,88,51,0.12)', color: '#8B3C1B', fontSize: '12px', fontWeight: '700' } }, 'Evening group') : null,
         med.groupedAfternoon ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(174,88,51,0.12)', color: '#8B3C1B', fontSize: '12px', fontWeight: '700' } }, 'Afternoon group') : null,
         med.scheduleDays ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(46,125,79,0.10)', color: '#2E7D4F', fontSize: '12px', fontWeight: '700' } }, scheduleDaysLabel(med)) : null,
-        med.treatmentMode === 'only' ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(192,69,59,0.10)', color: '#A15B56', fontSize: '12px', fontWeight: '700' } }, (isOtherTreatmentType() ? 'Your date ' : 'Treatment day ') + '−' + clampTreatmentDays(med.treatmentDaysBefore) + '/+' + clampTreatmentDays(med.treatmentDaysAfter)) : null,
+        med.treatmentMode === 'only' && !isOtherTreatmentType() ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(192,69,59,0.10)', color: '#A15B56', fontSize: '12px', fontWeight: '700' } }, (isOtherTreatmentType() ? 'Your date ' : 'Treatment day ') + '−' + clampTreatmentDays(med.treatmentDaysBefore) + '/+' + clampTreatmentDays(med.treatmentDaysAfter)) : null,
         // v20 Designer review: "Excluded" gets the amber NOTICE_TONES.attention token (not the same
         // red as "Only"/"Treatment day" above) since the two states are opposites -- available-then
         // vs. withheld-then -- and sharing one color made them indistinguishable at a glance.
-        med.treatmentMode === 'excluded' ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: NOTICE_TONES.attention.chipBg, color: NOTICE_TONES.attention.chipFg, fontSize: '12px', fontWeight: '700' } }, (isOtherTreatmentType() ? 'Excluded near your date ' : 'Excluded near treatment ') + '−' + clampTreatmentDays(med.treatmentDaysBefore) + '/+' + clampTreatmentDays(med.treatmentDaysAfter)) : null,
+        med.treatmentMode === 'excluded' && !isOtherTreatmentType() ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: NOTICE_TONES.attention.chipBg, color: NOTICE_TONES.attention.chipFg, fontSize: '12px', fontWeight: '700' } }, (isOtherTreatmentType() ? 'Excluded near your date ' : 'Excluded near treatment ') + '−' + clampTreatmentDays(med.treatmentDaysBefore) + '/+' + clampTreatmentDays(med.treatmentDaysAfter)) : null,
         med.paused ? h('span', { style: { borderRadius: '99px', padding: '3px 7px', background: 'rgba(124,97,86,0.14)', color: '#583F35', fontSize: '12px', fontWeight: '700' } }, 'Paused') : null
       ),
       deleting ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', paddingTop: '9px', borderTop: '1px solid rgba(192,69,59,0.16)' } },
@@ -5358,7 +5448,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v51';
+const APP_VERSION = 'app-v52';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -5519,7 +5609,7 @@ function renderSettings(now) {
         toggle('showTemperature', 'Temperature card', 'Quick temperature logging on Home.'),
         toggle('showWeight', 'Weight card', 'Quick weight logging on Home.'),
         toggle('showBloodPressure', 'Blood pressure card', 'Quick BP logging on Home; readings appear in Reports.'),
-        !isRadiationOnly() ? toggle('showChemoSchedule', 'Treatment schedule card', 'Countdown and reminders around treatment dates.') : null,
+        toggle('showChemoSchedule', 'Treatment schedule card', 'Treatment date, countdown, and reminders on Home.'),
         hasRadiation() ? toggle('showRadiationSessions', 'Radiation sessions card', 'Session counter and quick logging on Home.') : null,
         cycleAllowed() ? toggle('cycleTracking', 'Menstrual cycle tracking', 'Period banner on Home and the Cycle report.') : null
       ),
@@ -5629,7 +5719,26 @@ function buildExportRows() {
     else if (e.medId === 'appetite') detail = (typeof APPETITE_LABELS === 'object' && APPETITE_LABELS[e.value]) || e.value || '';
     else if (e.medId && e.medId.indexOf('symptom_') === 0) { const bits = []; if (e.severity) bits.push(e.severity); if (e.site) bits.push('site: ' + e.site); if (e.freq) bits.push(e.freq + ' episodes'); detail = bits.join(', '); }
     else if (e.medId === 'cycle_start' || e.medId === 'cycle_end' || e.medId === 'inpatient_start' || e.medId === 'inpatient_end' || e.medId === 'inpatient') detail = '';
-    else { detail = e.dose || ''; if (e.pills) detail += (detail ? ', ' : '') + e.pills + ' pill' + (e.pills === 1 ? '' : 's'); if (e.painLevel) detail += (detail ? ', ' : '') + 'pain ' + e.painLevel + '/10'; if (e.overrideReason) detail += (detail ? ', ' : '') + 'override: ' + e.overrideReason; }
+    // v52 (audit H-3, Aaron-reported: "the detail column had 500mg, 500 pills. the med was Tylenol
+    // for 500 mg"). `e.pills` is NOT a pill count -- parseDoseOptions deliberately stores any leading
+    // number from a free-text dosage label there as "the amount in the non-mg limit unit" (see the
+    // v45 comment on that function). Printing it with a hardcoded "pill(s)" invented a unit the user
+    // never chose, and because the dose label already contains that same number, every row said the
+    // amount twice: "8 mg, 8 pills", "40 mg, 40 pills", "2 tabs, 2 pills", "2 applications, 2 pills".
+    // This function also feeds the printable report a doctor reads, so it was wrong in front of a
+    // clinician. Fix: the dose label is the amount -- print it and stop. Only fall back to the raw
+    // number when there is no label to describe it, and even then use the medication's real unit
+    // rather than assuming pills.
+    else {
+      detail = e.dose || '';
+      if (!detail && e.pills) {
+        const medRec = state.meds.find(x => x.id === e.medId) || (state.archivedMeds && state.archivedMeds[e.medId]) || {};
+        const unit = medRec.ceilingUnit || 'pill' + (e.pills === 1 ? '' : 's');
+        detail = e.pills + ' ' + unit;
+      }
+      if (e.painLevel) detail += (detail ? ', ' : '') + 'pain ' + e.painLevel + '/10';
+      if (e.overrideReason) detail += (detail ? ', ' : '') + 'override: ' + e.overrideReason;
+    }
     return [d.toLocaleDateString('en-CA'), fmtTime(e.ts), nameOf(e.medId), detail, note];
   });
 }
@@ -5974,6 +6083,25 @@ function renderHistory(now) {
   const yStart = d0 - 86400000;
   const dmap = {};
   state.entries.forEach(e => { if (e.medId === 'inpatient' || e.medId === 'inpatient_start' || e.medId === 'inpatient_end' || e.medId === 'cycle_start' || e.medId === 'cycle_end') return; const k = dayStart(e.ts); (dmap[k] = dmap[k] || []).push(e); });
+  // v52 (audit H-1). dmap is built purely from logged entries, so a day with NOTHING logged -- or a
+  // day whose only entries are the period/in-patient markers filtered out above -- never became a key
+  // here and therefore could never render a missed-dose row. Meanwhile the Home banner
+  // (pastMissedCount) walks every calendar day since MISSED_TRACK_SINCE. The two disagreed, and the
+  // disagreement was unresolvable from the UI: Home said "2 missed doses from previous days", Review
+  // said "you're all caught up", Clear all never rendered (it is gated on totalMissed > 0), and a
+  // reload changed nothing. Worse, the day a caregiver logs nothing is exactly the day most likely to
+  // contain a real missed dose -- the one day History could not show. An un-dismissable red alert
+  // also trains people to ignore red alerts, which matters more than this one screen.
+  // Fix: enumerate the same range pastMissedCount does and seed any day that has misses, so every
+  // counted miss is listed and resolvable. Only days WITH misses are seeded -- empty days are not
+  // added, so History gains no blank filler rows.
+  // v52 (Auditor V52-5): `d <= d0`, not `d < d0`. Stopping before today left today's own misses
+  // out of History, so "Review 1 missed dose from today" led to "you're all caught up" -- the same
+  // contradiction H-1 fixed for past days, just one day narrower. Seeding only adds a day that has
+  // misses AND no entries, so a normal today is unaffected.
+  for (let d = dayStart(MISSED_TRACK_SINCE); d <= d0; d = nextDay(d)) {
+    if (!dmap[d] && missedDosesFor(d, now).length) dmap[d] = [];
+  }
 
   const allHistoryDays = Object.keys(dmap).map(k => +k).sort((a, b) => b - a).map(k => {
     const missed = missedDosesFor(k, now);
@@ -5985,7 +6113,11 @@ function renderHistory(now) {
     const wkday = new Date(k).toLocaleDateString([], { weekday: 'long' });
     const md = (new Date(k).getMonth() + 1) + '/' + new Date(k).getDate();
     const label = k === d0 ? ('Today - ' + wkday + ' ' + md) : (wkday + ', ' + md);
-    let summary = doses + ' dose' + (doses === 1 ? '' : 's');
+    // v52 (Designer D-4): on a day seeded purely because it has missed doses, `doses` is 0 and
+    // "0 doses · 2 MISSED" put a zero directly beside a red count -- which reads for a half second as
+    // "0 missed". Nobody says "I had zero doses yesterday"; they say nothing was logged.
+    const nothingElseLogged = !doses && !temps && !weights && !tyDay;
+    let summary = nothingElseLogged ? 'Nothing logged' : (doses + ' dose' + (doses === 1 ? '' : 's'));
     if (temps) summary += ' · ' + temps + ' temp' + (temps === 1 ? '' : 's');
     if (weights) summary += ' · ' + weights + ' wt';
     if (tyDay) summary += ' · ' + tyDay.toLocaleString() + ' mg APAP';
@@ -6549,7 +6681,7 @@ function dueRemindersAt(nowDate) {
   state.meds.filter(med => med.alerts && med.windows && med.windows.length).forEach(med => {
     if (med.paused) return; // v20: don't remind for a currently-paused medication
     if (!medScheduledOn(med, nowTs)) return; // off-day for this medication's own schedule
-    if (med.treatmentOnly && !treatmentActiveOn(med, nowTs)) return; // outside its treatment-day window
+    if (treatmentOnlyBlocks(med, nowTs)) return; // v52: only when a real window exists (see treatmentOnlyBlocks)
     if (treatmentExcludedNow(med, nowTs)) return; // v20: excluded near treatment day
     med.windows.forEach(w => {
       // v20: w.start may now be a quarter-hour decimal (8.25 = 8:15) from the structured time-window
@@ -6790,7 +6922,7 @@ function medRemindersEnabledOn(med, dayTs) {
   if (!med || !med.alerts || !med.windows || !med.windows.length) return false;
   if (med.paused) return false;
   if (!medScheduledOn(med, dayTs)) return false;
-  if (med.treatmentOnly && !treatmentActiveOn(med, dayTs)) return false;
+  if (treatmentOnlyBlocks(med, dayTs)) return false;
   if (treatmentExcludedNow(med, dayTs)) return false;
   return true;
 }
