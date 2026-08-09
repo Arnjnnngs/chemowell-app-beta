@@ -70,6 +70,29 @@ reconstruct it from history.
   the only way to get there is not to hold the data. Today ChemoWell holds none of it; that position
   is preserved. The Vercel project and Blob store built earlier the same day were deleted/emptied.
   Design: `outputs/SHARING_DEVELOPER_BRIEF_v3.md`.
+- **"Can we just send a code and sync that way?" — asked and answered 2026-08-09. Decision: NO
+  automatic sync. Encrypted-file sharing only.** Aaron raised the real product worry: *"I think we
+  lose a lot of the selling point if they can't sync up... I wanted my app to stand out."* Worth
+  recording the reasoning in full, because this question will come back.
+  The hard constraint: **a code cannot carry data.** A code is a key; it points at something. For
+  the receiving device to type a code and get a medication history, those bytes must already be
+  sitting somewhere it can reach. So the only real question is *who holds the bytes in between*, and
+  there are exactly three answers: (1) the message itself, i.e. an encrypted file the sender
+  attaches — no third party, manual; (2) the **user's own cloud**, e.g. their own Google Drive via
+  the `drive.file` scope (app can only touch files it created, and it is the scope Google
+  recommends as the minimum, which also avoids sensitive-scope verification) — this gives genuinely
+  automatic ~1-minute sync while ChemoWell still never holds the data, because it lives in the
+  caregiver's own Drive under their own account; (3) a ChemoWell-operated server — already rejected
+  2026-08-09 for the consumer-health-data reasons above.
+  Option 2 was presented as a real, buildable way to keep automatic sync without becoming a data
+  collector. **Aaron chose option 1 (file only)** — simplest, works for every caregiver with no
+  account and no setup, gets to the App Store sooner, and frees the time for the Pro-tier features
+  already approved. Also noted in the discussion and worth keeping in front of him: Medisafe and the
+  other big trackers *already* have cloud accounts and sync, so matching them there is not
+  differentiation — "your diagnosis and medication list never touch our servers, and you never make
+  an account" is the thing none of them offer. **Do not re-propose Drive sync unless Aaron raises
+  it**; if he does, option 2 above is the design to start from, and the encryption + merge logic
+  built for file sharing is directly reusable, so nothing is wasted by having shipped files first.
 - **QR codes: SCRATCHED** (Aaron, 2026-08-09: "Scratch QR code"). Was proposed only as a way to
   transfer the 10-character key in person — never for the data itself, which is ~300KB against a
   QR ceiling of ~3KB. Not needed anyway: Android's Nearby Share already appears in the same share
