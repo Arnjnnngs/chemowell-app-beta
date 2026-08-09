@@ -82,8 +82,19 @@ export function requireMethod(req, res, method) {
 // thrown error inside the handler and came back as a 500 with the raw SDK text echoed to the
 // caller. A client sending bad JSON is a client error, and the app should be able to tell that
 // apart from "the backend is down."
+// The `req.body` ACCESS ITSELF can throw: Vercel's Node runtime parses lazily behind a getter, so
+// a malformed payload raises at the moment a handler first reads it, not before the handler runs.
+// That throw landed in each endpoint's outer try/catch and came back as a 500 -- so a client
+// sending bad JSON was told the backend had failed, which the app cannot tell apart from a real
+// outage. Reading it inside its own try is what makes the 400 reachable at all.
 export function readBody(req, res) {
-  const b = req.body;
+  let b;
+  try {
+    b = req.body;
+  } catch (e) {
+    res.status(400).json({ error: 'invalid_json_body' });
+    return null;
+  }
   if (b === undefined || b === null || typeof b !== 'object' || Array.isArray(b)) {
     res.status(400).json({ error: 'invalid_json_body' });
     return null;
