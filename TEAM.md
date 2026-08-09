@@ -133,6 +133,38 @@ Everything else below is scoped in or out based on what the release actually cha
    function." This is where copy-clarity gets checked by default now, including for releases
    where the Designer stage below is skipped (see Copy review section further down).
 
+   **The Auditor does the legwork. Aaron does not. (Aaron, 2026-08-09 — spelled out because
+   this rule already existed and still went soft.)** His words: *"you need to have the auditor or
+   someone else do these testing questions... I don't need to be doing that leg work. this auditor
+   needs to also be entering test/fake logs for every case and scenario to ensure everything works.
+   that means doing tour using different things like, chemo, radiation, both and other. there needs
+   to be medication added for each profile thats specific to the treatment. everything needs to be
+   tested. I've asked this before for a full test of things. but now i'm spelling it out that test
+   logs needs to be entered. different profiles needs to be created."*
+
+   Concretely, a full sweep means the Auditor **creates the data and drives the app itself**:
+   - **Four profiles from wiped installs — chemo, radiation, both, and Other** — each taken through
+     the complete guided tour, with the copy checked *for that treatment type*.
+   - **Real medications per profile, specific to that treatment**, covering every placement,
+     category, unit, scheduling mode, daily limit and pause-period the editor supports.
+   - **A simulated multi-day logging span across every loggable type**, then each entry verified on
+     every screen it should reach — Today, History, Reports, Calendar, Notes, and a real CSV export.
+   - Test data may be left in place or cleaned up afterwards; Aaron explicitly does not care which.
+
+   **"Please confirm this on your device" is not an acceptable way to close a test case.** The only
+   legitimate unverified items are ones a browser genuinely cannot reach — real Android OS
+   notification delivery, the native share sheet, the hardware Back button — and each must be named
+   explicitly, with the reason, plus whatever half of it *was* testable. Everything else, the
+   Auditor determines. Aaron's device is for final acceptance of things only a real phone can show,
+   not for finding defects the sweep should have found.
+
+   **This runs in-sandbox, so cost is not a reason to skip it:** Playwright 1.56 + Chromium are
+   installed (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`; never run `playwright install`), and
+   `python3 -m http.server` over the repo serves the real `index.html` at localhost. The sandbox has
+   no outbound access to the live site, which is fine — verify `git diff origin/main -- index.html`
+   is empty and you are testing byte-identical code. Reference run: `outputs/AUDIT_full_app_v51.md`,
+   82 cases, 4 profiles, 17 entry types, 10 curated screenshots.
+
    **Test-case depth scales to risk, it isn't fixed at 20 for everything anymore:**
    - Releases that change how medication/dose/schedule data is stored, read, or calculated,
      or anything safety-relevant (dosing logic, missed-dose tracking, reminders), still get
