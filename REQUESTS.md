@@ -26,18 +26,25 @@ For a new chat picking this project up cold: this is the priority order, top to 
 detail on each is in the Open list below; this is just the ordering so you don't have to
 reconstruct it from history.
 
-1. **Nothing to build — waiting on Aaron.** app-v51 needs a fresh APK (GitHub Actions builds
+1. **Waiting on Aaron (not blocking anything else).** app-v51 needs a fresh APK (GitHub Actions builds
    this automatically off the `main` push) installed on his Galaxy S25 Ultra, then his
    confirmation of: exact-alarm reminders, the new "Allow background activity" battery control,
    and — important, re-broke and re-fixed this session — CSV/PDF export actually reaching the
    native share sheet again. See the Export/printable report item and the Notification item
    below for exact detail.
-2. **Multi-device/multi-user sync** — confirmed top build priority, App Store blocker. Blocked
-   on Aaron completing 3 one-time Vercel dashboard steps (see the item below for exactly what).
-   Once unblocked: build the pairing UI, sync loop, conflict UI, "last synced" indicator, and
-   Settings entry point (items 4-8 of `outputs/SYNC_DEVELOPER_BRIEF_v2.md` §7). **Gets the full
-   Quality Chain (TEAM.md) when it starts — do not self-verify this one solo, per Aaron's
-   explicit 2026-08-08 instruction that this needs multiple eyes given the stakes.**
+2. **Multi-device/multi-user sync — NO LONGER BLOCKED as of 2026-08-09.** The 3 Vercel dashboard
+   steps are done (Claude did them directly in Aaron's browser via Claude-in-Chrome, which is what
+   made them possible — this environment's Vercel API token can deploy code but cannot create
+   projects or change project settings, which is why they sat on Aaron for a day). The relay is
+   live at `https://chemowell-sync.vercel.app`, publicly reachable, auto-deploying from `main`,
+   and its Critical/High security findings are fixed and re-verified. **Next actual work: items
+   4-8 of `outputs/SYNC_DEVELOPER_BRIEF_v2.md` §7** — the pairing UI, the sync loop, the conflict
+   UI, the "last synced" indicator, and the Settings entry point. Two contract changes the pairing
+   UI must account for, both introduced by the security fixes (details in the item below): the
+   pairing code is now 10 characters, and the wrapped-key payload must carry the profile's write
+   token alongside K. **Gets the full Quality Chain (TEAM.md) when it starts — do not self-verify
+   this one solo, per Aaron's explicit 2026-08-08 instruction that this needs multiple eyes given
+   the stakes.**
 3. **Per-medication "What is this for?" link (MedlinePlus)** — approved, source confirmed, no
    further sign-off needed. Small and independent of sync — can be picked up any time, including
    before sync if it's a better use of a shorter session.
@@ -224,6 +231,33 @@ reconstruct it from history.
   Still to build once unblocked: the pairing UI (Share this profile / Join a shared profile),
   the sync loop itself, the conflict-detected UI, the "last synced" indicator, and the
   Settings entry point — items 4-8 of `SYNC_DEVELOPER_BRIEF_v2.md` §7's task breakdown.
+  **Update 2026-08-09 — UNBLOCKED, and the backend has been independently audited and hardened.**
+  The three Vercel steps are done: project `chemowell-sync` created (root dir `sync-backend`,
+  auto-deploys from `main`), the Vercel Authentication login wall disabled so the API is actually
+  publicly reachable, and a Blob store connected. The store was deliberately created **Private**
+  rather than public — the payload is already end-to-end ciphertext, but a public store would mean
+  the only thing between a stranger and the stored bytes is the secrecy of a URL, and pathnames
+  here are deliberately non-random. Verified by test, not assumed: an unauthenticated fetch of a
+  real blob URL returns 403.
+  A mandatory Zero Day Auditor pass (`outputs/AUDIT_sync_backend_provisioning.md`, ~1,400 real
+  requests against the live deployment) then found **two Critical and six High** issues in the
+  relay as originally built — none of them reachable by any user, since `index.html`'s
+  `SYNC_API_BASE` is still `''` and the app has never called this backend, but all of them
+  blocking for the pairing UI. Worst two: an unvalidated `recordId` let a push escape the
+  `profile/` namespace and echo back another user's *live pairing code* to an unauthenticated
+  caller, and the 6-digit code was brute-forceable inside its own window (270 req/s measured, no
+  limiter). Also found: `pull` silently truncated at 1,000 records and still returned success —
+  a caregiver past that point would see a medication list quietly missing entries and looking
+  entirely normal. All fixed and re-verified live (33/33 checks, including replaying both attacks).
+  **Two contract changes the pairing UI (item 4) must build against:**
+  1. The pairing code is now **10 Crockford-base32 characters**, displayed `XXXXX-XXXXX`, not 6
+     digits. The API accepts it back lowercase, spaced, undashed, and repairs O/I/L transcription
+     slips, so the UI can be forgiving about how it's typed. QR remains the primary path.
+  2. Writes now require a **write token**. The server mints it once at first share, keeps only a
+     SHA-256 hash, and returns it only to the inviting device. The joining device must receive its
+     copy **inside the encrypted wrapped-key payload** — i.e. `upload-key`'s ciphertext should wrap
+     `{ k, writeToken }`, not just K — so it never crosses the server readably. Push and pull both
+     send `x-cw-profile-token` and `x-cw-write-token` as headers (not query params).
 - [ ] **How does a Plus/Pro caregiver actually back up and move to a new phone?** — added
   2026-08-08. Aaron: "if they have the higher tier plans, we need to figure out how would they
   backup to move to another phone if it's all on one device and they aren't logging in." Real

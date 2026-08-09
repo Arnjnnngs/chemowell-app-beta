@@ -46,6 +46,24 @@ when you're about to touch the relevant code; delete the line once it's actually
   sooner — the lesson: a documented-but-unapplied fix for a known live defect should get promoted
   to REQUESTS.md and scheduled, not left here indefinitely once the underlying feature has
   actually shipped and is live for real users.
+- **`sync-backend` profile pull is O(n) sequential reads — fine now, will not stay fine** — the
+  Zero Day Auditor measured `GET /api/profile/pull` at 516ms for 10 records, 4,755ms for 100,
+  11,163ms for 300 and 36,645ms for 1,000 (roughly 37ms per record, linear), because `listJson`
+  fetches each blob one at a time. Harmless at realistic near-term scale (dozens of records, a
+  ~45s poll loop) and explicitly out of scope for slice 1, but it sits directly under a polling
+  sync loop, so it degrades quietly as a patient's history grows. Two straightforward fixes when
+  it matters, neither a redesign: read the page concurrently instead of sequentially, and/or add
+  the delta-since-timestamp endpoint `SYNC_DEVELOPER_BRIEF_v2.md` §6 already anticipates. Found
+  2026-08-09 during the sync-backend provisioning audit. (The *correctness* half of this — silent
+  truncation at 1,000 records — was a real bug and is already fixed; this entry is only the
+  performance half.)
+- **`sync-backend` has no revocation path** — if a paired device is lost, stolen, or the caregiver
+  relationship ends, there is currently no way to cut that device off: it holds K (so it can
+  decrypt everything) and the write token (so it can write). Real revocation means rotating both
+  and re-pairing every device that should keep access, which is a genuine feature, not a patch.
+  Not urgent for slice 1 (nothing is live), but it should be designed before the feature is
+  offered to real users, and it belongs in the same conversation as the Formal Privacy Policy /
+  lawyer review item in REQUESTS.md. Noted 2026-08-09.
 - **"Welcome to ChemoWell" setup toast can briefly overlap the tour's "Daily limit" field** — during
   the guided tour's "Fill in the details" step (medication editor), the post-`completeSetup()` toast
   is still visible for its last moment or two and sits over the Daily limit field. Pre-existing

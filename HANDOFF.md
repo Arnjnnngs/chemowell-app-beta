@@ -64,9 +64,25 @@ authoritative version; follow TEAM.md where the two differ, and read its "Proces
   entry — don't mark it Completed until he confirms it on the actual app-v51 build).
 - **Next build priority: multi-device/multi-user sync.** Confirmed by Aaron as the top priority,
   App Store blocker, and explicitly told to use the full team (not solo) given the stakes. Fully
-  scoped in `outputs/SYNC_DEVELOPER_BRIEF_v2.md`; blocked on Aaron completing 3 one-time Vercel
-  dashboard steps — check REQUESTS.md's sync item for exactly which three, and ask him directly
-  if it's unclear whether he's done them.
+  scoped in `outputs/SYNC_DEVELOPER_BRIEF_v2.md`. **No longer blocked as of 2026-08-09** — the
+  three Vercel dashboard steps are done. They were done directly in Aaron's own browser via
+  Claude-in-Chrome, which is the only reason they were possible: this sandbox's Vercel API token
+  can deploy code but cannot create a project or change project settings, which is exactly why
+  they sat on Aaron for a day. Worth remembering as a general pattern — "blocked on Aaron doing
+  something in a web dashboard" is often not actually blocked.
+  The relay is live at `https://chemowell-sync.vercel.app`, publicly reachable, auto-deploying
+  from `main`, backed by a **private** Blob store. It was then put through the mandatory Zero Day
+  Auditor gate (`outputs/AUDIT_sync_backend_provisioning.md`), which found **2 Critical and 6
+  High** issues in the backend as originally built — all now fixed and re-verified against the
+  live deployment. Read that report before touching `sync-backend/`; it is the clearest statement
+  of what this backend's security actually rests on.
+  **Start at items 4-8 of `SYNC_DEVELOPER_BRIEF_v2.md` §7 (pairing UI onward), and read
+  REQUESTS.md's sync item first** — the security fixes introduced two contract changes the pairing
+  UI must build against (a 10-character pairing code instead of 6 digits, and a write token that
+  has to reach the joining device inside the encrypted wrapped-key payload).
+  Note the app itself is still completely unwired: `index.html`'s `SYNC_API_BASE` is `''`, so
+  nothing shipped calls this backend yet. That is why none of the audit findings were ever
+  reachable by a real user.
 - **Approved and ready whenever there's a good slot for it:** the per-medication MedlinePlus
   "what is this for" link — already agreed with Aaron, no further sign-off needed, small and
   independent of sync.
