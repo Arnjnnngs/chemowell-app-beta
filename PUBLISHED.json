@@ -12,10 +12,15 @@
     "A committed record cannot go stale the way a remote ref can, because updating it is part of",
     "the push itself. Update it by running ./mark_published.sh IMMEDIATELY AFTER a successful",
     "push, and commit the result. Never edit it by hand to make the gate pass -- release_check.sh",
-    "cross-checks these values against the recorded commit and will refuse a record that lies."
+    "cross-checks these values against the recorded commit and will refuse a record that lies.",
+    "",
+    "'commit' is the LOCAL commit whose index.html and sw.js are byte-identical to what was",
+    "uploaded. It is deliberately not the SHA GitHub assigned: pushes here are manual web uploads,",
+    "so GitHub mints its own commit that this sandbox has never seen and could not resolve. What",
+    "the gate needs from this field is a local tree to diff against, and the local commit is that."
   ],
-  "commit": "18c65045f58d129df2c2be6ccb1e8c72e2c718b0",
-  "app_version": "app-v54",
-  "cache": "chemowell-app-v54-2",
+  "commit": "60434dcd7190469822a3724c697060873479d0ac",
+  "app_version": "app-v55",
+  "cache": "chemowell-app-v55-2",
   "published_at": "2026-08-10"
 }
