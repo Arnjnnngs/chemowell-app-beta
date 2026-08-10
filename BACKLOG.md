@@ -29,6 +29,19 @@ when you're about to touch the relevant code; delete the line once it's actually
   instead of against a remote ref this environment cannot refresh. **Do this before any further code
   ships**, and until it is done, verify the CACHE bump by hand against the live site as well as by
   running the script.
+- **Drawer focus management is broken, and has been since app-v22** — found by the app-v54 Auditor
+  and confirmed identical on the live app-v53 build, so it is pre-existing, not a v54 regression.
+  Two related defects: (1) focus is never returned to the hamburger when the drawer closes
+  (`index.html:2302`) — `closeDrawer()` calls `setState` first, `render()` then does
+  `root.innerHTML = ''` (`:3151`), so the stored trigger element is already detached by the time
+  `.focus()` runs; observed `activeElement=BODY` after Escape, X and scrim alike. (2) The Tab
+  handler (`:2311-2325`) only acts when focus is exactly the first or last focusable, so once focus
+  lands on `<body>` — which happens by tapping any non-focusable region of the drawer, e.g. the
+  footer — Tab escapes into the app behind the scrim. Only affects keyboard and switch-access users,
+  which is why it has gone unnoticed, but it makes the drawer a trap-that-isn't. Fix belongs in its
+  own small release with its own gates: focus the trigger *after* the re-render (or move focus to
+  the drawer panel and restore on unmount), and make the Tab handler wrap whenever focus is outside
+  the drawer, not only at the two ends.
 - **`release_check.sh`'s "uncommitted work" warning branch is dead code and its comment is wrong**
   (Auditor V53-6, independently re-confirmed by the PM gate on app-v53). Lines ~44-48 fire only when
   `UNCOMMITTED_INDEX` is non-empty *and* `INDEX_CHANGED` is empty, but `git diff <commit> -- index.html`

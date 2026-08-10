@@ -2512,11 +2512,20 @@ function renderDrawer() {
       // coordinate collision entirely, regardless of tap timing.
       h('div', { style: { position: 'relative', padding: '20px 56px 20px 18px', borderBottom: '1px solid #E9D8D1' } },
         h('button', { id: 'drawer-close-btn', onClick: closeDrawer, 'aria-label': 'Close menu', style: { position: 'absolute', top: '8px', right: '8px', width: '44px', height: '44px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#915E48', background: 'transparent' } }, appIcon('x', 18)),
-        h('button', { onClick: () => drawerGo('account'), 'aria-label': 'Open Account — active profile ' + name + ', ' + tierLabel(lic.tier) + ' plan', style: { display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', width: '100%' } },
-          h('span', { style: { width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(191,76,26,0.14)', color: '#A83D0F', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: '800', flexShrink: '0' } }, initial),
+        // v54 (Aaron, 2026-08-10): "when tapping the name at the top of the list...it takes you to
+        // the settings page. this shouldn't take you to any page as this should be visible only.
+        // there is a settings tab right underneath that... don't need both." The identity header was
+        // a full-width button duplicating the Account row directly beneath it, so the top of the
+        // drawer had two controls going to the same place and the one that looked like a heading was
+        // the surprising one. Now a plain, non-interactive block: same layout, no tap target, no
+        // aria-label announcing an action it no longer performs. This also retires the double-tap
+        // hazard the old comment above describes -- a second fast tap on the hamburger can no longer
+        // land on anything interactive, because there is nothing interactive there.
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', width: '100%' } },
+          h('span', { 'aria-hidden': 'true', style: { width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(191,76,26,0.14)', color: '#A83D0F', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: '800', flexShrink: '0' } }, initial),
           h('div', { style: { minWidth: '0', flex: '1' } },
             h('div', { style: { ...TYPE.title, color: '#2A2127', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, name),
-            h('span', { style: { display: 'inline-block', marginTop: '3px', fontSize: '11.5px', fontWeight: '800', color: '#0A6B4A', background: 'rgba(46,125,79,0.12)', border: '1px solid rgba(46,125,79,0.25)', padding: '2px 9px', borderRadius: '99px' } }, tierLabel(lic.tier))
+            h('span', { 'aria-label': tierLabel(lic.tier) + ' plan', style: { display: 'inline-block', marginTop: '3px', fontSize: '11.5px', fontWeight: '800', color: '#0A6B4A', background: 'rgba(46,125,79,0.12)', border: '1px solid rgba(46,125,79,0.25)', padding: '2px 9px', borderRadius: '99px' } }, tierLabel(lic.tier))
           )
         )
       ),
@@ -5479,7 +5488,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v53';
+const APP_VERSION = 'app-v54';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
