@@ -250,6 +250,25 @@ defect.
   gate on a build that never bumped it (proven on scratch clones; it is the app-v40 stranding
   failure printing a ✅). Skip this step and the gate quietly stops guarding one release later —
   which is precisely how app-v40 happened, so treat it as part of the push, not as a follow-up.
+- **Then verify the upload landed, file by file, and only then move `origin/main` by hand.**
+  `git push` cannot work here (the proxy refuses to inject a credential for this repo — try it,
+  you get a 403), so pushes are web uploads and `git` never learns they happened: `origin/main`
+  sits frozen at whatever release the sandbox was created from, and `git status` reports every
+  commit since as unpushed forever. That is noise, and noise around "did this ship?" is how a
+  release gets assumed-shipped. Fix it deliberately, never reflexively:
+
+  1. Open the compare view — `github.com/<owner>/<repo>/compare/<old-sha>...main` — and check the
+     changed-file list matches `git diff --name-only origin/main HEAD` exactly. A file you forgot
+     to upload shows up here and nowhere else.
+  2. From a github.com tab, hash every one of those files off `raw.githubusercontent.com` and
+     compare against local `sha256sum`. app-v55 did this for all 40: 40 match, 0 mismatch. This is
+     the step that catches a truncated or mangled upload, which the file list cannot.
+  3. Only if that is clean: `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)`.
+
+  This asserts **content** equality, not history — GitHub mints its own commit SHAs for a web
+  upload, so the trees match and the SHAs never will. Do not skip to step 3 because the upload
+  "looked fine"; an `origin/main` that lies is strictly worse than one that is merely stale,
+  because a stale one at least nags.
 - Push to GitHub, then live-verify the actual deployed site (not just localhost) with a
   cache-buster query param, since the service worker caches aggressively. Batch a release's
   code fixes into one commit and its documentation/reports into another, rather than a
