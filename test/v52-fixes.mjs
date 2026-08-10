@@ -51,13 +51,25 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const sw = fs.readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
 const v = (html.match(/const APP_VERSION = '([^']+)'/) || [])[1];
 const c = (sw.match(/const CACHE = '([^']+)'/) || [])[1];
-t('APP_VERSION is app-v52', v === 'app-v52', 'got ' + v);
-t('sw.js CACHE matches the version', !!c && c.includes('v52'), 'got ' + c);
+// v55: this file is now a standing regression suite, not a one-release check, so it no longer
+// pins app-v52 — that assertion would have to be edited (i.e. weakened by hand) on every release,
+// which is exactly how a guard stops guarding. It asserts the INVARIANT instead: whatever version
+// index.html declares, sw.js's cache key must name the same one, or installed apps never update.
+t('APP_VERSION is present and well-formed', /^app-v\d+$/.test(v || ''), 'got ' + v);
+t('sw.js CACHE names the same version index.html declares',
+  !!c && !!v && c.indexOf(v.replace('app-', '') + '-') >= 0, 'APP_VERSION=' + v + '  CACHE=' + c);
 
 // Source-level assertions on the three fixes. These prove the change is present; the Auditor proves
 // the behaviour is correct by driving the UI.
-t('H-1 renderHistory walks the same day range as pastMissedCount',
-  /for \(let d = dayStart\(MISSED_TRACK_SINCE\); d < d0; d = nextDay\(d\)\)[\s\S]{0,200}missedDosesFor\(d, now\)\.length/.test(html));
+// v55: this assertion used to match the FIRST `dayStart(MISSED_TRACK_SINCE)` loop in the file,
+// which is pastMissedCount's (`d < d0` — it deliberately excludes today, because the Home banner
+// counts "previous days"). renderHistory's seeding loop is a different one further down and must
+// be `d <= d0`, since today's own misses are exactly what V52-5 was about. The old regex was
+// therefore green regardless of what renderHistory did. Both loops are now pinned by name.
+t('H-1 pastMissedCount walks previous days only (d < d0)',
+  /function pastMissedCount[\s\S]{0,900}for \(let d = dayStart\(MISSED_TRACK_SINCE\); d < d0; d = nextDay\(d\)\)/.test(html));
+t('H-1 renderHistory seeds through today inclusive (d <= d0), matching the banner',
+  /for \(let d = dayStart\(MISSED_TRACK_SINCE\); d <= d0; d = nextDay\(d\)\)[\s\S]{0,300}missedDosesFor\(d, now\)\.length/.test(html));
 t('H-2 hasTreatmentDate\\(\\) helper exists', /function hasTreatmentDate\(\)\s*\{\s*return nextChemoTs\(\) !== null;/.test(html));
 // Every treatment-window gate must route through the single predicate. The first attempt guarded
 // one call site out of seven, so this asserts the ABSENCE of the raw pattern anywhere as well as
