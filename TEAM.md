@@ -257,13 +257,24 @@ defect.
   commit since as unpushed forever. That is noise, and noise around "did this ship?" is how a
   release gets assumed-shipped. Fix it deliberately, never reflexively:
 
-  1. Open the compare view — `github.com/<owner>/<repo>/compare/<old-sha>...main` — and check the
-     changed-file list matches `git diff --name-only origin/main HEAD` exactly. A file you forgot
-     to upload shows up here and nowhere else.
-  2. From a github.com tab, hash every one of those files off `raw.githubusercontent.com` and
-     compare against local `sha256sum`. app-v55 did this for all 40: 40 match, 0 mismatch. This is
-     the step that catches a truncated or mangled upload, which the file list cannot.
-  3. Only if that is clean: `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)`.
+  1. Locally: `git ls-tree -r HEAD --format='%(objectname) %(path)' | sort | sha256sum`
+  2. From a github.com tab, via `javascript_tool`, fetch
+     `api.github.com/repos/<owner>/<repo>/git/trees/main?recursive=1`, keep the `blob` entries,
+     build the same `sha path` lines, sort, join with `\n`, add a trailing `\n`, and SHA-256 it.
+     Check `truncated` is `false` and the file count matches.
+  3. The two digests must be identical. Only then:
+     `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)`
+
+  Git blob SHAs are content hashes, so one 64-character comparison verifies **every file in the
+  repository** — not just the ones you meant to upload. app-v55: 808 files, digest
+  `33216ec992c4acd27d26933efbee407a` on both sides.
+
+  **Do not verify by hashing `raw.githubusercontent.com`.** That endpoint is CDN-cached and keeps
+  serving the previous version for minutes after a push — `cache: 'no-store'`, a cache-busting
+  query param and the `github.com/.../raw/...` alias all still returned the stale bytes. It cost a
+  false "mismatch" on a TEAM.md upload that had landed correctly, and a false alarm on a release
+  gate is not harmless: it is what teaches the next person to click past a red one. The `contents`
+  and `git/trees` API endpoints are not cached this way and are what to use.
 
   This asserts **content** equality, not history — GitHub mints its own commit SHAs for a web
   upload, so the trees match and the SHAs never will. Do not skip to step 3 because the upload
