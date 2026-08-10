@@ -428,6 +428,31 @@ reconstruct it from history.
 
 ## Completed
 
+- [x] **Treatment type is now editable in Settings — shipped as app-v53** — added and closed
+  2026-08-10. Aaron: *"there should be a way for people to update their treatment as you described.
+  they could go from chemo to radiation. needs fixed in setting."* Settings now has a **Treatment**
+  section offering **Chemo · Radiation · Both · Other**, with the caption *"Change this if your
+  treatment plan changes — moving from chemo to radiation, for example. Your medications, doses and
+  history are all kept."* Before this, the answer was asked once on the welcome screen and could then
+  only be changed by the legacy "Finish setting up this profile" card, which only appears when sex or
+  treatment type is *missing* — so anyone who picked the wrong one, or whose plan changed (chemo then
+  radiation is extremely common), had no way to correct it short of erasing the profile and losing all
+  their history. Treatment type drives which Home cards appear, which medication options exist, and
+  the wording on several screens, so being stuck with the wrong answer was not cosmetic.
+  **What was verified independently by the PM gate, in stored data and not just on screen**
+  (`outputs/PM_v53.md`): every transition between all four types keeps medications, doses, history,
+  notes and appointments exactly as they were; treatment-day rules are preserved on chemo ↔ radiation
+  ↔ both; switching to **Other** clears treatment-day rules from storage (because Other has no such
+  control since app-v52) and switching back **does not** bring them back; and the same normalisation
+  now runs on *both* places the app writes treatment type, including the legacy setup card, which the
+  Auditor caught still leaving an orphaned rule behind (V53-2). Also in this release: the mandatory
+  pre-push safety script `release_check.sh` was fixed — it used to inspect only uncommitted work, so
+  it passed green on the exact stale-cache failure it exists to block; it now compares against what is
+  actually published and compares the cache constant itself. And the FAQ's "Can I start over / erase
+  everything?" answer now points at **Account**, where Start over actually lives, instead of Settings.
+  Gates: `outputs/AUDIT_v53.md` (242 assertions, 26 profiles — blocked on V53-2, which was then fixed)
+  and `outputs/PM_v53.md`.
+
 - [x] **Full end-to-end app audit with real test data entered per illness type — and the three
   defects it found, fixed and shipped as app-v52** — added and closed 2026-08-09. Aaron, spelling
   out a standing rule that had gone soft: *"you need to have the auditor or someone else do these

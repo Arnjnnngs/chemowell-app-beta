@@ -6,20 +6,43 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
-- **`release_check.sh` only guards *uncommitted* work — it passes green on the exact bug it exists
-  to block.** Found by the PM gate on app-v52 (2026-08-09) and reproduced directly: the script reads
-  `git diff --name-only HEAD -- index.html` and `git diff HEAD -- sw.js`, so on a clean tree it prints
-  "✅ Release check passed. No index.html changes pending." and exits 0 — even when the committed
-  delta about to be uploaded changes `index.html` without bumping `sw.js`'s CACHE. That is precisely
-  the app-v40 silent-stale-cache failure the script was written to make structurally impossible, and
-  it is reachable through this project's *own documented workflow* (APP_CLAUDE.md rule 8 says commit
-  early and often; pushes are manual GitHub web uploads of already-committed files). app-v52's own
-  version coherence was verified by hand instead (`APP_VERSION` app-v51 → app-v52, CACHE
-  chemowell-app-v51-1 → chemowell-app-v52-4). Fix: diff against the upstream ref, not `HEAD` —
-  `BASE="${BASE_REF:-origin/main}"`, then `git diff --name-only "$BASE" -- index.html` and
-  `git diff "$BASE" -- sw.js`, keeping the existing `HEAD` check as an additional uncommitted-work
-  warning. Deliberately NOT changed inside the PM gate that depends on it: it should go in as its own
-  change with its own Auditor + PM pass. **Do this before the next release.**
+- **🔴 BLOCKS THE NEXT RELEASE — `release_check.sh`'s CACHE hard-block is defeated by a *stale*
+  `origin/main`, which is this sandbox's normal state after every push.** Found and reproduced by the
+  PM gate on app-v53 (2026-08-10); the app-v53 Auditor saw the adjacent symptom (V53-8) but judged the
+  CACHE block "unaffected — it fails safe." It does not. The script compares `CACHE` at `$BASE`
+  against `CACHE` in the working tree. Pushes here are manual GitHub web uploads and the sandbox has
+  no network, so `origin/main` is **never** fetched afterwards — one release later it points at the
+  release *before* the one that is actually live. A CACHE bumped in the **previous** release then
+  still reads as "bumped" against that stale base, and the script prints
+  `✅ index.html changed and sw.js's CACHE constant changed with it` on a build that never bumped it.
+  Reproduced exactly, on a scratch clone, never in the working repo: origin/main pinned at v52
+  (`chemowell-app-v52-4`), HEAD at v53 (`chemowell-app-v53-2`), then a simulated app-v54 commit that
+  changes `index.html` and leaves CACHE at `v53-2` → **exit 0, green, with the untrue success
+  message.** That is the app-v40 silent-stale-cache failure back again, wearing a ✅.
+  **This does not affect app-v53 itself** — at the time v53 was gated, `origin/main` genuinely was
+  the live build (v52), so the v52-4 → v53-2 comparison was real, and the PM confirmed it by hand.
+  The hole opens the moment v53 is uploaded. Fix options, cheapest first: (a) detect staleness —
+  if `$BASE` is an ancestor of `HEAD` and more than the current release's commits behind, print a
+  hard warning (or `FAIL=1`) saying the baseline may not be what is live; (b) compare `CACHE_NEW`
+  against every CACHE value in `$BASE..HEAD`, not just the one at `$BASE`; (c) record the
+  last-published CACHE in a committed file that the release step updates, and compare against that
+  instead of against a remote ref this environment cannot refresh. **Do this before any further code
+  ships**, and until it is done, verify the CACHE bump by hand against the live site as well as by
+  running the script.
+- **`release_check.sh`'s "uncommitted work" warning branch is dead code and its comment is wrong**
+  (Auditor V53-6, independently re-confirmed by the PM gate on app-v53). Lines ~44-48 fire only when
+  `UNCOMMITTED_INDEX` is non-empty *and* `INDEX_CHANGED` is empty, but `git diff <commit> -- index.html`
+  already compares the working tree, so any uncommitted index change is in `INDEX_CHANGED` too.
+  Observed: an uncommitted index change with no sw.js bump **hard-fails with exit 1**, while the
+  branch's own comment promises "Not blocking (nothing is being published from the working tree)".
+  The behaviour is the safe direction; the branch and comment just mislead the next reader. Delete
+  the branch or rewrite the comment to describe what actually happens.
+- **The `release_check.sh` executable bit may not survive a GitHub web upload.** The app-v53 fix for
+  Auditor V53-5 is committed correctly (`git ls-files -s` → `100755`), but this project pushes by
+  uploading files through the GitHub web UI, which is not guaranteed to preserve file mode. After the
+  next push, check `git ls-tree origin/main release_check.sh` on a fresh clone; if it reads `100644`,
+  TEAM.md's documented `./release_check.sh` will still fail with exit 126 for anyone starting from
+  GitHub, and the mode needs setting through the API/CLI instead (`git update-index --chmod=+x`).
 - **History gets very heavy when a large missed-dose backlog is finally listed** (new tail case
   introduced by app-v52's H-1 fix — History now seeds days that have misses but no entries, where
   before it rendered nothing for them). PM-measured on this sandbox, 4 window meds, nothing logged:
@@ -31,20 +54,16 @@ when you're about to touch the relevant code; delete the line once it's actually
   exactly the one who can't tap it. Realistic backlogs (a patient who stops logging for a few weeks)
   are comfortably fine, so this is a tail case, not a release blocker. Fix options: cap/paginate the
   seeded day list, or exclude History from the 1-second tick the way the modals already are.
-- **The near-treatment restriction is still stored on "Other" profiles, just ignored** — app-v52
-  removed the control and made saved values inert (`treatmentOnlyBlocks`/`treatmentExcludedNow` both
-  return false for Other), and re-saving a medication on an Other profile leaves `treatmentMode:"only"`
-  in localStorage. Harmless today *only because there is no UI anywhere to change a profile's
-  treatment type after first-run setup* (`needsProfileCompletion()` gates the one editor, and it only
-  fires when sex or type is missing). If treatment-type editing is ever added — and it probably should
-  be, see the next item — an Other → Chemo switch would silently reactivate a restriction the user has
-  not been able to see since upgrading. Fix: normalise `treatmentMode`/`treatmentOnly` to `none`/false
-  on save when `isOtherTreatmentType()`, and/or clear it when the type changes.
-- **No way to change treatment type after setup** — chemo / radiation / both / Other is asked once on
-  the welcome screen and can then only be changed by the legacy "Finish setting up this profile" card,
-  which only appears when sex or type is *missing*. A user who picks the wrong one, or whose treatment
-  plan changes (very common — chemo then radiation), has no way to correct it short of erasing the
-  profile. Pre-existing, noticed during the app-v52 PM gate.
+- **Switching chemo → radiation quietly takes the Treatment schedule card off Home while medications
+  keyed to that date still depend on it** (Auditor V53-3, re-verified by the PM gate on app-v53).
+  Not new in v53 — hiding that card is app-v52's deliberate radiation-only default — but v53's new
+  Settings control is what makes a user walk into it. Verified: card present before the switch, absent
+  after; the treatment date itself is fully preserved (still stored as its `chemo_date` entry, entry
+  count unchanged); the Meds list still shows the medication's `Treatment day −1/+1` chip, so the rule
+  stays visible; and Settings → Home screen → *Treatment schedule card* brings the card straight back.
+  So it is recoverable and nothing is lost — it just isn't signposted. Cheapest fix is one clause on
+  the existing toast when `key === 'radiation'` and a treatment date exists, e.g. *"Treatment updated
+  to Radiation — your treatment date is kept; turn its Home card back on in Settings."*
 - **Dead "Other"-specific copy left behind by app-v52** — `treatmentModeOptions()`'s
   `isOtherTreatmentType()` branch ("Only near your date" / "Excluded near your date") is now
   unreachable, since the whole picker is `isOtherTreatmentType() ? null : …`. Three other places still

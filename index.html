@@ -1697,6 +1697,37 @@ function isRadiationOnly() { return treatmentType() === 'radiation'; }
 // Menstrual-cycle UI is Owner-specified as Female-only. Unset sex (legacy profile) keeps the old
 // behavior (toggle available) so existing users' cycle history never vanishes before they answer.
 function cycleAllowed() { return profileSex() !== 'male'; }
+// v53.1 (Auditor V53-2). THE single place a profile's treatment type changes. v53 added the
+// Settings control and normalised stranded restrictions there -- but treatmentType has TWO write
+// sites, and the legacy "Finish setting up this profile" card was left untouched. That was harmless
+// while a profile stranded on Other could never switch back; v53's own new control is the way back,
+// so the orphaned rule silently reactivated. Exactly the "fixed one of N call sites" mistake the
+// treatmentOnlyBlocks centralisation exists to prevent, so this is a shared function rather than a
+// second copy of the same four lines.
+//
+// Returns { changed, cleared } so callers can word their own confirmation; it deliberately does not
+// toast or setState, because the two callers present success differently.
+function applyTreatmentTypeChange(nextType, extraPrefs) {
+  const prev = treatmentType();
+  setPrefsDB(Object.assign({ treatmentType: nextType }, extraPrefs || {}));
+  let cleared = { only: 0, excluded: 0 };
+  if (nextType === 'other') {
+    // app-v52 removed the treatment-day control for Other entirely. Leaving a restriction stored
+    // would mean a rule the user can neither see nor change -- and switching back would reactivate
+    // it without warning. Normalise on the way in so stored data always matches what the editor
+    // can actually show.
+    const affected = (state.meds || []).filter(m => m.treatmentOnly || (m.treatmentMode && m.treatmentMode !== 'none'));
+    if (affected.length) {
+      affected.forEach(m => { if (m.treatmentMode === 'excluded') cleared.excluded++; else cleared.only++; });
+      const meds = state.meds.map(m => (m.treatmentOnly || (m.treatmentMode && m.treatmentMode !== 'none'))
+        ? Object.assign({}, m, { treatmentOnly: false, treatmentMode: 'none' }) : m);
+      persistMedicationConfig(meds, state.archivedMeds);
+      state.meds = meds;
+    }
+  }
+  markNotifDirty(); // treatment type changes which medications are due; the plan must be rebuilt
+  return { changed: prev !== nextType, cleared, prev };
+}
 function needsProfileCompletion() { const p = getPrefsDB(); return !!(p.patientName || '').trim() && (!p.sex || !p.treatmentType); }
 // v41 (Aaron-requested): "treatment day" reads as chemo/radiation-specific and confused Aaron
 // himself picturing his own non-chemo medications ("I could use this app for my own meds...but
@@ -2041,7 +2072,7 @@ const FAQ_ITEMS = [
   { id: 'off-day-log', q: 'Can I log a medication on a day it isn’t normally scheduled?', a: 'Yes. If a medication is set to specific days (see Days taken) and today isn’t one of them, its card shows “Not scheduled today” with a button to log it anyway — tap it, then confirm. Every medication has this override, the same way daily-limit and gap-timer locks do.' },
   { id: 'daily-limit', q: 'How does Daily limit work?', a: 'It blocks logging more of a medication once the number you set is reached for the day, in whichever unit you choose under Limit unit (total mg, number of pills, or number of applications). It only works if at least one Dosage option actually carries that unit — the editor warns you right under Dosage options if it doesn’t. You can always log over the limit anyway by tapping the button that appears once it’s reached and confirming.' },
   { id: 'gap-timer', q: 'What’s “Hours between doses” / minimum gap?', a: 'It’s the minimum time ChemoWell requires since the last dose before the card unlocks again — used for “as needed” medications (e.g. every 4 hours) and, optionally, layered on top of a scheduled medication’s reminder times too. Like other locks, you can override it early if there’s a real reason to.' },
-  { id: 'reset', q: 'Can I start over / erase everything?', a: 'Yes — Settings, all the way at the bottom, under Start over. It erases the patient name, medication list, and all logged history from this device. This can’t be undone, so use it only if you really mean to wipe the slate clean.' },
+  { id: 'reset', q: 'Can I start over / erase everything?', a: 'Yes — open Account (in the menu), and scroll to Start over at the bottom. It erases the patient name, medication list, and all logged history from this device. This can’t be undone, so use it only if you really mean to wipe the slate clean.' },
   { id: 'in-patient', q: 'How does In-Patient tracking work?', a: 'Tap Log In-Patient Start when a hospital stay begins. While it’s active, Home medication logging pauses (the hospital is administering meds, not you), and the In-Patient tab shows how many days into the stay you are. Tap Log In-Patient End when discharged — every past stay is kept in the In-Patient History list below.' }
 ];
 async function logSymptom(type, ts, opts) {
@@ -3414,7 +3445,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       // Full-strength fill always (v33 fix pass): the 35%-alpha "waiting" state read as a broken
       // disabled button while still being tappable — the tap-with-guidance toast covers the
       // incomplete case, so the button just stays a real button.
-      h('button', { onClick: () => { if (!curSex || !curTreat) { setToast('Pick both answers to save'); return; } setPrefsDB({ sex: curSex, treatmentType: curTreat }); migrateSexDraft = ''; migrateTreatDraft = ''; setToast('Profile updated'); }, style: { width: '100%', minHeight: '44px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Save')
+      h('button', { onClick: () => { if (!curSex || !curTreat) { setToast('Pick both answers to save'); return; } applyTreatmentTypeChange(curTreat, { sex: curSex }); migrateSexDraft = ''; migrateTreatDraft = ''; setToast('Profile updated'); }, style: { width: '100%', minHeight: '44px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Save')
     ));
   }
 
@@ -5448,7 +5479,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v52';
+const APP_VERSION = 'app-v53';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -5599,6 +5630,40 @@ function renderSettings(now) {
       ) : h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
         h('button', { onClick: () => { if (profilesState().list.length >= tierLimit(getLicense().tier)) { setState({ upgradeOpen: true }); } else { setState({ addingProfile: true }); } }, style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 6px 18px rgba(168,61,15,0.32)' } }, '+ Add profile'),
         h('button', { onClick: () => setState({ upgradeOpen: true }), style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.7)', border: '1.5px solid rgba(200,83,32,0.35)', color: '#A83D0F', fontSize: '13px', fontWeight: '800' } }, 'View plans')
+      )
+    ),
+    // v53 (Aaron, 2026-08-10): "there should be a way for people to update their treatment as you
+    // described. they could go from chemo to radiation. needs fixed in setting".
+    // Treatment type was asked once on the welcome screen and after that could only be changed by
+    // the legacy "Finish setting up this profile" card, which only appears when sex or type is
+    // MISSING -- so anyone who picked the wrong one, or whose plan changed (chemo then radiation is
+    // extremely common), had no way to correct it short of erasing the profile and losing all their
+    // history. It drives which Home cards appear, which medication options exist, and the wording
+    // across several screens, so being stuck with the wrong answer is not cosmetic.
+    h('section', { style: secStyle },
+      secLabel('Treatment'),
+      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } }, 'Change this if your treatment plan changes \u2014 moving from chemo to radiation, for example. Your medications, doses and history are all kept.'),
+      h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
+        ...[['chemo', 'Chemo'], ['radiation', 'Radiation'], ['both', 'Both'], ['other', 'Other']].map(([key, label]) => {
+          const on = treatmentType() === key;
+          return h('button', {
+            onClick: () => {
+              if (on) return;
+              const res = applyTreatmentTypeChange(key);
+              const n = res.cleared.only + res.cleared.excluded;
+              // V53-1: word this by what actually changed. "No longer limited to treatment days" is
+              // wrong for an EXCLUDED medication, whose rule was the opposite, and the old branch
+              // never confirmed the type change itself when medications were touched.
+              setToast(n
+                ? ('Treatment set to ' + treatmentLabel(key, true) + ' \u2014 treatment-day rules removed from ' + n + ' medication' + (n === 1 ? '' : 's'))
+                : ('Treatment updated to ' + treatmentLabel(key, true)));
+              setState({ meds: state.meds });
+              return;
+            },
+            'aria-pressed': on ? 'true' : 'false',
+            style: { flex: '1 1 40%', minHeight: '44px', padding: '0 10px', borderRadius: '11px', border: on ? '2px solid #C85320' : '1.5px solid rgba(246,108,49,0.28)', background: on ? 'rgba(200,83,32,0.13)' : 'rgba(255,255,255,0.7)', color: on ? '#A83D0F' : '#5E4337', fontSize: '13px', fontWeight: '800' }
+          }, label);
+        })
       )
     ),
     // Home screen & daily check-ins
