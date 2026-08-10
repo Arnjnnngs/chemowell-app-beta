@@ -6,29 +6,6 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
-- **🔴 BLOCKS THE NEXT RELEASE — `release_check.sh`'s CACHE hard-block is defeated by a *stale*
-  `origin/main`, which is this sandbox's normal state after every push.** Found and reproduced by the
-  PM gate on app-v53 (2026-08-10); the app-v53 Auditor saw the adjacent symptom (V53-8) but judged the
-  CACHE block "unaffected — it fails safe." It does not. The script compares `CACHE` at `$BASE`
-  against `CACHE` in the working tree. Pushes here are manual GitHub web uploads and the sandbox has
-  no network, so `origin/main` is **never** fetched afterwards — one release later it points at the
-  release *before* the one that is actually live. A CACHE bumped in the **previous** release then
-  still reads as "bumped" against that stale base, and the script prints
-  `✅ index.html changed and sw.js's CACHE constant changed with it` on a build that never bumped it.
-  Reproduced exactly, on a scratch clone, never in the working repo: origin/main pinned at v52
-  (`chemowell-app-v52-4`), HEAD at v53 (`chemowell-app-v53-2`), then a simulated app-v54 commit that
-  changes `index.html` and leaves CACHE at `v53-2` → **exit 0, green, with the untrue success
-  message.** That is the app-v40 silent-stale-cache failure back again, wearing a ✅.
-  **This does not affect app-v53 itself** — at the time v53 was gated, `origin/main` genuinely was
-  the live build (v52), so the v52-4 → v53-2 comparison was real, and the PM confirmed it by hand.
-  The hole opens the moment v53 is uploaded. Fix options, cheapest first: (a) detect staleness —
-  if `$BASE` is an ancestor of `HEAD` and more than the current release's commits behind, print a
-  hard warning (or `FAIL=1`) saying the baseline may not be what is live; (b) compare `CACHE_NEW`
-  against every CACHE value in `$BASE..HEAD`, not just the one at `$BASE`; (c) record the
-  last-published CACHE in a committed file that the release step updates, and compare against that
-  instead of against a remote ref this environment cannot refresh. **Do this before any further code
-  ships**, and until it is done, verify the CACHE bump by hand against the live site as well as by
-  running the script.
 - **Drawer focus management is broken, and has been since app-v22** — found by the app-v54 Auditor
   and confirmed identical on the live app-v53 build, so it is pre-existing, not a v54 regression.
   Two related defects: (1) focus is never returned to the hamburger when the drawer closes
@@ -42,14 +19,43 @@ when you're about to touch the relevant code; delete the line once it's actually
   own small release with its own gates: focus the trigger *after* the re-render (or move focus to
   the drawer panel and restore on unmount), and make the Tab handler wrap whenever focus is outside
   the drawer, not only at the two ends.
-- **`release_check.sh`'s "uncommitted work" warning branch is dead code and its comment is wrong**
-  (Auditor V53-6, independently re-confirmed by the PM gate on app-v53). Lines ~44-48 fire only when
-  `UNCOMMITTED_INDEX` is non-empty *and* `INDEX_CHANGED` is empty, but `git diff <commit> -- index.html`
-  already compares the working tree, so any uncommitted index change is in `INDEX_CHANGED` too.
-  Observed: an uncommitted index change with no sw.js bump **hard-fails with exit 1**, while the
-  branch's own comment promises "Not blocking (nothing is being published from the working tree)".
-  The behaviour is the safe direction; the branch and comment just mislead the next reader. Delete
-  the branch or rewrite the comment to describe what actually happens.
+- **`sym-severe` (index.html:2198) needs one oncology-nurse-level read before real users** — raised
+  by the app-v55 Auditor and explicitly *not* treated as a beta blocker. It is the only entry in the
+  117-topic Help centre that enumerates clinical signs ("struggling to breathe, confused, or you're
+  frightened") as the trigger for calling emergency services. However lightly worded, that is a
+  triage list, and it is the one line in the app where being slightly wrong costs something in both
+  directions — someone calling too late, or someone learning that whatever is *not* on the list can
+  wait. Every other medical-adjacent entry is safely non-clinical (no thresholds, no numbers, no
+  "this is fine"). Buy the read before the App Store submission, not before the next beta push.
+- **After setting a treatment date, the collapsed row still reads "Pick a date"** while the card
+  directly above it already shows the date ("Tuesday, 8/25 · in 15 days"). Found while writing the
+  app-v55 Help content and independently confirmed real by the Auditor, which is why `treat-set-date`
+  ships with a note explaining it. Help text apologising for a UI wart is a stopgap; fix the row's
+  label to reflect the set date and delete that sentence from the walkthrough at the same time.
+- **The `pro-switch` Help walkthrough doesn't mention that step 3 hits a paywall** (app-v55 PM gate,
+  PM-8). The Free tier caps profiles at 1, so a Free user following "how do I switch profiles"
+  reaches the add-profile step and meets the upgrade sheet with no warning. The walkthrough is
+  otherwise correct — it just describes the Plus/Pro path as though it were everyone's. One clause
+  on that step ("the Free plan includes one profile; adding a second is a Plus or Pro feature")
+  fixes it, and it is worth doing before Pro is actually sold, because a help page that walks
+  someone into a paywall reads as a bait-and-switch rather than as an oversight.
+- **`HELP_POINTERS` rows are browsable but not searchable** — `helpAllTopics()` does not include
+  them, so "Change temperature or weight units" can only be found by opening the *Settings & the
+  Home screen* category. Nothing is unreachable (its target, `vit-units`, is searchable and is what
+  the pointer opens), so this is a small completeness gap rather than a defect. Worth folding
+  pointers into the search index next time that file is open.
+- **`release_check.sh` still cannot tell whether `PUBLISHED.json` is CURRENT — only that it is
+  self-consistent** (app-v55 PM gate, PM-3). The integrity check proves the recorded cache matches
+  the recorded commit's own `sw.js`, which stops the record being hand-edited into passing. It
+  cannot prove the record describes what is actually live, because nothing in this sandbox can
+  reach GitHub. So the one remaining way to reopen the stale-baseline hole is to push and then
+  forget `./mark_published.sh`. Mitigated, not closed: the gate now prints how many unrecorded
+  `index.html` commits sit on top of the record and states out loud that it is assuming none of
+  them are live, and TEAM.md's checklist makes `mark_published.sh` part of the push rather than a
+  follow-up. A real close needs something that can observe the live site — e.g. reading
+  `sw.js` from the deployed URL through Chrome during the post-push live-verify step (which
+  already happens) and comparing it to the record, failing the *next* release if they disagree.
+  Worth doing the next time a release is being verified in the browser anyway.
 - **The `release_check.sh` executable bit may not survive a GitHub web upload.** The app-v53 fix for
   Auditor V53-5 is committed correctly (`git ls-files -s` → `100755`), but this project pushes by
   uploading files through the GitHub web UI, which is not guaranteed to preserve file mode. After the

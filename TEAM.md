@@ -238,7 +238,18 @@ defect.
 - Version bump (`APP_VERSION` in index.html) and service worker cache name bump for any
   change that ships to users. (This is what the script above enforces mechanically — the bullet
   stays here as the human-readable explanation of *why*, not as the actual safeguard.)
-- README.md version history entry.
+- README.md version history entry, **and tick the REQUESTS.md line the release closes** — both
+  before the push, not "when there's a moment". The app-v55 Auditor found two consecutive
+  releases (v54, v55) with neither done (V55-5); the version history is how anyone reconstructs
+  what is live, so a gap in it is not a tidiness problem.
+- **Immediately after a successful push, run `./mark_published.sh` and commit `PUBLISHED.json`.**
+  This is not optional bookkeeping — `release_check.sh` uses that file as its baseline for the
+  *next* release. It exists because `origin/main` cannot be trusted here: pushes are manual web
+  uploads and this sandbox has no network to fetch with, so origin/main silently points one
+  release behind reality forever, and a CACHE bumped in the *previous* release then satisfies the
+  gate on a build that never bumped it (proven on scratch clones; it is the app-v40 stranding
+  failure printing a ✅). Skip this step and the gate quietly stops guarding one release later —
+  which is precisely how app-v40 happened, so treat it as part of the push, not as a follow-up.
 - Push to GitHub, then live-verify the actual deployed site (not just localhost) with a
   cache-buster query param, since the service worker caches aggressively. Batch a release's
   code fixes into one commit and its documentation/reports into another, rather than a

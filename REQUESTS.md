@@ -131,19 +131,29 @@ reconstruct it from history.
   upgrade to actually submitting straight to a place I can read directly, closing the loop for real.
   Awaiting Aaron's go-ahead on the near-term (share-based) version before building — flagging here so
   it isn't lost, not yet started.
-- [ ] **In-app troubleshooting "chatbot" — an extensive, walk-through-the-problem list, far beyond
-  today's FAQ** — added 2026-08-08. Aaron: "want to add a chatbot. maybe it can't be something that
-  you can respond to real time, but if not, it should have a very extensive list of problems it can
-  walk a user through. much like the FAQ. but way more details to choose from. needs to be a full
-  list of issues to help with. end to end app coverage." Aaron's own framing already answers the
-  real-time-AI question: not a live model in the app (that would need a paid API connection and a
-  backend this app doesn't have), but a much bigger, more structured version of the FAQ system
-  already built — pick your symptom/problem from a list, get a specific walkthrough, not just one
-  short Q&A entry. This is a large content-authoring effort (needs an actual comprehensive catalog of
-  real problems across every screen, not just a few code changes) more than a hard technical build —
-  the existing FAQ array is the right foundation to extend. Not yet started or scoped in detail;
-  flagging here so it isn't lost. Will need a working session with Aaron on what "full list of
-  issues" should actually cover before writing the content.
+- [x] **SHIPPED IN app-v55 (2026-08-10) — In-app troubleshooting "chatbot": 117 step-by-step
+  walkthroughs across 17 categories, offline, replacing the 15-entry FAQ.** Added 2026-08-08. Aaron:
+  "want to add a chatbot. maybe it can't be something that you can respond to real time, but if not,
+  it should have a very extensive list of problems it can walk a user through. much like the FAQ. but
+  way more details to choose from. needs to be a full list of issues to help with. end to end app
+  coverage." Aaron's own framing already answered the real-time-AI question: not a live model in the
+  app (that would need a paid API connection and a backend this app doesn't have — and would put a
+  named cancer diagnosis on someone else's server, which is exactly what we cancelled the sync work
+  to avoid), but a much bigger, more structured version of the FAQ system already built. **Delivered
+  as:** category → problem → ordered walkthrough, plus one search box over the whole set; branches
+  ("if that button isn't there…"), a "Worth knowing" note, and Related cross-links per topic; the 15
+  original FAQ entries kept intact as the **Common questions** category; nine medical-adjacent topics
+  opening with a care-team callout in the app's own existing disclaimer wording, with no thresholds
+  or dosing guidance anywhere. Works with the phone in aeroplane mode — it is part of the single-file
+  app, not a fetch. **On the working session Aaron was told this would need:** he decided it did not
+  (2026-08-10 — *"I don't see why the bot content needs my input. you can build it off of the FAQ and
+  also think of anything else an inexperienced person using the app might need help with"*), so the
+  catalogue was authored from the FAQ plus a screen-by-screen sweep of everything an inexperienced
+  user hits, written up first as `outputs/HELPBOT_CONTENT_v1.md` and transcribed into the app by
+  script rather than by hand. Gated by `outputs/AUDIT_v55.md` (all 133 rows opened, 5 findings, all
+  5 fixed before push). **Still open, and deliberately not claimed:** one oncology-nurse-level read
+  of the `sym-severe` entry — the only place in the app that enumerates clinical signs — before this
+  reaches real users rather than beta.
 - [x] **CONFIRMED WORKING ON DEVICE 2026-08-09 — Export/printable report native fix.** Aaron on the
   app-v51 APK: *"Settings > Download CSV works."* The share sheet opens and hands off correctly.
   This closes a defect that shipped broken twice (app-v47 silently, then again through app-v50) and

@@ -1,0 +1,21 @@
+{
+  "_comment": [
+    "The build that is ACTUALLY LIVE at https://arnjnnngs.github.io/chemowell-app-beta/.",
+    "This file exists because release_check.sh needs a baseline it can trust, and in this",
+    "environment `origin/main` is not one: pushes are manual GitHub web uploads and the sandbox",
+    "has no network, so origin/main is never fetched afterwards and silently points one release",
+    "behind reality. A CACHE bumped in the PREVIOUS release then reads as 'bumped' against that",
+    "stale base, and the gate prints a green tick on a build that never bumped it -- the app-v40",
+    "silent-stale-cache failure again, wearing a checkmark. (Found by the app-v53 PM gate,",
+    "logged in BACKLOG.md as blocking the next release, fixed in app-v55.)",
+    "",
+    "A committed record cannot go stale the way a remote ref can, because updating it is part of",
+    "the push itself. Update it by running ./mark_published.sh IMMEDIATELY AFTER a successful",
+    "push, and commit the result. Never edit it by hand to make the gate pass -- release_check.sh",
+    "cross-checks these values against the recorded commit and will refuse a record that lies."
+  ],
+  "commit": "18c65045f58d129df2c2be6ccb1e8c72e2c718b0",
+  "app_version": "app-v54",
+  "cache": "chemowell-app-v54-2",
+  "published_at": "2026-08-10"
+}
