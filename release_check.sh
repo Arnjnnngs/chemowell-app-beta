@@ -14,6 +14,21 @@ cd "$(dirname "$0")"
 
 FAIL=0
 
+# BACKLOG predicted this and it happened: a GitHub web upload does not preserve the executable bit,
+# so after anyone syncs from the remote `./release_check.sh` dies with exit 126 -- "Permission
+# denied", which reads like a broken gate rather than a mode bit, and the tempting next move is to
+# skip it. Confirmed 2026-08-11: both scripts came back 100644 after a fetch + fast-forward.
+# Self-check, because a gate that cannot be invoked the documented way is not protecting anything.
+for _s in release_check.sh mark_published.sh; do
+  _mode=$(git ls-files -s -- "$_s" 2>/dev/null | awk '{print $1}')
+  if [ -n "$_mode" ] && [ "$_mode" != "100755" ]; then
+    echo "⚠️  WARNING: $_s is committed as $_mode, not 100755."
+    echo "   ./$_s will exit 126 (Permission denied) for anyone who clones or syncs this repo."
+    echo "   Fix: git update-index --chmod=+x $_s && commit, then re-upload it."
+  fi
+done
+
+
 # PM-6 (app-v55 PM gate): a bare `grep -o` returns EVERY match, so a second `CACHE = '…'` anywhere
 # in sw.js -- a commented-out previous value is the obvious way in -- made these variables
 # multi-line, and the `grep -Fx` reuse check downstream then read each line as its own pattern and
@@ -49,20 +64,29 @@ read_cache() {   # stdin: a sw.js. stdout: the bare value, or "none"/"multi".
 # the WORKING TREE, uncommitted work is judged too -- which is right, since a manual upload
 # publishes the working tree.
 #
-# ...AND origin/main IS NOT THAT BASELINE HERE (fixed 2026-08-11, found by the app-v53 PM gate).
-# Pushes in this project are manual GitHub web uploads and this sandbox has no network, so
-# origin/main is never fetched after a push -- one release later it points at the release BEFORE
-# the one that is actually live. A CACHE bumped in the PREVIOUS release then still reads as
-# "bumped" against that stale base and this script prints a green tick on a build that never
-# bumped it. Reproduced exactly on a scratch clone; it is the app-v40 failure wearing a ✅.
+# ...AND origin/main GOES STALE AFTER A PUSH UNLESS SOMEONE FETCHES (found by the app-v53 PM gate).
+# Pushes here are manual GitHub web uploads, so git never learns they happened: until someone runs
+# `git fetch`, origin/main points at the release BEFORE the live one. A CACHE bumped in the PREVIOUS
+# release then still reads as "bumped" against that stale base and this script prints a green tick
+# on a build that never bumped it. Reproduced on a scratch clone; the app-v40 failure wearing a ✅.
 #
-# The fix is PUBLISHED.json: a COMMITTED record of what is live, written by ./mark_published.sh as
-# part of the push itself, so it cannot drift the way a remote ref does. Baseline resolution, in
-# order of how much the answer can be trusted:
+# CORRECTION (2026-08-11, the same day, after this script asserted otherwise): `git fetch` DOES work
+# in this sandbox. Only `git push` is refused -- the proxy declines to inject a credential for this
+# repo (403), which is a write restriction, not a network one. The earlier text here said "this
+# sandbox has no network" and built a whole workaround on that, which was a guess generalised from
+# the push failure without ever running fetch. Kept as a note rather than deleted, because assuming
+# instead of checking is the specific mistake this file keeps being edited to undo.
+#
+# So the baseline is now belt AND braces: fetch when you can, and keep PUBLISHED.json as a COMMITTED
+# record written by ./mark_published.sh, which still matters when a run is offline or a fetch is
+# skipped. Resolution order, most trustworthy first:
 #   1. $BASE_REF          -- explicit override, for scratch clones and for testing this script.
 #   2. PUBLISHED.json     -- the recorded live commit, cross-checked against its own sw.js.
-#   3. origin/main        -- with a loud staleness warning; better than nothing.
+#   3. origin/main        -- honest now that it can be refreshed; still warns if it was not.
 #   4. HEAD               -- uncommitted work only. Warns hard, because it catches almost nothing.
+#
+# This script never fetches by itself. A gate that mutates refs behind the operator is a gate that
+# can change its own verdict between two runs, so it tells you to fetch instead.
 PUB_COMMIT=""; PUB_CACHE=""; PUB_VERSION=""
 if [ -f PUBLISHED.json ]; then
   PUB_COMMIT=$(python3 -c "import json;print(json.load(open('PUBLISHED.json')).get('commit',''))" 2>/dev/null || echo "")
@@ -114,10 +138,19 @@ elif [ -n "$PUB_COMMIT" ] && git rev-parse --verify --quiet "$PUB_COMMIT^{commit
   fi
 elif git rev-parse --verify --quiet origin/main >/dev/null; then
   BASE="origin/main"
+  if [ -n "$PUB_COMMIT" ]; then
+    # Distinguish this from "there is no record at all" -- they need different fixes, and a message
+    # that says "no record" when a record exists sends the reader looking for the wrong problem.
+    # This is the live failure mode after a fetch + fast-forward: mark_published.sh used to store the
+    # LOCAL commit, which stops existing the moment history is replaced by the remote's.
+    echo "⚠️  WARNING: PUBLISHED.json names commit ${PUB_COMMIT:0:7}, which does not exist in this"
+    echo "   repository -- most likely a local SHA recorded before history was replaced by a fetch."
+    echo "   Re-run ./mark_published.sh (it records origin/main now, which survives a fetch)."
+  fi
   echo "⚠️  WARNING: no usable PUBLISHED.json record, falling back to origin/main."
-  echo "   This sandbox cannot fetch, so origin/main may be a release behind what is really live,"
-  echo "   which would let a CACHE bumped in the PREVIOUS release satisfy the check below."
-  echo "   Run ./mark_published.sh after your next push to close this."
+  echo "   That is only trustworthy if origin/main has been refreshed since the last push --"
+  echo "   run 'git fetch origin' and re-run this, or a CACHE bumped in the PREVIOUS release"
+  echo "   could satisfy the check below. Run ./mark_published.sh after your next push too."
 else
   BASE="HEAD"
   echo "⚠️  WARNING: no PUBLISHED.json and no origin/main. Falling back to HEAD, which only sees"
@@ -234,6 +267,30 @@ if [ -n "$INDEX_CHANGED" ]; then
   if [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
     echo "⚠️  WARNING: index.html changed but APP_VERSION is still $NEW_VERSION."
     echo "   Not blocking, but the version shown in the app's drawer will be stale."
+  fi
+fi
+
+# The README's version-history row is the only human-readable record of what shipped, and it has
+# now carried a WRONG cache key twice: app-v55 (PM-4) and app-v56 (Scribe). Both times the row was
+# written before a later fix bumped the cache again, and nothing could catch it because this script
+# never opened README.md. Documentation failures are silent -- the build is green whether or not
+# the changelog is true -- so this is a mechanical check, not a checklist item.
+if [ -n "$INDEX_CHANGED" ] && [ -f README.md ]; then
+  NEW_VER=$(grep -o "APP_VERSION = '[^']*'" index.html | head -1 | sed "s/.*'\(.*\)'/\1/")
+  ROW=$(grep -n "^| $NEW_VER |" README.md | head -1 | cut -d: -f1)
+  if [ -z "$ROW" ]; then
+    echo "❌ RELEASE CHECK FAILED: README.md has no version-history row for $NEW_VER."
+    echo "   Two releases (app-v54, app-v55) shipped with no row at all before this check existed."
+    FAIL=1
+  else
+    if ! sed -n "${ROW}p" README.md | grep -qF "$CACHE_NEW"; then
+      echo "❌ RELEASE CHECK FAILED: README.md's $NEW_VER row does not mention the cache key that"
+      echo "   is actually about to ship ($CACHE_NEW). It says:"
+      sed -n "${ROW}p" README.md | grep -o "chemowell-app-v[0-9]*-[0-9]*" | sort -u | sed 's/^/     /'
+      echo "   Fix the row. A version-history entry wrong about the one fact it exists to record is"
+      echo "   worse than no entry, because it will be believed."
+      FAIL=1
+    fi
   fi
 fi
 

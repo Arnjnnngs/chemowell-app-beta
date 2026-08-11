@@ -8,10 +8,25 @@
 #
 # Usage:  ./mark_published.sh            # records HEAD
 #         ./mark_published.sh <commit>   # records a specific commit
+#
+# Run `git fetch origin` FIRST. With no argument this records origin/main, whose SHA is the one the
+# remote actually has and therefore the one that still resolves after any future fetch.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-REF="${1:-HEAD}"
+# Default to origin/main, NOT HEAD (fixed 2026-08-11, after the previous default broke in practice).
+# This script used to record the local commit, on the reasoning that a GitHub web upload mints its
+# own SHA which this sandbox has never seen. That was true and still wrong: `git fetch` DOES work
+# here (only push is refused), so the moment anyone fetches and fast-forwards, local history is
+# replaced by the remote's and the recorded SHA stops existing -- release_check.sh then silently
+# degrades to its origin/main fallback, which is the guard it was written to replace. Observed
+# exactly that on 2026-08-11 with commit 60434dc. origin/main's SHA survives a fetch, because it IS
+# what the remote says. Fetch first, then run this.
+if [ -z "${1:-}" ] && git rev-parse --verify --quiet origin/main >/dev/null; then
+  echo "ℹ️  Recording origin/main. If you have not fetched since the upload, Ctrl-C now and run:"
+  echo "   git fetch origin && git status"
+fi
+REF="${1:-origin/main}"
 SHA=$(git rev-parse --verify "$REF^{commit}")
 
 # Read from the COMMIT, not the working tree. If the tree has moved on since the commit that was

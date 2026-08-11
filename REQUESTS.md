@@ -131,6 +131,30 @@ reconstruct it from history.
   upgrade to actually submitting straight to a place I can read directly, closing the loop for real.
   Awaiting Aaron's go-ahead on the near-term (share-based) version before building — flagging here so
   it isn't lost, not yet started.
+- [ ] **BUILT AND GATED, NOT YET LIVE (2026-08-11) — the on-screen help bubble, which is the shape
+  Aaron actually asked for.** Unticked on purpose: this list's own rule is that an item is only
+  checked off once it is confirmed on the deployed site, and the first version of this entry was
+  ticked while two review stages were still running — both of which then came back blocking.
+  Tick it after the push and the live check, not before.
+  Aaron, after seeing what v55 shipped: *"I wanted the bot to be like and on screen help like most
+  apps have them down in the bottom corner. they can click on it and start typing and the bot will
+  look up their question and reply. like AI, but its not AI, its just things that has already been
+  written to the app."* v55 built the right **content** (117 walkthroughs) in the wrong **shape** —
+  a browse-and-search screen behind a menu row. Worth recording plainly as a miss rather than as an
+  enhancement: the original request said "chatbot" and was read as "a much bigger FAQ", because that
+  was the buildable-sounding interpretation. He meant the thing every consumer app has in the corner,
+  and he was right that it is a different product.
+  **Two follow-up decisions he gave mid-build, both applied:**
+  - *"it should not take over the whole screen so they can still see the rest of the screen"*, and
+    when asked how small: *"scrolling is fine. doesn't need to cover more than half."* → the panel is
+    capped at **half the screen height**; long answers scroll inside it rather than the panel growing.
+  - *"no minimize button is needed. just the X"* → one X, which collapses back to the bubble with the
+    conversation intact. No second control.
+  **Gated by five stages, every one of which found something:** `outputs/DEV_BRIEF_v56_helpbot.md`,
+  `outputs/DESIGN_v56.md` (3 must-fix), `outputs/AUDIT_v56.md` (452 cases, NOT READY, 2 High),
+  `outputs/LEAD_DESIGNER_v56.md` and `outputs/LEAD_AUDITOR_v56.md` — the last two of which found that
+  three of the *fixes* were themselves wrong, including a medical guard that had over-corrected into
+  refusing ordinary questions like "is my data safe". All fixed and re-measured in both directions.
 - [x] **SHIPPED IN app-v55 (2026-08-10) — In-app troubleshooting "chatbot": 117 step-by-step
   walkthroughs across 17 categories, offline, replacing the 15-entry FAQ.** Added 2026-08-08. Aaron:
   "want to add a chatbot. maybe it can't be something that you can respond to real time, but if not,

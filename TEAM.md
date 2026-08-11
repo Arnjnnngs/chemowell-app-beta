@@ -250,36 +250,44 @@ defect.
   gate on a build that never bumped it (proven on scratch clones; it is the app-v40 stranding
   failure printing a ✅). Skip this step and the gate quietly stops guarding one release later —
   which is precisely how app-v40 happened, so treat it as part of the push, not as a follow-up.
-- **Then verify the upload landed, file by file, and only then move `origin/main` by hand.**
-  `git push` cannot work here (the proxy refuses to inject a credential for this repo — try it,
-  you get a 403), so pushes are web uploads and `git` never learns they happened: `origin/main`
-  sits frozen at whatever release the sandbox was created from, and `git status` reports every
-  commit since as unpushed forever. That is noise, and noise around "did this ship?" is how a
-  release gets assumed-shipped. Fix it deliberately, never reflexively:
+- **Then `git fetch origin` and confirm the upload landed. Do not move refs by hand.**
+  `git push` does not work here — the proxy refuses to inject a credential for this repo and you
+  get a 403 — so pushes are web uploads. **`git fetch` DOES work.** Only writes are blocked; read
+  access is fine. So the honest way to find out what shipped is to ask the remote:
 
-  1. Locally: `git ls-tree -r HEAD --format='%(objectname) %(path)' | sort | sha256sum`
-  2. From a github.com tab, via `javascript_tool`, fetch
-     `api.github.com/repos/<owner>/<repo>/git/trees/main?recursive=1`, keep the `blob` entries,
-     build the same `sha path` lines, sort, join with `\n`, add a trailing `\n`, and SHA-256 it.
-     Check `truncated` is `false` and the file count matches.
-  3. The two digests must be identical. Only then:
-     `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)`
+  ```
+  git fetch origin && git status -sb        # "up to date" is the answer you want
+  git diff origin/main --stat               # must be empty
+  ```
 
-  Git blob SHAs are content hashes, so one 64-character comparison verifies **every file in the
-  repository** — not just the ones you meant to upload. app-v55: 808 files, digest
-  `33216ec992c4acd27d26933efbee407a` on both sides.
+  If `git status` still shows commits ahead, something did not upload — find it and upload it.
+  After a fetch you will normally fast-forward onto the remote's history, which replaces your local
+  commit SHAs with GitHub's for the same content. That is expected and fine.
 
-  **Do not verify by hashing `raw.githubusercontent.com`.** That endpoint is CDN-cached and keeps
-  serving the previous version for minutes after a push — `cache: 'no-store'`, a cache-busting
-  query param and the `github.com/.../raw/...` alias all still returned the stale bytes. It cost a
-  false "mismatch" on a TEAM.md upload that had landed correctly, and a false alarm on a release
-  gate is not harmless: it is what teaches the next person to click past a red one. The `contents`
-  and `git/trees` API endpoints are not cached this way and are what to use.
+  **This paragraph replaces a procedure that stood here for about an hour and was wrong.** It said
+  fetch was impossible and told you to verify by hashing every file, then move
+  `refs/remotes/origin/main` by hand. That was built on generalising a *push* 403 into "no network"
+  without ever running fetch. It also cost a real false alarm along the way: the first version of it
+  said to hash files off `raw.githubusercontent.com`, which is CDN-cached and served stale bytes for
+  minutes after an upload, reporting a mismatch on a file that had landed perfectly. Two lessons,
+  both the same lesson: **run the command before writing down what it does**, and never hand-move a
+  ref to make a status line look tidy — a ref you set yourself asserts something you have not
+  verified, which is the failure mode this whole file exists to prevent.
 
-  This asserts **content** equality, not history — GitHub mints its own commit SHAs for a web
-  upload, so the trees match and the SHAs never will. Do not skip to step 3 because the upload
-  "looked fine"; an `origin/main` that lies is strictly worse than one that is merely stale,
-  because a stale one at least nags.
+  The tree-digest comparison from that procedure is still a genuinely good tool, just no longer the
+  routine path. Keep it for when you need to prove content equality without trusting refs at all —
+  compare `git ls-tree -r HEAD --format='%(objectname) %(path)' | sort | sha256sum` against the same
+  manifest built from `api.github.com/repos/<owner>/<repo>/git/trees/main?recursive=1`. One
+  64-character comparison covers every file in the repo. Use the `git/trees` or `contents` API for
+  this, never `raw.githubusercontent.com`.
+
+- **Check the executable bit after any sync from the remote.** A GitHub web upload does not preserve
+  file mode, so `release_check.sh` and `mark_published.sh` come back as `100644` and then die with
+  exit 126 — "Permission denied", which reads like a broken gate and invites skipping it. BACKLOG
+  predicted this; it happened on 2026-08-11. `release_check.sh` now warns about its own mode, but
+  it cannot warn if it cannot run, so: `git ls-files -s release_check.sh mark_published.sh` should
+  read `100755` for both. Fix with `git update-index --chmod=+x <file>`, commit, and re-upload.
+
 - Push to GitHub, then live-verify the actual deployed site (not just localhost) with a
   cache-buster query param, since the service worker caches aggressively. Batch a release's
   code fixes into one commit and its documentation/reports into another, rather than a

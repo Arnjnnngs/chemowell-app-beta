@@ -39,11 +39,71 @@ when you're about to touch the relevant code; delete the line once it's actually
   on that step ("the Free plan includes one profile; adding a second is a Plus or Pro feature")
   fixes it, and it is worth doing before Pro is actually sold, because a help page that walks
   someone into a paywall reads as a bait-and-switch rather than as an oversight.
-- **`HELP_POINTERS` rows are browsable but not searchable** — `helpAllTopics()` does not include
-  them, so "Change temperature or weight units" can only be found by opening the *Settings & the
-  Home screen* category. Nothing is unreachable (its target, `vit-units`, is searchable and is what
-  the pointer opens), so this is a small completeness gap rather than a defect. Worth folding
-  pointers into the search index next time that file is open.
+- **The best remaining lever on the medical guard is not another pattern — it is the LIST reply**
+  (app-v56 PM gate). Every residual leak in this release is a list of app pages, and a list carries
+  no care-team wording at all, while the "I don't have an answer" reply already says the right
+  thing. Adding `HELP_CARE_TEAM_LINE` to a list whose query nearly matched the guard would close the
+  whole residual class at once, with copy that already shipped and no clinician needed. Worth
+  designing properly rather than rushing into a release that has already had two Highs arrive in
+  small post-gate changes.
+- **Move `symptoms`, `morning`, `evening` and `night` from tier 1 to tier 2 of the guard's
+  suppressor** (app-v56 PM gate, measured, non-blocking). `symptoms` sitting in tier 1 is the
+  clearest miss — it is *the* clinical noun — and it is why *"is her morning tablet safe"* still
+  returns a list. Measured by the gate: boundary leaks 7 → 5, with held-out clinical (9/86),
+  held-out ordinary (3/66) and a fresh 20-question ordinary set (0/20) all unchanged. It costs
+  nothing; it was left out of v56 only because the release had already had two High findings
+  arrive in exactly this kind of small change made after the testers had finished.
+- **On the held-out fixture, 7 of 72 medical questions still get a list of app pages, and 3 of 66
+  ordinary questions are still wrongly refused** (app-v56, `test/v56-guard-heldout.mjs`). None gets
+  a confident answer, which was the class that caused the PM's NO-GO. The residual leaks are
+  descriptions of a person that share incidental vocabulary with an app page — *"she fainted this
+  morning"*, *"he has not eaten in three days"* — and the residual refusals are app questions
+  phrased about a person: *"he takes his with breakfast where does that go"*. **Do not tune the
+  patterns against that file**; the moment anything is changed to make a line in it pass, it stops
+  being held out and stops being worth running. Improve against the tuned set, then read the
+  held-out numbers to find out whether it generalised.
+- **The Designer's S1 residual was decided against and never written down** (app-v56). The user's
+  own message bubble is `#A83D0F` and the primary CTA is `#BF4C1A` — 1.28:1 apart, so they remain
+  confusable at a glance even though the contrast fix landed. The report's quiet-tint alternative
+  would have removed the ambiguity entirely, at the cost of a less familiar chat shape. Recorded so
+  it is a decision rather than an oversight.
+- **A toast paints over the help panel's content** (app-v56, Lead Designer). The panel now sits at
+  z51 above the toast's z50, which fixes the reported case; the inverse is that a toast raised
+  during a help conversation is hidden behind the panel for its 4.5s. Cosmetic either way, and the
+  chosen direction is the better of the two, but it is a trade rather than a fix.
+- **The help panel's callout and the walkthrough page's are two separate components that merely
+  match** (app-v56, Lead Designer). `helpBotNotice()` is panel-only; `renderHelpView`'s callout is
+  still its own inline markup. They read as one component at a consistent scale, but there is no
+  single shell to edit, so the next change to one will silently not apply to the other.
+- **The medical guard misses 11 of 50 tuned clinical questions; they land on "I don't have an
+  answer" rather than the care-team route** (app-v56, Lead Auditor's set). Examples: *"the injection
+  site is red and hot"*, *"does radiation burn the skin"*, *"how do i know if its an infection"*.
+  Nothing wrong is asserted — the fallback copy already says *"if it's about the treatment itself, a
+  dose, or how someone is feeling, that's a question for the care team"* — but they are not routed
+  to it explicitly. Closing this properly needs a symptom-noun list, which is a content decision
+  that should wait for the same oncology-nurse read `sym-severe` is already waiting on. Writing one
+  by guesswork is how a triage list gets into the app by the back door. **Do not tune the guard
+  patterns to catch these without measuring the 35-question ordinary set at the same time** — the
+  first attempt at exactly that refused 21 ordinary questions including "is my data safe".
+- **The screen-reader announcer node is re-created on every reply** (`index.html`, `helpbot-announce`;
+  Lead Auditor LA-3, explicitly left open). It was added to fix the transcript's `aria-live`
+  container being destroyed by `render()` — and it has the same structural flaw, because it is
+  inside the tree `render()` replaces. It is written *after* the rebuild, which may be enough in
+  practice, but that has not been confirmed with an actual screen reader and should not be assumed.
+  Needs a real assistive-technology pass, or moving the node outside `#root`.
+- **The help bubble is re-focused once per second while it holds focus** (app-v56, Lead Auditor).
+  `render()` restores focus by id after every rebuild, so a focused button gets a fresh `focusin`
+  every tick — measured at 7 events in 6 idle seconds. No observable defect was produced, but it is
+  the kind of thing a screen reader may narrate repeatedly. Same assistive-technology pass as above.
+- **`BY_MEASURE` in the clinical guard has no `symptom` entry** (`index.html`, `helpBotAsk`). The
+  guard can return `measure: 'symptom'`, and the map only has `temp`, `weight` and `dose`, so those
+  questions take the generic care-team reply. That is the safe direction and it is deliberate —
+  there is no `careLead` symptom page other than `sym-severe`, which BACKLOG already flags as
+  needing a clinician read before it is surfaced more aggressively. Recorded so the gap is a
+  decision rather than an oversight.
+- **`renderHeader()` titles every screen with the patient's name and "Meds"** (Lead Auditor,
+  incidental find) — so the Reports, Symptoms and In-Patient screens all read *"<name>'s Meds"*.
+  Pre-existing, unrelated to v56, cosmetic, but wrong on four of five tabs.
 - **`release_check.sh` still cannot tell whether `PUBLISHED.json` is CURRENT — only that it is
   self-consistent** (app-v55 PM gate, PM-3). The integrity check proves the recorded cache matches
   the recorded commit's own `sw.js`, which stops the record being hand-edited into passing. It
@@ -56,12 +116,15 @@ when you're about to touch the relevant code; delete the line once it's actually
   `sw.js` from the deployed URL through Chrome during the post-push live-verify step (which
   already happens) and comparing it to the record, failing the *next* release if they disagree.
   Worth doing the next time a release is being verified in the browser anyway.
-- **The `release_check.sh` executable bit may not survive a GitHub web upload.** The app-v53 fix for
-  Auditor V53-5 is committed correctly (`git ls-files -s` → `100755`), but this project pushes by
-  uploading files through the GitHub web UI, which is not guaranteed to preserve file mode. After the
-  next push, check `git ls-tree origin/main release_check.sh` on a fresh clone; if it reads `100644`,
-  TEAM.md's documented `./release_check.sh` will still fail with exit 126 for anyone starting from
-  GitHub, and the mode needs setting through the API/CLI instead (`git update-index --chmod=+x`).
+- **CONFIRMED 2026-08-11, and fixed once — the executable bit does NOT survive a GitHub web
+  upload.** Predicted here before it happened; then a fetch + fast-forward brought both scripts back
+  as `100644` and `./release_check.sh` died with exit 126. Both are `100755` again via
+  `git update-index --chmod=+x`, and `release_check.sh` now checks its own mode and
+  `mark_published.sh`'s and warns. **It will happen again on the next upload of either file** —
+  there is no way to set file mode through the web UI. Leaving this line here permanently: after
+  any upload that includes a `.sh`, run `git ls-files -s release_check.sh mark_published.sh` and
+  re-chmod if needed. A real fix needs a push credential (API/CLI), which this session does not have.
+
 - **History gets very heavy when a large missed-dose backlog is finally listed** (new tail case
   introduced by app-v52's H-1 fix — History now seeds days that have misses but no entries, where
   before it rendered nothing for them). PM-measured on this sandbox, 4 window meds, nothing logged:
