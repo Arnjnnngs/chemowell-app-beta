@@ -46,12 +46,27 @@ t('9 medical-adjacent topics carry medical: true', (topicsBlock.match(/medical: 
   (topicsBlock.match(/medical: true/g) || []).length + '');
 t('2 safety-only topics are flagged (5 safety: true total, 3 of them also medical)',
   (topicsBlock.match(/safety: true/g) || []).length === 5, (topicsBlock.match(/safety: true/g) || []).length + '');
-t('the search input is covered by the 1s tick guard',
-  /if \(state\.view !== 'help'\s*\n\s*&& !state\.timeModal/.test(html));
+// v56: this was pinned to the exact spelling of the guard line, so adding the help bubble to the
+// same guard broke it on a build where the property it checks is MORE protected, not less. Assert
+// the invariant -- the Help view is excluded from the tick -- not the punctuation around it. This
+// is the second time in two releases an assertion here had to be hand-edited to keep passing;
+// that is the signature of a guard that has stopped guarding.
+const tickGuard = (html.match(/\n\s*if \(state\.view !== 'help'[\s\S]{0,900}?\) render\(\);/) || [''])[0];
+t('the Help view is excluded from the 1s tick guard', /state\.view !== 'help'/.test(tickGuard), tickGuard.slice(0, 60));
+t('the tick guard still lists every modal it listed before',
+  ['timeModal', 'upgradeOpen', 'drawerOpen', 'apptModal', 'noteModal', 'checkinModal', 'medEditor',
+   'infoModal', 'eraseAllModalOpen', 'confirmDeleteMed', 'confirmDeleteAppt', 'confirmDeleteNote',
+   'confirmDeleteProfile', 'confirmRemove', 'isEditing'].every(k => tickGuard.indexOf(k) >= 0));
 t('the drawer row is Help, and there is no second FAQ row',
   /\{ key: 'help', label: 'Help', icon: 'help'/.test(html) && !/label: 'FAQ'/.test(html));
-t('APP_VERSION is app-v55', /const APP_VERSION = 'app-v55';/.test(html));
-t('sw.js CACHE is chemowell-app-v55-2', /const CACHE = 'chemowell-app-v55-2';/.test(sw));
+// v56: pinned literals here would have to be weakened by hand on every release, which is exactly
+// how the v52 suite quietly stopped guarding. Assert the invariant instead: whatever version
+// index.html declares, sw.js's cache key must name the same one.
+const vNow = (html.match(/const APP_VERSION = '([^']+)'/) || [])[1];
+const cNow = (sw.match(/const CACHE = '([^']+)'/) || [])[1];
+t('APP_VERSION is present and well-formed', /^app-v\d+$/.test(vNow || ''), 'got ' + vNow);
+t('sw.js CACHE names the same version index.html declares',
+  !!cNow && !!vNow && cNow.indexOf(vNow.replace('app-', '') + '-') >= 0, 'APP_VERSION=' + vNow + '  CACHE=' + cNow);
 
 // ---------- Auditor findings V55-1 … V55-4, asserted at source level ----------
 // V55-1: app-v54 made the drawer's identity header non-interactive at Aaron's explicit request.
