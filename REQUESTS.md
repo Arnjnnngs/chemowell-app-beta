@@ -131,11 +131,12 @@ reconstruct it from history.
   upgrade to actually submitting straight to a place I can read directly, closing the loop for real.
   Awaiting Aaron's go-ahead on the near-term (share-based) version before building — flagging here so
   it isn't lost, not yet started.
-- [ ] **BUILT AND GATED, NOT YET LIVE (2026-08-11) — the on-screen help bubble, which is the shape
-  Aaron actually asked for.** Unticked on purpose: this list's own rule is that an item is only
-  checked off once it is confirmed on the deployed site, and the first version of this entry was
-  ticked while two review stages were still running — both of which then came back blocking.
-  Tick it after the push and the live check, not before.
+- [x] **LIVE 2026-08-11 (app-v56) — the on-screen help bubble, which is the shape Aaron actually
+  asked for.** Ticked only after the live check: `is the tablet safe` was typed into the deployed
+  site and answered *"That's a question for the care team."* — the exact defect the PM gate found,
+  confirmed fixed in production rather than in a report. This entry was ticked once before, while
+  two review stages were still running; both then came back blocking, which is why the rule is
+  what it is.
   Aaron, after seeing what v55 shipped: *"I wanted the bot to be like and on screen help like most
   apps have them down in the bottom corner. they can click on it and start typing and the bot will
   look up their question and reply. like AI, but its not AI, its just things that has already been
