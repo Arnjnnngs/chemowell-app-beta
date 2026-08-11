@@ -1,0 +1,142 @@
+PASS  H1 [ANSWER -> ANSWER] why cant i type in the daily limit box  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  H2 [ANSWER -> ANSWER] daily limit is locked  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  H3 [ANSWER -> ANSWER] the limit box is greyed out  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  H4 [ANSWER -> ANSWER] im not getting any notifications  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  H5 [ANSWER -> ANSWER] no reminders coming through at all  |  It says 'No reminders are currently due in the next 3 days' That means the app is working fine — there is genu
+PASS  H6 [ANSWER -> ANSWER] notifcations not working  |  It says 'No reminders are currently due in the next 3 days' That means the app is working fine — there is genu
+PASS  H7 [ANSWER -> ANSWER] the reminder came 10 mins late  |  The reminder came a few minutes early, or a few minutes late A few minutes early is on purpose. A few minutes 
+PASS  H8 [ANSWER -> ANSWER] alarms and reminders switch is missing on my samsung  |  The 'Alarms & reminders' switch isn't there, or won't turn on This is a known quirk on some Samsung phones. On
+PASS  H9 [ANSWER -> ANSWER] how do i add a new medicine  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  H10 [ANSWER -> ANSWER] how do i add a med  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  H11 [LIST -> LIST] my moms medication isnt on the home screen  |  I'm not certain which one you mean — do any of these match? A card I want isn't on my Home screen Settings & t
+PASS  H12 [ANSWER -> ANSWER] all my meds vanished  |  All my medications vanished from Home The Quick log section is probably just folded shut. 1 On Home, look for 
+PASS  H13 [LIST -> LIST] the app is broken  |  I'm not certain which one you mean — do any of these match? I was told something was fixed, but I still see th
+PASS  H14 [ANSWER -> ANSWER] the screen is blank  |  The screen is blank or the app won't load Close it fully and open it again first. 1 Swipe ChemoWell away from 
+PASS  H15 [ANSWER -> ANSWER] screen keeps flickering  |  The screen keeps refreshing or flickering Older versions did this while a confirmation box was open. If you're
+PASS  H16 [ANSWER -> ANSWER] i tap the button and nothing happens  |  I tap something and nothing happens A few of these are deliberate, and the rest usually clear with a reopen. 1
+PASS  H17 [GUARD -> GUARD] what dose should i give  |  Contact your care team Contact the care team. Whether to take a missed dose late, skip it, or double up is a m
+PASS  H18 [GUARD -> GUARD] is 101 a fever  |  Contact your care team Contact the care team now. For someone on chemotherapy, a fever can be an emergency, an
+PASS  H19 [GUARD -> GUARD] should i take a double dose  |  Contact your care team Contact the care team. Whether to take a missed dose late, skip it, or double up is a m
+PASS  H20 [GUARD -> GUARD] can he take two paracetamol together  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is sa
+PASS  H21 [LIST -> LIST] he missed his chemo pill last night what do i do  |  I'm not certain which one you mean — do any of these match? A dose was genuinely missed — what should I do? Mi
+PASS  H22 [ANSWER -> ANSWER] i think i logged the same dose twice  |  I think I logged the same dose twice Check Today's journal — the app is built to ignore a double-tap, so there
+PASS  H23 [ANSWER -> ANSWER] how do i delete something i logged by mistake  |  I logged something by mistake You can remove it from History, but medication doses lock after 48 hours. 1 Tap 
+PASS  H24 [LIST -> LIST] can i log a dose from yesterday  |  I'm not certain which one you mean — do any of these match? I forgot to log a dose at the time — can I put in 
+PASS  H25 [ANSWER -> ANSWER] export to excel  |  How do I get everything out of the app? Download CSV. It's free, on every plan. 1 Tap the three lines in the t
+PASS  H26 [ANSWER -> ANSWER] where did my csv file go  |  Where did the exported file go? I can't find a 'save to this phone' option The file is handed to your phone's 
+PASS  H27 [ANSWER -> ANSWER] print a report for the doctor  |  How do I get a report to hand to the doctor? The Printable report. It's part of the Plus plan; CSV is free for
+PASS  H28 [LIST -> LIST] how do i put in his weight  |  I'm not certain which one you mean — do any of these match? How do I see the weight trend? History & reports H
+PASS  H29 [ANSWER -> ANSWER] the temprature wont save  |  It won't let me save the medication A message appears at the bottom of the screen saying exactly what's missin
+PASS  H30 [ANSWER -> ANSWER] change it to celsius  |  I want pounds instead of kilograms, or Celsius instead of Fahrenheit Menu → Settings → Units. 1 Tap the three 
+PASS  H31 [LIST -> LIST] i look after two people  |  I'm not certain which one you mean — do any of these match? I'm caring for more than one person Profiles & pla
+PASS  H32 [ANSWER -> ANSWER] how much does pro cost  |  What do Plus and Pro actually add? They're one-time purchases, not subscriptions. The free tracker is complete
+PASS  H33 [LIST -> LIST] is my information private  |  I'm not certain which one you mean — do any of these match? Is my information stored on a server somewhere? Yo
+PASS  H34 [ANSWER -> ANSWER] what happens if i lose my phone  |  What happens if I lose my phone or the app is uninstalled? The data goes with it. There's no cloud copy and no
+PASS  H35 [ANSWER -> ANSWER] his meds say restricted  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  H36 [ANSWER -> ANSWER] i forgot to end the hospital stay  |  I forgot to end a hospital stay and it still says Active End it now — the stay keeps its real start date. 1 Ta
+PASS  H37 [ANSWER -> ANSWER] the back button closes the whole app  |  The back button closes the whole app That's a known problem. Use the tabs at the bottom instead. 1 To move bet
+PASS  H38 [ANSWER -> ANSWER] how do i do the walkthrough again  |  Can I go through the guided walkthrough again? Yes, any time. 1 Tap the three lines in the top left, then Sett
+PASS  H39 [ANSWER -> ANSWER] whats the difference between notes and the check in  |  What's the difference between Notes and the check-in's 'Anything else?' box? There isn't one, in the end — the
+PASS  H40 [LIST -> LIST] add an appointment reminder  |  I'm not certain which one you mean — do any of these match? My appointment reminder never came Reminders & not
+PASS  H41 [ANSWER -> ANSWER] red banner wont go away  |  There's a red 'missed doses' banner and I can't get rid of it Tap the banner itself — it takes you to the list
+PASS  H42 [ANSWER -> ANSWER] clear all the missed doses at once  |  I've got weeks of missed doses and I don't want to tap them one by one There's a Clear all button in the misse
+PASS  H43 [ANSWER -> ANSWER] history is really slow  |  History is slow or won't respond when I tap This happens when there's a very large backlog of missed doses to 
+PASS  H44 [ANSWER -> ANSWER] i cant find something i logged  |  Something I logged isn't in History Check the day it landed on, and which profile you're looking at. 1 If you 
+PASS  H45 [ANSWER -> ANSWER] does it work with no internet  |  Does it work without internet? Yes. Everything works offline. 1 Logging, history, reports, notes and appointme
+PASS  H46 [LIST -> ANSWER] wat version am i on  |  How do I check which version I'm on? Settings → About & legal. 1 Tap the three lines in the top left, then Set
+PASS  H47 [ANSWER -> ANSWER] how do i start over and erase everything  |  How do I erase everything and start over? Menu → Account → Start over. It's permanent, and there's no way to g
+PASS  H48 [ANSWER -> ANSWER] diarrhoea where do i put it  |  Should diarrhoea go in Symptoms or the bowel tracker? Either works, and they're for different things. 1 Use th
+PASS  H49 [NONE -> NONE] asdfgh  |  I don't have an answer for that one. I can only look through the help pages written into ChemoWell, so anythin
+PASS  H50 [NONE -> NONE] thanks  |  I don't have an answer for that one. I can only look through the help pages written into ChemoWell, so anythin
+PASS  H51 [NONE -> NONE] hows the weather today  |  I don't have an answer for that one. I can only look through the help pages written into ChemoWell, so anythin
+PASS  H52 [ANSWER -> ANSWER] pause a medication for a week  |  I want to stop a medication for a while without deleting it Pause it. Everything is kept, and it stops being t
+PASS  H53 [ANSWER -> ANSWER] it wont let me save the medication  |  It won't let me save the medication A message appears at the bottom of the screen saying exactly what's missin
+PASS  H54 [LIST -> LIST] what does reminds at mean  |  I'm not certain which one you mean — do any of these match? What does 'Reminds at' mean under Schedule windows
+PASS  H55 [ANSWER -> ANSWER] i want a reminder every 4 hours  |  What’s “Hours between doses” / minimum gap? It’s the minimum time ChemoWell requires since the last dose befor
+PASS  H56 [ANSWER -> ANSWER] why is the log button greyed out  |  The Log button is greyed out or won't do anything The card tells you which rule is holding it, in the words on
+PASS  H57 [ANSWER -> ANSWER] when does a dose count as missed  |  When does a dose count as missed? A reminder stays open, not missed, until the next reminder for that medicati
+PASS  H58 [ANSWER -> ANSWER] how do i set the treatment date  |  How do I set a treatment date? On Home, in the Treatment schedule card. 1 Go to Home and find the card headed 
+PASS  H59 [ANSWER -> ANSWER] radiation session counter  |  How do I track radiation sessions? The Radiation sessions card on Home, with a one-tap log. 1 Go to Home and f
+PASS  H60 [ANSWER -> ANSWER] i picked the wrong treatment type  |  I picked the wrong treatment type during setup There's currently no way to change it afterwards. This is a rea
+PASS  HP [NONE -> NONE] whats for dinner  |  I don't have an answer for that one. I can only look through the help pages written into ChemoWell, so anythin
+PASS  HP [NONE -> NONE] ok  |  I don't have an answer for that one. I can only look through the help pages written into ChemoWell, so anythin
+PASS  HP [NONE -> NONE] hello  |  I don't have an answer for that one. I can only look through the help pages written into ChemoWell, so anythin
+PASS  HP [NONE -> NONE] thank you so much  |  I don't have an answer for that one. I can only look through the help pages written into ChemoWell, so anythin
+PASS  HP [NONE -> NONE] how long does chemo last  |  I don't have an answer for that one. I can only look through the help pages written into ChemoWell, so anythin
+PASS  HP [GUARD -> GUARD] how many mg of tylenol is safe  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is sa
+PASS  HP [GUARD -> GUARD] can i give him ibuprofen  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is sa
+PASS  HP [GUARD -> GUARD] is 99.8 too high  |  Contact your care team Contact the care team now. For someone on chemotherapy, a fever can be an emergency, an
+PASS  HP [NOT-ANSWER -> LIST] my car wont start  |  I'm not certain which one you mean — do any of these match? I'm caring for more than one person Profiles & pla
+PASS  HP [NOT-ANSWER -> LIST] i love this app  |  I'm not certain which one you mean — do any of these match? The back button closes the whole app The app itsel
+PASS  HP [NOT-ANSWER -> LIST] will she lose her hair  |  I'm not certain which one you mean — do any of these match? What happens if I lose my phone or the app is unin
+PASS  HP [NOT-ANSWER -> LIST] my husband is very tired all the time  |  I'm not certain which one you mean — do any of these match? I'm not getting any reminders at all Reminders & n
+PASS  HP [PERSON -> PERSON] are you a real person  |  No — I'm not a person, and I'm not AI either. I look through help pages that were written into ChemoWell befor
+PASS  HP [PERSON -> PERSON] can i speak to someone  |  No — I'm not a person, and I'm not AI either. I look through help pages that were written into ChemoWell befor
+PASS  HP [PERSON -> PERSON] is anyone there  |  No — I'm not a person, and I'm not AI either. I look through help pages that were written into ChemoWell befor
+PASS  HP [NOT-ANSWER -> LIST] what time is it  |  I'm not certain which one you mean — do any of these match? I forgot to log a dose at the time — can I put in 
+PASS  H-FAQ an FAQ hit opens the Common-questions accordion with that row expanded  |  ChemoWell / BETA / Fixture Fay’s Meds / Tuesday, Aug 11 / BETA DATE CONTROLS / ▼ / All help topics / HELP / Common questions / The short answers most people start with / SEARCH HELP / Who is ChemoWell for? / + / Is my data pri
+
+--- MODE TABLE ---
+ 1  want ANSWER got ANSWER  why cant i type in the daily limit box
+ 2  want ANSWER got ANSWER  daily limit is locked
+ 3  want ANSWER got ANSWER  the limit box is greyed out
+ 4  want ANSWER got ANSWER  im not getting any notifications
+ 5  want ANSWER got ANSWER  no reminders coming through at all
+ 6  want ANSWER got ANSWER  notifcations not working
+ 7  want ANSWER got ANSWER  the reminder came 10 mins late
+ 8  want ANSWER got ANSWER  alarms and reminders switch is missing on my samsung
+ 9  want ANSWER got ANSWER  how do i add a new medicine
+10  want ANSWER got ANSWER  how do i add a med
+11  want LIST   got LIST    my moms medication isnt on the home screen
+12  want ANSWER got ANSWER  all my meds vanished
+13  want LIST   got LIST    the app is broken
+14  want ANSWER got ANSWER  the screen is blank
+15  want ANSWER got ANSWER  screen keeps flickering
+16  want ANSWER got ANSWER  i tap the button and nothing happens
+17  want GUARD  got GUARD   what dose should i give
+18  want GUARD  got GUARD   is 101 a fever
+19  want GUARD  got GUARD   should i take a double dose
+20  want GUARD  got GUARD   can he take two paracetamol together
+21  want LIST   got LIST    he missed his chemo pill last night what do i do
+22  want ANSWER got ANSWER  i think i logged the same dose twice
+23  want ANSWER got ANSWER  how do i delete something i logged by mistake
+24  want LIST   got LIST    can i log a dose from yesterday
+25  want ANSWER got ANSWER  export to excel
+26  want ANSWER got ANSWER  where did my csv file go
+27  want ANSWER got ANSWER  print a report for the doctor
+28  want LIST   got LIST    how do i put in his weight
+29  want ANSWER got ANSWER  the temprature wont save
+30  want ANSWER got ANSWER  change it to celsius
+31  want LIST   got LIST    i look after two people
+32  want ANSWER got ANSWER  how much does pro cost
+33  want LIST   got LIST    is my information private
+34  want ANSWER got ANSWER  what happens if i lose my phone
+35  want ANSWER got ANSWER  his meds say restricted
+36  want ANSWER got ANSWER  i forgot to end the hospital stay
+37  want ANSWER got ANSWER  the back button closes the whole app
+38  want ANSWER got ANSWER  how do i do the walkthrough again
+39  want ANSWER got ANSWER  whats the difference between notes and the check in
+40  want LIST   got LIST    add an appointment reminder
+41  want ANSWER got ANSWER  red banner wont go away
+42  want ANSWER got ANSWER  clear all the missed doses at once
+43  want ANSWER got ANSWER  history is really slow
+44  want ANSWER got ANSWER  i cant find something i logged
+45  want ANSWER got ANSWER  does it work with no internet
+46  want LIST   got ANSWER  wat version am i on
+47  want ANSWER got ANSWER  how do i start over and erase everything
+48  want ANSWER got ANSWER  diarrhoea where do i put it
+49  want NONE   got NONE    asdfgh
+50  want NONE   got NONE    thanks
+51  want NONE   got NONE    hows the weather today
+52  want ANSWER got ANSWER  pause a medication for a week
+53  want ANSWER got ANSWER  it wont let me save the medication
+54  want LIST   got LIST    what does reminds at mean
+55  want ANSWER got ANSWER  i want a reminder every 4 hours
+56  want ANSWER got ANSWER  why is the log button greyed out
+57  want ANSWER got ANSWER  when does a dose count as missed
+58  want ANSWER got ANSWER  how do i set the treatment date
+59  want ANSWER got ANSWER  radiation session counter
+60  want ANSWER got ANSWER  i picked the wrong treatment type
+PASS  H zero console errors across the fixture run
+
+SUITE H: 78/78 pass

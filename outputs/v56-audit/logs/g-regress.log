@@ -1,0 +1,28 @@
+FAIL  G1 transcript scroll survives an unrelated re-render (brief §5.3)  |  scrollTop 1998 -> 0
+FAIL  G1 the newest reply is still on screen after that re-render  |  {"st":0,"lastTop":2305,"logTop":268,"logBottom":694}
+PASS  G2 a second profile could be created for the switch test
+PASS  G2 profile switch clears the transcript  |  had=true
+PASS  G2 the panel is closed (not left open) after the switch  |  reopened cleanly
+PASS  G3 Help view still advertises 117 topics  |  15 topics,14 topics,18 topics,8 topics,6 topics,5 topics,11 topics,5 topics,5 topics,6 topics,7 topics,6 topics,7 topics,6 topics,3 topics,4 topics,7 topics
+PASS  G3 Help view still advertises 15 common questions  |  15 common questions
+PASS  G3 no bubble on the Help view
+PASS  G3 the Help search box is present
+PASS  G3 the v55 dead query now returns results (matcher shared)  |  ChemoWell / BETA / First Fiona’s Meds / Tuesday, Aug 11 / BETA DATE CONTROLS / ▼ / HELP / Search help / SEARCH HELP / Clear / The Daily limit box is greyed out and says 'Locked' / Adding & editing medications / Which Limit u
+PASS  G3 HELP_POINTERS fix: "change units" finds the units topic  |  ChemoWell / BETA / First Fiona’s Meds / Tuesday, Aug 11 / BETA DATE CONTROLS / ▼ / HELP / Search help / SEARCH HELP / Clear / I want pounds instead of kilograms, or Celsius instead of Fahrenheit / Temperature, weight, bloo
+PASS  G3 the "Nothing matched that" empty state still exists
+PASS  G3 Common questions accordion opens  |  46 lines
+PASS  G4 an FAQ-shaped question gets a reply  |  on questions / Is my information stored on a server somewhere? / Your data & privacy / How do I get everything out of the app? / Sharing & exporting
+PASS  G5 lands on the right walkthrough in one transition
+PASS  G5 Back names the topic category, not "All help topics"  |  ChemoWell / BETA / First Fiona’s Meds / Tuesday, Aug 11 / BETA DATE CONTROLS / ▼ / Sharing & exporting / SHARING & EXPORTING / How do I 
+PASS  G5 Back works
+PASS  G6 switch treatment type to Radiation: app fine, bubble present
+PASS  G6 switch treatment type to Both: app fine, bubble present
+PASS  G6 switch treatment type to Other: app fine, bubble present
+PASS  G6 switch treatment type to Chemo: app fine, bubble present
+PASS  G7 no horizontal overflow at the end
+PASS  G7 zero console errors
+
+SUITE G: 21/23 pass
+FAILURES:
+  - G1 transcript scroll survives an unrelated re-render (brief §5.3)  |  scrollTop 1998 -> 0
+  - G1 the newest reply is still on screen after that re-render  |  {"st":0,"lastTop":2305,"logTop":268,"logBottom":694}

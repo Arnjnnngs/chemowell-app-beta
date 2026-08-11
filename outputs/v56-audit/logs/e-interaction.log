@@ -1,0 +1,50 @@
+PASS  E1.1 15-word sentence typed at ~1 word/s keeps every character  |  got: "why is the daily limit box locked and greyed out on this medication screen"
+PASS  E1.1 caret is still at the end  |  {"s":74,"len":74}
+PASS  E1.2 a toast firing mid-type does not eat the draft  |  got: "the reminder came ten minutes late this morning"
+PASS  E1.3 typing after a drawer open/close cycle keeps every character  |  got: "export to excel"
+PASS  E1.4 the 1s tick does not rebuild the panel (no animation replay, no flicker)  |  {"same":true,"rebuilds":0}
+PASS  E2.1 the newest reply is scrolled into view  |  scrollTop=1559
+PASS  E2.2 tapping the composer does NOT scroll the transcript away (brief §5.4)  |  scrollTop 1559 -> 1559
+PASS  E2.3 transcript scroll survives an unrelated re-render (brief §5.3)  |  scrollTop 0 -> 0 (was 2137 before close)
+PASS  E3.1 panel is open
+FAIL  E3.1 tapping a bottom-nav tab closes the panel (DoD 9.1 #12)  |  panel still open on Reports
+PASS  E3.2 double-tapping the bubble opens exactly one panel
+PASS  E3.3 triple-submit adds exactly one exchange (empty resubmits are silent no-ops)  |  delta=2
+PASS  E3.4 Escape twice: closed, no error, bubble back
+FAIL  E3.4 focus returned to the bubble (activeElement, not by eye)  |  BODY
+PASS  E3.5 panel survives a rotate to landscape without leaving the viewport  |  {"w":784,"right":8,"top":24,"bottom":84,"maxH":"252px","overflowsTop":false}
+FAIL  E3.5 rotating to landscape re-lays the panel out for the new width (>=520px => 380px right-anchored)  |  {"w":784,"right":8,"top":24,"bottom":84,"maxH":"252px","overflowsTop":false} -- window.innerWidth is read at render time only
+PASS  E4.1 Tab never strands focus on <body>  |  helpbot-panel > Close help > BUTTON > BUTTON > BUTTON > BUTTON > BUTTON > BUTTON > BUTTON > BUTTON > BUTTON
+PASS  E4.2 panel is role=dialog, labelled, and NOT aria-modal  |  {"role":"dialog","label":"Ask for help","modal":null,"logRole":"log","live":"polite","rel":"additions","inputLabel":"Type your question","maxlen":"200","fs":"16px"}
+PASS  E4.2 transcript is role=log aria-live=polite  |  {"role":"dialog","label":"Ask for help","modal":null,"logRole":"log","live":"polite","rel":"additions","inputLabel":"Type your question","maxlen":"200","fs":"16px"}
+PASS  E4.2 input is 16px (no iOS zoom) and maxlength 200  |  {"role":"dialog","label":"Ask for help","modal":null,"logRole":"log","live":"polite","rel":"additions","inputLabel":"Type your question","maxlen":"200","fs":"16px"}
+PASS  E5 300 characters: produced a reply, no crash  |  I don't have an answer for that one. / I can only look through the help pages written into C
+PASS  E5 emoji only: produced a reply, no crash  |  I don't have an answer for that one. / I can only look through the help pages written into C
+PASS  E5 RTL text: produced a reply, no crash  |  I don't have an answer for that one. / I can only look through the help pages written into C
+PASS  E5 SQL: produced a reply, no crash  |  I'm not certain which one you mean — do any of these match? / The weight has changed a lot i
+PASS  E5 HTML: produced a reply, no crash  |  I don't have an answer for that one. / I can only look through the help pages written into C
+PASS  E5 script tag: produced a reply, no crash  |  I'm not certain which one you mean — do any of these match? / What does 'Reminds at' mean un
+PASS  E5 60 words: produced a reply, no crash  |  I don't have an answer for that one. / I can only look through the help pages written into C
+PASS  E5 repeated whitespace: produced a reply, no crash  |  Not medical advice / ChemoWell is a record-keeping tool, not medical advice. Always follow t
+PASS  E5 single character: produced a reply, no crash  |  I don't have an answer for that one. / I can only look through the help pages written into C
+PASS  E5 single digit: produced a reply, no crash  |  Contact your care team / Contact the care team now. For someone on chemotherapy, a fever can
+PASS  E5 only punctuation: produced a reply, no crash  |  I don't have an answer for that one. / I can only look through the help pages written into C
+PASS  E5 newlines: produced a reply, no crash  |  Not medical advice / ChemoWell is a record-keeping tool, not medical advice. Always follow t
+PASS  E5 nothing typed is ever interpreted as markup (no innerHTML path)  |  {"a":false,"b":false,"imgs":0}
+PASS  E5 maxlength attribute is present
+PASS  E5 no horizontal overflow after adversarial input  |  0px
+PASS  E6 message count after ~20 exchanges  |  34 message nodes
+FAIL  E6 transcript is capped at 40 messages (brief §5.6)  |  94 message nodes after 4s of asking
+PASS  E6 DOM nodes in the transcript  |  {"nodes":1606,"ms":0.599999999627471}
+PASS  E7.1 no transcript text anywhere in storage
+PASS  E7.1 no helpbot key was created  |  chemowell-app-p-p1-entries-v1,chemowell-app-p-p1-med-v1,chemowell-app-p-p1-prefs-v1,chemowell-app-profiles-v1,chemowell-app-ui-view
+PASS  E7.2 reload with the panel open: panel is gone, app renders
+PASS  E7.2 transcript is empty after a reload
+PASS  E8 zero console errors across the whole interaction suite
+
+SUITE E: 39/43 pass
+FAILURES:
+  - E3.1 tapping a bottom-nav tab closes the panel (DoD 9.1 #12)  |  panel still open on Reports
+  - E3.4 focus returned to the bubble (activeElement, not by eye)  |  BODY
+  - E3.5 rotating to landscape re-lays the panel out for the new width (>=520px => 380px right-anchored)  |  {"w":784,"right":8,"top":24,"bottom":84,"maxH":"252px","overflowsTop":false} -- window.innerWidth is read at render time only
+  - E6 transcript is capped at 40 messages (brief §5.6)  |  94 message nodes after 4s of asking

@@ -1,0 +1,30 @@
+PASS  I1 opening the drawer hides the panel
+PASS  I1 the Help view shows no panel
+FAIL  I1 leaving the Help view does NOT resurrect a panel the user never re-opened  |  panel reappeared with the old transcript
+   resurrected transcript: export to excel / How do I get everything out of the app? / Download CSV. It's free, on every plan. / 1 / Tap the three lines in
+FAIL  I1b the open panel physically blocks the Meds "Add" button after a nav tap  |  BLOCKED by the panel
+PASS  I1 the medication editor hides the panel  |  panel was still open on the Meds tab
+PASS  I1 closing the editor restores whatever state the panel was in  |  bubble only
+PASS  I2 a 3-step topic shows 3 steps and no "+ N more"  |  The reminder came a few minutes early, or a few minutes late / A few minutes early is on purpose. A few minutes late means your phone is delaying the app. / 1 / If it arrived early: that is ChemoWell 
+PASS  I2 a 4-step topic shows "+ 1 more step" (singular)  |  + 1 more step
+PASS  I2 a many-step topic pluralises "steps"  |  + 3 more steps
+   round 0: {"msgs":50,"nodes":960,"submitMs":56}
+   round 1: {"msgs":92,"nodes":1823,"submitMs":85}
+   round 2: {"msgs":134,"nodes":2686,"submitMs":94}
+   round 3: {"msgs":176,"nodes":3549,"submitMs":73}
+   round 4: {"msgs":218,"nodes":4412,"submitMs":113}
+   round 5: {"msgs":260,"nodes":5275,"submitMs":181}
+FAIL  I3 transcript is capped (brief §5.6 says 40 messages)  |  260 messages, 5275 DOM nodes
+FAIL  I3 a single question still renders in under 150ms at that size  |  181ms for one submit at 260 messages
+PASS  I3 growth is linear and unbounded (recorded)  |  [{"msgs":50,"nodes":960,"submitMs":56},{"msgs":92,"nodes":1823,"submitMs":85},{"msgs":134,"nodes":2686,"submitMs":94},{"msgs":176,"nodes":3549,"submitMs":73},{"msgs":218,"nodes":4412,"submitMs":113},{"msgs":260,"nodes":5275,"submitMs":181}]
+PASS  I4 panel max-height never exceeds the 560px design cap  |  {"inline":"560px","computed":"560px","h":560}
+PASS  I5 320px: bubble present, no overflow  |  0px
+PASS  I5 320px: panel usable, composer on screen, no overflow  |  0px
+PASS  I6 zero console errors
+
+SUITE I: 12/16 pass
+FAILURES:
+  - I1 leaving the Help view does NOT resurrect a panel the user never re-opened  |  panel reappeared with the old transcript
+  - I1b the open panel physically blocks the Meds "Add" button after a nav tap  |  BLOCKED by the panel
+  - I3 transcript is capped (brief §5.6 says 40 messages)  |  260 messages, 5275 DOM nodes
+  - I3 a single question still renders in under 150ms at that size  |  181ms for one submit at 260 messages

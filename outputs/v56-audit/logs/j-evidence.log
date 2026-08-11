@@ -1,0 +1,12 @@
+PASS  J1 a toast is raised while the bubble is on screen  |  {"hasToast":true,"bottom":"150px","overlap":false,"toastBottomPx":150,"fabTopPx":140,"tapThrough":true,"aboveNav":true,"wraps":true}
+PASS  J1 toast bottom is 150px (raised clear of the bubble)  |  150px
+PASS  J1 toast does not overlap the bubble  |  {"hasToast":true,"bottom":"150px","overlap":false,"toastBottomPx":150,"fabTopPx":140,"tapThrough":true,"aboveNav":true,"wraps":true}
+PASS  J1 taps still pass through the toast to the bubble  |  {"hasToast":true,"bottom":"150px","overlap":false,"toastBottomPx":150,"fabTopPx":140,"tapThrough":true,"aboveNav":true,"wraps":true}
+PASS  J1 toast still wraps inside the viewport  |  {"hasToast":true,"bottom":"150px","overlap":false,"toastBottomPx":150,"fabTopPx":140,"tapThrough":true,"aboveNav":true,"wraps":true}
+PASS  J2 the panel answers with the network off  |  r of applications, any entry that starts with a number counts — 2 tabs, 1 patch, 2 sprays all work. / + 2 more steps / Open the full walkthrough
+PASS  J2 the clinical guard still fires offline  |  is not something to look up in an app. Call the number the care team gave you, or the on-call line, straight away. / Open the full walkthrough
+PASS  J2 no console errors while offline
+PASS  J3 evidence captured  |  outputs/v56-audit/*.png
+PASS  J4 no horizontal overflow anywhere in this run
+
+SUITE J: 10/10 pass

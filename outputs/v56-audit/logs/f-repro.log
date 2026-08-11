@@ -1,0 +1,20 @@
+PASS  F1 panel node is NOT rebuilt by the 1s tick (no animation replay)  |  {"same":true,"anims":[]}
+PASS  F2 focus lands on the bubble right after Escape  |  helpbot-fab
+FAIL  F2 focus is STILL on the bubble one second later (survives the 1s tick)  |  after 1.6s: BODY
+FAIL  F2 focus is still on the bubble after ~4s  |  after 3.8s: BODY
+PASS  F3 tapping the composer does not scroll the transcript away (brief §5.4)  |  transcript scrollTop 1998 -> 1998
+PASS  F3 tapping the composer does not lurch the page behind the panel  |  window.scrollY 0 -> 0
+PASS  F3 page behind the panel does not scroll 320ms after focusing the input  |  window.scrollY 0 -> 0
+PASS  F4 triple-submit adds exactly one exchange (empty resubmits are silent no-ops)  |  delta=1 (greeting replaced by user+bot)
+PASS  F5 Tab never strands focus on <body>  |  Send question > Home > Meds > Reports > In-Patient > Symptoms > ChemoWell BETA Repro R > Open menu > BETA DATE CONTROLS ▼ > History Review dose, s > Weight Explore weight  > Blood Pressure Review  > Bowel Movement Review  > Appetite Review appeti
+PASS  F5 Tab does leave the panel (non-modal by design, no trap)  |  Send question > Home > Meds > Reports > In-Patient > Symptoms > ChemoWell BETA Repro R > Open menu > BETA DATE CONTROLS ▼ > History Review dose, s > Weight Explore weight  > Blood Pressure Review  > Bowel Movement Review  > Appetite Review appeti
+PASS  F6 opened at 900px: panel is 380px wide, right:14  |  {"w":380,"right":14}
+FAIL  F6 resized down to 390px while open: panel re-lays out to the phone layout (left/right 8px => w 374)  |  {"w":380,"right":14,"vw":390} -- `const wide = window.innerWidth >= 520` is read at render time and nothing re-renders on resize
+PASS  F8 no off-origin network request while the panel is used
+PASS  F9 zero console errors
+
+SUITE F: 11/14 pass
+FAILURES:
+  - F2 focus is STILL on the bubble one second later (survives the 1s tick)  |  after 1.6s: BODY
+  - F2 focus is still on the bubble after ~4s  |  after 3.8s: BODY
+  - F6 resized down to 390px while open: panel re-lays out to the phone layout (left/right 8px => w 374)  |  {"w":380,"right":14,"vw":390} -- `const wide = window.innerWidth >= 520` is read at render time and nothing re-renders on resize

@@ -1,0 +1,66 @@
+PASS  [360] A1 welcome/first-run: no bubble, no panel
+PASS  [360] A3 guided tour is running after first-run  |  tour visible
+PASS  [360] A3 bubble absent from the DOM at EVERY guided-tour step  |  1 steps walked, bubble seen 0x
+PASS  [360] A3 bubble not tappable through the pointer-events:none tour layer
+PASS  [360] A4 bubble present on Home
+PASS  [360] A4 no horizontal overflow on Home  |  0px
+PASS  [360] A4 bubble present on Meds
+PASS  [360] A4 no horizontal overflow on Meds  |  0px
+PASS  [360] A4 bubble present on Reports
+PASS  [360] A4 no horizontal overflow on Reports  |  0px
+PASS  [360] A4 bubble present on In-Patient
+PASS  [360] A4 no horizontal overflow on In-Patient  |  0px
+PASS  [360] A4 bubble present on Symptoms
+PASS  [360] A4 no horizontal overflow on Symptoms  |  0px
+PASS  [360] A5 bubble is 56x56  |  56x56
+PASS  [360] A5 bubble right offset is 14px  |  14px
+PASS  [360] A5 bubble clears the nav by >=15px  |  15.0px
+PASS  [360] A5 bubble z-index is 37  |  37
+PASS  [360] A5 bubble computed bottom is 84px  |  84px
+PASS  [360] A6 real tap on Home navigates (app-v28 failure mode)  |  active=Home
+PASS  [360] A6 real tap on Meds navigates (app-v28 failure mode)  |  active=Meds
+PASS  [360] A6 real tap on Reports navigates (app-v28 failure mode)  |  active=Reports
+PASS  [360] A6 real tap on In-Patient navigates (app-v28 failure mode)  |  active=In-Patient
+PASS  [360] A6 real tap on Symptoms navigates (app-v28 failure mode)  |  active=Symptoms
+PASS  [360] A6 Symptoms tab centre is not covered by the bubble  |  {"overlaps":false,"hitIsNav":true}
+PASS  [360] A7 drawer open: no bubble, no panel
+PASS  [360] A7 bubble returns after the drawer closes
+PASS  [360] A8 Help view: no bubble
+PASS  [360] A9 report detail still shows the bubble
+PASS  [360] A9 Back pill and bubble both hit-testable, no overlap  |  {"ok":true,"overlap":false}
+PASS  [360] A10 medication editor open: no bubble
+PASS  [360] A11 zero console errors so far
+PASS  [390] A1 welcome/first-run: no bubble, no panel
+PASS  [390] A3 guided tour is running after first-run  |  tour visible
+PASS  [390] A3 bubble absent from the DOM at EVERY guided-tour step  |  1 steps walked, bubble seen 0x
+PASS  [390] A3 bubble not tappable through the pointer-events:none tour layer
+PASS  [390] A4 bubble present on Home
+PASS  [390] A4 no horizontal overflow on Home  |  0px
+PASS  [390] A4 bubble present on Meds
+PASS  [390] A4 no horizontal overflow on Meds  |  0px
+PASS  [390] A4 bubble present on Reports
+PASS  [390] A4 no horizontal overflow on Reports  |  0px
+PASS  [390] A4 bubble present on In-Patient
+PASS  [390] A4 no horizontal overflow on In-Patient  |  0px
+PASS  [390] A4 bubble present on Symptoms
+PASS  [390] A4 no horizontal overflow on Symptoms  |  0px
+PASS  [390] A5 bubble is 56x56  |  56x56
+PASS  [390] A5 bubble right offset is 14px  |  14px
+PASS  [390] A5 bubble clears the nav by >=15px  |  15.0px
+PASS  [390] A5 bubble z-index is 37  |  37
+PASS  [390] A5 bubble computed bottom is 84px  |  84px
+PASS  [390] A6 real tap on Home navigates (app-v28 failure mode)  |  active=Home
+PASS  [390] A6 real tap on Meds navigates (app-v28 failure mode)  |  active=Meds
+PASS  [390] A6 real tap on Reports navigates (app-v28 failure mode)  |  active=Reports
+PASS  [390] A6 real tap on In-Patient navigates (app-v28 failure mode)  |  active=In-Patient
+PASS  [390] A6 real tap on Symptoms navigates (app-v28 failure mode)  |  active=Symptoms
+PASS  [390] A6 Symptoms tab centre is not covered by the bubble  |  {"overlaps":false,"hitIsNav":true}
+PASS  [390] A7 drawer open: no bubble, no panel
+PASS  [390] A7 bubble returns after the drawer closes
+PASS  [390] A8 Help view: no bubble
+PASS  [390] A9 report detail still shows the bubble
+PASS  [390] A9 Back pill and bubble both hit-testable, no overlap  |  {"ok":true,"overlap":false}
+PASS  [390] A10 medication editor open: no bubble
+PASS  [390] A11 zero console errors so far
+
+SUITE A: 64/64 pass

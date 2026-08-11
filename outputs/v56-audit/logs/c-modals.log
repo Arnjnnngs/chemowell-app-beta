@@ -1,0 +1,14 @@
+PASS  C timeModal (dose time picker): bubble AND panel hidden  |  {"fab":false,"panel":false}
+PASS  C upgradeOpen (Pro plans sheet): bubble AND panel hidden  |  {"fab":false,"panel":false}
+PASS  C apptModal (appointment editor): bubble AND panel hidden  |  {"fab":false,"panel":false}
+PASS  C noteModal (note editor): bubble AND panel hidden  |  {"fab":false,"panel":false}
+PASS  C checkinModal (daily check-in): bubble AND panel hidden  |  {"fab":false,"panel":false}
+PASS  C infoModal (? explainer): bubble AND panel hidden  |  {"fab":false,"panel":false}
+PASS  C eraseAllModalOpen (erase everything): bubble AND panel hidden  |  {"fab":false,"panel":false}
+PASS  C armed confirmDelete: bubble MUST still show  |  {"fab":true,"panel":false}
+PASS  C TEST_MODE date-controls open: bubble MUST still show  |  {"fab":true,"panel":false}
+PASS  C simulated date shift: bubble still present  |  {"fab":true,"panel":false}
+PASS  C zero console errors across the modal sweep
+PASS  C no horizontal overflow at the end
+
+SUITE C: 12/12 pass

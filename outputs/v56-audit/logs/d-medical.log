@@ -1,0 +1,155 @@
+PASS  D1 rem-none: reply is the right topic  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  D1 rem-none: heading is "Not medical advice"  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  D1 rem-none: the WRONG heading is absent
+PASS  D1 rem-none: HELP_CARE_TEAM_LINE verbatim, character for character  |  itch isn't there, or won't turn on My appointment reminder never came I tapped the reminder and I'm not sure what it did
+PASS  D1 rem-none: callout accent is the attention tone  |  rgb(181, 118, 30) (want rgb(181, 118, 30))
+PASS  D3 rem-none: callout sits above the steps and the button  |  {"iCall":0,"iStep":461,"iBtn":682}
+PASS  D3 rem-none: callout is on screen, not scrolled past  |  {"visible":true}
+PASS  D1 med-add-first: reply is the right topic  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  D1 med-add-first: heading is "Not medical advice"  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  D1 med-add-first: the WRONG heading is absent
+PASS  D1 med-add-first: HELP_CARE_TEAM_LINE verbatim, character for character  |   what you'll see everywhere in the app, so use whatever you call it day to day. + 3 more steps Open the full walkthrough
+PASS  D1 med-add-first: callout accent is the attention tone  |  rgb(181, 118, 30) (want rgb(181, 118, 30))
+PASS  D3 med-add-first: callout sits above the steps and the button  |  {"iCall":0,"iStep":341,"iBtn":523}
+PASS  D3 med-add-first: callout is on screen, not scrolled past  |  {"visible":true}
+PASS  D1 med-daily-limit-locked: reply is the right topic  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  D1 med-daily-limit-locked: heading is "Not medical advice"  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  D1 med-daily-limit-locked: the WRONG heading is absent
+PASS  D1 med-daily-limit-locked: HELP_CARE_TEAM_LINE verbatim, character for character  |  ny entry that starts with a number counts — 2 tabs, 1 patch, 2 sprays all work. + 2 more steps Open the full walkthrough
+PASS  D1 med-daily-limit-locked: callout accent is the attention tone  |  rgb(181, 118, 30) (want rgb(181, 118, 30))
+PASS  D3 med-daily-limit-locked: callout sits above the steps and the button  |  {"iCall":0,"iStep":455,"iBtn":918}
+PASS  D3 med-daily-limit-locked: callout is on screen, not scrolled past  |  {"visible":true}
+PASS  D1 log-anyway-override: reply is the right topic  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  D1 log-anyway-override: heading is "Not medical advice"  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  D1 log-anyway-override: the WRONG heading is absent
+PASS  D1 log-anyway-override: HELP_CARE_TEAM_LINE verbatim, character for character  |  . It names the rule you're about to go past. 3 Tap the dose amount and confirm. + 2 more steps Open the full walkthrough
+PASS  D1 log-anyway-override: callout accent is the attention tone  |  rgb(181, 118, 30) (want rgb(181, 118, 30))
+PASS  D3 log-anyway-override: callout sits above the steps and the button  |  {"iCall":0,"iStep":367,"iBtn":632}
+PASS  D3 log-anyway-override: callout is on screen, not scrolled past  |  {"visible":true}
+PASS  D1 ip-meds-restricted: reply is the right topic  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  D1 ip-meds-restricted: heading is "Not medical advice"  |  Not medical advice ChemoWell is a record-keeping tool, not medical advice. Always follow the care team’s instr
+PASS  D1 ip-meds-restricted: the WRONG heading is absent
+PASS  D1 ip-meds-restricted: HELP_CARE_TEAM_LINE verbatim, character for character  |   behaviour — the doses are being given and recorded by the hospital, not by you. + 1 more step Open the full walkthrough
+PASS  D1 ip-meds-restricted: callout accent is the attention tone  |  rgb(181, 118, 30) (want rgb(181, 118, 30))
+PASS  D3 ip-meds-restricted: callout sits above the steps and the button  |  {"iCall":0,"iStep":393,"iBtn":690}
+PASS  D3 ip-meds-restricted: callout is on screen, not scrolled past  |  {"visible":true}
+PASS  D1 miss-real-missed: reply is the right topic  |  Contact your care team Contact the care team. Whether to take a missed dose late, skip it, or double up is a m
+PASS  D1 miss-real-missed: heading is "Contact your care team"  |  Contact your care team Contact the care team. Whether to take a missed dose late, skip it, or double up is a m
+PASS  D1 miss-real-missed: the WRONG heading is absent
+PASS  D2 miss-real-missed: shows its OWN answer verbatim  |  Contact the care team. Whether to take a missed dose late, skip it, or
+PASS  D2 miss-real-missed: the topic answer is not printed twice  |  occurrences=1
+PASS  D1 miss-real-missed: callout accent is the urgent tone  |  rgb(192, 69, 59) (want rgb(192, 69, 59))
+PASS  D3 miss-real-missed: callout sits above the steps and the button  |  {"iCall":0,"iStep":284,"iBtn":651}
+PASS  D3 miss-real-missed: callout is on screen, not scrolled past  |  {"visible":true}
+PASS  D1 vit-temp-high: reply is the right topic  |  Contact your care team Contact the care team now. For someone on chemotherapy, a fever can be an emergency, an
+PASS  D1 vit-temp-high: heading is "Contact your care team"  |  Contact your care team Contact the care team now. For someone on chemotherapy, a fever can be an emergency, an
+PASS  D1 vit-temp-high: the WRONG heading is absent
+PASS  D2 vit-temp-high: shows its OWN answer verbatim  |  Contact the care team now. For someone on chemotherapy, a fever can be
+PASS  D2 vit-temp-high: the topic answer is not printed twice  |  occurrences=1
+PASS  D1 vit-temp-high: callout accent is the urgent tone  |  rgb(192, 69, 59) (want rgb(192, 69, 59))
+PASS  D3 vit-temp-high: callout sits above the steps and the button  |  {"iCall":0,"iStep":273,"iBtn":585}
+PASS  D3 vit-temp-high: callout is on screen, not scrolled past  |  {"visible":true}
+PASS  D1 vit-weight-change: reply is the right topic  |  Contact your care team Tell the care team. A fast weight change during treatment is something they want to kno
+PASS  D1 vit-weight-change: heading is "Contact your care team"  |  Contact your care team Tell the care team. A fast weight change during treatment is something they want to kno
+PASS  D1 vit-weight-change: the WRONG heading is absent
+PASS  D2 vit-weight-change: shows its OWN answer verbatim  |  Tell the care team. A fast weight change during treatment is something
+PASS  D2 vit-weight-change: the topic answer is not printed twice  |  occurrences=1
+PASS  D1 vit-weight-change: callout accent is the urgent tone  |  rgb(192, 69, 59) (want rgb(192, 69, 59))
+PASS  D3 vit-weight-change: callout sits above the steps and the button  |  {"iCall":0,"iStep":223,"iBtn":594}
+PASS  D3 vit-weight-change: callout is on screen, not scrolled past  |  {"visible":true}
+PASS  D1 sym-severe: reply is the right topic  |  Contact your care team Contact the care team, or emergency services if it's urgent. Do that first. Logging it 
+PASS  D1 sym-severe: heading is "Contact your care team"  |  Contact your care team Contact the care team, or emergency services if it's urgent. Do that first. Logging it 
+PASS  D1 sym-severe: the WRONG heading is absent
+PASS  D2 sym-severe: shows its OWN answer verbatim  |  Contact the care team, or emergency services if it's urgent. Do that f
+PASS  D2 sym-severe: the topic answer is not printed twice  |  occurrences=1
+PASS  D1 sym-severe: callout accent is the urgent tone  |  rgb(192, 69, 59) (want rgb(192, 69, 59))
+PASS  D3 sym-severe: callout sits above the steps and the button  |  {"iCall":0,"iStep":281,"iBtn":603}
+PASS  D3 sym-severe: callout is on screen, not scrolled past  |  {"visible":true}
+PASS  D4 [CARE-TEAM] should i take a double dose  |  Contact your care team Contact the care team. Whether to take a missed dose late, skip it, or double up is a medical decision, and
+PASS  D4 no numeric guidance in the reply to: should i take a double dose
+PASS  D4 [CARE-TEAM] what dose should i give  |  Contact your care team Contact the care team. Whether to take a missed dose late, skip it, or double up is a medical decision, and
+PASS  D4 no numeric guidance in the reply to: what dose should i give
+PASS  D4 [CARE-TEAM] how many mg of tylenol is safe  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: how many mg of tylenol is safe
+PASS  D4 [CARE-TEAM] can he take two paracetamol together  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: can he take two paracetamol together
+PASS  D4 [CARE-TEAM] can i give him ibuprofen  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: can i give him ibuprofen
+PASS  D4 [CARE-TEAM] is it ok to give him the pill early  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: is it ok to give him the pill early
+PASS  D4 [CARE-TEAM] how much ondansetron can he have in a day  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: how much ondansetron can he have in a day
+PASS  D4 [CARE-TEAM] what strength of morphine is right  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: what strength of morphine is right
+PASS  D4 [CARE-TEAM] he took an extra dose by accident  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: he took an extra dose by accident
+PASS  D4 [CARE-TEAM] my mom doubled up on her tablets what now  |  Contact your care team Contact the care team. Whether to take a missed dose late, skip it, or double up is a medical decision, and
+PASS  D4 no numeric guidance in the reply to: my mom doubled up on her tablets what now
+PASS  D4 [LIST] is 2 tablets too many  |  I'm not certain which one you mean — do any of these match? What is 'Hours between doses' / minimum gap? Adding & editing medicati
+PASS  D4 no numeric guidance in the reply to: is 2 tablets too many
+PASS  D4 [CARE-TEAM] is 101 a fever  |  Contact your care team Contact the care team now. For someone on chemotherapy, a fever can be an emergency, and it is not somethin
+PASS  D4 no numeric guidance in the reply to: is 101 a fever
+PASS  D4 [CARE-TEAM] is 99.8 too high  |  Contact your care team Contact the care team now. For someone on chemotherapy, a fever can be an emergency, and it is not somethin
+PASS  D4 no numeric guidance in the reply to: is 99.8 too high
+PASS  D4 [CARE-TEAM] is a temperature of 38.5 dangerous  |  Contact your care team Contact the care team now. For someone on chemotherapy, a fever can be an emergency, and it is not somethin
+PASS  D4 no numeric guidance in the reply to: is a temperature of 38.5 dangerous
+PASS  D4 [LIST] what temperature is a fever  |  I'm not certain which one you mean — do any of these match? The temperature is high — what should I do? Temperature, weight, blood
+PASS  D4 no numeric guidance in the reply to: what temperature is a fever
+PASS  D4 [CARE-TEAM] his blood pressure is 150 over 95 is that bad  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: his blood pressure is 150 over 95 is that bad
+PASS  D4 [CARE-TEAM] is a pulse of 120 normal  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: is a pulse of 120 normal
+PASS  D4 [CARE-TEAM] is oxygen of 91 ok  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: is oxygen of 91 ok
+PASS  D4 [CARE-TEAM] his sugar is 250 should i worry  |  Contact your care team Tell the care team. A fast weight change during treatment is something they want to know about, and what it
+PASS  D4 no numeric guidance in the reply to: his sugar is 250 should i worry
+PASS  D4 [CARE-TEAM] is it normal to be this tired  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: is it normal to be this tired
+PASS  D4 [CARE-TEAM] is vomiting normal after chemo  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: is vomiting normal after chemo
+PASS  D4 [CARE-TEAM] he is not eating is that serious  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: he is not eating is that serious
+PASS  D4 [CARE-TEAM] she has a rash is that an emergency  |  Contact your care team Contact the care team now. For someone on chemotherapy, a fever can be an emergency, and it is not somethin
+PASS  D4 no numeric guidance in the reply to: she has a rash is that an emergency
+PASS  D4 [CARE-TEAM] should i call the doctor  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: should i call the doctor
+PASS  D4 [CARE-TEAM] should i go to the hospital  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: should i go to the hospital
+PASS  D4 [CARE-TEAM] is diarrhea normal on chemo  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: is diarrhea normal on chemo
+PASS  D4 [LIST] will she lose her hair  |  I'm not certain which one you mean — do any of these match? What happens if I lose my phone or the app is uninstalled? Your data &
+PASS  D4 no numeric guidance in the reply to: will she lose her hair
+PASS  D4 [LIST] he's not eating  |  I'm not certain which one you mean — do any of these match? How do I record a weight, and why does it ask for a reason? Temperatur
+PASS  D4 no numeric guidance in the reply to: he's not eating
+PASS  D4 [CARE-TEAM] should i be worried about his cough  |  Contact your care team Tell the care team. A fast weight change during treatment is something they want to know about, and what it
+PASS  D4 no numeric guidance in the reply to: should i be worried about his cough
+PASS  D4 [LIST] does this interact with grapefruit  |  I'm not certain which one you mean — do any of these match? Does it work without internet? The app itself
+PASS  D4 no numeric guidance in the reply to: does this interact with grapefruit
+PASS  D4 [CARE-TEAM] can she take her chemo with antibiotics  |  Contact your care team Contact the care team. Whether to take a missed dose late, skip it, or double up is a medical decision, and
+PASS  D4 no numeric guidance in the reply to: can she take her chemo with antibiotics
+PASS  D4 [CARE-TEAM] what dose for a 6 year old  |  That's a question for the care team. I can't answer anything about doses, symptoms, or whether something is safe — this app only k
+PASS  D4 no numeric guidance in the reply to: what dose for a 6 year old
+FAIL  D4 [APP-ANSWER] is this medicine safe for children  |  Is my information stored on a server somewhere? No. Everything you enter stays on this device. There's no account, no cloud, and n
+PASS  D4 no numeric guidance in the reply to: is this medicine safe for children
+PASS  D4 [LIST] can a child take this  |  I'm not certain which one you mean — do any of these match? What does 'Take all' do on the Morning/Evening card? Logging doses Whe
+PASS  D4 no numeric guidance in the reply to: can a child take this
+FAIL  D4 [APP-ANSWER] what are the side effects of cisplatin  |  How do I record a symptom? The Symptoms tab at the bottom, then the + button. 1 Tap Symptoms at the bottom of the screen. 2 Tap th
+PASS  D4 no numeric guidance in the reply to: what are the side effects of cisplatin
+PASS  D4 [NO-ANSWER] he threw up 10 minutes after his pill do i give another one  |  I don't have an answer for that one. I can only look through the help pages written into ChemoWell, so anything outside the app is
+PASS  D4 no numeric guidance in the reply to: he threw up 10 minutes after his pill do i give another one
+PASS  D4 [LIST] can i crush the tablet  |  I'm not certain which one you mean — do any of these match? Where do I put instructions like 'take with food'? Adding & editing me
+PASS  D4 no numeric guidance in the reply to: can i crush the tablet
+PASS  D4 [NO-ANSWER] is he dying  |  I don't have an answer for that one. I can only look through the help pages written into ChemoWell, so anything outside the app is
+PASS  D4 no numeric guidance in the reply to: is he dying
+
+--- CLINICAL LEAKS (a normal app answer to a clinical question) ---
+  APP-ANSWER  is this medicine safe for children
+      Is my information stored on a server somewhere? No. Everything you enter stays on this device. There's no account, no cloud, and nothing is sent anywh
+  APP-ANSWER  what are the side effects of cisplatin
+      How do I record a symptom? The Symptoms tab at the bottom, then the + button. 1 Tap Symptoms at the bottom of the screen. 2 Tap the + in the top right
+PASS  D5 zero console errors across the medical sweep
+
+SUITE D: 142/144 pass
+FAILURES:
+  - D4 [APP-ANSWER] is this medicine safe for children  |  Is my information stored on a server somewhere? No. Everything you enter stays on this device. There's no account, no cloud, and n
+  - D4 [APP-ANSWER] what are the side effects of cisplatin  |  How do I record a symptom? The Symptoms tab at the bottom, then the + button. 1 Tap Symptoms at the bottom of the screen. 2 Tap th
