@@ -1,0 +1,201 @@
+=== PRE(9dddf15) CLINICAL (must NOT be a normal app answer) ===
+PASS  A1 clinical [NONE] he keeps throwing up after every meal what do i do  |  I don't have an answer for that one. / I can only look through the help pages written into
+FAIL  A1 clinical [LIST] her feet are swelling up is that from the chemo  |  I'm not certain which one you mean — do any of these match? / A dose was genuinely missed 
+PASS  A1 clinical [GUARD_GENERIC] the nurse said watch for infection what should i look for  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+PASS  A1 clinical [NONE] he has a sore mouth and cant eat anything  |  I don't have an answer for that one. / I can only look through the help pages written into
+FAIL  A1 clinical [LIST] how do i stop the nausea  |  I'm not certain which one you mean — do any of these match? / How do I record a symptom?
+PASS  A1 clinical [NONE] what helps with the mouth sores  |  I don't have an answer for that one. / I can only look through the help pages written into
+FAIL  A1 clinical [LIST] she cant sleep since starting treatment  |  I'm not certain which one you mean — do any of these match? / I can't find the Treatment s
+PASS  A1 clinical [NONE] his hands are numb and tingly  |  I don't have an answer for that one. / I can only look through the help pages written into
+FAIL  A1 clinical [LIST] her white count is low what does that mean  |  I'm not certain which one you mean — do any of these match? / The screen is blank or the a
+FAIL  A1 clinical [LIST] what does neutropenic mean  |  I'm not certain which one you mean — do any of these match? / What does 'Reminds at' mean 
+FAIL  A1 clinical [LIST] he has a nosebleed that wont stop  |  I'm not certain which one you mean — do any of these match? / The 'Alarms & reminders' swi
+PASS  A1 clinical [GUARD_GENERIC] she fell this morning should she be seen  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+PASS  A1 clinical [NONE] hes been sleeping 20 hours a day  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A1 clinical [NONE] the injection site is red and hot  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A1 clinical [NONE] her port is leaking  |  I don't have an answer for that one. / I can only look through the help pages written into
+FAIL  A1 clinical [LIST] when will his hair grow back  |  I'm not certain which one you mean — do any of these match? / The back button closes the w
+PASS  A1 clinical [NONE] how long until the chemo starts working  |  I don't have an answer for that one. / I can only look through the help pages written into
+FAIL  A1 clinical [LIST] does radiation burn the skin  |  I'm not certain which one you mean — do any of these match? / How do I track radiation ses
+FAIL  A1 clinical [LIST] what cream can i put on the radiation burn  |  I'm not certain which one you mean — do any of these match? / How do I track radiation ses
+PASS  A1 clinical [GUARD_GENERIC] he has a headache can he take anything for it  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+PASS  A1 clinical [NONE] she is constipated from the painkillers  |  I don't have an answer for that one. / I can only look through the help pages written into
+FAIL  A1 clinical [LIST] her lips are turning blue  |  I'm not certain which one you mean — do any of these match? / The 'Alarms & reminders' swi
+PASS  A1 clinical [NONE] he is confused and not making sense  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A1 clinical [NONE] she has been running a low grade temp for two days  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A1 clinical [NONE] he is shivering and his teeth are chattering  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A1 clinical [NONE] she is bleeding from her gums  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A1 clinical [GUARD_GENERIC] how much water should he drink  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+FAIL  A1 clinical [LIST] his appetite is gone completely  |  I'm not certain which one you mean — do any of these match? / How do I make sure my data i
+PASS  A1 clinical [NONE] her heart is racing  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A1 clinical [GUARD_ROUTED] he has a fever of 103 what do i do  |  Contact your care team / Contact the care team now. For someone on chemotherapy, a fever c
+PASS  A1 clinical [NONE] she threw up her pill right after taking it  |  I don't have an answer for that one. / I can only look through the help pages written into
+FAIL  A1 clinical [ANSWER] what do i do about the diarrhea  |  Should diarrhoea go in Symptoms or the bowel tracker? / Either works, and they're for diff
+PASS  A1 clinical [GUARD_ROUTED] when should i call the on call number  |  Contact your care team / Contact the care team now. For someone on chemotherapy, a fever c
+FAIL  A1 clinical [LIST] can he drink alcohol on chemo  |  I'm not certain which one you mean — do any of these match? / I picked the wrong treatment
+PASS  A1 clinical [GUARD_GENERIC] is it safe to be around the grandkids  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+PASS  A1 clinical [NONE] does he need a mask in public  |  I don't have an answer for that one. / I can only look through the help pages written into
+FAIL  A1 clinical [LIST] can she get the flu shot during chemo  |  I'm not certain which one you mean — do any of these match? / I picked the wrong treatment
+PASS  A1 clinical [NONE] how do i know if its an infection  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A1 clinical [NONE] his stool is black  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A1 clinical [NONE] she has a lump under her arm  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A1 clinical [NONE] what are the signs of dehydration  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A1 clinical [GUARD_GENERIC] should we go to the er  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+FAIL  A1 clinical [LIST] he wont eat or drink anything today  |  I'm not certain which one you mean — do any of these match? / The Log button is greyed out
+PASS  A1 clinical [NONE] her chemo brain is getting worse is that permanent  |  I don't have an answer for that one. / I can only look through the help pages written into
+FAIL  A1 clinical [LIST] how long does chemo stay in the body  |  I'm not certain which one you mean — do any of these match? / Can I record how bad it was,
+PASS  A1 clinical [NONE] what happens if he misses a whole week of pills  |  I don't have an answer for that one. / I can only look through the help pages written into
+FAIL  A1 clinical [LIST] she is coughing up blood  |  I'm not certain which one you mean — do any of these match? / How do I record blood pressu
+FAIL  A1 clinical [LIST] the pharmacist gave a different colour tablet is it the same drug  |  I'm not certain which one you mean — do any of these match? / The same medication comes in
+PASS  A1 clinical [NONE] his temperature keeps going up and down all day  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A1 clinical [GUARD_GENERIC] can i give her the tablet with her heart medicine  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+
+=== PRE(9dddf15) ORDINARY APP (must NOT be refused as clinical) ===
+PASS  A2 ordinary [ANSWER] is my data safe  |  Is my information stored on a server somewhere? / No. Everything you enter stays on this d
+PASS  A2 ordinary [ANSWER] is my information safe on this app  |  Is my information stored on a server somewhere? / No. Everything you enter stays on this d
+PASS  A2 ordinary [LIST] is the app safe to use offline  |  I'm not certain which one you mean — do any of these match? / The back button closes the w
+PASS  A2 ordinary [ANSWER] where do i put take with food  |  Where do I put instructions like 'take with food'? / The Notes field at the bottom of the 
+PASS  A2 ordinary [ANSWER] how do i add take with food instructions  |  Where do I put instructions like 'take with food'? / The Notes field at the bottom of the 
+PASS  A2 ordinary [LIST] can i set up a profile for a child  |  I'm not certain which one you mean — do any of these match? / I picked 'Other' as the trea
+PASS  A2 ordinary [LIST] i added too many medications how do i delete one  |  I'm not certain which one you mean — do any of these match? / I added a medication but I c
+PASS  A2 ordinary [ANSWER] i logged too many doses by mistake  |  I logged something by mistake / You can remove it from History, but medication doses lock 
+FAIL  A2 ordinary [GUARD_GENERIC] how long should i keep my history  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+PASS  A2 ordinary [LIST] how long does the export take  |  I'm not certain which one you mean — do any of these match? / What does 'Take all' do on t
+PASS  A2 ordinary [ANSWER] how do i log side effects  |  How do I record a symptom? / The Symptoms tab at the bottom, then the + button.
+PASS  A2 ordinary [ANSWER] where do i record side effects  |  How do I record a symptom? / The Symptoms tab at the bottom, then the + button.
+PASS  A2 ordinary [NONE] where do i note the liver test results  |  I don't have an answer for that one. / I can only look through the help pages written into
+FAIL  A2 ordinary [GUARD_GENERIC] is it safe to delete a profile  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+PASS  A2 ordinary [LIST] is my backup safe if i change phones  |  I'm not certain which one you mean — do any of these match? / What happens if I lose my ph
+PASS  A2 ordinary [ANSWER] how many medications can i add  |  Not medical advice / ChemoWell is a record-keeping tool, not medical advice. Always follow
+PASS  A2 ordinary [LIST] what does the allergy field do  |  I'm not certain which one you mean — do any of these match? / What's the Generic name fiel
+PASS  A2 ordinary [NONE] where do i put allergies  |  I don't have an answer for that one. / I can only look through the help pages written into
+PASS  A2 ordinary [LIST] can this be exported to a spreadsheet  |  I'm not certain which one you mean — do any of these match? / What am I looking at in the 
+PASS  A2 ordinary [ANSWER] how do i split the dose into morning and evening  |  What does 'Take all' do on the Morning/Evening card? / It logs every medication in that gr
+PASS  A2 ordinary [ANSWER] how do i change units to metric  |  I want pounds instead of kilograms, or Celsius instead of Fahrenheit / Menu → Settings → U
+PASS  A2 ordinary [ANSWER] is my phone the only place the data is stored  |  Is my information stored on a server somewhere? / No. Everything you enter stays on this d
+PASS  A2 ordinary [LIST] does the app share my data with anyone  |  I'm not certain which one you mean — do any of these match? / How do I get everything out 
+PASS  A2 ordinary [ANSWER] how do i export a csv  |  How do I get everything out of the app? / Download CSV. It's free, on every plan.
+PASS  A2 ordinary [ANSWER] why is the daily limit box locked  |  Not medical advice / ChemoWell is a record-keeping tool, not medical advice. Always follow
+PASS  A2 ordinary [LIST] how do i pause treatment  |  I'm not certain which one you mean — do any of these match? / I want to stop a medication 
+PASS  A2 ordinary [LIST] i get too many reminders how do i turn some off  |  I'm not certain which one you mean — do any of these match? / I'm not getting any reminder
+PASS  A2 ordinary [LIST] how do i set a reminder for my childs vitamins  |  I'm not certain which one you mean — do any of these match? / It says reminders couldn't b
+PASS  A2 ordinary [LIST] can i add a medication for a child profile  |  I'm not certain which one you mean — do any of these match? / How do I add a medication?
+FAIL  A2 ordinary [GUARD_GENERIC] is it safe to uninstall the app will i lose data  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+PASS  A2 ordinary [LIST] how do i back up before switching phones  |  I'm not certain which one you mean — do any of these match? / The 'Alarms & reminders' swi
+PASS  A2 ordinary [ANSWER] what happens if i log a dose twice  |  I think I logged the same dose twice / Check Today's journal — the app is built to ignore 
+PASS  A2 ordinary [LIST] how do i mark a dose as taken with food  |  I'm not certain which one you mean — do any of these match? / How do I record that a dose 
+PASS  A2 ordinary [ANSWER] is the export file safe to email  |  Where did the exported file go? I can't find a 'save to this phone' option / The file is h
+PASS  A2 ordinary [LIST] how do i turn off too many notifications  |  I'm not certain which one you mean — do any of these match? / The Daily check-in card isn'
+
+--- PRE(9dddf15) SUMMARY TABLE ---
+clinical :: NONE :: he keeps throwing up after every meal what do i do :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: LIST :: her feet are swelling up is that from the chemo :: I'm not certain which one you mean — do any of these match? / A dose was genuinely missed 
+clinical :: GUARD_GENERIC :: the nurse said watch for infection what should i look for :: That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+clinical :: NONE :: he has a sore mouth and cant eat anything :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: LIST :: how do i stop the nausea :: I'm not certain which one you mean — do any of these match? / How do I record a symptom?
+clinical :: NONE :: what helps with the mouth sores :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: LIST :: she cant sleep since starting treatment :: I'm not certain which one you mean — do any of these match? / I can't find the Treatment s
+clinical :: NONE :: his hands are numb and tingly :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: LIST :: her white count is low what does that mean :: I'm not certain which one you mean — do any of these match? / The screen is blank or the a
+clinical :: LIST :: what does neutropenic mean :: I'm not certain which one you mean — do any of these match? / What does 'Reminds at' mean 
+clinical :: LIST :: he has a nosebleed that wont stop :: I'm not certain which one you mean — do any of these match? / The 'Alarms & reminders' swi
+clinical :: GUARD_GENERIC :: she fell this morning should she be seen :: That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+clinical :: NONE :: hes been sleeping 20 hours a day :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: NONE :: the injection site is red and hot :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: NONE :: her port is leaking :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: LIST :: when will his hair grow back :: I'm not certain which one you mean — do any of these match? / The back button closes the w
+clinical :: NONE :: how long until the chemo starts working :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: LIST :: does radiation burn the skin :: I'm not certain which one you mean — do any of these match? / How do I track radiation ses
+clinical :: LIST :: what cream can i put on the radiation burn :: I'm not certain which one you mean — do any of these match? / How do I track radiation ses
+clinical :: GUARD_GENERIC :: he has a headache can he take anything for it :: That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+clinical :: NONE :: she is constipated from the painkillers :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: LIST :: her lips are turning blue :: I'm not certain which one you mean — do any of these match? / The 'Alarms & reminders' swi
+clinical :: NONE :: he is confused and not making sense :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: NONE :: she has been running a low grade temp for two days :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: NONE :: he is shivering and his teeth are chattering :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: NONE :: she is bleeding from her gums :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: GUARD_GENERIC :: how much water should he drink :: That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+clinical :: LIST :: his appetite is gone completely :: I'm not certain which one you mean — do any of these match? / How do I make sure my data i
+clinical :: NONE :: her heart is racing :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: GUARD_ROUTED :: he has a fever of 103 what do i do :: Contact your care team / Contact the care team now. For someone on chemotherapy, a fever c
+clinical :: NONE :: she threw up her pill right after taking it :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: ANSWER :: what do i do about the diarrhea :: Should diarrhoea go in Symptoms or the bowel tracker? / Either works, and they're for diff
+clinical :: GUARD_ROUTED :: when should i call the on call number :: Contact your care team / Contact the care team now. For someone on chemotherapy, a fever c
+clinical :: LIST :: can he drink alcohol on chemo :: I'm not certain which one you mean — do any of these match? / I picked the wrong treatment
+clinical :: GUARD_GENERIC :: is it safe to be around the grandkids :: That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+clinical :: NONE :: does he need a mask in public :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: LIST :: can she get the flu shot during chemo :: I'm not certain which one you mean — do any of these match? / I picked the wrong treatment
+clinical :: NONE :: how do i know if its an infection :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: NONE :: his stool is black :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: NONE :: she has a lump under her arm :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: NONE :: what are the signs of dehydration :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: GUARD_GENERIC :: should we go to the er :: That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+clinical :: LIST :: he wont eat or drink anything today :: I'm not certain which one you mean — do any of these match? / The Log button is greyed out
+clinical :: NONE :: her chemo brain is getting worse is that permanent :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: LIST :: how long does chemo stay in the body :: I'm not certain which one you mean — do any of these match? / Can I record how bad it was,
+clinical :: NONE :: what happens if he misses a whole week of pills :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: LIST :: she is coughing up blood :: I'm not certain which one you mean — do any of these match? / How do I record blood pressu
+clinical :: LIST :: the pharmacist gave a different colour tablet is it the same drug :: I'm not certain which one you mean — do any of these match? / The same medication comes in
+clinical :: NONE :: his temperature keeps going up and down all day :: I don't have an answer for that one. / I can only look through the help pages written into
+clinical :: GUARD_GENERIC :: can i give her the tablet with her heart medicine :: That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+ordinary :: ANSWER :: is my data safe :: Is my information stored on a server somewhere? / No. Everything you enter stays on this d
+ordinary :: ANSWER :: is my information safe on this app :: Is my information stored on a server somewhere? / No. Everything you enter stays on this d
+ordinary :: LIST :: is the app safe to use offline :: I'm not certain which one you mean — do any of these match? / The back button closes the w
+ordinary :: ANSWER :: where do i put take with food :: Where do I put instructions like 'take with food'? / The Notes field at the bottom of the 
+ordinary :: ANSWER :: how do i add take with food instructions :: Where do I put instructions like 'take with food'? / The Notes field at the bottom of the 
+ordinary :: LIST :: can i set up a profile for a child :: I'm not certain which one you mean — do any of these match? / I picked 'Other' as the trea
+ordinary :: LIST :: i added too many medications how do i delete one :: I'm not certain which one you mean — do any of these match? / I added a medication but I c
+ordinary :: ANSWER :: i logged too many doses by mistake :: I logged something by mistake / You can remove it from History, but medication doses lock 
+ordinary :: GUARD_GENERIC :: how long should i keep my history :: That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+ordinary :: LIST :: how long does the export take :: I'm not certain which one you mean — do any of these match? / What does 'Take all' do on t
+ordinary :: ANSWER :: how do i log side effects :: How do I record a symptom? / The Symptoms tab at the bottom, then the + button.
+ordinary :: ANSWER :: where do i record side effects :: How do I record a symptom? / The Symptoms tab at the bottom, then the + button.
+ordinary :: NONE :: where do i note the liver test results :: I don't have an answer for that one. / I can only look through the help pages written into
+ordinary :: GUARD_GENERIC :: is it safe to delete a profile :: That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+ordinary :: LIST :: is my backup safe if i change phones :: I'm not certain which one you mean — do any of these match? / What happens if I lose my ph
+ordinary :: ANSWER :: how many medications can i add :: Not medical advice / ChemoWell is a record-keeping tool, not medical advice. Always follow
+ordinary :: LIST :: what does the allergy field do :: I'm not certain which one you mean — do any of these match? / What's the Generic name fiel
+ordinary :: NONE :: where do i put allergies :: I don't have an answer for that one. / I can only look through the help pages written into
+ordinary :: LIST :: can this be exported to a spreadsheet :: I'm not certain which one you mean — do any of these match? / What am I looking at in the 
+ordinary :: ANSWER :: how do i split the dose into morning and evening :: What does 'Take all' do on the Morning/Evening card? / It logs every medication in that gr
+ordinary :: ANSWER :: how do i change units to metric :: I want pounds instead of kilograms, or Celsius instead of Fahrenheit / Menu → Settings → U
+ordinary :: ANSWER :: is my phone the only place the data is stored :: Is my information stored on a server somewhere? / No. Everything you enter stays on this d
+ordinary :: LIST :: does the app share my data with anyone :: I'm not certain which one you mean — do any of these match? / How do I get everything out 
+ordinary :: ANSWER :: how do i export a csv :: How do I get everything out of the app? / Download CSV. It's free, on every plan.
+ordinary :: ANSWER :: why is the daily limit box locked :: Not medical advice / ChemoWell is a record-keeping tool, not medical advice. Always follow
+ordinary :: LIST :: how do i pause treatment :: I'm not certain which one you mean — do any of these match? / I want to stop a medication 
+ordinary :: LIST :: i get too many reminders how do i turn some off :: I'm not certain which one you mean — do any of these match? / I'm not getting any reminder
+ordinary :: LIST :: how do i set a reminder for my childs vitamins :: I'm not certain which one you mean — do any of these match? / It says reminders couldn't b
+ordinary :: LIST :: can i add a medication for a child profile :: I'm not certain which one you mean — do any of these match? / How do I add a medication?
+ordinary :: GUARD_GENERIC :: is it safe to uninstall the app will i lose data :: That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+ordinary :: LIST :: how do i back up before switching phones :: I'm not certain which one you mean — do any of these match? / The 'Alarms & reminders' swi
+ordinary :: ANSWER :: what happens if i log a dose twice :: I think I logged the same dose twice / Check Today's journal — the app is built to ignore 
+ordinary :: LIST :: how do i mark a dose as taken with food :: I'm not certain which one you mean — do any of these match? / How do I record that a dose 
+ordinary :: ANSWER :: is the export file safe to email :: Where did the exported file go? I can't find a 'save to this phone' option / The file is h
+ordinary :: LIST :: how do i turn off too many notifications :: I'm not certain which one you mean — do any of these match? / The Daily check-in card isn'
+
+console errors: []
+
+SUITE A PRE(9dddf15): 64/85 pass
+FAILURES:
+  - A1 clinical [LIST] her feet are swelling up is that from the chemo  |  I'm not certain which one you mean — do any of these match? / A dose was genuinely missed 
+  - A1 clinical [LIST] how do i stop the nausea  |  I'm not certain which one you mean — do any of these match? / How do I record a symptom?
+  - A1 clinical [LIST] she cant sleep since starting treatment  |  I'm not certain which one you mean — do any of these match? / I can't find the Treatment s
+  - A1 clinical [LIST] her white count is low what does that mean  |  I'm not certain which one you mean — do any of these match? / The screen is blank or the a
+  - A1 clinical [LIST] what does neutropenic mean  |  I'm not certain which one you mean — do any of these match? / What does 'Reminds at' mean 
+  - A1 clinical [LIST] he has a nosebleed that wont stop  |  I'm not certain which one you mean — do any of these match? / The 'Alarms & reminders' swi
+  - A1 clinical [LIST] when will his hair grow back  |  I'm not certain which one you mean — do any of these match? / The back button closes the w
+  - A1 clinical [LIST] does radiation burn the skin  |  I'm not certain which one you mean — do any of these match? / How do I track radiation ses
+  - A1 clinical [LIST] what cream can i put on the radiation burn  |  I'm not certain which one you mean — do any of these match? / How do I track radiation ses
+  - A1 clinical [LIST] her lips are turning blue  |  I'm not certain which one you mean — do any of these match? / The 'Alarms & reminders' swi
+  - A1 clinical [LIST] his appetite is gone completely  |  I'm not certain which one you mean — do any of these match? / How do I make sure my data i
+  - A1 clinical [ANSWER] what do i do about the diarrhea  |  Should diarrhoea go in Symptoms or the bowel tracker? / Either works, and they're for diff
+  - A1 clinical [LIST] can he drink alcohol on chemo  |  I'm not certain which one you mean — do any of these match? / I picked the wrong treatment
+  - A1 clinical [LIST] can she get the flu shot during chemo  |  I'm not certain which one you mean — do any of these match? / I picked the wrong treatment
+  - A1 clinical [LIST] he wont eat or drink anything today  |  I'm not certain which one you mean — do any of these match? / The Log button is greyed out
+  - A1 clinical [LIST] how long does chemo stay in the body  |  I'm not certain which one you mean — do any of these match? / Can I record how bad it was,
+  - A1 clinical [LIST] she is coughing up blood  |  I'm not certain which one you mean — do any of these match? / How do I record blood pressu
+  - A1 clinical [LIST] the pharmacist gave a different colour tablet is it the same drug  |  I'm not certain which one you mean — do any of these match? / The same medication comes in
+  - A2 ordinary [GUARD_GENERIC] how long should i keep my history  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+  - A2 ordinary [GUARD_GENERIC] is it safe to delete a profile  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w
+  - A2 ordinary [GUARD_GENERIC] is it safe to uninstall the app will i lose data  |  That's a question for the care team. / I can't answer anything about doses, symptoms, or w

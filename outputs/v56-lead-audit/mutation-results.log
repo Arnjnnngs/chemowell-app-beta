@@ -1,0 +1,39 @@
+
+=== MUTATION A-composer-onInput-setState  (1 anchor sites) ===
+  v56-helpbot.mjs: 2 FAIL
+     FAIL  the input handler assigns the draft and nothing else — no setState, no render
+     FAIL  no render() or setState() anywhere in the composer input handler
+
+=== MUTATION B-drop-log-scroll-restore  (1 anchor sites) ===
+  v56-helpbot.mjs: STILL ALL GREEN  <-- assertion did not notice
+
+=== MUTATION C-drop-transcript-cap  (1 anchor sites) ===
+  v56-helpbot.mjs: STILL ALL GREEN  <-- assertion did not notice
+
+=== MUTATION D-drop-BUTTON-focus-restore  (1 anchor sites) ===
+  v56-helpbot.mjs: 2 FAIL
+     FAIL  [360px] V56-3 focus is still on the bubble after the tick rebuilds the tree  |  BODY
+     FAIL  [390px] V56-3 focus is still on the bubble after the tick rebuilds the tree  |  BODY
+
+=== MUTATION E-drop-navigateTo-close  (1 anchor sites) ===
+  v56-helpbot.mjs: 3 FAIL
+     FAIL  [360px] V56-2 navigating closes the panel
+     FAIL  [360px] V56-2 the destination screen is reachable, not covered
+     FAIL  [360px] V56-2 the panel does not resurrect itself on the way back
+
+=== MUTATION F-drop-new-guard-patterns  (1 anchor sites) ===
+  v56-matcher.mjs: STILL ALL GREEN  <-- assertion did not notice
+  v56-helpbot.mjs: STILL ALL GREEN  <-- assertion did not notice
+
+=== MUTATION G-drop-syncviewport-width-branch  (1 anchor sites) ===
+  v56-helpbot.mjs: 2 FAIL
+     FAIL  [360px] M2 the panel adopts the wide layout after a resize  |  724px
+     FAIL  [390px] M2 the panel adopts the wide layout after a resize  |  724px
+
+=== MUTATION H-helpbotsyncviewport-calls-setState  (1 anchor sites) ===
+  v56-helpbot.mjs: 3 FAIL
+     FAIL  helpBotSyncViewport never calls render() or setState()
+     FAIL  [360px] focus lands in the input
+     FAIL  [360px] zero app console errors across the whole run  |  pageerror: Maximum call stack size exceeded | pageerror: Maximum call stack size exceed
+
+restored

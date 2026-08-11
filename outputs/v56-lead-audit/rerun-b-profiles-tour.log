@@ -1,0 +1,50 @@
+PASS  [Chemo] B1 welcome screen: no bubble
+PASS  [Chemo] B2 bubble absent at EVERY tour step  |  10 steps checked; violations: []
+PASS  [Chemo] B2 nothing helpbot-shaped is hit-testable at the bubble coords during the tour  |  SECTION,BUTTON,DIV,med-daily-limit-unit,tour-card
+PASS  [Chemo] B3 tour completed end to end  |  walked to Finish
+PASS  [Chemo] B4 bubble appears once the tour is over
+PASS  [Chemo] B4 medication was really saved  |  Capecitabine
+PASS  [Chemo] B5 the dose time modal hides the bubble
+PASS  [Chemo] B5 a real dose is logged and the bubble is back afterwards
+PASS  [Chemo] B5 toast no longer overlaps the bubble  |  {"hasToast":true,"ok":true,"tapThrough":true,"toastBottom":"150px"}
+PASS  [Chemo] B5 toast still passes taps through to the bubble  |  {"hasToast":true,"ok":true,"tapThrough":true,"toastBottom":"150px"}
+PASS  [Chemo] B6 no horizontal overflow after logging
+PASS  [Chemo] B7 zero console errors for this profile
+PASS  [Radiation] B1 welcome screen: no bubble
+PASS  [Radiation] B2 bubble absent at EVERY tour step  |  10 steps checked; violations: []
+PASS  [Radiation] B2 nothing helpbot-shaped is hit-testable at the bubble coords during the tour  |  SECTION,BUTTON,DIV,med-daily-limit-unit,tour-card
+PASS  [Radiation] B3 tour completed end to end  |  walked to Finish
+PASS  [Radiation] B4 bubble appears once the tour is over
+PASS  [Radiation] B4 medication was really saved  |  Ondansetron
+PASS  [Radiation] B5 the dose time modal hides the bubble
+PASS  [Radiation] B5 a real dose is logged and the bubble is back afterwards
+PASS  [Radiation] B5 toast no longer overlaps the bubble  |  {"hasToast":true,"ok":true,"tapThrough":true,"toastBottom":"150px"}
+PASS  [Radiation] B5 toast still passes taps through to the bubble  |  {"hasToast":true,"ok":true,"tapThrough":true,"toastBottom":"150px"}
+PASS  [Radiation] B6 no horizontal overflow after logging
+PASS  [Radiation] B7 zero console errors for this profile
+PASS  [Both] B1 welcome screen: no bubble
+PASS  [Both] B2 bubble absent at EVERY tour step  |  10 steps checked; violations: []
+PASS  [Both] B2 nothing helpbot-shaped is hit-testable at the bubble coords during the tour  |  SECTION,BUTTON,DIV,med-daily-limit-unit,tour-card
+PASS  [Both] B3 tour completed end to end  |  walked to Finish
+PASS  [Both] B4 bubble appears once the tour is over
+PASS  [Both] B4 medication was really saved  |  Dexamethasone
+PASS  [Both] B5 the dose time modal hides the bubble
+PASS  [Both] B5 a real dose is logged and the bubble is back afterwards
+PASS  [Both] B5 toast no longer overlaps the bubble  |  {"hasToast":true,"ok":true,"tapThrough":true,"toastBottom":"150px"}
+PASS  [Both] B5 toast still passes taps through to the bubble  |  {"hasToast":true,"ok":true,"tapThrough":true,"toastBottom":"150px"}
+PASS  [Both] B6 no horizontal overflow after logging
+PASS  [Both] B7 zero console errors for this profile
+PASS  [Other] B1 welcome screen: no bubble
+PASS  [Other] B2 bubble absent at EVERY tour step  |  10 steps checked; violations: []
+PASS  [Other] B2 nothing helpbot-shaped is hit-testable at the bubble coords during the tour  |  SECTION,BUTTON,DIV,med-daily-limit-unit,tour-card
+PASS  [Other] B3 tour completed end to end  |  walked to Finish
+PASS  [Other] B4 bubble appears once the tour is over
+PASS  [Other] B4 medication was really saved  |  Metformin
+PASS  [Other] B5 the dose time modal hides the bubble
+PASS  [Other] B5 a real dose is logged and the bubble is back afterwards
+PASS  [Other] B5 toast no longer overlaps the bubble  |  {"hasToast":true,"ok":true,"tapThrough":true,"toastBottom":"150px"}
+PASS  [Other] B5 toast still passes taps through to the bubble  |  {"hasToast":true,"ok":true,"tapThrough":true,"toastBottom":"150px"}
+PASS  [Other] B6 no horizontal overflow after logging
+PASS  [Other] B7 zero console errors for this profile
+
+SUITE B: 48/48 pass
