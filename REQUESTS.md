@@ -20,7 +20,38 @@ new session the way a committed file does; see TEAM.md's opening note.
 - Nothing gets deleted when it's finished — it moves to Completed with a one-line note of
   what shipped and when, so there's a record if a question comes back to it later.
 
-## Next up, in order (read this first — updated 2026-08-09, app-v52)
+## Next up, in order (read this first — updated 2026-08-13, app-v57)
+
+**The ordering below this box was written for app-v52 on 2026-08-09 and item 2 is now WRONG — it
+points a fresh session at building server-based sync, which Aaron cancelled the same day (see
+"Decisions taken 2026-08-09"). It is left in place rather than deleted so the record of what was
+planned survives, but read this box first and ignore item 2.**
+
+Current order, top to bottom:
+
+1. **app-v57 is signed off and NOT yet pushed** — remove the help bubble, rename the menu row to
+   Help & FAQ, add the browser first-run notice for testers, fix the manifest wording. **Both gates
+   ran TWICE.** Round 1: both NOT READY (Auditor 1 High + 2 Medium + 3 Low; Designer 3 Must-fix +
+   8 Should-fix). Round 2: Auditor READY with 7 further Lows, Designer NOT READY with 1 Must-fix +
+   3 Should-fix. Everything from both rounds is fixed. **The Project Manager gate has since signed
+   off: GO** (`outputs/PM_v57.md`), conditional on four bookkeeping items and on the live checks in
+   its §8 after the push. Next action is the push itself, then those live checks.
+2. **Limit Units + the CSV unit bug** — the oldest open functional defect left.
+3. **Device-to-device encrypted-file sharing** (`outputs/SHARING_DEVELOPER_BRIEF_v3.md`). This is
+   what replaced sync. Gets the full Quality Chain.
+4. **Fix the Pro copy that promises "real-time shared access automatically"** — it was written when
+   sync was still the plan and is now a promise the product will not keep. Do this BEFORE Pro is
+   sold, not after.
+5. **"Save to this phone" on export**, then the **MedlinePlus per-medication link**, then the
+   **Pro-tier features**, then the **in-app bug logger**, then **drawer keyboard focus**.
+6. **Before the App Store:** a privacy-policy URL, and one oncology-nurse read of `sym-severe` and
+   `sym-medical-question` (the two pages that route a frightened person to their care team).
+
+**Waiting on Aaron, not blocking anything:** the CSV/PDF share-sheet and reminder re-checks on his
+own Galaxy S25 Ultra, and the two open decisions — dropping the Male/Female onboarding question, and
+whether to do redeem codes.
+
+## Next up, in order (SUPERSEDED — written 2026-08-09, app-v52; item 2 is cancelled work)
 
 For a new chat picking this project up cold: this is the priority order, top to bottom. Full
 detail on each is in the Open list below; this is just the ordering so you don't have to
@@ -112,6 +143,27 @@ reconstruct it from history.
   described anyway ("maybe it can't be something that you can respond to real time").
 
 ## Open
+
+- [ ] **app-v57, signed off by all three gates, NOT yet pushed — Aaron, 2026-08-13:**
+  *"what's next and what's left on my tasks. I don't really care for the 'bot'. it's not doing what
+  I want. but I do think all of those things can be in a FAQ under the 3 hamburger menu. can this be
+  shared via HTML so others can see it even though its not on the stores yet? I know that
+  notification won't work. tell me else won't work for them?"* He then chose, explicitly: remove the
+  bubble entirely, rename the menu row to **Help & FAQ**, and add an **in-app first-run notice** for
+  browser testers. All three are built. Ticks only after the live check, per the rule above.
+  - The bubble is gone in full (~46,000 characters), and a test asserts by absence that no symbol of
+    it survives, so it cannot creep back one helper at a time.
+  - The Help centre's scored search box is kept — it is the half that works.
+  - The browser notice tells a tester the three things that need the phone app, in the order of what
+    they cost: Add to Home Screen (iOS Safari erases a site's data after 7 days without a visit, and
+    the log is stored nowhere else), reminders need the page open, exports download instead of
+    opening the share sheet.
+  - `manifest.webmanifest` and `package.json` no longer say *"for chemo patients"* — wrong since
+    v33, and it is the text a tester reads under the icon the moment they follow the instruction.
+- [ ] **Answer Aaron's actual question — "tell me what else won't work for them?"** The notice
+  covers the three that cost a tester something. The full list was given to him in chat on
+  2026-08-13; if it needs to live anywhere permanent, it belongs in `rem-web-vs-app`, which app-v57
+  expanded for exactly this purpose.
 
 - [ ] **In-app issue/bug logger — testers (including Aaron) can log something that isn't working,
   building a real list to work from** — added 2026-08-08. Aaron: "I want to be able to have a

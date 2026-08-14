@@ -6,6 +6,55 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
+- **`test/v55-help.mjs`'s "every careLead topic is also flagged medical" check cannot fail**
+  (app-v57 PM gate, **PM-1**, proven by a full-suite mutation run, not inferred). Same lazy
+  multiline-regex class as the Auditor's R2-C, sitting three lines below the per-line fix R2-C
+  prompted: `[\s\S]*?` expands from the FIRST topic in the block, so each captured chunk spans
+  intervening topics and borrows somebody else's `medical: true`. The PM flagged `log-double-tap`
+  careLead-without-medical and the whole suite still printed ALL GREEN; 6 of 9 candidate positions
+  go undetected. Worse, this release's own new page `sym-medical-question` is exempt from the regex
+  entirely, because its object ends `careTone: "calm" }` rather than `careLead: true }` — the newest
+  and most safety-adjacent page in the corpus is not checked at all. **Why it matters if the
+  invariant is ever violated:** `careCallout` renders on `topic.medical` and the answer body renders
+  on `(!topic.careLead && topic.a)`, so a careLead page WITHOUT medical renders neither — the page
+  ships with its entire answer text missing. The code is correct today (all five carry both); only
+  the guard is hollow. Fix: match per line, exactly as the `careTone` check two lines above now
+  does. **Deliberately held for the next release's first commit** so nothing about the app-v57
+  shipping build changed after the PM signed off.
+- **The care-team coverage floor measures 4 rows while the phone shows 2** (app-v57 PM gate,
+  **PM-2**). `test/v57-search.mjs` reads the top 4, which was the Auditor's V57-2 correction — but
+  the V57-1 fix put a ~175-194px strip above the results, so after it the phone shows **2 rows at
+  360 and 1 at 320**. V57-2 has effectively been reintroduced by the fix for V57-1. Measured: top-2
+  is 15/50 against the floored top-4's 20/50. The comment calls the choice conservative in the safe
+  direction; it is the opposite. Not a behaviour defect — the unconditional strip is the safety
+  property and it is asserted in the rendered UI — but the supporting metric currently overstates
+  itself. Held for the next release's first commit, same reason as PM-1.
+- **The Help results screen has no heading element at all** (app-v57 PM gate, **PM-4**, Low,
+  non-visual). Removing the duplicated "Search help" H1 to buy the clearance R2D-1 needed at 320px
+  also removed the view's only `<h1>` on that screen, since `pageHead()` is the sole emitter. The
+  eyebrow that remains is a `<span>`. One line to fix by promoting the eyebrow's text node; no
+  visual change. Held for the next release's first commit.
+- **The deep-linked help page's back row points somewhere the reader has never been** (app-v57
+  Designer round 2, **R2D-7**). Tapping "More about the web version" on Home lands on
+  `rem-web-vs-app` with a back row reading "← Reminders & notifications" — the person came from
+  Home, not from that category, so "back" is an invitation into a section they did not ask for.
+  Everything works and the bottom nav is always present, so it is orientation rather than a trap.
+  **Not fixed in v57 on purpose:** the fix is to make the back row depend on where `state.help` was
+  set from, which introduces entry-point state into a component that currently has none. That is a
+  design decision worth taking deliberately rather than inside a fix pass.
+- **The care-team strip's button label wraps to two lines at every phone width** (app-v57 Designer
+  round 2, **R2D-8**, recorded as a known state rather than a request). "When to call the care team
+  straight away" is 2 × 16.9px of line box inside its 44px target at 320/360/390, one line at 768.
+  It fits, and the wording is the Auditor's R2-G fix — "when to contact them" had no antecedent if
+  the button was read alone. If a one-line label at 390 is ever wanted, the Designer's measured
+  alternative is "When to call the care team now" (30 chars). Left alone in v57 because two
+  reviewers have now approved this exact sentence and it is read while someone decides whether to
+  phone.
+- **Help search has no "show more", so a page ranked 13 or lower is unreachable through search**
+  (app-v57 Auditor round 2). The v57 cap shows the closest 12 and the count line now states the true
+  total honestly ("The closest 12 of 28 matches"), so nothing is hidden silently — but there is no
+  way to page past 12 other than typing a narrower query. Fine for a 133-page corpus where the
+  fixture puts an acceptable page first 53 times out of 53; worth revisiting if the corpus grows.
 - **Drawer focus management is broken, and has been since app-v22** — found by the app-v54 Auditor
   and confirmed identical on the live app-v53 build, so it is pre-existing, not a v54 regression.
   Two related defects: (1) focus is never returned to the hamburger when the drawer closes
@@ -46,6 +95,7 @@ when you're about to touch the relevant code; delete the line once it's actually
   whole residual class at once, with copy that already shipped and no clinician needed. Worth
   designing properly rather than rushing into a release that has already had two Highs arrive in
   small post-gate changes.
+  **CLOSED app-v57 — done, and in a stronger form than this item proposed. The guard is gone with the bubble; `HELP_CARE_TEAM_LINE` now sits above EVERY search-results screen, not only the ones a classifier judged to be near-misses. Deciding which queries are the frightening ones is the classifier that failed twice in v56, so v57 stopped trying.**
 - **Move `symptoms`, `morning`, `evening` and `night` from tier 1 to tier 2 of the guard's
   suppressor** (app-v56 PM gate, measured, non-blocking). `symptoms` sitting in tier 1 is the
   clearest miss — it is *the* clinical noun — and it is why *"is her morning tablet safe"* still
@@ -53,6 +103,7 @@ when you're about to touch the relevant code; delete the line once it's actually
   held-out ordinary (3/66) and a fresh 20-question ordinary set (0/20) all unchanged. It costs
   nothing; it was left out of v56 only because the release had already had two High findings
   arrive in exactly this kind of small change made after the testers had finished.
+  **CLOSED app-v57 — the guard and its two-tier suppressor were deleted with the help bubble. Nothing to move.**
 - **On the held-out fixture, 7 of 72 medical questions still get a list of app pages, and 3 of 66
   ordinary questions are still wrongly refused** (app-v56, `test/v56-guard-heldout.mjs`). None gets
   a confident answer, which was the class that caused the PM's NO-GO. The residual leaks are
@@ -62,6 +113,7 @@ when you're about to touch the relevant code; delete the line once it's actually
   patterns against that file**; the moment anything is changed to make a line in it pass, it stops
   being held out and stops being worth running. Improve against the tuned set, then read the
   held-out numbers to find out whether it generalised.
+  **CLOSED app-v57, but the observation was re-pointed rather than dropped. The guard and `test/v56-guard-heldout.mjs` are deleted with the help bubble, so the numbers above no longer describe anything. What survives is the underlying fact: a clinical question typed into the SEARCH BOX still returns a list of app pages, and after the Auditor measured that v55 returned nothing for 49 of 50 such questions while the v56 matcher returns a list for 45 of 50, that is now understood as a v56 regression on an unaudited path rather than residual guard leakage. v57's answer is not a better classifier: the care-team sentence and a one-tap route to `sym-severe` sit above every results screen unconditionally, and the coverage floor in `test/v57-search.mjs` measures the four rows a phone actually shows.**
 - **The Designer's S1 residual was decided against and never written down** (app-v56). The user's
   own message bubble is `#A83D0F` and the primary CTA is `#BF4C1A` — 1.28:1 apart, so they remain
   confusable at a glance even though the contrast fix landed. The report's quiet-tint alternative
@@ -71,10 +123,12 @@ when you're about to touch the relevant code; delete the line once it's actually
   z51 above the toast's z50, which fixes the reported case; the inverse is that a toast raised
   during a help conversation is hidden behind the panel for its 4.5s. Cosmetic either way, and the
   chosen direction is the better of the two, but it is a trade rather than a fix.
+  **CLOSED app-v57 — the panel is gone. The toast's own collision with the Back-to-reports pill, which this release's Designer found, is fixed separately.**
 - **The help panel's callout and the walkthrough page's are two separate components that merely
   match** (app-v56, Lead Designer). `helpBotNotice()` is panel-only; `renderHelpView`'s callout is
   still its own inline markup. They read as one component at a consistent scale, but there is no
   single shell to edit, so the next change to one will silently not apply to the other.
+  **CLOSED app-v57 — `helpBotNotice()` is deleted; only the walkthrough page's callout remains, so there is nothing left to diverge.**
 - **The medical guard misses 11 of 50 tuned clinical questions; they land on "I don't have an
   answer" rather than the care-team route** (app-v56, Lead Auditor's set). Examples: *"the injection
   site is red and hot"*, *"does radiation burn the skin"*, *"how do i know if its an infection"*.
@@ -85,22 +139,26 @@ when you're about to touch the relevant code; delete the line once it's actually
   by guesswork is how a triage list gets into the app by the back door. **Do not tune the guard
   patterns to catch these without measuring the 35-question ordinary set at the same time** — the
   first attempt at exactly that refused 21 ordinary questions including "is my data safe".
+  **CLOSED app-v57 — the guard is deleted with the bubble. The property that replaced it is measured in `test/v57-search.mjs`: a care-team page must appear in the four rows a phone actually shows, for at least 18 of those same 50 questions.**
 - **The screen-reader announcer node is re-created on every reply** (`index.html`, `helpbot-announce`;
   Lead Auditor LA-3, explicitly left open). It was added to fix the transcript's `aria-live`
   container being destroyed by `render()` — and it has the same structural flaw, because it is
   inside the tree `render()` replaces. It is written *after* the rebuild, which may be enough in
   practice, but that has not been confirmed with an actual screen reader and should not be assumed.
   Needs a real assistive-technology pass, or moving the node outside `#root`.
+  **CLOSED app-v57 — `helpbot-announce` no longer exists.**
 - **The help bubble is re-focused once per second while it holds focus** (app-v56, Lead Auditor).
   `render()` restores focus by id after every rebuild, so a focused button gets a fresh `focusin`
   every tick — measured at 7 events in 6 idle seconds. No observable defect was produced, but it is
   the kind of thing a screen reader may narrate repeatedly. Same assistive-technology pass as above.
+  **CLOSED app-v57 — the bubble is deleted.**
 - **`BY_MEASURE` in the clinical guard has no `symptom` entry** (`index.html`, `helpBotAsk`). The
   guard can return `measure: 'symptom'`, and the map only has `temp`, `weight` and `dose`, so those
   questions take the generic care-team reply. That is the safe direction and it is deliberate —
   there is no `careLead` symptom page other than `sym-severe`, which BACKLOG already flags as
   needing a clinician read before it is surfaced more aggressively. Recorded so the gap is a
   decision rather than an oversight.
+  **CLOSED app-v57 — `helpBotAsk` and `BY_MEASURE` are deleted.**
 - **`renderHeader()` titles every screen with the patient's name and "Meds"** (Lead Auditor,
   incidental find) — so the Reports, Symptoms and In-Patient screens all read *"<name>'s Meds"*.
   Pre-existing, unrelated to v56, cosmetic, but wrong on four of five tabs.
