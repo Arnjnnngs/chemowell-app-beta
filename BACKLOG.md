@@ -6,6 +6,22 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
+- **The executable bit on the three `.sh` files does not survive a GitHub web upload, and app-v57's
+  "fix" for it did not actually reach the remote** (app-v57, found at push time). The Auditor's
+  V57-6 asked for `release_check.sh`, `mark_published.sh` and `.github/scripts/android_smoke_test.sh`
+  to be committed `100755` rather than `100644`. They were, locally, and the PM verified it locally
+  — but pushes in this environment are manual GitHub **web uploads**, and the web upload API has no
+  way to set a file mode. After the v57 push the local tree and `origin/main` are byte-identical in
+  content (verified by tree digest) and differ **only** in those three modes, which are still 644 on
+  the remote. So V57-6 is closed locally and open on GitHub, and this note exists so the next person
+  does not re-close it from a local `git ls-files -s` and believe it.
+  **This is the third time this has bitten** (see the earlier entry about a fetch + fast-forward
+  bringing both scripts back). It is low-impact in practice — every call site in TEAM.md and in this
+  project's own docs invokes them as `bash release_check.sh`, which ignores the bit entirely — but
+  the CI workflow that runs `android_smoke_test.sh` directly would exit 126. **The only real fix is
+  a push path that can carry a mode**, i.e. a working `git push`, which is blocked here by the
+  proxy (403). Worth one attempt at a token-authenticated HTTPS push next session; if that works it
+  removes the whole manual-upload apparatus, not just this.
 - **`test/v55-help.mjs`'s "every careLead topic is also flagged medical" check cannot fail**
   (app-v57 PM gate, **PM-1**, proven by a full-suite mutation run, not inferred). Same lazy
   multiline-regex class as the Auditor's R2-C, sitting three lines below the per-line fix R2-C
