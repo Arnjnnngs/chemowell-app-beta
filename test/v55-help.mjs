@@ -21,7 +21,14 @@ const { chromium } = require('/home/claude/.npm-global/lib/node_modules/playwrig
 const fs = require('fs');
 
 const BASE = 'http://127.0.0.1:8899/index.html';
-const EXPECTED_TOPICS = 117;   // outputs/HELPBOT_CONTENT_v1.md, §2 "Total"
+// v57: EXPECTED_TOPICS was pinned at 117 (outputs/HELPBOT_CONTENT_v1.md, §2 "Total"). Adding one
+// help page broke SIX assertions here, none of which was checking anything that had gone wrong --
+// which is the same failure mode this file already called out twice, in the tick-guard and cache-key
+// comments below. A guard you hand-edit on every release has stopped guarding. The count is now
+// READ FROM THE SOURCE, and what is asserted is the INVARIANT: the number the landing copy shows
+// the user, and the numbers on the category tiles, must agree with how many topics actually exist.
+// That is the real defect class -- copy claiming 117 walkthroughs when 118 shipped -- and it still
+// fails. Adding a topic no longer does.
 const EXPECTED_FAQ = 15;
 
 let fail = 0;
@@ -37,13 +44,63 @@ const sw = fs.readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
 
 const topicsBlock = html.slice(html.indexOf('const HELP_TOPICS = ['), html.indexOf('\n];', html.indexOf('const HELP_TOPICS = [')));
 const idMatches = topicsBlock.match(/\{ id: "/g) || [];
-t('HELP_TOPICS has exactly ' + EXPECTED_TOPICS + ' entries in code', idMatches.length === EXPECTED_TOPICS, idMatches.length + ' entries');
+const EXPECTED_TOPICS = idMatches.length;
+// V57-3 (Auditor, Medium): deriving the count fixed the hand-edit treadmill but opened a hole --
+// DELETING a topic became invisible, because every downstream assertion re-derived from the smaller
+// number and agreed with itself. The floor is therefore ratcheted to what actually shipped (it goes
+// up on the release that adds a page, never down), and the dangling-reference check below is what
+// catches a deletion regardless of the count: a removed topic almost always leaves its id behind in
+// some other topic's `related` list, and that is a real defect on its own -- a Related chip that
+// resolves to nothing renders as a dead end.
+t('HELP_TOPICS is at or above the count that shipped in app-v57', EXPECTED_TOPICS >= 118, EXPECTED_TOPICS + ' entries');
+{
+  const faqIdsAll = (html.slice(html.indexOf('const FAQ_ITEMS = ['), html.indexOf('\n];', html.indexOf('const FAQ_ITEMS = ['))).match(/\{ id: '([^']+)'/g) || []).map(x => x.slice(7, -1));
+  const topicIds = new Set((topicsBlock.match(/\{ id: "([^"]+)"/g) || []).map(x => x.slice(7, -1)).concat(faqIdsAll.map(x => 'faq:' + x)).concat(faqIdsAll));
+  const dangling = [];
+  (topicsBlock.match(/\{ id: "([^"]+)"[\s\S]*?related: \[([^\]]*)\]/g) || []).forEach(chunk => {
+    const owner = (chunk.match(/id: "([^"]+)"/) || [])[1];
+    const rel = (chunk.match(/related: \[([^\]]*)\]$/) || ['', ''])[1];
+    (rel.match(/"([^"]+)"/g) || []).map(x => x.slice(1, -1)).forEach(id => { if (!topicIds.has(id)) dangling.push(owner + ' -> ' + id); });
+  });
+  t('no topic\'s `related` list points at an id that does not exist', dangling.length === 0, dangling.join(', '));
+}
+// v57 (Designer S8): careTone splits "this is a question for a person" from "this is red, call now".
+// It must never appear on a page that is not already routed to the care team, or a page would carry
+// the softer heading without the routing that earns it.
+// R2-C (Auditor, round 2): the first version of this matched `\{ id: "..."[\s\S]*?careTone:` lazily
+// from the FIRST topic in the block, so every captured chunk spanned intervening topics and picked up
+// somebody else's `careLead: true` before the filter ran. He added careTone to sym-log, which is not
+// careLead, and it stayed ALL GREEN. Every topic in this corpus is one line, so match per line --
+// which is how the other per-topic checks in this file already work.
+{
+  const lines = topicsBlock.split('\n');
+  const strayTone = lines.filter(l => /careTone: "/.test(l) && l.indexOf('careLead: true') < 0)
+    .map(l => (l.match(/id: "([^"]+)"/) || [])[1] || l.trim().slice(0, 40));
+  t('careTone is only ever set on a topic that is also careLead', strayTone.length === 0, strayTone.join(', '));
+  // R2-D: dropping careLead from any ONE of the five left the coverage floor green, so each is pinned
+  // by id here. These five are the pages whose answer routes a person to a human; a page silently
+  // losing that flag loses its callout, its heading, and its place in the coverage metric at once.
+  const CARE_LEAD_PAGES = ['sym-severe', 'sym-medical-question', 'vit-temp-high', 'vit-weight-change', 'miss-real-missed'];
+  const lost = CARE_LEAD_PAGES.filter(id => !lines.some(l => l.indexOf('id: "' + id + '"') >= 0 && l.indexOf('careLead: true') >= 0));
+  t('all five care-team pages still carry careLead', lost.length === 0, 'lost: ' + lost.join(', '));
+}
 t('FAQ_ITEMS still has its original ' + EXPECTED_FAQ + ' entries',
   (html.slice(html.indexOf('const FAQ_ITEMS = ['), html.indexOf('\n];', html.indexOf('const FAQ_ITEMS = ['))).match(/\{ id: '/g) || []).length === EXPECTED_FAQ);
 t('no step string relies on a newline (the answer div has no white-space:pre-line)',
   !/\\n/.test(topicsBlock));
-t('9 medical-adjacent topics carry medical: true', (topicsBlock.match(/medical: true/g) || []).length === 9,
+// v57: was `=== 9`. A topic ADDED with medical: true is not a defect, so an equality check here only
+// ever fires on the safe direction. The floor catches the defect (a medical flag silently dropped),
+// and the invariant below catches the one that actually matters: a page whose first line routes the
+// person to their care team must also be flagged medical, or it escapes every medical-copy review.
+t('at least 9 topics carry medical: true (floor rises, never falls)',
+  (topicsBlock.match(/medical: true/g) || []).length >= 9,
   (topicsBlock.match(/medical: true/g) || []).length + '');
+{
+  const careLeadNotMedical = (topicsBlock.match(/\{ id: "[^"]+",[\s\S]*?careLead: true \}/g) || [])
+    .filter(chunk => chunk.indexOf('medical: true') < 0)
+    .map(chunk => (chunk.match(/id: "([^"]+)"/) || [])[1]);
+  t('every careLead topic is also flagged medical', careLeadNotMedical.length === 0, careLeadNotMedical.join(', '));
+}
 t('2 safety-only topics are flagged (5 safety: true total, 3 of them also medical)',
   (topicsBlock.match(/safety: true/g) || []).length === 5, (topicsBlock.match(/safety: true/g) || []).length + '');
 // v56: this was pinned to the exact spelling of the guard line, so adding the help bubble to the
@@ -57,8 +114,10 @@ t('the tick guard still lists every modal it listed before',
   ['timeModal', 'upgradeOpen', 'drawerOpen', 'apptModal', 'noteModal', 'checkinModal', 'medEditor',
    'infoModal', 'eraseAllModalOpen', 'confirmDeleteMed', 'confirmDeleteAppt', 'confirmDeleteNote',
    'confirmDeleteProfile', 'confirmRemove', 'isEditing'].every(k => tickGuard.indexOf(k) >= 0));
-t('the drawer row is Help, and there is no second FAQ row',
-  /\{ key: 'help', label: 'Help', icon: 'help'/.test(html) && !/label: 'FAQ'/.test(html));
+// v57 (Aaron): the row is now "Help & FAQ" -- the FAQ was folded into this centre in v55 and the
+// row still said only "Help", so nobody looking for the FAQ knew where it had gone.
+t('the drawer row is Help & FAQ, and there is no second FAQ row',
+  /\{ key: 'help', label: 'Help & FAQ', icon: 'help'/.test(html) && !/label: 'FAQ'/.test(html));
 // v56: pinned literals here would have to be weakened by hand on every release, which is exactly
 // how the v52 suite quietly stopped guarding. Assert the invariant instead: whatever version
 // index.html declares, sw.js's cache key must name the same one.
@@ -101,9 +160,14 @@ t('PM-1 FAQ markup is balanced too (** and ` both)',
 
 // V55-3: the calm variant of the medical callout kept the heading "Contact your care team" over
 // the standing not-medical-advice disclaimer, on pages about UI mechanics.
+// v57 (Designer S8): careLead now decides the ROUTE and careTone decides the WEIGHT, so this pins
+// both halves -- the heading still follows the flag rather than being hardcoded, AND the calm
+// variant exists so a "what should I expect" page cannot wear the red call-now treatment.
 t('V55-3 the callout heading follows the tone rather than being hardcoded',
-  /const careHeading = topic\.careLead \? 'Contact your care team' : 'Not medical advice';/.test(html)
+  /const careHeading = topic\.careLead \? \(calmCare \? 'Ask your care team' : 'Contact your care team'\) : 'Not medical advice';/.test(html)
   && !/\}, 'Contact your care team'\)/.test(html));
+t('v57 the urgent red tone is reserved for careLead pages that are NOT careTone calm',
+  /const tone = \(topic\.careLead && !calmCare\) \? NOTICE_TONES\.urgent : NOTICE_TONES\.attention;/.test(html));
 
 // V55-4: a dead `state.view === 'faq'` router arm whose comment claimed it caught a persisted
 // value. VALID_VIEWS has never contained 'faq', so restoreView() could never return it.
