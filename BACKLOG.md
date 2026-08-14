@@ -6,6 +6,27 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
+- **The sandbox filesystem silently rolled back mid-session for the SECOND time, and this one could
+  have overwritten a good live build with a regressed one** (app-v57, after the push). Symptom: local
+  `HEAD` had quietly moved back to the gate-round-2 commit, `index.html` was 733,357 bytes against
+  the 736,834 on `origin/main`, and every Designer round-2 fix — the shortened care-team strip, the
+  suppressed first-run toast, `toastNeedsLift`, `careTone`, the 560px caps — was **absent locally
+  and present on origin**. The working tree looked healthy and `git status` was clean; nothing
+  announced the loss. A stop-hook nudge to "push these commits" is what surfaced it, and pushing
+  local over origin at that moment would have reverted a PM-signed-off, live-verified release.
+  **The recovery is not the interesting part; the detection is.** Content on GitHub was correct
+  throughout — the live app was never at risk from the rollback itself, only from a reflexive push.
+  Recovered by preserving the local-only files outside the repo, branching the stale commits to
+  `v57-local-before-rollback`, then `git checkout -B main origin/main` — deliberately NOT
+  `git reset --hard`, which is banned in this repo for having destroyed agent reports twice.
+  All four suites green afterwards and the tree digest matches origin exactly.
+  **Standing rule from now on:** before pushing, and before trusting any local measurement after a
+  gap in the session, compare
+  `git ls-tree -r HEAD --format='%(objectname) %(path)' | sort | sha256sum` against the same command
+  on `origin/main`. If they differ and you did not just make a change, assume the sandbox rolled
+  back and re-derive from origin — never the other way round. This is the same class of trap as the
+  stray `http.server` on a shared port that served a different directory earlier in this release:
+  **the environment can lie about what you are looking at, and the only defence is a digest.**
 - **The executable bit on the three `.sh` files does not survive a GitHub web upload, and app-v57's
   "fix" for it did not actually reach the remote** (app-v57, found at push time). The Auditor's
   V57-6 asked for `release_check.sh`, `mark_published.sh` and `.github/scripts/android_smoke_test.sh`
