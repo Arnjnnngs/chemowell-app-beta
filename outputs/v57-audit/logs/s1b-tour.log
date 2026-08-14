@@ -1,0 +1,20 @@
+PASS  [Chemo] the guide ran to Finish (steps seen: 2,3,4,5,6,7,8,9,10,,NOTICE-DURING-GUIDE)  |  guide gone
+FAIL  [Chemo] the notice never appeared while the guide was up
+PASS  [Chemo] the guide finishes on Home  |  ChemoWell | BETA | Tori’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | You’re using th
+PASS  [Chemo] NOTICE APPEARS after COMPLETING the guide  |  ChemoWell | BETA | Tori’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | You’re using the web preview | Everything here works. Three things need the phone app, 
+PASS  [Chemo] zero console errors
+PASS  [Radiation] the guide ran to Finish (steps seen: 2,3,4,5,6,7,8,9,10,,NOTICE-DURING-GUIDE)  |  guide gone
+FAIL  [Radiation] the notice never appeared while the guide was up
+PASS  [Radiation] the guide finishes on Home  |  ChemoWell | BETA | Ray’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | You’re using the
+PASS  [Radiation] NOTICE APPEARS after COMPLETING the guide  |  ChemoWell | BETA | Ray’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | You’re using the web preview | Everything here works. Three things need the phone app, s
+PASS  [Radiation] zero console errors
+PASS  [Both] the guide ran to Finish (steps seen: 2,3,4,5,6,7,8,9,10,,NOTICE-DURING-GUIDE)  |  guide gone
+FAIL  [Both] the notice never appeared while the guide was up
+PASS  [Both] the guide finishes on Home  |  ChemoWell | BETA | Bo’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | You’re using the 
+PASS  [Both] NOTICE APPEARS after COMPLETING the guide  |  ChemoWell | BETA | Bo’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | You’re using the web preview | Everything here works. Three things need the phone app, so
+PASS  [Both] zero console errors
+PASS  [Other] the guide ran to Finish (steps seen: 2,3,4,5,6,7,8,9,10,,NOTICE-DURING-GUIDE)  |  guide gone
+FAIL  [Other] the notice never appeared while the guide was up
+PASS  [Other] the guide finishes on Home  |  ChemoWell | BETA | Otto’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | You’re using th
+PASS  [Other] NOTICE APPEARS after COMPLETING the guide  |  ChemoWell | BETA | Otto’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | You’re using the web preview | Everything here works. Three things need the phone app, 
+PASS  [Other] zero console errors

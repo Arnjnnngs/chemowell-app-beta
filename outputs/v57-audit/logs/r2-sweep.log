@@ -1,0 +1,38 @@
+PASS  [Chemo] medications added and listed
+PASS  [Chemo] all medications listed on Meds  |  all present
+FAIL  [Chemo] daily limit stored  |  Rules: Min 12-hour gap ;; Rules: Daily
+PASS  [Chemo] a dose logged on each of 3 simulated days  |  3/3
+PASS  [Chemo] Home shows the latest temperature and weight
+PASS  [Chemo] Today’s journal populated
+PASS  [Chemo] symptom logged
+PASS  [Chemo] note saved
+PASS  [Chemo] appointment saved on the Calendar
+PASS  [Chemo] Reports index non-zero  |  13 recorded entries
+PASS  [Chemo] History spans 3 dates  |  ["0/1","8/13","20/78","8/12","22/80"]
+PASS  [Chemo] History shows temperature + symptom
+PASS  [Chemo] Weight report shows readings
+PASS  [Chemo] Blood Pressure report shows readings
+PASS  [Chemo] CSV downloads, spans 3 dates, carries every type  |  chemowell-rita-2026-08-13.csv 582B dates=2026-08-11,2026-08-12,2026-08-13
+PASS  [Chemo] zero console errors across the profile
+PASS  [Both] medications added and listed
+PASS  [Both] all medications listed on Meds  |  all present
+FAIL  [Both] daily limit stored  |  Rules: Min 6-hour gap ;; Rules: Daily
+PASS  [Both] a dose logged on each of 3 simulated days  |  3/3
+PASS  [Both] Home shows the latest temperature and weight
+PASS  [Both] Today’s journal populated
+PASS  [Both] symptom logged
+PASS  [Both] note saved
+PASS  [Both] appointment saved on the Calendar
+PASS  [Both] Reports index non-zero  |  13 recorded entries
+PASS  [Both] History spans 3 dates  |  ["0/1","8/13","20/78","8/12","22/80"]
+PASS  [Both] History shows temperature + symptom
+PASS  [Both] Weight report shows readings
+PASS  [Both] Blood Pressure report shows readings
+PASS  [Both] CSV downloads, spans 3 dates, carries every type  |  chemowell-sam-2026-08-13.csv 591B dates=2026-08-11,2026-08-12,2026-08-13
+PASS  [Both] zero console errors across the profile
+PASS  sym-medical-question uses the shortened title  |  LS | ▼ | Search results | SYMPTOMS & REACTIONS | Side effects — hair loss, sickness, tiredness: is this normal? | Ask your care te
+PASS  careTone calm gives it the "Ask your care team" heading, not the red "Contact"
+PASS  the calm page no longer wears the urgent red left border  |  rgb(181, 118, 30)
+PASS  sym-severe still carries the urgent "Contact your care team" heading
+PASS  sym-severe keeps the urgent red border  |  severe=rgb(192, 69, 59) calm=rgb(181, 118, 30)
+PASS  zero console errors

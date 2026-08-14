@@ -1,0 +1,68 @@
+PASS  [Chemo] guided tour completed to Finish
+PASS  [Chemo] browser notice present on Home after setup
+PASS  [Chemo] every medication added and listed on Meds (3)  |  all present
+PASS  [Chemo] placement/rules echoed on the Meds rows  |   | HOME SCREEN ORDER | Sets the order these individual medication cards appear in Home’s Quick Log grid. Grouped Morning/Evening meds aren’t included here. | Capecitabine (tour) | ▲ | ▼ | Capecitabine | ▲ | ▼ | Capecitabine | Xeloda | Dose
+PASS  [Chemo] doses appear in Today’s journal  |  TODAY’S JOURNAL | EVENING | 9:33 PM | Capecitabine (tour) | 8 mg | Remove | Blood pressure 120/78 logged at 9:33 PM | Log Weight · 148.8 lbs | REASON FOR CHANGE (OPTIONAL) | Not noted | Paracentesis (fluid drained) | Fluid
+FAIL  [Chemo] temperature card shows the latest reading  |  TEMPERATURE | No readings yet | Log | WEIGHT | No readings yet | Log | BLOOD PRESSU
+FAIL  [Chemo] a symptom was logged  |  ChemoWell | BETA | Rita’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | Symptoms & Reactions | Nausea, fatigue, mouth sores, and other reaction
+FAIL  [Chemo] a note was saved and shows on Notes  |  ChemoWell | BETA | Rita’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | NOTES | Notes | A day-by-day journal. Always editable — log something late and it lands on th
+FAIL  [Chemo] an appointment was saved and shows on Calendar  |  ChemoWell | BETA | Rita’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | CALENDAR | Calendar | Appointments, infusions, labs, and other dates worth a reminder. | Add | ‹ | August 2026 | › | S | M | T | W | T | F | S | 1 | 
+PASS  [Chemo] Reports index shows a non-zero recorded-entry count  |  5 recorded entries
+PASS  [Chemo] History lists entries across more than one day  |  dates=["Aug 14","Aug 13","Aug 14"]
+FAIL  [Chemo] Weight report shows the logged readings  |  ChemoWell | BETA | Rita’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | REPORTS | Weight | Explore weight readings, trends, and recent changes. | W
+PASS  [Chemo] Blood Pressure report shows the logged readings  |  ChemoWell | BETA | Rita’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | REPORTS | Blood Pressure | Review blood pressure readings over time. | 122/
+PASS  [Chemo] CSV export downloads a real file  |  chemowell-rita-2026-08-14.csv 309 bytes
+PASS  [Chemo] CSV contains the logged medication  |  ﻿Date,Time,Type,Detail,Note
+PASS  [Chemo] CSV contains vitals rows (temperature/weight/BP)  |  2026-08-11,9:33 PM,Capecitabine (tour),8 mg, || 2026-08-11,9:33 PM,Blood Pressure,118/76 mmHg, || 2026-08-12,9:33 PM,Capecitabine (tour),8 mg,
+PASS  [Chemo] zero console errors across the whole profile sweep
+PASS  [Radiation] guided tour completed to Finish
+PASS  [Radiation] browser notice present on Home after setup
+PASS  [Radiation] every medication added and listed on Meds (2)  |  all present
+PASS  [Radiation] placement/rules echoed on the Meds rows  |   | HOME SCREEN ORDER | Sets the order these individual medication cards appear in Home’s Quick Log grid. Grouped Morning/Evening meds aren’t included here. | Aquaphor (tour) | ▲ | ▼ | Aquaphor | ▲ | ▼ | Aquaphor | No generic name | Doses: 
+PASS  [Radiation] doses appear in Today’s journal  |  TODAY’S JOURNAL | EVENING | 9:34 PM | Aquaphor (tour) | 8 mg | Remove | Blood pressure 120/78 logged at 9:34 PM | Log Weight · 148.8 lbs | REASON FOR CHANGE (OPTIONAL) | Not noted | Paracentesis (fluid drained) | Fluid ret
+FAIL  [Radiation] temperature card shows the latest reading  |  TEMPERATURE | No readings yet | Log | WEIGHT | No readings yet | Log | BLOOD PRESSU
+FAIL  [Radiation] a symptom was logged  |  ChemoWell | BETA | Sam’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | Symptoms & Reactions | Nausea, fatigue, mouth sores, and other reactions
+FAIL  [Radiation] a note was saved and shows on Notes  |  ChemoWell | BETA | Sam’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | NOTES | Notes | A day-by-day journal. Always editable — log something late and it lands on the
+FAIL  [Radiation] an appointment was saved and shows on Calendar  |  ChemoWell | BETA | Sam’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | CALENDAR | Calendar | Appointments, infusions, labs, and other dates worth a reminder. | Add | ‹ | August 2026 | › | S | M | T | W | T | F | S | 1 | 2
+PASS  [Radiation] Reports index shows a non-zero recorded-entry count  |  5 recorded entries
+PASS  [Radiation] History lists entries across more than one day  |  dates=["Aug 14","Aug 13","Aug 14"]
+FAIL  [Radiation] Weight report shows the logged readings  |  ChemoWell | BETA | Sam’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | REPORTS | Weight | Explore weight readings, trends, and recent changes. | We
+PASS  [Radiation] Blood Pressure report shows the logged readings  |  ChemoWell | BETA | Sam’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | REPORTS | Blood Pressure | Review blood pressure readings over time. | 122/8
+PASS  [Radiation] CSV export downloads a real file  |  chemowell-sam-2026-08-14.csv 297 bytes
+PASS  [Radiation] CSV contains the logged medication  |  ﻿Date,Time,Type,Detail,Note
+PASS  [Radiation] CSV contains vitals rows (temperature/weight/BP)  |  2026-08-11,9:33 PM,Aquaphor (tour),8 mg, || 2026-08-11,9:34 PM,Blood Pressure,118/76 mmHg, || 2026-08-12,9:34 PM,Aquaphor (tour),8 mg,
+PASS  [Radiation] zero console errors across the whole profile sweep
+PASS  [Both] guided tour skipped
+PASS  [Both] browser notice present on Home after setup
+PASS  [Both] every medication added and listed on Meds (2)  |  all present
+PASS  [Both] placement/rules echoed on the Meds rows  |   | Cisplatin support | No generic name | Doses: 250 mg | Rules: Min 8-hour gap | Managed only (no Home card) | Afternoon group | Paracetamol | No generic name | Doses: 500 mg · 1000 mg | Rules: Min 4-hour gap | Own Home card | Paracetamol ad
+PASS  [Both] doses appear in Today’s journal  |  TODAY’S JOURNAL | EVENING | 9:34 PM | Paracetamol | 500 mg | Remove | Blood pressure 120/78 logged at 9:34 PM | Log Weight · 148.8 lbs | REASON FOR CHANGE (OPTIONAL) | Not noted | Paracentesis (fluid drained) | Fluid reten
+FAIL  [Both] temperature card shows the latest reading  |  TEMPERATURE | No readings yet | Log | WEIGHT | No readings yet | Log | BLOOD PRESSU
+FAIL  [Both] a symptom was logged  |  ChemoWell | BETA | Ada’s Meds | Friday, Aug 14 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | Symptoms & Reactions | Nausea, fatigue, mouth sores, and other reactions noticed during or after treatment — for bowel
+FAIL  [Both] a note was saved and shows on Notes  |  ChemoWell | BETA | Ada’s Meds | Friday, Aug 14 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | NOTES | Notes | A day-by-day journal. Always editable — log something late and it lands on the date it happened. | Add | No notes yet. | Jot down 
+FAIL  [Both] an appointment was saved and shows on Calendar  |  ChemoWell | BETA | Ada’s Meds | Friday, Aug 14 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | CALENDAR | Calendar | Appointments, infusions, labs, and other dates worth a reminder. | Add | ‹ | August 2026 | › | S | M | T | W | T | F | S | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 2
+PASS  [Both] Reports index shows a non-zero recorded-entry count  |  5 recorded entries
+PASS  [Both] History lists entries across more than one day  |  dates=["Aug 14","Aug 13","Aug 14"]
+FAIL  [Both] Weight report shows the logged readings  |  ChemoWell | BETA | Ada’s Meds | Friday, Aug 14 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | REPORTS | Weight | Explore weight readings, trends, and recent changes. | Weeks | Months | No weight readings logged yet. Log 
+PASS  [Both] Blood Pressure report shows the logged readings  |  ChemoWell | BETA | Ada’s Meds | Friday, Aug 14 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | REPORTS | Blood Pressure | Review blood pressure readings over time. | 122/80 mmHg | Wed, Aug 12 · 9:34 PM | Remove | 118/76 mmH
+PASS  [Both] CSV export downloads a real file  |  chemowell-ada-2026-08-14.csv 291 bytes
+FAIL  [Both] CSV contains the logged medication  |  ﻿Date,Time,Type,Detail,Note
+PASS  [Both] CSV contains vitals rows (temperature/weight/BP)  |  2026-08-11,9:34 PM,Paracetamol,500 mg, || 2026-08-11,9:34 PM,Blood Pressure,118/76 mmHg, || 2026-08-12,9:34 PM,Paracetamol,500 mg,
+PASS  [Both] zero console errors across the whole profile sweep
+PASS  [Other] guided tour skipped
+PASS  [Other] browser notice present on Home after setup
+PASS  [Other] every medication added and listed on Meds (1)  |  all present
+PASS  [Other] placement/rules echoed on the Meds rows  |   | Metformin | No generic name | Doses: 500 mg | Rules: Daily | Managed only (no Home card) | Morning group | Metformin added to medication management. | Home | Meds | Reports | In-Patient | Symptoms
+FAIL  [Other] doses appear in Today’s journal  |  TODAY’S JOURNAL | No doses logged yet today. Doses you log from your medication cards will appear here. | Blood pressure 120/78 logged at 9:35 PM | Log Weight · 148.8 lbs | REASON FOR CHANGE (OPTIONAL) | Not no
+FAIL  [Other] temperature card shows the latest reading  |  TEMPERATURE | No readings yet | Log | WEIGHT | Last reading 9:35 PM | 149.2 lbs | L
+FAIL  [Other] a symptom was logged  |  ChemoWell | BETA | Ken’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | Symptoms & Reactions | Nausea, fatigue, mouth sores, and other reactions
+FAIL  [Other] a note was saved and shows on Notes  |  ChemoWell | BETA | Ken’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | NOTES | Notes | A day-by-day journal. Always editable — log something late and it lands on the
+FAIL  [Other] an appointment was saved and shows on Calendar  |  ChemoWell | BETA | Ken’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | CALENDAR | Calendar | Appointments, infusions, labs, and other dates worth a reminder. | Add | ‹ | August 2026 | › | S | M | T | W | T | F | S | 1 | 2
+PASS  [Other] Reports index shows a non-zero recorded-entry count  |  4 recorded entries
+PASS  [Other] History lists entries across more than one day  |  dates=["Aug 14","Aug 13","Aug 14"]
+PASS  [Other] Weight report shows the logged readings  |  ChemoWell | BETA | Ken’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | REPORTS | Weight | Explore weight readings, trends, and recent changes. | We
+PASS  [Other] Blood Pressure report shows the logged readings  |  ChemoWell | BETA | Ken’s Meds | Friday, Aug 14 | 0/1 | BETA DATE CONTROLS | ▲ | − 1 Day | + 1 Day | Reset | ! | 1 missed dose from previous days | Review | REPORTS | Blood Pressure | Review blood pressure readings over time. | 122/8
+PASS  [Other] CSV export downloads a real file  |  chemowell-ken-2026-08-14.csv 245 bytes
+FAIL  [Other] CSV contains the logged medication  |  ﻿Date,Time,Type,Detail,Note
+PASS  [Other] CSV contains vitals rows (temperature/weight/BP)  |  2026-08-11,9:35 PM,Weight,150 lbs, || 2026-08-11,9:35 PM,Blood Pressure,118/76 mmHg, || 2026-08-12,9:35 PM,Weight,149.2 lbs,
+PASS  [Other] zero console errors across the whole profile sweep

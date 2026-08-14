@@ -1,0 +1,151 @@
+PASS  HELP_TOPICS parses to a plausible corpus (>= 117, the v55 baseline)  |  118 entries
+PASS  FAQ_ITEMS still has its original 15 entries
+PASS  no step string relies on a newline (the answer div has no white-space:pre-line)
+PASS  at least 9 topics carry medical: true (floor rises, never falls)  |  10
+PASS  every careLead topic is also flagged medical
+PASS  2 safety-only topics are flagged (5 safety: true total, 3 of them also medical)  |  5
+PASS  the Help view is excluded from the 1s tick guard  |  
+  if (state.view !== 'help'
+      && !state.timeModal && !s
+PASS  the tick guard still lists every modal it listed before
+PASS  the drawer row is Help & FAQ, and there is no second FAQ row
+PASS  APP_VERSION is present and well-formed  |  got app-v57
+PASS  sw.js CACHE names the same version index.html declares  |  APP_VERSION=app-v57  CACHE=chemowell-app-v57-1
+PASS  V55-1 no help copy tells the user to tap the name at the top of the menu
+PASS  V55-2 helpRich() has a backtick arm in its tokenizer
+PASS  V55-2 the backtick arm emits a real <code> node
+PASS  V55-2 every backtick in HELP_TOPICS is balanced (an odd one would render literally)  |  26 backticks
+PASS  PM-1 FAQ answers are rendered through helpRich(), like every other help string
+PASS  PM-1 FAQ markup is balanced too (** and ` both)  |  8 asterisks, 0 backticks
+PASS  V55-3 the callout heading follows the tone rather than being hardcoded
+PASS  V55-4 the dead faq router arm is gone
+PASS  V55-4 the tick guard no longer references faq either
+PASS  V55-4 VALID_VIEWS still does not contain faq (the reason the arm was dead)
+PASS  V55-4 faqOpenId is untouched — that is a live accordion state, not the dead view
+PASS  [360px] drawer has a Help row
+PASS  [360px] Help landing screen renders
+PASS  [360px] landing states the walkthrough count (118)  |  118 step-by-step walkthroughs plus the 15 common questions, all stored in the app — nothing is sent anywhere
+PASS  [360px] all 17 categories are listed  |  17 tiles
+PASS  [360px] no horizontal overflow on the Help landing  |  overflow=0px
+PASS  [360px] category tile counts sum to 134  |  sum=134
+PASS  [360px] category screen opens
+PASS  [360px] category lists its problems
+PASS  [360px] no horizontal overflow in a category  |  overflow=0px
+PASS  [360px] walkthrough opens with the step list
+PASS  [360px] steps render as separate list items, not one run-on line  |  14 <li>
+PASS  [360px] branches render
+PASS  [360px] the note renders
+PASS  [360px] related topics render as chips
+PASS  [360px] medical-adjacent topic leads with the callout
+PASS  [360px] the calm callout carries the standing disclaimer
+PASS  [360px] a non-urgent topic does NOT say "Contact your care team"
+PASS  [360px] no horizontal overflow in a walkthrough  |  overflow=0px
+PASS  [360px] back from a walkthrough returns to its category
+PASS  [360px] search box keeps every character typed  |  expected "greyed out daily limit", got "greyed out daily limit"
+PASS  [360px] multi-word search finds the right topic
+PASS  [360px] search results are labelled with their category
+PASS  [360px] no horizontal overflow on search results  |  overflow=0px
+PASS  [360px] V55-2 no literal backtick survives into the rendered text  |  (none)
+PASS  [360px] V55-2 the literal examples render as <code> chips  |  6 <code> nodes
+PASS  [360px] V55-2 the example still reads as the user must type it
+PASS  [360px] V55-2 code chips do not cause horizontal overflow  |  overflow=0px
+PASS  [360px] V55-2 a code chip never renders wider than its column
+PASS  [360px] vit-temp-high keeps the brief’s "Contact the care team now" wording
+PASS  [360px] vit-temp-high states no threshold
+PASS  [360px] a call-now topic still leads with "Contact your care team"
+PASS  [360px] back from a search hit says it returns to the results
+PASS  [360px] back from a search hit returns to the results
+PASS  [360px] keyword-only search term matches
+PASS  [360px] Clear returns to the category the search started from
+PASS  [360px] back reaches the Help landing again
+PASS  [360px] Common questions category holds the original FAQ
+PASS  [360px] FAQ accordion still expands in place
+PASS  [360px] the brief’s pointer entry renders as a cross-link
+PASS  [360px] V55-3 "not getting any reminders at all" heading is Not medical advice
+PASS  [360px] V55-2/PM-1 no raw markup on "not getting any reminders at all"  |  (none)
+PASS  [360px] V55-3 "How do I add a medication" heading is Not medical advice
+PASS  [360px] V55-2/PM-1 no raw markup on "How do I add a medication"  |  (none)
+PASS  [360px] V55-3 "Daily limit box is greyed out" heading is Not medical advice
+PASS  [360px] V55-2/PM-1 no raw markup on "Daily limit box is greyed out"  |  (none)
+PASS  [360px] V55-3 "log something the app is blocking" heading is Not medical advice
+PASS  [360px] V55-2/PM-1 no raw markup on "log something the app is blocking"  |  (none)
+PASS  [360px] V55-3 "A dose was genuinely missed" heading is Contact your care team
+PASS  [360px] V55-2/PM-1 no raw markup on "A dose was genuinely missed"  |  (none)
+PASS  [360px] V55-3 "The temperature is high" heading is Contact your care team
+PASS  [360px] V55-2/PM-1 no raw markup on "The temperature is high"  |  (none)
+PASS  [360px] V55-3 "weight has changed a lot" heading is Contact your care team
+PASS  [360px] V55-2/PM-1 no raw markup on "weight has changed a lot"  |  (none)
+PASS  [360px] V55-3 "symptom is severe" heading is Contact your care team
+PASS  [360px] V55-2/PM-1 no raw markup on "symptom is severe"  |  (none)
+PASS  [360px] V55-3 "medications say .Restricted" heading is Not medical advice
+PASS  [360px] V55-2/PM-1 no raw markup on "medications say .Restricted"  |  (none)
+PASS  [360px] PM-1 all 15 FAQ rows are expandable  |  15 rows
+PASS  [360px] PM-1 no FAQ answer renders literal ** or backticks
+PASS  [360px] empty search state is handled
+PASS  [360px] every walkthrough opens with steps (118 + 1 pointer row)  |  119 opened, missing steps: none
+PASS  [360px] zero app console errors across the whole run
+PASS  [390px] drawer has a Help row
+PASS  [390px] Help landing screen renders
+PASS  [390px] landing states the walkthrough count (118)  |  118 step-by-step walkthroughs plus the 15 common questions, all stored in the app — nothing is sent anywhere
+PASS  [390px] all 17 categories are listed  |  17 tiles
+PASS  [390px] no horizontal overflow on the Help landing  |  overflow=0px
+PASS  [390px] category tile counts sum to 134  |  sum=134
+PASS  [390px] category screen opens
+PASS  [390px] category lists its problems
+PASS  [390px] no horizontal overflow in a category  |  overflow=0px
+PASS  [390px] walkthrough opens with the step list
+PASS  [390px] steps render as separate list items, not one run-on line  |  14 <li>
+PASS  [390px] branches render
+PASS  [390px] the note renders
+PASS  [390px] related topics render as chips
+PASS  [390px] medical-adjacent topic leads with the callout
+PASS  [390px] the calm callout carries the standing disclaimer
+PASS  [390px] a non-urgent topic does NOT say "Contact your care team"
+PASS  [390px] no horizontal overflow in a walkthrough  |  overflow=0px
+PASS  [390px] back from a walkthrough returns to its category
+PASS  [390px] search box keeps every character typed  |  expected "greyed out daily limit", got "greyed out daily limit"
+PASS  [390px] multi-word search finds the right topic
+PASS  [390px] search results are labelled with their category
+PASS  [390px] no horizontal overflow on search results  |  overflow=0px
+PASS  [390px] V55-2 no literal backtick survives into the rendered text  |  (none)
+PASS  [390px] V55-2 the literal examples render as <code> chips  |  6 <code> nodes
+PASS  [390px] V55-2 the example still reads as the user must type it
+PASS  [390px] V55-2 code chips do not cause horizontal overflow  |  overflow=0px
+PASS  [390px] V55-2 a code chip never renders wider than its column
+PASS  [390px] vit-temp-high keeps the brief’s "Contact the care team now" wording
+PASS  [390px] vit-temp-high states no threshold
+PASS  [390px] a call-now topic still leads with "Contact your care team"
+PASS  [390px] back from a search hit says it returns to the results
+PASS  [390px] back from a search hit returns to the results
+PASS  [390px] keyword-only search term matches
+PASS  [390px] Clear returns to the category the search started from
+PASS  [390px] back reaches the Help landing again
+PASS  [390px] Common questions category holds the original FAQ
+PASS  [390px] FAQ accordion still expands in place
+PASS  [390px] the brief’s pointer entry renders as a cross-link
+PASS  [390px] V55-3 "not getting any reminders at all" heading is Not medical advice
+PASS  [390px] V55-2/PM-1 no raw markup on "not getting any reminders at all"  |  (none)
+PASS  [390px] V55-3 "How do I add a medication" heading is Not medical advice
+PASS  [390px] V55-2/PM-1 no raw markup on "How do I add a medication"  |  (none)
+PASS  [390px] V55-3 "Daily limit box is greyed out" heading is Not medical advice
+PASS  [390px] V55-2/PM-1 no raw markup on "Daily limit box is greyed out"  |  (none)
+PASS  [390px] V55-3 "log something the app is blocking" heading is Not medical advice
+PASS  [390px] V55-2/PM-1 no raw markup on "log something the app is blocking"  |  (none)
+PASS  [390px] V55-3 "A dose was genuinely missed" heading is Contact your care team
+PASS  [390px] V55-2/PM-1 no raw markup on "A dose was genuinely missed"  |  (none)
+PASS  [390px] V55-3 "The temperature is high" heading is Contact your care team
+PASS  [390px] V55-2/PM-1 no raw markup on "The temperature is high"  |  (none)
+PASS  [390px] V55-3 "weight has changed a lot" heading is Contact your care team
+PASS  [390px] V55-2/PM-1 no raw markup on "weight has changed a lot"  |  (none)
+PASS  [390px] V55-3 "symptom is severe" heading is Contact your care team
+PASS  [390px] V55-2/PM-1 no raw markup on "symptom is severe"  |  (none)
+PASS  [390px] V55-3 "medications say .Restricted" heading is Not medical advice
+PASS  [390px] V55-2/PM-1 no raw markup on "medications say .Restricted"  |  (none)
+PASS  [390px] PM-1 all 15 FAQ rows are expandable  |  15 rows
+PASS  [390px] PM-1 no FAQ answer renders literal ** or backticks
+PASS  [390px] empty search state is handled
+PASS  [390px] every walkthrough opens with steps (118 + 1 pointer row)  |  119 opened, missing steps: none
+PASS  [390px] zero app console errors across the whole run
+
+ALL GREEN
+EXIT=0

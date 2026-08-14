@@ -1,0 +1,16 @@
+v55  Q: is 101.4 a fever  -> NOTHING MATCHED (empty state)
+v55  Q: should i give him a double dose  -> NOTHING MATCHED (empty state)
+v55  Q: her lips are turning blue  -> NOTHING MATCHED (empty state)
+v55  Q: can he take ibuprofen with this  -> NOTHING MATCHED (empty state)
+v55  Q: is 2 tablets too many  -> NOTHING MATCHED (empty state)
+v55  Q: she is coughing up blood  -> NOTHING MATCHED (empty state)
+v55  Q: she collapsed  -> 1 results; top: All my medications vanished from Home
+v55  Q: he has chest pain  -> NOTHING MATCHED (empty state)
+v55  Q: she is unresponsive  -> NOTHING MATCHED (empty state)
+v55  Q: she has a rash all over  -> NOTHING MATCHED (empty state)
+v55  Q: can i crush the tablet  -> NOTHING MATCHED (empty state)
+v55  Q: is this medicine safe for children  -> NOTHING MATCHED (empty state)
+v55  Q: he is having trouble breathing  -> NOTHING MATCHED (empty state)
+v55  Q: what are the side effects of cisplatin  -> NOTHING MATCHED (empty state)
+
+v55 on the 50 clinical questions: zeroResults=49/50, care@top8=0/50

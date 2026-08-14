@@ -1,0 +1,16 @@
+PASS  toast reverted to 96px from the bottom (not v56's 150px)  |  {"bottomGap":96,"navTop":738,"overlapsNav":false,"pe":"none","z":"50"}
+PASS  toast still clears the bottom nav  |  {"bottomGap":96,"navTop":738,"overlapsNav":false,"pe":"none","z":"50"}
+PASS  Back-to-reports pill sits 88px from the bottom  |  {"bottomGap":88,"clearsNav":true,"gapToNav":26,"h":42}
+PASS  Back pill does not overlap the bottom nav  |  {"bottomGap":88,"clearsNav":true,"gapToNav":26,"h":42}
+PASS  Back pill returns to the Reports index
+PASS  Help search survives 3+ tick boundaries with no dropped characters  |  "why cant i type in the daily limit box"
+PASS  caret is still at the end after typing
+PASS  the slow-typed sentence still ranks the right page first  |  SEARCH HELP | Clear | The Daily limit box is greyed out and says 'Locked' | Adding & editing medications
+PASS  Help view keeps its scroll position across 2+ ticks  |  scrollY=400
+PASS  Help view is not rebuilt by the 1s tick (node identity survives)
+PASS  a focused id'd button still survives the tick (BUTTON kept in the restore list)  |  drawer-close-btn -> drawer-close-btn
+PASS  no #helpbot CSS rule survives in the stylesheet
+z-index census >=30 on Home: {"35":1}
+PASS  app still renders offline after reload (service worker / no network need)  |  ChemoWell | BETA | Rita’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | You’re using th
+PASS  Help search works offline
+PASS  zero console errors across the regression sweep

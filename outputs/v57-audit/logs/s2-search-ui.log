@@ -1,0 +1,142 @@
+PASS  Help centre reached from drawer row "Help & FAQ"  |  ChemoWell | BETA | Rita’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | HELP & FAQ | Find
+PASS  Help screen eyebrow reads HELP & FAQ
+
+Q "is 101.4 a fever" -> 7 results, 4 rows above the fold
+    1. The temperature is high — what should I do?  top=376
+    2. How do I record a temperature?  top=475
+    3. It won't accept the temperature I typed  top=574
+    4. What’s “Hours between doses” / minimum gap?  top=673
+    5. How do I add a medication?  top=753  <-- BELOW FOLD
+    6. What is 'Hours between doses' / minimum gap?  top=816  <-- BELOW FOLD
+    7. All my medications vanished from Home  top=896  <-- BELOW FOLD
+
+Q "should i give him a double dose" -> 36 results, 5 rows above the fold
+    1. A dose was genuinely missed — what should I do?  top=376
+    2. I think I logged the same dose twice  top=457
+    3. How do I record that a dose was taken?  top=538
+    4. How do I clear a missed dose?  top=618
+    5. I forgot to log a dose at the time — can I put in the right time?  top=681
+    6. When does a dose count as missed?  top=779  <-- BELOW FOLD
+    7. I've got weeks of missed doses and I don't want to tap them one by one  top=860  <-- BELOW FOLD
+    8. What happens if I miss a dose?  top=959  <-- BELOW FOLD
+
+Q "her lips are turning blue" -> 2 results, 2 rows above the fold
+    1. Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?  top=376
+    2. The 'Alarms & reminders' switch isn't there, or won't turn on  top=475
+
+Q "can he take ibuprofen with this" -> 7 results, 4 rows above the fold
+    1. What does 'Take all' do on the Morning/Evening card?  top=376
+    2. Where do I put instructions like 'take with food'?  top=457
+    3. Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?  top=538
+    4. A dose was genuinely missed — what should I do?  top=636
+    5. Where does this medication show up on Home?  top=717  <-- BELOW FOLD
+    6. The weight has changed a lot in a few days  top=798  <-- BELOW FOLD
+    7. Something's wrong and it isn't in this list  top=897  <-- BELOW FOLD
+
+Q "is 2 tablets too many" -> 60 results, 4 rows above the fold
+    1. What is 'Hours between doses' / minimum gap?  top=376
+    2. It won't let me save the medication  top=457
+    3. This medication isn't taken every day  top=538
+    4. I've got weeks of missed doses and I don't want to tap them one by one  top=618
+    5. What's the difference between 'As needed' and 'Scheduled'?  top=717  <-- BELOW FOLD
+    6. How do I record a weight, and why does it ask for a reason?  top=798  <-- BELOW FOLD
+    7. How do I add a medication?  top=897  <-- BELOW FOLD
+    8. I'm not getting any reminders at all  top=959  <-- BELOW FOLD
+
+Q "she is coughing up blood" -> 66 results, 4 rows above the fold
+    1. How do I record blood pressure?  top=376
+    2. The temperature is high — what should I do?  top=475
+    3. Where does this medication show up on Home?  top=574
+    4. The printable report says pop-ups are blocked  top=655
+    5. How do I record a weight, and why does it ask for a reason?  top=735  <-- BELOW FOLD
+    6. What am I looking at in the CSV?  top=834  <-- BELOW FOLD
+    7. I typed a temperature wrong and there's no Remove button  top=915  <-- BELOW FOLD
+    8. A dose was genuinely missed — what should I do?  top=1013  <-- BELOW FOLD
+
+Q "she collapsed" -> 2 results, 2 rows above the fold
+    1. All my medications vanished from Home  top=376
+    2. I added a medication but I can't find it on Home  top=457
+
+Q "he has chest pain" -> 1 results, 1 rows above the fold
+    1. Can I record how bad it was, or where on the body?  top=376
+
+Q "she is unresponsive" -> 1 results, 1 rows above the fold
+    1. I tap something and nothing happens  top=376
+
+Q "she has a rash all over" -> 39 results, 4 rows above the fold
+    1. How do I erase everything and start over?  top=376
+    2. Can I start over / erase everything?  top=457
+    3. All my medications vanished from Home  top=538
+    4. How do I record blood pressure?  top=618
+    5. What does 'Take all' do on the Morning/Evening card?  top=717  <-- BELOW FOLD
+    6. How do I make sure my data is really gone?  top=798  <-- BELOW FOLD
+    7. I've got weeks of missed doses and I don't want to tap them one by one  top=878  <-- BELOW FOLD
+    8. Can I record how bad it was, or where on the body?  top=977  <-- BELOW FOLD
+
+Q "can i crush the tablet" -> 54 results, 5 rows above the fold
+    1. Where do I put instructions like 'take with food'?  top=376
+    2. How do I add a medication?  top=457
+    3. How do I change or delete a medication?  top=519
+    4. One particular medication never reminds me  top=600
+    5. The same medication comes in two strengths  top=681
+    6. It won't let me save the medication  top=761  <-- BELOW FOLD
+    7. This medication isn't taken every day  top=842  <-- BELOW FOLD
+    8. I want to stop a medication for a while without deleting it  top=923  <-- BELOW FOLD
+
+Q "is this medicine safe for children" -> 54 results, 5 rows above the fold
+    1. Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?  top=376
+    2. Is my information stored on a server somewhere?  top=475
+    3. How do I add a medication?  top=556
+    4. How do I change or delete a medication?  top=618
+    5. One particular medication never reminds me  top=699
+    6. The same medication comes in two strengths  top=779  <-- BELOW FOLD
+    7. It won't let me save the medication  top=860  <-- BELOW FOLD
+    8. This medication isn't taken every day  top=941  <-- BELOW FOLD
+
+Q "he is having trouble breathing" -> 1 results, 1 rows above the fold
+    1. The symptom is severe, or something new and frightening is happening  top=376
+
+Q "what are the side effects of cisplatin" -> 2 results, 2 rows above the fold
+    1. Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?  top=376
+    2. How do I record a symptom?  top=475
+
+Q "my mom stopped breathing" -> 5 results, 4 rows above the fold
+    1. My reminders stopped after I didn't open the app for a while  top=376
+    2. The symptom is severe, or something new and frightening is happening  top=457
+    3. It says notifications are blocked for ChemoWell  top=556
+    4. I'm not getting any reminders at all  top=636
+    5. I want to stop a medication for a while without deleting it  top=717  <-- BELOW FOLD
+
+===== sym-medical-question rendered =====
+ChemoWell
+BETA
+Rita’s Meds
+Thursday, Aug 13
+BETA DATE CONTROLS
+▼
+Search results
+SYMPTOMS & REACTIONS
+Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?
+Contact your care team
+This is a question for the care team, and ChemoWell will not try to answer it. The app keeps a record of what happened and when. It holds no information about any drug, has no idea what is normal for this person's treatment, and would be guessing if it said otherwise.
+STEP BY STEP
+1
+Write the question down, along with what you have actually seen and when it started.
+2
+Ask the care team, or the pharmacist who dispensed the medication — they have the person's actual treatment plan in front of them.
+3
+Anything sudden, severe, or frightening is a phone call now, not a question for later.
+4
+Log the symptom here with a note in your own words. Turning up to an appointment with dates and times is worth far more than trying to remember.
+WORTH KNOWING
+ChemoWell is a record-keeping tool, not a source of medical information. Never delay care because of anything shown in this app.
+RELATED
+The symptom is severe, or something new and frightening is happening
+How do I record a symptom?
+The temperature is high — what should I do?
+This help is stored inside the app. Nothing you read or search here is sent anywhere.
+Home
+Meds
+Reports
+In-Patient
+Symptoms

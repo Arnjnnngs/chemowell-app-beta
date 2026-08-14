@@ -1,0 +1,58 @@
+PASS  [Chemo] notice does NOT show during the guided tour  |  guide up
+PASS  [Chemo] notice appears on Home after Skip guide
+PASS  [Chemo] notice is the FIRST card on Home  |  noticeIdx=72 tempIdx=1013
+PASS  [Chemo] notice not on Meds
+PASS  [Chemo] notice not on Reports
+PASS  [Chemo] notice not on In-Patient
+PASS  [Chemo] notice not on Symptoms
+PASS  [Chemo] notice still on Home after a nav round trip
+PASS  [Chemo] zero console errors
+PASS  [Radiation] notice does NOT show during the guided tour  |  guide up
+PASS  [Radiation] notice appears on Home after Skip guide
+PASS  [Radiation] notice is the FIRST card on Home  |  noticeIdx=71 tempIdx=1012
+PASS  [Radiation] notice not on Meds
+PASS  [Radiation] notice not on Reports
+PASS  [Radiation] notice not on In-Patient
+PASS  [Radiation] notice not on Symptoms
+PASS  [Radiation] notice still on Home after a nav round trip
+PASS  [Radiation] zero console errors
+PASS  [Both] notice does NOT show during the guided tour  |  guide up
+PASS  [Both] notice appears on Home after Skip guide
+PASS  [Both] notice is the FIRST card on Home  |  noticeIdx=71 tempIdx=1012
+PASS  [Both] notice not on Meds
+PASS  [Both] notice not on Reports
+PASS  [Both] notice not on In-Patient
+PASS  [Both] notice not on Symptoms
+PASS  [Both] notice still on Home after a nav round trip
+PASS  [Both] zero console errors
+PASS  [Other] notice does NOT show during the guided tour  |  guide up
+PASS  [Other] notice appears on Home after Skip guide
+PASS  [Other] notice is the FIRST card on Home  |  noticeIdx=71 tempIdx=1012
+PASS  [Other] notice not on Meds
+PASS  [Other] notice not on Reports
+PASS  [Other] notice not on In-Patient
+PASS  [Other] notice not on Symptoms
+PASS  [Other] notice still on Home after a nav round trip
+PASS  [Other] zero console errors
+PASS  [tour completed] the guide actually ran to the end (1 steps)  |  guide gone
+PASS  [tour completed] the notice was NEVER visible while the guide was up
+FAIL  [tour completed] notice appears on Home after finishing the guide  |  ChemoWell | BETA | Tour’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | TEMPERATURE | No readings yet | Log | WEIGHT | No readings yet | 
+PASS  [Got it] notice showing before dismissal
+PASS  [Got it] notice gone from Home
+PASS  [Got it] browserNoticeSeen written to on-device prefs  |  {"installedAt":1786656360342,"patientName":"DGot","sex":"female","treatmentType":"chemo","pendingName":null,"tourDone":true,"tourStep":null,"browserNoticeSeen":
+PASS  [Got it] still dismissed after a full reload
+PASS  [Got it] Home still renders normally after dismissal
+PASS  [Got it] zero console errors
+PASS  [Dismiss] notice showing before dismissal
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+page.evaluate: Error: no button Dismiss
+    at eval (eval at evaluate (:290:30), <anonymous>:1:196)
+    at UtilityScript.evaluate (<anonymous>:292:16)
+    at UtilityScript.<anonymous> (<anonymous>:1:44)
+    at clickText (/tmp/lib.mjs:30:11)
+    at /tmp/s1-notice.mjs:64:9
+
+Node.js v22.22.2

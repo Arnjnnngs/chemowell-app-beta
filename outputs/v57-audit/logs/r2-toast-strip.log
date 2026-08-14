@@ -1,0 +1,4 @@
+FAIL  [320px] a live toast does NOT cover the care-team strip button  |  {"toastTop":522,"toastBottom":624,"btnTop":539,"btnBottom":583,"overlapY":44,"overlapX":160,"overlaps":true,"pe":"none"}
+PASS  [320px] ...and it is still tappable through the toast  |  {"tag":"BUTTON","isBtn":true}
+PASS  [360px] a live toast does NOT cover the care-team strip button  |  {"toastTop":621,"toastBottom":704,"btnTop":519,"btnBottom":563,"overlapY":-58,"overlapX":180,"overlaps":false,"pe":"none"}
+PASS  [390px] a live toast does NOT cover the care-team strip button  |  {"toastTop":665,"toastBottom":748,"btnTop":482,"btnBottom":526,"overlapY":-140,"overlapX":195,"overlaps":false,"pe":"none"}

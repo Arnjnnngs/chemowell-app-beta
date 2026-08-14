@@ -1,0 +1,31 @@
+PASS  [Got it] notice showing before dismissal
+PASS  [Got it] notice gone from Home
+PASS  [Got it] browserNoticeSeen persisted to on-device prefs  |  "browserNoticeSeen":true
+PASS  [Got it] still dismissed after a full reload
+PASS  [Got it] Home renders normally after dismissal
+PASS  [Got it] zero console errors
+PASS  [X] notice showing before dismissal
+PASS  [X] notice gone from Home
+PASS  [X] browserNoticeSeen persisted to on-device prefs  |  "browserNoticeSeen":true
+PASS  [X] still dismissed after a full reload
+PASS  [X] Home renders normally after dismissal
+PASS  [X] zero console errors
+PASS  [Open Help & FAQ] notice showing before dismissal
+PASS  [Open Help & FAQ] navigated to the Help centre
+PASS  [Open Help & FAQ] notice gone from Home
+PASS  [Open Help & FAQ] browserNoticeSeen persisted to on-device prefs  |  "browserNoticeSeen":true
+PASS  [Open Help & FAQ] still dismissed after a full reload
+PASS  [Open Help & FAQ] Home renders normally after dismissal
+PASS  [Open Help & FAQ] zero console errors
+PASS  [double-tap] triple-tapping "Got it" is harmless
+settings buttons: Open menu / + Add profile / View plans / Chemo / Radiation / Both / Other / Temperature card
+Quick temperature logging on Home. / Weight card
+Quick weight logging on Home. / Blood pressure card
+Quick BP logging on Home; readings appear in Reports. / Treatment schedule card
+Treatment date, countdown, and reminders on Home. / Menstrual cycle tracking
+Period banner on Home and the Cycle report. / Weight in daily check-in
+Include a weight question in the daily check-in below. / Bowel movement in daily check-in
+Include a bowel movement question in the daily check-in below. / Appetite in daily check-in
+Include an appetite question in the daily check-in below. / Replay the walkthrough / Download CSV / Printable report
+PLUS / Home / Meds / Reports / In-Patient / Symptoms
+FAIL  [Start over] returns to the welcome screen  |  ChemoWell | BETA | Wipe’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | ⚙ | SETTINGS | Settings | Profi

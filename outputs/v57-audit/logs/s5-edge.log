@@ -1,0 +1,59 @@
+daily-limit field: {"ph":"No limit","ro":false,"dis":false}
+PASS  daily limit is saved and shown on the Meds row  |  Rules: Min 4-hour gap · Daily limit 4000 mg
+PASS  daily limit blocks further logging once reached  |  logs=2 blocked=false
+PASS  double-tapping a dose button does not double-log silently  |  errs=0
+PASS  absurd temperature (999) is rejected with a clear message  |  Enter a valid temperature in °F (86–113)
+PASS  absurd blood pressure is rejected with a clear message  |  Enter a valid reading, e.g. 120 over 80.
+PASS  a note is saved and listed on Notes  |  ways editable — log something late and it lands on the date it happened. | Add | AUG | 13 | Thursday · Today | Ask the nurse about the rash. | Note saved | Home | Meds | Reports | In-Patient | Symptoms
+appt modal btns: Pick a date
+▼ // Cancel // Add // Home // Meds // Reports // In-Patient // Symptoms
+appt fields: INPUT|e.g. Infusion, lab draw, oncologist visit|text ;; INPUT||time ;; SELECT||select-one ;; TEXTAREA|Anything else worth noting...|textarea
+FAIL  an appointment is saved and shown on the Calendar  |  sions, labs, and other dates worth a reminder. | Add | ‹ | August 2026 | › | S | M | T | W | T | F | S | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31 | Thursday, August 13 · Today | Add | Not
+=== History ===
+ChemoWell
+BETA
+Fix’s Meds
+Thursday, Aug 13
+BETA DATE CONTROLS
+▼
+REPORTS
+History
+Review dose, symptom, and vital logs by day.
+Missed Doses
+Show all
+TODAY - THURSDAY 8/13
+1 dose
+EVENING
+9:42 PM
+Paracetamol
+1000 mg
+Remove
+Enter a title for this appointment
+Add appointment
+TITLE
+COLOR
+✓
+DATE
+Pick a date
+▼
+TIME
+REMIND ME
+No reminder
+At the scheduled time
+1 hour before
+The morning of (9 AM)
+1 day before
+Custom...
+NOTE (OPTIONAL)
+Cancel
+Add
+↩ Back
+Home
+Meds
+Reports
+In-Patient
+Symptoms
+history btns: Open menu // Missed Doses // Show all // Remove // ✓ // Teal // Blue // Indigo // Purple // Pink // Pick a date
+▼ // Cancel // Add // ↩ Back // Home
+PASS  History screen renders entries
+PASS  zero console errors

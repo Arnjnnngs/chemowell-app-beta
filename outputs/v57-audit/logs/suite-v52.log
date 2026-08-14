@@ -1,0 +1,23 @@
+PASS  [mobile 390px] app rendered something  |  433 chars
+PASS  [mobile 390px] no app console errors (CDN/proxy noise excluded)
+PASS  [mobile 390px] no horizontal overflow on first screen  |  overflow=0px
+PASS  [mobile 360px] app rendered something  |  433 chars
+PASS  [mobile 360px] no app console errors (CDN/proxy noise excluded)
+PASS  [mobile 360px] no horizontal overflow on first screen  |  overflow=0px
+PASS  APP_VERSION is present and well-formed  |  got app-v57
+PASS  sw.js CACHE names the same version index.html declares  |  APP_VERSION=app-v57  CACHE=chemowell-app-v57-1
+PASS  H-1 pastMissedCount walks previous days only (d < d0)
+PASS  H-1 renderHistory seeds through today inclusive (d <= d0), matching the banner
+PASS  H-2 hasTreatmentDate\(\) helper exists
+PASS  H-2 treatmentOnlyBlocks() predicate exists and guards no-date + Other
+PASS  H-2 no raw "treatmentOnly && !treatmentActiveOn" gate survives anywhere
+PASS  H-2 every gate routes through the predicate (>=6 call sites)  |  10 call sites
+PASS  Other profiles: treatment-mode control removed from the editor entirely
+PASS  Other profiles: treatmentExcludedNow is inert
+PASS  Other profiles: Meds-list treatment chips hidden
+PASS  H-2 Treatment schedule card is no longer hard-blocked for radiation-only
+PASS  H-2 Settings toggle for the schedule card is available to every profile
+PASS  H-3 export no longer appends a hardcoded pill count
+
+ALL GREEN
+EXIT=0

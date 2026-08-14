@@ -1,0 +1,87 @@
+PASS  [Chemo] guided tour completed to Finish
+PASS  [Chemo] browser notice present on Home after setup
+PASS  [Chemo] all 3 medications listed on Meds  |  all present
+FAIL  [Chemo] daily limit recorded on Capecitabine  |  Rules: Min 12-hour gap ;; Rules: Min 4-hour gap ;; Rules: Daily ;; Rules: Min 8-hour gap
+PASS  [Chemo] a dose was logged on each of 3 simulated days  |  3/3
+PASS  [Chemo] temperature card shows the latest reading  |  TEMPERATURE | Last reading 9:38 PM | 98.6°F | Log | WEIGHT | Last readi
+PASS  [Chemo] weight card shows the latest reading  |  WEIGHT | Last reading 9:38 PM | 148.8 lbs | Log | BLOOD PRESSURE
+PASS  [Chemo] Today’s journal is populated  |  TODAY’S JOURNAL | EVENING | 9:38 PM | TourMed | 8 mg | Remove | 9:38 PM | Temperature | 98.6 °F | Remove | 9:38 PM | Weight | 148.8 lbs | Remove | 9:38 P
+PASS  [Chemo] a symptom is listed on the Symptoms screen  |  l changes, use the Bowel Movement tracker on Home | + | Nausea | 8/13/2026 9:38 PM | felt rough | Remove | Nausea logged at 9:38 PM | Home | Meds | Reports | In
+FAIL  [Chemo] a note is saved and listed on Notes  |  lways editable — log something late and it lands on the date it happened. | Add | No notes yet. | Jot down anything worth remembering — a side effect, a question for the doctor, how the 
+FAIL  [Chemo] an appointment is saved and shown on the Calendar  |  ar | Appointments, infusions, labs, and other dates worth a reminder. | Add | ‹ | August 2026 | › | S | M | T | W | T | F | S | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 2
+PASS  [Chemo] Reports index shows a non-zero recorded-entry count  |  13 recorded entries
+FAIL  [Chemo] History spans 3 days  |  ["Aug 13","Thu, Aug 13"]
+PASS  [Chemo] History shows the temperature entries  |  temps found: ["98.6","148.8","101.4","149.2","99.1"]
+PASS  [Chemo] History shows the symptom entry
+PASS  [Chemo] Weight report shows the logged readings  |  s. | Weeks | Months | WEIGHT TREND | Last 4 weeks | 148.8 lbs | 146 | 147.2 | 148.4 | 149.6 | 150.8 | 152 | 8/11 | 8/12 | 8/12 | 8/13 | 8/13 | 148.8 | CURRENT | 148.8 | AVERAGE | 149.3 | CHANGE | 
+PASS  [Chemo] Blood Pressure report shows the logged readings
+PASS  [Chemo] CSV export downloads a real file  |  chemowell-rita-2026-08-13.csv 548 bytes
+PASS  [Chemo] CSV contains the medication doses  |  2026-08-11,9:38 PM,TourMed,8 mg,
+PASS  [Chemo] CSV contains temperature, weight and BP rows  |  T=true W=true BP=true
+PASS  [Chemo] CSV contains the symptom and spans 3 dates  |  dates=2026-08-11,2026-08-12,2026-08-13
+PASS  [Chemo] zero console errors across the whole profile sweep
+PASS  [Radiation] guided tour completed to Finish
+PASS  [Radiation] browser notice present on Home after setup
+PASS  [Radiation] all 2 medications listed on Meds  |  all present
+FAIL  [Radiation] daily limit recorded on Aquaphor  |  Rules: Min 6-hour gap ;; Rules: Daily ;; Rules: Min 8-hour gap
+PASS  [Radiation] a dose was logged on each of 3 simulated days  |  3/3
+PASS  [Radiation] temperature card shows the latest reading  |  TEMPERATURE | Last reading 9:39 PM | 98.6°F | Log | WEIGHT | Last readi
+PASS  [Radiation] weight card shows the latest reading  |  WEIGHT | Last reading 9:39 PM | 148.8 lbs | Log | BLOOD PRESSURE
+PASS  [Radiation] Today’s journal is populated  |  TODAY’S JOURNAL | EVENING | 9:39 PM | TourMed | 8 mg | Remove | 9:39 PM | Temperature | 98.6 °F | Remove | 9:39 PM | Weight | 148.8 lbs | Remove | 9:39 P
+PASS  [Radiation] a symptom is listed on the Symptoms screen  |   changes, use the Bowel Movement tracker on Home | + | Nausea | 8/13/2026 9:39 PM | felt rough | Remove | Nausea logged at 9:39 PM | Home | Meds | Reports | In-
+FAIL  [Radiation] a note is saved and listed on Notes  |  ways editable — log something late and it lands on the date it happened. | Add | No notes yet. | Jot down anything worth remembering — a side effect, a question for the doctor, how the d
+FAIL  [Radiation] an appointment is saved and shown on the Calendar  |  r | Appointments, infusions, labs, and other dates worth a reminder. | Add | ‹ | August 2026 | › | S | M | T | W | T | F | S | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23
+PASS  [Radiation] Reports index shows a non-zero recorded-entry count  |  16 recorded entries
+FAIL  [Radiation] History spans 3 days  |  ["Aug 13","Thu, Aug 13"]
+PASS  [Radiation] History shows the temperature entries  |  temps found: ["98.6","148.8","101.4","149.2","99.1"]
+PASS  [Radiation] History shows the symptom entry
+PASS  [Radiation] Weight report shows the logged readings  |  . | Weeks | Months | WEIGHT TREND | Last 4 weeks | 148.8 lbs | 146 | 147.2 | 148.4 | 149.6 | 150.8 | 152 | 8/11 | 8/12 | 8/12 | 8/13 | 8/13 | 148.8 | CURRENT | 148.8 | AVERAGE | 149.3 | CHANGE | -
+PASS  [Radiation] Blood Pressure report shows the logged readings
+PASS  [Radiation] CSV export downloads a real file  |  chemowell-sam-2026-08-13.csv 695 bytes
+PASS  [Radiation] CSV contains the medication doses  |  2026-08-11,9:39 PM,TourMed,8 mg,
+PASS  [Radiation] CSV contains temperature, weight and BP rows  |  T=true W=true BP=true
+PASS  [Radiation] CSV contains the symptom and spans 3 dates  |  dates=2026-08-11,2026-08-12,2026-08-13
+PASS  [Radiation] zero console errors across the whole profile sweep
+PASS  [Both] guided tour skipped
+PASS  [Both] browser notice present on Home after setup
+PASS  [Both] all 2 medications listed on Meds  |  all present
+FAIL  [Both] daily limit recorded on Paracetamol  |  Rules: Min 8-hour gap ;; Rules: Min 4-hour gap
+PASS  [Both] a dose was logged on each of 3 simulated days  |  3/3
+PASS  [Both] temperature card shows the latest reading  |  TEMPERATURE | Last reading 9:40 PM | 98.6°F | Log | WEIGHT | Last readi
+PASS  [Both] weight card shows the latest reading  |  WEIGHT | Last reading 9:40 PM | 148.8 lbs | Log | BLOOD PRESSURE
+PASS  [Both] Today’s journal is populated  |  TODAY’S JOURNAL | EVENING | 9:40 PM | Paracetamol | 500 mg | Remove | 9:40 PM | Temperature | 98.6 °F | Remove | 9:40 PM | Weight | 148.8 lbs | Remove | 
+PASS  [Both] a symptom is listed on the Symptoms screen  |  nges, use the Bowel Movement tracker on Home | + | Nausea | 8/13/2026 9:40 PM | felt rough | Remove | Nausea logged at 9:40 PM | Home | Meds | Reports | In-Pati
+FAIL  [Both] a note is saved and listed on Notes  |   editable — log something late and it lands on the date it happened. | Add | No notes yet. | Jot down anything worth remembering — a side effect, a question for the doctor, how the day w
+FAIL  [Both] an appointment is saved and shown on the Calendar  |  pointments, infusions, labs, and other dates worth a reminder. | Add | ‹ | August 2026 | › | S | M | T | W | T | F | S | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 
+PASS  [Both] Reports index shows a non-zero recorded-entry count  |  16 recorded entries
+FAIL  [Both] History spans 3 days  |  ["Aug 13","Thu, Aug 13"]
+PASS  [Both] History shows the temperature entries  |  temps found: ["98.6","148.8","101.4","149.2","99.1"]
+PASS  [Both] History shows the symptom entry
+PASS  [Both] Weight report shows the logged readings  |  eks | Months | WEIGHT TREND | Last 4 weeks | 148.8 lbs | 146 | 147.2 | 148.4 | 149.6 | 150.8 | 152 | 8/11 | 8/12 | 8/12 | 8/13 | 8/13 | 148.8 | CURRENT | 148.8 | AVERAGE | 149.3 | CHANGE | -1.2 
+PASS  [Both] Blood Pressure report shows the logged readings
+PASS  [Both] CSV export downloads a real file  |  chemowell-ada-2026-08-13.csv 713 bytes
+PASS  [Both] CSV contains the medication doses  |  2026-08-11,9:40 PM,Paracetamol,500 mg,
+PASS  [Both] CSV contains temperature, weight and BP rows  |  T=true W=true BP=true
+PASS  [Both] CSV contains the symptom and spans 3 dates  |  dates=2026-08-11,2026-08-12,2026-08-13
+PASS  [Both] zero console errors across the whole profile sweep
+PASS  [Other] guided tour skipped
+PASS  [Other] browser notice present on Home after setup
+PASS  [Other] all 1 medications listed on Meds  |  all present
+PASS  [Other] a dose was logged on each of 3 simulated days  |  3/3
+PASS  [Other] temperature card shows the latest reading  |  TEMPERATURE | Last reading 9:41 PM | 98.6°F | Log | WEIGHT | Last readi
+PASS  [Other] weight card shows the latest reading  |  WEIGHT | Last reading 9:41 PM | 148.8 lbs | Log | BLOOD PRESSURE
+PASS  [Other] Today’s journal is populated  |  TODAY’S JOURNAL | EVENING | 9:41 PM | Metformin | 500 mg | Remove | 9:41 PM | Temperature | 98.6 °F | Remove | 9:41 PM | Weight | 148.8 lbs | Remove | 9:
+PASS  [Other] a symptom is listed on the Symptoms screen  |  hanges, use the Bowel Movement tracker on Home | + | Nausea | 8/13/2026 9:41 PM | felt rough | Remove | Nausea logged at 9:41 PM | Home | Meds | Reports | In-Pa
+FAIL  [Other] a note is saved and listed on Notes  |  ys editable — log something late and it lands on the date it happened. | Add | No notes yet. | Jot down anything worth remembering — a side effect, a question for the doctor, how the day
+FAIL  [Other] an appointment is saved and shown on the Calendar  |  Appointments, infusions, labs, and other dates worth a reminder. | Add | ‹ | August 2026 | › | S | M | T | W | T | F | S | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 2
+PASS  [Other] Reports index shows a non-zero recorded-entry count  |  13 recorded entries
+FAIL  [Other] History spans 3 days  |  ["Aug 13","Thu, Aug 13"]
+PASS  [Other] History shows the temperature entries  |  temps found: ["98.6","148.8","101.4","149.2","99.1"]
+PASS  [Other] History shows the symptom entry
+PASS  [Other] Weight report shows the logged readings  |  Weeks | Months | WEIGHT TREND | Last 4 weeks | 148.8 lbs | 146 | 147.2 | 148.4 | 149.6 | 150.8 | 152 | 8/11 | 8/12 | 8/12 | 8/13 | 8/13 | 148.8 | CURRENT | 148.8 | AVERAGE | 149.3 | CHANGE | -1.
+PASS  [Other] Blood Pressure report shows the logged readings
+PASS  [Other] CSV export downloads a real file  |  chemowell-ken-2026-08-13.csv 560 bytes
+PASS  [Other] CSV contains the medication doses  |  2026-08-11,9:40 PM,Metformin,500 mg,
+PASS  [Other] CSV contains temperature, weight and BP rows  |  T=true W=true BP=true
+PASS  [Other] CSV contains the symptom and spans 3 dates  |  dates=2026-08-11,2026-08-12,2026-08-13
+PASS  [Other] zero console errors across the whole profile sweep
