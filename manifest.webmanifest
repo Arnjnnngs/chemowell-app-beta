@@ -1,7 +1,7 @@
 {
   "name": "ChemoWell",
   "short_name": "ChemoWell",
-  "description": "Private chemo medication & symptom tracker \u2014 all data stays on your device",
+  "description": "Track medications, doses and symptoms through cancer treatment — all data stays on your device",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#FDF1F4",

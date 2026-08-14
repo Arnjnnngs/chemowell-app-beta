@@ -53,10 +53,6 @@ input:focus{outline:2px solid #BF4C1A;outline-offset:0;border-color:#BF4C1A;}
 select{font-family:inherit;-webkit-tap-highlight-color:transparent;}
 select:focus{outline:2px solid #BF4C1A;outline-offset:0;border-color:#BF4C1A;}
 button:focus-visible, [role="button"]:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #BF4C1A; outline-offset: 2px; }
-    /* v56 (Designer N3): the shared ring is #BF4C1A, and the help bubble is the one control whose
-       ring lands on the peach page gradient rather than a white card -- ~2.4:1, under WCAG 2.2
-       1.4.11's 3:1 floor for non-text indicators. */
-    #helpbot-fab:focus-visible { outline: 3px solid #2A2127; outline-offset: 3px; }
 ::placeholder{color:#7A6E76 !important;opacity:1;}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
 #root{min-height:100vh;}
@@ -108,6 +104,12 @@ const SUPPORT_LINK_READY = SUPPORT_LINK.indexOf('REPLACE') === -1;
     if (isWebView && measured === 0) document.documentElement.style.setProperty('--safe-top', '28px');
   } catch (e) {}
 })();
+// See the toast's own comment in render(). Only FIXED-positioned furniture belongs here: this lifts
+// the toast by a constant, which can clear an element whose position is also constant and cannot
+// chase one that scrolls. Today that is one element, the Reports "Back" pill.
+function toastNeedsLift() {
+  return state.view === 'reports' && !!state.reportsView;
+}
 function safeTopPx() {
   const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-top'));
   return isNaN(v) ? 0 : v;
@@ -574,6 +576,50 @@ function openSupportLink() {
   try { window.open(SUPPORT_LINK, '_blank', 'noopener'); } catch (e) {}
 }
 
+// ---- v57: browser-build first-run notice (Aaron-requested) -------------------------------------
+// The beta reaches testers as a plain HTTPS URL months before either store listing exists. A
+// browser tab is NOT the phone app, and the gaps are not cosmetic: a tester who never adds the app
+// to their Home Screen can lose everything they logged (iOS Safari clears site data for a site the
+// person hasn't opened in 7 days -- installed Home Screen apps are exempt), and one who expects a
+// reminder to wake their locked phone will report "reminders are broken" when they are working
+// exactly as a browser permits. Saying this once, up front, is cheaper than either outcome.
+//
+// Shown once and then never again -- persisted in on-device prefs, so it survives reloads rather
+// than re-appearing on every visit. Native builds never see it (isNativeApp gate), and it waits for
+// the first-run guide to finish so the two never compete for the same screen.
+//
+// PROFILE-SCOPED on purpose, not device-wide. It reads like a property of the browser, so a
+// device-wide key looks more correct at first glance -- but "Start over" wipes profile prefs and
+// returns the app to the welcome screen, and its own copy promises that is "exactly like a
+// brand-new install". A device-wide flag would survive that and silently withhold the Home Screen
+// warning from someone starting fresh, which is the one person who most needs it. The cost is that
+// a caregiver adding a second profile sees it once more; that is the cheap side of the trade.
+function isInstalledPWA() {
+  try {
+    if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+    return window.navigator.standalone === true; // iOS Safari's own flag; undefined everywhere else
+  } catch (e) { return false; }
+}
+function isIOSDevice() {
+  try {
+    const ua = navigator.userAgent || '';
+    // iPadOS 13+ reports a desktop Macintosh UA; maxTouchPoints is the standard way to tell a real
+    // Mac (0) from an iPad pretending to be one (>1).
+    return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+  } catch (e) { return false; }
+}
+function browserNoticeDue() {
+  return state.prefsLoaded && !isNativeApp() && !state.browserNoticeSeen && state.tourStep == null;
+}
+async function dismissBrowserNotice() {
+  try { await setPrefsDB({ browserNoticeSeen: true }); }
+  catch (e) { setState({ browserNoticeSeen: true }); }
+  // Designer S2: the only way to reach "Got it" was to scroll past the card, so dismissing removed
+  // several hundred px from ABOVE the viewport and dropped the person into the middle of Home with
+  // the top card sliced through. Every other wholesale view change in this file calls this.
+  scrollToTop();
+}
+
 // Full local wipe: profile, medication list, and every logged entry. Since everything lives on
 // this device only, this is the app's "start completely over" — after the reload the first-run
 // welcome + guide appear again, exactly like a brand-new install.
@@ -791,7 +837,7 @@ function restoreView() {
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, helpBotOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -2093,7 +2139,8 @@ const FAQ_ITEMS = [
 // no box at all. This is a labelled "Search help" field over a fixed list, and the medical-adjacent
 // entries all say the same thing first: contact the care team.
 //
-// Content is transcribed verbatim from the Developer stage's brief (outputs/HELPBOT_CONTENT_v1.md),
+// Content is transcribed verbatim from the Developer stage's brief (outputs/HELPBOT_CONTENT_v1.md,
+// named for the shape that brief assumed; the content shipped as the browsable Help & FAQ centre),
 // which authored it from the existing FAQ, every problem in REQUESTS.md / BACKLOG.md, every finding
 // in the v51/v52 audits, and a screen-by-screen walk of this file.
 //
@@ -2137,7 +2184,7 @@ const HELP_TOPICS = [
   { id: "rem-none", cat: "reminders", q: "I'm not getting any reminders at all", a: "There are two separate phone settings involved, and the order matters. Do the battery one first. That is what finally worked here, and once it was on, the exact-timing setting turned on without a fight.", steps: ["Open ChemoWell. Tap the three lines in the top left, then tap **Settings**.", "Scroll down to the part that says **Notifications**.", "If you see **Turn on notifications**, tap it, and tap Allow when your phone asks.", "Now look for a button that says **Allow background activity**. **Tap this one first**, before anything else. Your phone will show its own screen — choose the option that lets the app run without limits (on Samsung phones it is usually called *Unrestricted*).", "Come back to ChemoWell. Now look for **Allow exact reminders** and tap it. Your phone opens a screen called *Alarms & reminders*. Turn the switch on.", "Come back to Settings in ChemoWell one more time. It should now say **✓ Notifications are on**, with a line underneath telling you how many reminders are set for the next 3 days."], branches: [{ when: "There is no Allow background activity button", steps: ["That is fine. The button only appears when your phone is still holding the app back. If it isn't there, your phone is already letting ChemoWell run, and there is nothing to do on that step.", "Carry on with the exact-timing step above."] }, { when: "It still says 0 reminders, or the count line is missing", steps: ["Check that at least one of your medications actually has set times. A medication set to *As needed* never sends a reminder — it only counts hours between doses. See *\"One medication never reminds me\"*.", "Check that the medication is not paused. A paused medication is not tracked and does not remind.", "Look at the top of your Home screen for a box called **Beta date controls**. If it is showing a date that isn't today, reminders are switched off on purpose. Open that box and tap **Reset**."] }, { when: "Everything says it's on, but nothing arrives", steps: ["Check your phone isn't on Do Not Disturb or a sleep/bedtime mode.", "In your phone's own Settings, find Apps, then ChemoWell, then Notifications, and make sure they are allowed there too.", "Open ChemoWell at least once every couple of days. Reminders are set up 3 days ahead each time you open the app — see *\"My reminders stopped after I didn't open the app for a while\"*."] }], note: "ChemoWell can ask your phone for permission, but it can never switch these settings on for you — Android deliberately puts that in your hands.", keywords: ["notification", "alarm", "alert", "silent", "nothing", "never", "missing", "battery", "optimisation", "optimization"], related: ["rem-exact-toggle-missing", "rem-after-3-days", "rem-no-reminder-for-med", "rem-web-vs-app"], medical: true, safety: true },
   { id: "rem-exact-toggle-missing", cat: "reminders", q: "The 'Alarms & reminders' switch isn't there, or won't turn on", a: "This is a known quirk on some Samsung phones. Once you say no to it, the whole section can disappear. There are two standard ways to bring it back.", steps: ["First, do the battery step described in *\"I'm not getting any reminders at all\"* — on the phone this was tested on, that alone made the switch work.", "If it is still missing: close ChemoWell completely (swipe it away from your recent apps), then open it again, and try the button once more.", "If it is still missing: open your phone's Settings, tap Apps, find ChemoWell, and use the app's own force-stop option. Then open ChemoWell again.", "If it is *still* missing: open your phone's Settings, tap Apps, tap the three dots in the top corner, and choose **Reset app preferences**. This does not delete anything — it only clears hidden permission decisions across all your apps. Then try again."], note: "You do not have to solve this to get reminders. When exact timing is off, ChemoWell already sets every reminder a few minutes early on purpose, so an ordinary phone delay makes it arrive on time rather than late. The time you see on screen is always the real time.", keywords: ["exact", "alarms and reminders", "samsung", "one ui", "toggle", "greyed out", "missing", "won't turn on"], related: ["rem-none", "rem-late"] },
   { id: "rem-late", cat: "reminders", q: "The reminder came a few minutes early, or a few minutes late", a: "A few minutes early is on purpose. A few minutes late means your phone is delaying the app.", steps: ["If it arrived **early**: that is ChemoWell doing it deliberately. When your phone hasn't granted exact timing, the app sets reminders about four minutes ahead so normal phone delays land them on time instead of late. Every time shown in the app is still the real time.", "If it arrived **late**: go to the menu → **Settings** → **Notifications**, and do both steps in *\"I'm not getting any reminders at all\"* — background activity first, then exact reminders.", "Once the app says exact timing is allowed, it stops setting reminders early and uses the exact time you chose."], note: "If one particular medication truly cannot be late, it is still safest to set its reminder a few minutes ahead yourself.", keywords: ["early", "late", "wrong time", "minutes", "delayed"], related: ["rem-none", "rem-exact-toggle-missing"] },
-  { id: "rem-web-vs-app", cat: "reminders", q: "I'm using ChemoWell in a web browser, not the installed app", a: "In a browser, reminders only work while ChemoWell is actually open on screen. They cannot reach you with the phone locked or the tab closed.", steps: ["Check which one you have: the installed app opens on its own, with no address bar at the top.", "If you are in a browser and you need reminders while the phone is locked or put away, you need the installed app version.", "In the browser version, everything else works exactly the same — logging, history, reports, exports. Only background reminders are limited."], keywords: ["browser", "chrome", "website", "tab", "locked", "installed", "apk"], related: ["rem-none"] },
+  { id: "rem-web-vs-app", cat: "reminders", q: "I'm using ChemoWell in a web browser, not the installed app", a: "Three things work differently in a browser. Everything else — logging, history, reports, exports — is exactly the same.", steps: ["**Add it to your Home Screen.** On iPhone, tap Share, then **Add to Home Screen**. On Android, open the browser menu, then **Add to Home screen**. This matters most on iPhone: Safari deletes a website's saved data after **7 days without a visit**, and your log is stored nowhere else. A Home Screen app is not treated as a website, so it is not cleared.", "**Reminders only fire while this page is open.** A browser cannot wake a locked phone. They will not reach you with the tab closed or the screen locked. The installed phone app schedules them with the operating system instead, so those arrive either way.", "**Exports download instead of opening the share sheet.** Download CSV and Print/PDF save straight to your Downloads folder. Sending them on to someone is a manual step in the browser version.", "Check which one you are in: the installed app opens on its own, with no address bar at the top."], note: "Nothing you log is sent anywhere in either version. It stays on this device.", keywords: ["browser", "chrome", "safari", "website", "tab", "locked", "installed", "apk", "home screen", "add to home screen", "web preview", "7 days", "cleared", "install"], related: ["rem-none", "priv-lost-phone", "exp-where-file"] },
   { id: "rem-after-3-days", cat: "reminders", q: "My reminders stopped after I didn't open the app for a while", a: "ChemoWell sets up reminders three days ahead every time you open it. If the app isn't opened for longer than that, the queue runs out.", steps: ["Just open ChemoWell. That alone refills the next three days of reminders.", "To check it worked: menu → **Settings** → **Notifications**. It should say how many reminders are scheduled over the next 3 days, and when the next one is.", "Try to open the app at least every couple of days, even briefly."], keywords: ["stopped", "ran out", "vacation", "away", "three days", "72 hours"], related: ["rem-none"] },
   { id: "rem-none-scheduled", cat: "reminders", q: "It says 'No reminders are currently due in the next 3 days'", a: "That means the app is working fine — there is genuinely nothing to remind you about in that window.", steps: ["This is normal if all your medications are *As needed*. Those never send reminders; they only track the hours between doses.", "It is also normal if your medications are set to specific days of the week, and none of those days fall in the next three days.", "It is also what you'll see if every medication is paused.", "If you expected a reminder, open the **Meds** tab, tap the medication, and check it is set to **Scheduled** with at least one time listed under *Schedule windows*."], keywords: ["no reminders", "none due", "empty", "zero"], related: ["rem-no-reminder-for-med"] },
   { id: "rem-paused-sim", cat: "reminders", q: "It says reminders are paused because of the beta date controls", a: "There is a testing box on Home that lets you pretend it is a different day. While that is on, reminders are switched off so your phone doesn't get alerts at the wrong real-world time.", steps: ["Go to **Home** and look near the top for a box labelled **Beta date controls**.", "Tap it to open it.", "Tap **Reset**.", "The date at the top of the screen goes back to today, and reminders start working again."], keywords: ["beta", "date controls", "simulated", "paused", "test date"], related: ["set-beta-date-controls"] },
@@ -2200,6 +2247,7 @@ const HELP_TOPICS = [
   { id: "sym-severity", cat: "symptoms", q: "Can I record how bad it was, or where on the body?", a: "Yes, for some symptoms — and it's optional.", steps: ["Log the symptom as normal.", "For a skin reaction or rash you also get **How bad is it?** (mild, moderate, severe) and **Where on the body?**.", "For pain-type symptoms you get a 1 to 10 scale.", "All of these are optional — a quick record is better than one you gave up on.", "Everything you fill in shows in History and in the exported records."], keywords: ["severity", "mild", "moderate", "severe", "where", "body", "pain scale"], related: ["sym-log"] },
   { id: "sym-edit-delete", cat: "symptoms", q: "I need to fix or delete a symptom I logged", a: "Symptoms can be edited or removed at any time, however old.", steps: ["Tap **Symptoms** at the bottom.", "Tap the entry you want to change.", "Change the time, note, severity or site, then confirm.", "To delete it, use the remove option on that entry and confirm."], keywords: ["edit symptom", "delete", "fix", "wrong"], related: ["log-remove"] },
   { id: "sym-severe", cat: "symptoms", q: "The symptom is severe, or something new and frightening is happening", a: "**Contact the care team, or emergency services if it's urgent.** Do that first. Logging it in the app can wait — this app has no way to judge how serious something is, and it will never try to.", steps: ["If the person is very unwell, struggling to breathe, confused, or you're frightened, call your local emergency number.", "Otherwise call the care team or the on-call number they gave you.", "Once they've been contacted, come back and log the symptom with the time it started, so there's an accurate record.", "Use the note field to write down exactly what you saw, in your own words. That's genuinely useful to the care team later."], note: "ChemoWell is a record-keeping tool, not medical advice. Never delay care because of anything shown in this app.", keywords: ["severe", "bad", "worse", "emergency", "frightened", "help"], related: ["sym-log", "vit-temp-high"], medical: true, careLead: true },
+  { id: "sym-medical-question", cat: "symptoms", q: "Side effects — hair loss, sickness, tiredness: is this normal?", a: "**This is a question for the care team, and ChemoWell will not try to answer it.** The app keeps a record of what happened and when. It holds no information about any drug, has no idea what is normal for this person's treatment, and would be guessing if it said otherwise.", steps: ["Write the question down, along with what you have actually seen and when it started.", "Ask the care team, or the pharmacist who dispensed the medication \u2014 they have the person's actual treatment plan in front of them.", "Anything sudden, severe, or frightening is a phone call now, not a question for later.", "Log the symptom here with a note in your own words. Turning up to an appointment with dates and times is worth far more than trying to remember."], note: "ChemoWell is a record-keeping tool, not a source of medical information. Never delay care because of anything shown in this app.", keywords: ["side effect", "side effects", "hair", "hair loss", "sickness", "tiredness", "fatigue", "normal", "expect", "is that normal", "should i worry", "worried", "dangerous", "interact", "interaction", "safe to take", "what does it do"], related: ["sym-severe", "sym-log", "vit-temp-high"], medical: true, careLead: true, careTone: "calm" },
   { id: "sym-bowel-confusion", cat: "symptoms", q: "Should diarrhoea go in Symptoms or the bowel tracker?", a: "Either works, and they're for different things.", steps: ["Use the **Daily check-in** bowel question for the day's overall pattern — normal, very little, none, or diarrhoea.", "Use the **Symptoms** tab for a specific episode with a time and a note.", "The Symptoms list does include diarrhoea and constipation for exactly that reason.", "Both show up in your exported records."], keywords: ["diarrhea", "diarrhoea", "constipation", "bowel", "where"], related: ["vit-checkin-modal", "sym-log"] },
   { id: "ip-start-end", cat: "inpatient", q: "How do I record a hospital stay?", a: "The In-Patient tab at the bottom, with a start and an end.", steps: ["Tap **In-Patient** at the bottom of the screen.", "When the stay begins, tap **Log In-Patient Start**.", "A banner appears on Home showing which day of the stay you're on.", "When the person is discharged, tap **Log In-Patient End** — on that banner or on the In-Patient tab.", "Every past stay is kept in the **In-Patient History** list below."], keywords: ["hospital", "admitted", "in-patient", "stay", "discharged"], related: ["ip-meds-restricted", "ip-forgot-end"] },
   { id: "ip-meds-restricted", cat: "inpatient", q: "My medications say 'Restricted' and I can't log them", a: "A hospital stay is marked as active. While it is, home logging pauses, because the hospital is giving the medications.", steps: ["If the stay is over, tap **In-Patient** at the bottom and tap **Log In-Patient End**.", "Medication logging on Home goes back to normal straight away.", "If the stay really is still active, that's the intended behaviour — the doses are being given and recorded by the hospital, not by you.", "Days inside a hospital stay are never flagged as missed doses."], keywords: ["restricted", "can't log", "hospital", "paused", "greyed"], related: ["ip-start-end", "log-button-locked"], medical: true },
@@ -2407,10 +2455,6 @@ function svgIcon(name, size) {
     history: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3.5 2"/>',
     cycle: '<path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 3v9h9"/><path d="M5 19 19 5"/>',
     arrow: '<path d="M10 7 5 12l5 5"/><path d="M5 12h14"/>',
-    // v56 (Designer M1): the send control was using `arrow`, which is this set's BACK chevron --
-    // the same glyph backRow() puts next to the word "Back". The one button the whole feature
-    // exists for was labelled "go back".
-    send: '<path d="M4.5 11.9 20 4.5l-7.4 15.5-2.1-6.4-6-1.7Z"/><path d="m10.5 13.6 9.5-9.1"/>',
     plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
     chevron: '<path d="m9 18 6-6-6-6"/>',
     edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',
@@ -2455,15 +2499,16 @@ function scrollToTop() {
 }
 function navigateTo(view) {
   const editorClosing = !!state.medEditor && view !== 'meds'; // audit v12 P3-1: nav-away also closes the editor
-  // V56-2 (Auditor, High): the help panel used to survive a nav tap -- it then covered the screen
-  // and elementFromPoint on the Meds "Add" button returned a node inside the panel, so the control
-  // was unreachable. It also resurrected itself with the old transcript when navigating back.
-  // Every navigation closes it, for the same reason navigating closes the medication editor.
-  const next = { view, reportsView: view === 'reports' ? null : state.reportsView, medEditor: view === 'meds' ? state.medEditor : null, confirmDeleteMed: null, helpBotOpen: false };
+  const next = { view, reportsView: view === 'reports' ? null : state.reportsView, medEditor: view === 'meds' ? state.medEditor : null, confirmDeleteMed: null };
   // v55: tapping Help in the menu always lands on the top level, the same way tapping Reports
   // always lands on the report list. Coming back to a walkthrough you left three screens deep,
   // with a stale search still in the box, is not what "Help" reads like it will do.
   if (view === 'help') { helpQuery = ''; next.help = { cat: null, topic: null }; }
+  // v57 (Auditor R2-E): a toast describes something that just happened on the screen you were on.
+  // Carrying it across a navigation is noise at best, and at worst it paints over the destination's
+  // own content for 4.5s -- which is how it ended up covering the Help search screen's care-team
+  // button at 320px. Cleared here rather than chased with offsets on each screen it might land on.
+  if (state.toast) next.toast = null;
   setState(next);
   persistView(view);
   scrollToTop();
@@ -2522,9 +2567,6 @@ document.addEventListener('keydown', (ev) => {
 document.addEventListener('focusin', (ev) => {
   const el = ev.target;
   if (!el || typeof el.matches !== 'function' || !el.matches('input, select, textarea')) return;
-  // v56: the help panel is position:fixed and already repositions itself around the keyboard, so
-  // scrolling the PAGE to bring its input "into view" only lurches the content behind it.
-  if (el.id === 'helpbot-input') return;
   setTimeout(() => { try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }, 320);
 });
 
@@ -2687,7 +2729,7 @@ function renderDrawer() {
     // shrink every existing touch target below what the Designer signed off on. The drawer already
     // houses the app's other "check in on sometimes, not a daily quick-log" destinations.
     { key: 'notes', label: 'Notes', icon: 'notes', helper: 'Daily journal' },
-    { key: 'help', label: 'Help', icon: 'help', helper: 'Find and fix a problem' },
+    { key: 'help', label: 'Help & FAQ', icon: 'help', helper: 'Find and fix a problem' },
     { key: 'settings', label: 'Settings', icon: 'gear', helper: 'Units, guide & data' }
   ];
   return h('div', { style: { position: 'fixed', inset: '0', zIndex: '90' } },
@@ -2895,7 +2937,13 @@ function completeSetup() {
   const ps = profilesState();
   const ap = ps.list.find(p => p.id === ps.activeId);
   if (ap) { ap.name = name; saveJSON(PROFILES_KEY, ps); }
-  setToast('Welcome to ChemoWell');
+  // R2D-2 (Designer, round 2): the browser notice IS this person's greeting -- it paints the moment
+  // they tap "Skip guide", well inside this toast's 4.5s life, and at 320/360 the toast lands across
+  // the card's privacy line ("Everything you log stays on this device.") and the top of its primary
+  // button. Same collision class as M3 and R2-E, and it must NOT be fixed with toastNeedsLift(): a
+  // constant lift can only clear a constant, and this card scrolls. One greeting, not two. Native
+  // builds and every later profile keep the toast exactly as before.
+  if (isNativeApp() || getPrefsDB().browserNoticeSeen) setToast('Welcome to ChemoWell');
   if (!getPrefsDB().tourDone) setState({ tourStep: 0 });
 }
 // Small shared chip-row builder for the setup card (and nowhere else \u2014 Settings uses toggles).
@@ -3299,7 +3347,23 @@ function render() {
     // fixed 96px-from-bottom position lands right on top of them. pointerEvents:'none' lets every tap
     // pass straight through to whatever's underneath, which is safe precisely because the toast never
     // needed to capture a tap in the first place.
-    state.toast ? h('div', { role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: 'calc(150px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(59,25,10,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(136,57,24,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', pointerEvents: 'none' } }, state.toast) : null,
+    // v57 (Designer M3, then Auditor R2-E). The toast sits 96px from the bottom and two different
+    // things were landing under it, and they need DIFFERENT fixes -- which is the whole lesson here.
+    //
+    // M3, the Reports "Back" pill: fixed-positioned, top edge a constant 130px up, so a toast at 96px
+    // overlaps it every time (34px measured, same dark fill, for the toast's full ~4.5s life). A
+    // constant lift clears a constant, so toastNeedsLift() handles it. Only the toast moves: its
+    // height varies with the message, so raising the pill instead is not deterministic.
+    //
+    // R2-E, the Help search screen's care-team button at 320px: NOT fixed. It sits in normal page
+    // flow, so it moves with scroll and with how many words the query put above it -- and the lift
+    // that fixes the pill does not clear it (measured: button 539-583, a lifted toast still ends at
+    // 578). Adding it to the predicate would have looked like a fix and been one only for the exact
+    // scroll position it was measured at. The real defect was upstream: a toast raised on Home was
+    // still on screen after the person had navigated to Help, describing an action on a screen they
+    // had left. navigateTo() now clears it, which closes the Auditor's repro at the root and fixes
+    // the same class on every other screen at once.
+    state.toast ? h('div', { role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: toastNeedsLift() ? 'calc(150px + env(safe-area-inset-bottom))' : 'calc(96px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(59,25,10,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(136,57,24,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', pointerEvents: 'none' } }, state.toast) : null,
     renderTimeModal(),
     renderUpgradeModal(),
     renderApptModal(),
@@ -3315,10 +3379,9 @@ function render() {
     // overlap the bottom of this button and win the tap since it painted on top. If this still
     // happens, the next thing to check is exactly which on-page button was tapped right before Back
     // stopped responding.
-    (state.view === 'reports' && state.reportsView) ? h('div', { style: { position: 'fixed', zIndex: '36', left: '0', right: '0', bottom: 'calc(91px + env(safe-area-inset-bottom))', display: 'flex', justifyContent: 'center', pointerEvents: 'none' } },
+    (state.view === 'reports' && state.reportsView) ? h('div', { style: { position: 'fixed', zIndex: '36', left: '0', right: '0', bottom: 'calc(88px + env(safe-area-inset-bottom))', display: 'flex', justifyContent: 'center', pointerEvents: 'none' } },
       h('button', { onClick: () => setState({ reportsView: null }), style: { pointerEvents: 'auto', minHeight: '42px', padding: '0 18px', borderRadius: '99px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(59,25,10,0.88)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', fontSize: '13px', fontWeight: '800', boxShadow: '0 10px 28px rgba(136,57,24,0.22)' } }, '↩ Back')
     ) : null,
-    renderHelpBot(),
     renderBottomNav(),
     !state.loaded ? h('div', { style: { position: 'fixed', inset: '0', background: 'rgba(253,220,206,0.95)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '100' } },
       h('div', { style: { textAlign: 'center' } },
@@ -3334,8 +3397,6 @@ function render() {
   // after any tap inside it. Re-query by id both times — never cache the node (stale-ref landmine).
   const prevSheet = document.getElementById('plans-sheet');
   const sheetScroll = prevSheet ? prevSheet.scrollTop : 0;
-  const prevLog = document.getElementById('helpbot-log');
-  const logScroll = prevLog ? prevLog.scrollTop : 0;
   // Preserve focus + text-cursor position across interaction re-renders (v25 audit fix, Finding 1):
   // same root cause as the plans-sheet scroll above -- the full rebuild below destroys whatever
   // input/select currently has focus and creates a brand-new element in its place, silently
@@ -3346,21 +3407,17 @@ function render() {
   // inputs/selects with a stable id opt in -- elements without one are left alone, unchanged from
   // before this fix.
   const prevActive = document.activeElement;
-  // v56 (Auditor V56-3): BUTTON joins the list. Focus was restored to the help bubble on close and
-  // then silently dropped to <body> by the next 1s tick, which is the exact end state as the
-  // pre-existing drawer defect this design set out not to repeat -- fixing the handoff and leaving
-  // the rebuild to undo it a second later is not a fix. Any focused element with a stable id now
-  // survives a rebuild; elements without one are left alone, unchanged.
+  // v56 (Auditor V56-3): BUTTON joins the list, so a focused button with a stable id survives a
+  // rebuild instead of being silently dropped to <body> by the next 1s tick. v57 removed the help
+  // bubble this was first written for; it is KEPT because drawer-close-btn has the same defect and
+  // is the reason the rule was worded as "any focused element with a stable id" rather than being
+  // special-cased to one button. Elements without an id are left alone, unchanged.
   const prevActiveId = (prevActive && prevActive.id && (prevActive.tagName === 'INPUT' || prevActive.tagName === 'SELECT' || prevActive.tagName === 'TEXTAREA' || prevActive.tagName === 'BUTTON')) ? prevActive.id : null;
   const prevSelStart = (prevActive && typeof prevActive.selectionStart === 'number') ? prevActive.selectionStart : null;
   const prevSelEnd = (prevActive && typeof prevActive.selectionEnd === 'number') ? prevActive.selectionEnd : null;
   root.innerHTML = '';
   root.appendChild(page);
   if (sheetScroll > 0) { const freshSheet = document.getElementById('plans-sheet'); if (freshSheet) freshSheet.scrollTop = sheetScroll; }
-  // v56 (Auditor V56-4): same pattern for the help transcript. Without it any unrelated setState
-  // (a toast expiring, a reminder) jumped the log back to the top and left the reply the user had
-  // just been given 1,600px below the fold.
-  if (logScroll > 0) { const freshLog = document.getElementById('helpbot-log'); if (freshLog) freshLog.scrollTop = logScroll; }
   if (prevActiveId) {
     const freshActive = document.getElementById(prevActiveId);
     if (freshActive) {
@@ -3371,9 +3428,6 @@ function render() {
     }
   }
   positionTour();
-  // Re-apply the keyboard offset after a rebuild, so a re-render with the keyboard already up
-  // does not drop the panel back behind it.
-  helpBotSyncViewport();
 }
 
 // Short "Mon, Jul 20" label for a collapsed date-picker pill button (v70).
@@ -3637,6 +3691,72 @@ function removeBtn(e) {
 function renderToday(now, mg, pct, tyColor, ceiling) {
   const parts = [];
   const inpatientActiveNow = isInpatientActiveNow();
+
+  // v57 (Aaron-requested): the browser build's one-time "what's different here" notice. First card
+  // on Home, above everything, because the Home Screen item below is time-sensitive on iOS -- a
+  // tester who reads it a week late may already have lost their log. See browserNoticeDue().
+  if (browserNoticeDue()) {
+    const bTone = NOTICE_TONES.attention;
+    const installed = isInstalledPWA();
+    // Designer S4: v57's first cut branched only the first SENTENCE, so the longest and most alarming
+    // clause in the card -- the one about Safari -- was shown to Android testers as the sole reason to
+    // act ("on iPhone this is the one that matters"), and to iPhone testers as a note about iPhones
+    // while they were holding one. Both audiences read the half addressed to the other. Branch the
+    // whole body or don't branch at all.
+    const homeScreenPoint = installed
+      ? ['Your log is safe on this device', 'You’ve already added ChemoWell to your Home Screen. Keep opening it from that icon, not a browser tab.']
+      : isIOSDevice()
+        ? ['Add it to your Home Screen', 'Tap Share, then Add to Home Screen. Safari deletes a site’s saved data after 7 days without a visit — and your log is stored nowhere else.']
+        : ['Add it to your Home Screen', 'Open your browser menu, then Add to Home screen. It keeps your log one tap away and out of reach of anything that clears browser data.'];
+    // Designer S1: heading and body were both 13px, 100 weight units apart, so three blocks read as
+    // one paragraph. 14/700 over 13/500 is the step the rest of the file already uses.
+    // R2D-5 (Designer, round 2): at 320 the primary action landed 3px under the fixed bottom nav on
+    // first paint, so the card appeared to have no action at all until the person scrolled. He asked
+    // explicitly for no further copy cut, so this is taken out of the rhythm instead: 2px per point
+    // plus 2px above the privacy line plus 1px above the actions, 9px total, which is what "Got it"
+    // needed. Verified by measurement, not by arithmetic.
+    const point = (title, body) => h('div', { style: { marginTop: '14px' } },
+      h('div', { style: { fontSize: '14px', fontWeight: '700', color: '#2A2127', lineHeight: '1.35', marginBottom: '3px' } }, title),
+      h('div', { style: { fontSize: '13px', fontWeight: '500', color: '#554A52', lineHeight: '1.5' } }, body)
+    );
+    // Designer M1: the icon and the ✕ used to be flex siblings of the entire body, so all ~40 lines
+    // of copy ran in a 207px column inside a 328px card -- 24 characters per line at 360px, against a
+    // comfortable floor of 45. They are now a header row and an absolutely-positioned control, and
+    // the copy is roughly half what it was; the detail that came out lives in rem-web-vs-app, which
+    // the button below links straight to. N3: its own off-white surface, so a tester scrolling can
+    // tell where the notice ends and the app begins.
+    parts.push(h('div', { style: { position: 'relative', background: '#FFFBF5', border: '1px solid #E9D8D1', borderLeft: '4px solid ' + bTone.accent, borderRadius: '14px', padding: '14px 16px', maxWidth: '560px', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
+      h('div', { style: { display: 'flex', gap: '12px', alignItems: 'center', paddingRight: '36px' } },
+        h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: bTone.chipBg, color: bTone.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('bulb', 16, { color: bTone.chipFg })),
+        h('div', { style: { ...TYPE.bodyBold, fontSize: '15px', color: '#2A2127', lineHeight: '1.3' } },
+          installed ? 'A couple of things about the browser version' : 'You’re using the web preview')
+      ),
+      h('div', { style: { fontSize: '13px', fontWeight: '500', color: '#554A52', lineHeight: '1.5', marginTop: '8px' } },
+        installed ? 'Everything works, and your log is already safe. Two things still behave differently here:'
+                  : 'Everything works. Three things are different in a browser:'),
+      point(homeScreenPoint[0], homeScreenPoint[1]),
+      point('Reminders need this page open', 'A browser can’t wake a locked phone. The phone app schedules them with the operating system instead.'),
+      point('Exports download instead of sharing', 'Download CSV and Print/PDF save to your Downloads folder.'),
+      h('div', { style: { fontSize: '13px', fontWeight: '500', color: '#554A52', lineHeight: '1.5', marginTop: '12px' } }, 'Everything you log stays on this device.'),
+      h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' } },
+        // Designer S6: this wore the INFO gradient on an ATTENTION-toned card. attention.accent behind
+        // white text measures 3.77:1 and must not be used; chipFg gives 5.93:1.
+        h('button', { onClick: dismissBrowserNotice, style: { minHeight: '44px', padding: '0 18px', borderRadius: '12px', background: bTone.chipFg, color: '#fff', fontSize: '13px', fontWeight: '700', border: 'none', cursor: 'pointer' } }, 'Got it'),
+        // Designer S3: this used to dismiss the notice AND land on the Help LANDING page, which says
+        // nothing about any of the above -- so the one person who tapped it because they wanted to
+        // read more was the only person who could never get the card back. It now deep-links to the
+        // page that actually answers it, and leaves the notice alone. navigateTo('help') deliberately
+        // resets state.help (v55: tapping Help in the menu always lands on the top level), so the
+        // target is set AFTER it, not before. N1: same 18px padding as its sibling, so the two labels
+        // share a left edge when the row wraps at 320/360.
+        h('button', { onClick: () => { navigateTo('help'); setState({ help: { cat: 'reminders', topic: 'rem-web-vs-app' } }); }, style: { minHeight: '44px', padding: '0 18px', borderRadius: '12px', background: 'transparent', border: 'none', color: '#8C5900', fontSize: '13px', fontWeight: '700', cursor: 'pointer' } }, 'More about the web version')
+      ),
+      // Designer M2: was 28x28 -- 40% under the project's 44px floor -- and, because the card used to
+      // be 919px tall, the only control on screen when it first painted. #6B5C63 on the chip is
+      // 5.50:1; the old #7A6E76 was 4.25:1, under AA for a 13px glyph.
+      h('button', { onClick: dismissBrowserNotice, 'aria-label': 'Dismiss', style: { position: 'absolute', top: '10px', right: '10px', width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(124,97,86,0.10)', color: '#6B5C63', fontSize: '15px', fontWeight: '800', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, '✕')
+    ));
+  }
 
   // v33 migration: profiles created before v33 have no sex/treatment on record, and both now
   // gate real UI. A compact finish-setup card sits at the top of Home until answered — deliber-
@@ -5701,7 +5821,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v56';
+const APP_VERSION = 'app-v57';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -5809,16 +5929,16 @@ function helpTopicsIn(cat) { return cat === 'common' ? helpFaqTopics() : HELP_TO
 function helpCategoryCount(cat) { return helpTopicsIn(cat).length + HELP_POINTERS.filter(p => p.cat === cat).length; }
 
 // ---------------------------------------------------------------------------------------------
-// v56: the help matcher. One scoring function, used by BOTH the Help view's search box and the
-// on-screen help bubble, per DEV_BRIEF_v56_helpbot.md §1.
+// v56: the help matcher, powering the Help & FAQ centre's search box.
 //
-// Why the old helpSearch() could not be reused: it was an AND-over-terms substring filter, which
-// is right for a search box (the user types keywords) and wrong for a chat box (the user types a
-// sentence). "why cant i type in the daily limit box" contains why/cant/in/the/box; under an AND
-// filter that returns ZERO results, and a bot that says "nothing matched" to a well-formed
-// question is worse than no bot at all.
+// Why the old v55 helpSearch() was replaced: it was an AND-over-terms substring filter, so it only
+// worked if the user typed bare keywords. People type sentences into a search box too -- "why cant
+// i type in the daily limit box" contains why/cant/in/the/box, and under an AND filter that returns
+// ZERO results for a perfectly well-formed question. v57 removed the on-screen bubble this matcher
+// was originally built alongside; the matcher stays, because the search box is the half of it that
+// works and reverting to substring matching would be a straight regression.
 //
-// There is no model and no network here. This is a scored lookup over the 132 help documents that
+// There is no model and no network here. This is a scored lookup over the help documents that
 // already ship inside index.html -- stopwords, light stemming, a small query-side synonym map,
 // bounded typo tolerance, field weighting and IDF. Every constant below was measured against the
 // 60-question fixture in the brief, not guessed.
@@ -5865,19 +5985,6 @@ const HELP_SYNONYMS = {
 const HELP_FIELDS = [['q', 1.0], ['kw', 0.9], ['a', 0.55], ['cat', 0.45], ['steps', 0.35], ['branch', 0.30], ['note', 0.25]];
 const HELP_UNKNOWN_IDF = 1.2;      // roughly the IDF of a very common word: an unknown term costs
                                    // the query without single-handedly destroying a good question
-const HELPBOT_ANSWER = 0.55;       // answer directly at or above this
-const HELPBOT_SHOW = 0.40;         // below this the bot says it does not know
-const HELPBOT_MARGIN = 1.15;       // top must beat the runner-up by 15% to answer directly
-const HELPBOT_LIST_COVERAGE = 0.34; // below this share of the query understood, offer no list at all
-// The list path had a coverage floor and the ANSWER path had none, which is how "she collapsed"
-// produced a confident "All my medications vanished from Home" -- one content term, coverage 1.00,
-// every gate passed honestly. A single content word must never be enough to answer with
-// confidence, whatever it scores.
-const HELPBOT_MIN_TERMS = 2;
-// And when the sentence is ABOUT A PERSON, the winner has to be further clear of the runner-up.
-// "can i stop the chemo early" answered the reminder-timing page because *early* matched it and
-// *chemo* contributed nothing -- an incidental shared word carrying a whole answer.
-const HELPBOT_SUBJECT_MARGIN = 1.6;
 
 // Apostrophes are DELETED rather than spaced, so "can't" -> "cant" and the corpus's own "can't
 // type" keyword normalises to the same token. Everything else non-alphanumeric is a separator,
@@ -5911,12 +6018,12 @@ function helpStem(w) {
   return x;
 }
 
-let helpBotIndex = null;
+let helpSearchIndex = null;
 
-// Built once, lazily, on first use -- 132 documents x 7 fields is a few ms, and doing it at module
+// Built once, lazily, on first use -- 133 documents x 7 fields is a few ms, and doing it at module
 // load would add that to every cold start whether or not anyone opens help.
 function helpIndex() {
-  if (helpBotIndex) return helpBotIndex;
+  if (helpSearchIndex) return helpSearchIndex;
   // HELP_POINTERS were browsable but invisible to search (logged in BACKLOG). Folded in as keyword
   // ALIASES on their target rather than as documents of their own: one copy of the copy, so the
   // two can never drift, and the browse rendering and category counts stay untouched.
@@ -5953,8 +6060,8 @@ function helpIndex() {
 
   const df = {};
   docs.forEach(function (d) { d.all.forEach(function (w) { df[w] = (df[w] || 0) + 1; }); });
-  helpBotIndex = { docs: docs, df: df, N: docs.length, vocab: Object.keys(df).filter(function (w) { return w.length >= 4; }) };
-  return helpBotIndex;
+  helpSearchIndex = { docs: docs, df: df, N: docs.length, vocab: Object.keys(df).filter(function (w) { return w.length >= 4; }) };
+  return helpSearchIndex;
 }
 
 // Bounded Damerau-Levenshtein against the index vocabulary. Caregivers type on phones at 2am;
@@ -6120,212 +6227,53 @@ function helpMatch(query) {
     .slice(0, 6);
 }
 
-// Someone is describing a person, not the app. Used only to make the answer path stricter -- never
-// to refuse anything on its own.
-const HELP_THIRD_PERSON = /\b(he|she|his|her|him|hes|shes|mum|mom|dad|husband|wife|mother|father|son|daughter|partner)\b/;
-
-// Five gates, all of which must hold before the bot answers with confidence. The score alone is
-// not enough: the anchor gate stops a document that only matched deep in its steps from becoming
-// a direct answer, and the coverage gate stops "will she lose her hair" (lose matched, hair
-// unknown) from confidently answering "What happens if I lose my phone?".
-function helpBotDecide(query) {
-  const hits = helpMatch(query);
-  const top = hits[0], second = hits[1];
-  if (!top || top.score < HELPBOT_SHOW) return { mode: 'none', hits: [] };
-  const covOK = top.nterms <= 2 ? top.cov >= 0.999 : top.cov >= 0.6;
-  const subject = HELP_THIRD_PERSON.test(' ' + (query || '').toLowerCase() + ' ');
-  const margin = subject ? HELPBOT_SUBJECT_MARGIN : HELPBOT_MARGIN;
-  const clear = top.score >= HELPBOT_ANSWER && top.anchor && covOK
-    && top.nterms >= HELPBOT_MIN_TERMS
-    && (!second || top.score >= second.score * margin);
-  if (clear) {
-    return {
-      mode: 'answer', topic: top.topic,
-      alts: hits.slice(1, 4).filter(function (x) { return x.score >= top.score * 0.5; }).map(function (x) { return x.topic; })
-    };
-  }
-  // Coverage floor on the LIST path (Lead Auditor). Sixteen of seventeen clinical questions that
-  // slipped past the guard failed as LISTS, not as answers -- the defect was never "the app
-  // answered a dosing question", it was "the app offered *Alarms & reminders* to someone
-  // describing a person turning blue". When most of the user's words are unknown to this corpus,
-  // the honest reply is the one that already exists and already says the right thing: "I don't
-  // have an answer for that one... if it's about the treatment itself, a dose, or how someone is
-  // feeling, that's a question for the care team." No clinical vocabulary required, and no
-  // clinician has to bless a word of it.
-  //
-  // 0.34 measured against both of the Lead Auditor's sets: it removes 4 of the 6 remaining
-  // clinical lists and costs exactly ONE ordinary question ("how long does the export take"),
-  // which still gets a browse-all route. 0.51 would remove 2 more clinical lists and cost 10
-  // ordinary ones -- a much worse trade, and the reason this is a measured constant rather than a
-  // round number.
-  if (top.cov < HELPBOT_LIST_COVERAGE) return { mode: 'none', hits: [] };
-  return {
-    mode: 'list',
-    hits: hits.filter(function (x) { return x.score >= HELPBOT_SHOW; }).slice(0, 4).map(function (x) { return x.topic; })
-  };
-}
-
-// Two guards that run BEFORE the matcher and, if either fires, suppress its answer entirely.
-// That ordering is load-bearing: a safety check that runs after a scoring function is a safety
-// check that can be tuned away.
-//
-// The clinical guard is split into HARD and SOFT, after the Lead Auditor measured the first
-// flat-list version: ten patterns bought one extra catch and cost 21 ordinary questions, refusing
-// "is my data safe", "how do i log side effects" and "where do i put take with food". The patterns
-// keyed on the JUDGEMENT ("is … safe", "too many", "side effects") with no requirement that there
-// be a clinical SUBJECT, and ordinary English carries those words too.
-//
-//   HARD  — unconditional. Evaluated first, and computed before `soft` even exists in scope, so
-//           the order cannot be quietly rearranged later. Anything asking what to take, how much,
-//           or whether to do something to a person fires here and nothing can suppress it.
-//   SOFT  — fires only when the sentence carries no positive evidence of app intent. Suppression
-//           must be POSITIVE evidence (an app-object noun), never the absence of clinical
-//           evidence: an empty suppressor list has to be safe, and the failure mode to avoid is a
-//           list that grows until it suppresses everything.
-//
-// Residual risk is bounded and worth stating: when SOFT is suppressed the question is not answered
-// blindly, it goes to the matcher, which still has its four gates plus the coverage floor below.
-// A soft false-negative costs a suggestion list, not a dosing statement.
-const HELP_CLINICAL_MEASURES = /(fever|temperature|temp|degrees|blood pressure|bp\b|pulse|heart rate|sugar|oxygen|sats?\b)/;
-
-// Verb-constrained on purpose. A bare /should\s+i/ refused "how long should i keep my history",
-// which is a question about the app's data retention.
-const HELP_GUARD_HARD = [
-  /\b(should|shall|ought)\s+(i|we|he|she|they)\s+(take|takes|taking|give|gives|giving|have|has|stop|start|skip|skips|double|call|go|worry|be\s+worried|see|wait)\b/,
-  // stay/keep/continue only in the THIRD person: "how long should he stay on this" is about a
-  // person on a medication, while "how long should i keep my history" is about the app's data.
-  /\b(should|shall|ought)\s+(he|she|they)\s+(stay|keep|continue|remain|be\s+on)\b/,
-  /\bshould\s+(i|we)\s+(go|call|worry|be\s+worried)\b/,
-  /\bis\s+(he|she|they)\s+(safe|ok|okay|alright|dangerous|normal|serious|bad)\b/,
-  /\bis\s+(it|that|this|he|she|they)\s+(dangerous|serious|normal|too\s+(much|high|low|many))\b/,
-  /\bis\s+it\s+(safe|ok|okay)\s+to\s+(take|takes|give|gives|have|mix|combine|crush|split|chew|swallow|drink|eat|use|apply|stop|skip)\b/,
-  /\b(safe|ok|okay)\s+(during|in|while)\s+(pregnan|breast|chemo|radiation|treatment)/,
-  /\bwhat\s+(dose|dosage|amount|strength)\b/,
-  /\bhow\s+(much|many)\s+.*\b(mg|ml|mcg|pill|pills|tablet|tablets|dose|doses|drop|drops|water|fluid)\b/,
-  /\b(double|extra|another|second)\s+dose\b/,
-  /\bdouble\s+up\b/,
-  /\boverdose\b/,
-  /\bcan\s+(i|we|he|she|they)\s+(take|takes|give|gives|have|has|mix|combine|drink|eat|apply|crush|chew|halve|dissolve|break|split)\b/,
-  /\bside\s*effects?\s+(of|from|to)\b/,
-  /\b(interact|interaction|interactions|contraindicat)/,
-  /\bis\s+[0-9.]+\s+(too\s+)?(high|low|much|many|hot|bad|normal|ok|okay|safe|dangerous|serious)\b/,
-  /\bis\s+[0-9.]+\s+an?\s+(fever|temperature|temp|problem|emergency)\b/,
-  /\ballergic\s+(to|reaction)\b/,
-  /\bshould\s+(we|i)\s+(go\s+to\s+)?(the\s+)?(er|a&e|hospital|emergency)\b/,
-  /\bwhen\s+should\s+i\s+call\b/,
-  /\b(what|any)\s+(cream|ointment|remedy|medicine|medication|drug)\s+(can|should|do)\b/,
-  /\bwhat\s+helps\s+with\b/,
-  /\bhow\s+do\s+i\s+stop\s+the\b/,
-  /\bwhat\s+(do|should)\s+i\s+do\s+about\s+(the\s+)?(nausea|pain|sores?|rash|swelling|bleeding|diarrh|constipation|vomit|fever)/,
-  /\bsigns?\s+of\s+(infection|dehydration|sepsis)\b/,
-  /\bwhat\s+(does|is)\s+(neutropenic|neutropenia|febrile)\b/,
-  // Clinician nouns, HARD rather than soft: they are never app vocabulary, so they cannot cause a
-  // false refusal -- and as a soft signal they were being suppressed by an ordinary app noun
-  // sitting in the same sentence ("the pharmacist gave a different colour tablet").
-  // pharmacist/oncologist only. "the doctor" and "the nurse" were tried and dropped: "print a
-  // report for the doctor" is an app question, and a word that appears in both vocabularies cannot
-  // be a hard rule.
-  /\b(pharmacist|oncologist)\b/,
-  /\bcan\s+(he|she|they)\s+(get|receive)\b/,
-  // "can this be taken with milk" -- the passive form, which the subject-pronoun frame misses.
-  /\bcan\s+(this|that|it|they|these)\s+be\s+(taken|given|mixed|combined|crushed|chewed|split|halved|dissolved|swallowed)\b/,
-  // "is 2 tablets too many" -- a quantity being judged. Deliberately anchored on `is <number>` so
-  // it cannot catch "i logged too many doses by mistake" or "i get too many reminders".
-  /\bis\s+[0-9.]+\s+[a-z]*\s*too\s+(many|much)\b/,
-  /\b(can|should|shall)\s+(i|we|he|she|they)\s+(stop|start|pause|reduce|lower|cut|increase|double|halve|delay|skip|come\s+off)\b/,
-  /\b(stop|stopping|reduce|reducing|lower|lowering|cut\s+down|come\s+off|delay|delaying)\s+(the\s+|her\s+|his\s+|their\s+)?(chemo|chemotherapy|radiation|treatment|infusion|tablets?|pills?|medication|meds)\b/
-];
-
-// Only ever consulted when no app-object noun is present.
-const HELP_GUARD_SOFT = [
-  /\bside\s*effects?\b/,
-  /\b(crush|chew|halve|dissolve)\s+(the|a|his|her|this|that|it)\b/,
-  /\bfor\s+(a\s+)?(child|children|kid|kids|baby|infant|toddler)\b/,
-  /\b(pregnan|breast\s*feed)\w*\b/,
-  /\b(safe|dangerous|harmful|toxic)\b/,
-];
-
-// The description-of-a-person rule is HELP_THIRD_PERSON, declared next to the answer-path gates.
-// It used to require a verb from a fixed list as well; that list was dropped because enumerating
-// more verbs is a symptom list by the back door, which BACKLOG says needs a clinician first.
-
-// Positive evidence that the sentence is about the APP. Nouns, not verbs: `where`, `put` and `add`
-// are ordinary English before they are app vocabulary, and they turn up inside genuinely clinical
-// sentences ("what cream can i put on the radiation burn").
-const HELP_APP_OBJECTS = /\b(app|screen|button|field|box|tab|card|csv|export|exported|file|report|history|profile|profiles|reminder|reminders|notification|notifications|entry|entries|log|logged|logging|setting|settings|data|backup|spreadsheet|units|limit|list|walkthrough|tour|banner|menu|phone|password|account|calendar|note|notes|checkin|check-in|symptoms|tracker|column|chart|graph|upgrade|plan|subscription|version|update|record|records|recording|enter|entering|delete|deleting|edit|editing|save|saving|track|tracking|instructions|name|time|times|day|days|morning|evening|night|week|weekly|daily)\b/;
-
-// Tier 2: DUAL-USE nouns. They are this app's vocabulary and they are also the subject of most
-// clinical questions ("is the tablet safe"). They may suppress the third-person rule -- so
-// "she has two different tablets how do I add both" is still recognised as an app question -- but
-// they must NEVER suppress the SOFT patterns, which is where safe/dangerous/side-effects/child
-// live. Keeping the two tiers apart is the whole point; merging them was the defect.
-const HELP_APP_OBJECTS_DUAL = /\b(medication|medications|meds|med|pill|pills|tablet|tablets|dose|doses|schedule|appointment|appointments)\b/;
-
-// Deliberately NOT in that list: treatment, chemo, chemotherapy, radiation. They are this app's
-// vocabulary AND they are clinical vocabulary, and adding them let "her feet are swelling up is
-// that from the chemo" suppress itself. The app-task frame below covers the legitimate phrasings
-// ("how do I add the days she has chemo") without handing the clinical ones a free pass.
-//
-// An interrogative sitting close to an app-task verb: "how do I add...", "where do I put...",
-// "can I change...". This is a GRAMMATICAL frame, not vocabulary, which is why it generalises to
-// phrasings nobody wrote down. Measured by the PM gate over 138 held-out questions: it removes
-// false refusals without losing a single clinical catch.
-const HELP_APP_TASK = /\b(how|where|what|which|can|do|does|is\s+there)\b[^.?!]{0,45}\b(add|adds|adding|put|puts|set|sets|setting|change|changes|changing|edit|show|shows|see|record|records|enter|remove|removes|delete|deletes|log|logs|save|saves|find|finds|print|prints|export|exports|share|shares|mark|marks|turn|switch|move|rename|reorder|sort|filter|open|close|start|stop)\b/;
-
-const HELP_GUARD_PERSON = [
-  /\bare\s+you\s+(a\s+)?(real|actual)?\s*(person|human|bot|robot|ai|real)\b/,
-  /\bis\s+(this|there)\s+(a\s+)?(real\s+)?(person|human|someone|anyone)\b/,
-  /\bis\s+(anyone|anybody|someone|somebody)\s+(there|listening|reading|home)\b/,
-  /\bcan\s+i\s+(speak|talk|chat)\s+(to|with)\b/
-];
-
-// Returns null, { kind: 'person' }, or { kind: 'clinical', measure } where measure names which
-// "how do I record this?" link to offer.
-function helpBotGuard(query) {
-  const q = ' ' + (query || '').toLowerCase().replace(/[‘’ʼ´]/g, "'").replace(/'/g, '').replace(/\s+/g, ' ').trim() + ' ';
-  if (!q.trim()) return null;
-  for (let i = 0; i < HELP_GUARD_PERSON.length; i++) if (HELP_GUARD_PERSON[i].test(q)) return { kind: 'person' };
-
-  // Computed first, and in its own scope, so no later edit can accidentally let a suppressor run
-  // ahead of it.
-  let clinical = false;
-  for (let i = 0; i < HELP_GUARD_HARD.length; i++) if (HELP_GUARD_HARD[i].test(q)) { clinical = true; break; }
-  if (!clinical && /\b\d{2,3}(\s?\.?\s?\d)?\b/.test(q) && HELP_CLINICAL_MEASURES.test(q)) clinical = true;
-
-  // Suppression is POSITIVE evidence of app intent -- an app-object noun, or an app-task frame --
-  // never the absence of clinical evidence, so an empty suppressor list is still safe.
-  // SOFT is suppressed only by an UNAMBIGUOUS app noun or an app-task frame.
-  const strongAppIntent = HELP_APP_OBJECTS.test(q) || HELP_APP_TASK.test(q);
-  // The third-person rule is blunter, so it accepts the dual-use nouns as well.
-  const anyAppIntent = strongAppIntent || HELP_APP_OBJECTS_DUAL.test(q);
-  if (!clinical && !strongAppIntent) {
-    for (let i = 0; i < HELP_GUARD_SOFT.length; i++) if (HELP_GUARD_SOFT[i].test(q)) { clinical = true; break; }
-  }
-  if (!clinical && !anyAppIntent && HELP_THIRD_PERSON.test(q)) clinical = true;
-  if (!clinical) return null;
-
-  // Pattern-derived, never score-derived: V56-6 was the version that took whichever care-team topic
-  // scored best, and sent blood sugar to the weight page and a rash to the fever page.
-  const measure = /(fever|temperature|temp|degrees)/.test(q) ? 'temp'
-    : /(weight|weigh|lbs|kilos|kg|pounds)/.test(q) ? 'weight'
-    : /\b(missed|double|skip|skipped|catch up)\b/.test(q) && /\b(dose|doses|dos|pill|pills|tablet|tablets|medication|medicine)\b/.test(q) ? 'dose'
-    : /\bdouble\s+up\b/.test(q) ? 'dose'
-    : /(symptom|pain|sick|nausea|vomit|rash|tired|breath)/.test(q) ? 'symptom' : null;
-  return { kind: 'clinical', measure: measure };
-}
-
 // The Help view's search box now shares the matcher. It stays UNFILTERED by threshold -- a search
 // box may show weak matches; a bot may not.
-function helpSearch(query) {
-  if (!(query || '').trim()) return [];
+// v57 (Auditor V57-1). The v55 search was an AND-over-substrings filter, so a typed sentence
+// returned nothing -- an honest empty state, and the reason the corpus comment above calls this a
+// "Search help" field rather than a chat box. The v56 matcher replaced it with a scorer and, on the
+// SEARCH-BOX path, nobody ever measured what that did to a sentence the corpus has no answer for.
+// The Auditor measured it: v55 returned nothing for 49 of 50 clinical questions; v56/v57 return a
+// ranked list for 45 of 50. "she collapsed" ranked "All my medications vanished from Home" first --
+// a genuine keyword hit on `collapsed`, which is why no threshold catches it -- and "she is coughing
+// up blood" returned 66 rows headed by "How do I record blood pressure?".
+//
+// Three separate problems, fixed separately, because conflating them is how the v56 guard went wrong:
+//
+//  - SAFETY is handled in the UI, not here, and NOT conditionally. The care-team line now sits above
+//    every result set. The Auditor recommended showing it "when the query resolves poorly"; I went
+//    further and made it unconditional, because deciding which queries are the frightening ones is
+//    exactly the classifier that failed twice in v56 -- and one calm sentence above a list of app
+//    pages costs a person searching "export csv" nothing.
+//  - RELEVANCE is the floor below. A result scoring a small fraction of the leader is carried by one
+//    weak term and is noise; 66 rows of it buries whatever was right.
+//  - LENGTH is the cap. Whatever survives the floor, a phone shows a usable number of rows.
+//
+// Both constants below are MEASURED against the 53-question fixture and the every-topic-findable
+// regression in test/v57-search.mjs, not guessed -- a floor that starts emptying "export to excel"
+// is its own defect.
+const HELP_SEARCH_FLOOR = 0.22;   // fraction of the top score a result must reach to be shown
+const HELP_SEARCH_MAX = 12;       // rows shown; the total is still reported to the user
+
+// Returns { hits, total, shown, cov } -- cov is the leader's term coverage, reported so the results
+// screen can say something honest about a query the corpus does not cover.
+function helpSearchFull(query) {
+  const empty = { hits: [], total: 0, shown: 0, cov: 0 };
+  if (!(query || '').trim()) return empty;
   const ix = helpIndex();
   const terms = helpTerms(query, HELP_STOP_SEARCH);
-  if (!terms.length) return [];
-  return ix.docs.map(function (d) { return { topic: d.t, score: helpScore(d, terms, ix).score }; })
-    .filter(function (r) { return r.score > 0; })
-    .sort(function (a, b) { return b.score - a.score; })
-    .map(function (r) { return r.topic; });
+  if (!terms.length) return empty;
+  const scored = ix.docs.map(function (d) {
+    const r = helpScore(d, terms, ix);
+    return { topic: d.t, score: r.score, cov: r.cov };
+  }).filter(function (r) { return r.score > 0; }).sort(function (a, b) { return b.score - a.score; });
+  if (!scored.length) return empty;
+  const cut = scored[0].score * HELP_SEARCH_FLOOR;
+  const kept = scored.filter(function (r) { return r.score >= cut; });
+  return { hits: kept.slice(0, HELP_SEARCH_MAX).map(function (r) { return r.topic; }),
+    total: kept.length, shown: Math.min(kept.length, HELP_SEARCH_MAX), cov: scored[0].cov };
 }
+function helpSearch(query) { return helpSearchFull(query).hits; }
 
 // The brief's copy carries **bold** for the words to look for on screen, *italics* for screen
 // names and quoted topic titles, and `backticks` for text the user types into a field verbatim
@@ -6372,501 +6320,12 @@ function helpSetQuery(value, el) {
   if (next && el) { next.focus(); try { if (pos !== null) next.setSelectionRange(pos, pos); } catch (e) {} }
 }
 
-// ---------------------------------------------------------------------------------------------
-// v56: the on-screen help bubble. Aaron: "I wanted the bot to be like and on screen help like most
-// apps have them down in the bottom corner. they can click on it and start typing and the bot will
-// look up their question and reply. like AI, but its not AI, its just things that has already been
-// written to the app."
-//
-// So: a chat-SHAPED surface over a lookup. It never claims to think. No typing indicator, no
-// delay, no avatar, no name -- the reply is computed synchronously and appears in the same frame
-// as the question, because anything that looks like deliberation is claiming to be something this
-// is not. It also never reads the user's data: it looks at HELP_TOPICS, and nothing else.
-//
-// Transcript lives at module scope and is NEVER persisted. A typed question can contain a symptom
-// or a drug name, and this app's whole position is that it holds none of that -- so the
-// conversation dies with the page, on purpose, rather than becoming a new on-device data trail.
-// ---------------------------------------------------------------------------------------------
-let helpBotLog = [];          // [{ who:'user'|'bot', text, kind, topic, hits, alts, measure }]
-let helpBotDraft = '';        // module scope, like helpQuery -- never in state, so a keystroke
-                              // can never trigger a re-render
-let helpBotAnimated = false;  // guards the entry animation against the 1s tick (see :2810)
-const HELPBOT_BASE_BOTTOM = 84;
-const HELPBOT_LOG_MAX = 40;       // transcript cap -- see V56-5
-const HELPBOT_WIDE_MIN = 448;     // above this the panel is a fixed 380px card, not full-bleed
-const HELPBOT_MAX_H = 420;        // design cap; helpBotSyncViewport() may shrink below it, never above
-const HELPBOT_MAX_VH = 50;        // ...and never more than half the screen (Aaron, 2026-08-11)
-
-// One predicate, used for BOTH the bubble and the panel. Getting this list wrong is the most
-// likely way this feature ships broken, so it is written once and every case is justified:
-//  - !loaded: the loading overlay is z100; the bubble would flash under it on every cold start.
-//  - view 'help': a bubble offering to find help, on the help screen, is a loop.
-//  - tourStep: the tour layer is pointer-events:none, so a z37 bubble stays TAPPABLE THROUGH IT --
-//    a user could open the panel underneath the tour card and strand themselves. openDrawer()
-//    already no-ops during the tour for exactly this reason.
-//  - drawer and every modal: all z60-z90 with a scrim. The bubble would sit behind it, dimmed,
-//    looking tappable and not being it.
-//  - medEditor: not an overlay, but it has a bottom action row, and the toast has already been
-//    recorded landing "right on top of" its Discard/Add buttons at keyboard-open heights.
-// First-run setup is not listed because render() early-returns to renderSetup() before this is
-// ever constructed -- but that is structural, not guaranteed, so the Auditor tests it anyway.
-function helpBotVisible() {
-  return !!state.loaded
-    && state.view !== 'help'
-    && state.tourStep == null
-    && !state.drawerOpen
-    && !state.timeModal && !state.upgradeOpen && !state.apptModal && !state.noteModal
-    && !state.checkinModal && !state.medEditor && !state.infoModal && !state.eraseAllModalOpen;
-}
-
-function openHelpBot() {
-  if (!helpBotVisible()) return;
-  setState({ helpBotOpen: true });
-  // Re-query by id after the rebuild, never a cached node -- see closeHelpBot().
-  setTimeout(function () {
-    const log = document.getElementById('helpbot-log');
-    if (log && log.lastElementChild) log.scrollTop = Math.max(0, log.lastElementChild.offsetTop - log.offsetTop - 6);
-    const el = document.getElementById('helpbot-input');
-    if (el) el.focus();
-  }, 50);
-}
-function closeHelpBot() {
-  setState({ helpBotOpen: false });
-  // render() does root.innerHTML = '', so a node captured before setState is already detached by
-  // the time .focus() runs. That is the pre-existing drawer defect (BACKLOG); this returns focus
-  // AFTER the rebuild and looks the element up fresh.
-  requestAnimationFrame(function () {
-    const fab = document.getElementById('helpbot-fab');
-    if (fab) fab.focus();
-  });
-}
-
-// The keyboard shrinks the VISUAL viewport but not the layout viewport (the meta tag has no
-// interactive-widget, and adding one would change layout for every existing form in the app), so a
-// position:fixed panel ends up behind it. Registered once at module scope; mutates styles directly
-// and NEVER calls render() -- calling render() from a viewport event would destroy the focused
-// input mid-keystroke, which is the caret bug this file has shipped five times.
-function helpBotSyncViewport() {
-  const p = document.getElementById('helpbot-panel');
-  if (!p) return;
-  // Width branch, mutated directly for the same reason the height is: `const wide = innerWidth >=
-  // …` is read once at render, and nothing re-renders on resize, so rotating to landscape left a
-  // 360px-phone panel stretched to 724px permanently -- a ~100-character line measure. Doing it
-  // here rather than by re-rendering keeps the rule that a viewport event never calls render().
-  if (window.innerWidth >= HELPBOT_WIDE_MIN) {
-    p.style.left = 'auto'; p.style.right = '14px'; p.style.width = '380px';
-  } else {
-    p.style.left = '8px'; p.style.right = '8px'; p.style.width = 'auto';
-  }
-  if (!window.visualViewport) return;
-  const vv = window.visualViewport;
-  const kb = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop));
-  p.style.bottom = 'calc(' + (HELPBOT_BASE_BOTTOM + kb) + 'px + env(safe-area-inset-bottom))';
-  // Only ever SHRINKS. The first build used max(240, ...) alone, which on a tall phone with no
-  // keyboard resolved to 672px and overrode the 560px design cap -- the panel then covered almost
-  // the whole screen, which is not a chat bubble, it is a takeover. Clamp to the cap as well.
-  p.style.maxHeight = Math.min(HELPBOT_MAX_H, Math.round(vv.height * HELPBOT_MAX_VH / 100), Math.max(240, vv.height - HELPBOT_BASE_BOTTOM - 24)) + 'px';
-}
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', helpBotSyncViewport);
-  window.visualViewport.addEventListener('scroll', helpBotSyncViewport);
-}
-// A rotate does not always fire a visualViewport resize, and WebViews without visualViewport need
-// the width branch too.
-window.addEventListener('resize', helpBotSyncViewport);
-window.addEventListener('orientationchange', helpBotSyncViewport);
-document.addEventListener('keydown', (ev) => {
-  if (!state.helpBotOpen) return;
-  if (ev.key === 'Escape') { ev.preventDefault(); closeHelpBot(); }
-});
-
-// One state transition, not two. navigateTo('help') resets help state on the way in, so calling
-// it and THEN helpGo({topic}) renders twice and shows the top level for a frame.
-function helpBotOpenTopic(topic) {
-  helpBotDraft = '';
-  helpQuery = '';
-  if (topic.faqId) {
-    setState({ helpBotOpen: false, view: 'help', help: { cat: 'common', topic: null }, faqOpenId: topic.faqId });
-  } else {
-    setState({ helpBotOpen: false, view: 'help', help: { cat: topic.cat, topic: topic.id } });
-  }
-  persistView('help');
-  scrollToTop();
-  tourEvent('view:help');
-}
-function helpBotBrowseAll() {
-  helpBotDraft = '';
-  helpQuery = '';
-  setState({ helpBotOpen: false, view: 'help', help: { cat: null, topic: null } });
-  persistView('help');
-  scrollToTop();
-  tourEvent('view:help');
-}
-
-// The guards run BEFORE the matcher and suppress its answer entirely when they fire. A safety
-// check that runs after a scoring function is a safety check that can be tuned away.
-function helpBotAsk(raw) {
-  const q = (raw || '').trim();
-  if (!q) return;
-  helpBotLog.push({ who: 'user', text: q });
-  const guard = helpBotGuard(q);
-  if (guard && guard.kind === 'person') {
-    helpBotLog.push({ who: 'bot', kind: 'person' });
-  } else if (guard && guard.kind === 'clinical') {
-    // If a care-team topic is a plausible match, show THAT topic's own words rather than generic
-    // copy -- anything temperature-shaped should land on the page whose answer already says
-    // "Contact the care team now."
-    // V56-6 (Auditor): routing to "whichever careLead topic scored best" sent a question about
-    // blood sugar to the WEIGHT-change page, a rash to the FEVER page and antibiotics to the
-    // missed-dose page. A care-team page about the wrong thing is worse than the generic refusal,
-    // because it looks specific. Only route when the guard identified a measure AND that measure's
-    // own page is the one that matched; otherwise fall through to the generic care-team copy,
-    // which is correct for every question.
-    const BY_MEASURE = { temp: 'vit-temp-high', weight: 'vit-weight-change', dose: 'miss-real-missed' };
-    const wantId = BY_MEASURE[guard.measure] || null;
-    const hits = helpMatch(q).filter(function (x) { return x.score >= HELPBOT_SHOW && x.topic.careLead && x.topic.id === wantId; });
-    helpBotLog.push({ who: 'bot', kind: 'clinical', topic: hits.length ? hits[0].topic : null, measure: guard.measure });
-  } else {
-    const d = helpBotDecide(q);
-    if (d.mode === 'answer') helpBotLog.push({ who: 'bot', kind: 'answer', topic: d.topic, alts: d.alts || [] });
-    else if (d.mode === 'list') helpBotLog.push({ who: 'bot', kind: 'list', hits: d.hits });
-    else helpBotLog.push({ who: 'bot', kind: 'none' });
-  }
-  helpBotDraft = '';
-  // V56-5 (Auditor): unbounded, the log reached 260 messages / 5,275 nodes and 181ms per submit,
-  // because render() rebuilds the whole transcript on every setState. 40 is ~20 exchanges, which is
-  // far more than any real help session and still cheap to rebuild. Oldest go first.
-  if (helpBotLog.length > HELPBOT_LOG_MAX) helpBotLog = helpBotLog.slice(-HELPBOT_LOG_MAX);
-  setState({ helpBotOpen: true });
-  // Keep the newest reply in view, and put the caret back so a second question can be typed
-  // without another tap.
-  requestAnimationFrame(function () {
-    // Scroll so the TOP of the newest reply is visible, not the bottom of the log. Scrolling to
-    // the bottom put a long answer on screen mid-steps with the care-team callout scrolled off
-    // above it -- and §4 says that callout is never scrolled-past-by-default. If the reply is
-    // taller than the panel the steps scroll; the callout wins.
-    const log = document.getElementById('helpbot-log');
-    if (log && log.lastElementChild) {
-      log.scrollTop = Math.max(0, log.lastElementChild.offsetTop - log.offsetTop - 6);
-    }
-    const el = document.getElementById('helpbot-input');
-    if (el) el.focus();
-    // Written AFTER the rebuild, into a node that survives this render -- which is what makes the
-    // announcement reliable. Plain text only, and bounded, so a screen reader is not read a wall.
-    const ann = document.getElementById('helpbot-announce');
-    const last = helpBotLog[helpBotLog.length - 1];
-    if (ann && last) ann.textContent = helpBotAnnounceText(last);
-  });
-}
-
-// The one-line summary a screen reader hears when a reply arrives.
-function helpBotAnnounceText(msg) {
-  if (msg.kind === 'person') return "Not a person and not AI. This searches help pages written into the app.";
-  if (msg.kind === 'clinical') return msg.topic ? ('Contact your care team. ' + msg.topic.q) : "That's a question for the care team. This app can't answer it.";
-  if (msg.kind === 'answer') return 'Found: ' + msg.topic.q;
-  if (msg.kind === 'list') return 'Not certain which you mean. ' + msg.hits.length + ' possible topics: ' + msg.hits.map(function (x) { return x.q; }).join('; ');
-  return "No answer found for that. You can browse all help topics instead.";
-}
-
-const HELPBOT_STARTERS = [
-  { label: "I'm not getting reminders", id: 'rem-none' },
-  { label: 'The Daily limit box is locked', id: 'med-daily-limit-locked' },
-  { label: 'Clear a missed dose', id: 'miss-resolve' },
-  { label: 'Get my records out of the app', id: 'exp-csv' }
-];
-
-function helpBotChip(label, onClick, primary) {
-  return h('button', {
-    onClick: onClick,
-    style: {
-      display: 'block', width: '100%', textAlign: 'left', minHeight: '44px',
-      padding: '10px 13px', borderRadius: '13px',
-      // The non-primary fill is deliberately NOT the bubble's own #FFF6F1: chips sat on an
-      // identical background, so tappable and non-tappable looked alike. rgba(200,83,32,.10) with
-      // a .22 border is this file's existing quiet-accent pair (Related chips, the Clear button).
-      border: '1px solid ' + (primary ? 'transparent' : 'rgba(246,108,49,0.22)'),
-      background: primary ? '#BF4C1A' : 'rgba(200,83,32,0.10)',
-      color: primary ? '#FFFFFF' : '#8A3D14',
-      fontSize: '13.5px', fontWeight: '700', lineHeight: '1.35'
-    }
-  }, label);
-}
-
-// Same numbered-circle treatment as the walkthrough page's stepList(), so a step looks like a step
-// wherever the user meets it.
-function helpBotSteps(steps) {
-  const shown = steps.slice(0, 3);
-  return [
-    h('ol', { style: { listStyle: 'none', margin: '10px 0 0', padding: '0', display: 'flex', flexDirection: 'column', gap: '8px' } },
-      ...shown.map((sTxt, i) => h('li', { style: { display: 'flex', gap: '9px', alignItems: 'flex-start' } },
-        h('span', { 'aria-hidden': 'true', style: { flexShrink: '0', width: '21px', height: '21px', borderRadius: '50%', background: 'rgba(200,83,32,0.12)', color: '#A83D0F', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', marginTop: '1px' } }, String(i + 1)),
-        h('span', { style: { flex: '1', minWidth: '0', fontSize: '13.5px', lineHeight: '1.5', color: '#554A52', fontWeight: '500' } }, ...helpRich(sTxt))
-      ))
-    ),
-    steps.length > shown.length
-      ? h('div', { style: { ...TYPE.caption, color: '#915E48', marginTop: '7px' } }, '+ ' + (steps.length - shown.length) + ' more step' + (steps.length - shown.length === 1 ? '' : 's'))
-      : null
-  ];
-}
-
-// The care-team callout. Identical rule to the walkthrough page, including the app-v55 finding
-// that the HEADING has to move with the tone: "Contact your care team" over the standing
-// disclaimer, on a page about why a text box is greyed out, reads as an instruction to phone the
-// oncologist about a UI control. Every medical sentence here is HELP_CARE_TEAM_LINE or the
-// topic's own answer, verbatim -- no new medical copy in v56.
-function helpBotCallout(topic) {
-  if (!topic || !topic.medical) return null;
-  const tone = topic.careLead ? NOTICE_TONES.urgent : NOTICE_TONES.attention;
-  return helpBotNotice(tone, topic.careLead ? 'heart' : 'bulb',
-    topic.careLead ? 'Contact your care team' : 'Not medical advice',
-    [h('div', { style: { fontSize: '13.5px', lineHeight: '1.55', color: '#554A52', fontWeight: '500', marginTop: '3px' } },
-      ...helpRich(topic.careLead ? topic.a : HELP_CARE_TEAM_LINE))]);
-}
-
-// One shell for every notice the panel shows, so the walkthrough page's callout and this one read
-// as the same component rather than two that almost match. Values sit on the midpoint between the
-// panel's tighter scale and renderHelpView's -- notably the heading is 14/700, not 13.5/800: the
-// panel version was HEAVIER at a SMALLER size than its own sibling, which is what made them read
-// as different things.
-function helpBotNotice(tone, icon, heading, bodyNodes) {
-  return h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderLeft: '4px solid ' + tone.accent, borderRadius: '15px', padding: '12px 13px', display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' } },
-    h('span', { 'aria-hidden': 'true', style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '11px', background: tone.chipBg, color: tone.chipFg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, appIcon(icon, 17)),
-    h('div', { style: { flex: '1', minWidth: '0' } },
-      h('div', { style: { fontSize: '14px', fontWeight: '700', color: '#2A2127' } }, heading),
-      ...bodyNodes
-    )
-  );
-}
-
-// Kept on every reply, not just the greeting: the starter chips and the browse-all row vanished
-// permanently after the first question, so someone whose question was not understood had no route
-// to the full list except closing the panel. Low-emphasis text link so it does not compete with
-// the primary CTA above it.
-function helpBotBrowseLink() {
-  return h('button', { onClick: helpBotBrowseAll, style: { marginTop: '10px', minHeight: '44px', padding: '0', background: 'transparent', color: '#A83D0F', fontSize: '12.5px', fontWeight: '700', textDecoration: 'underline', textAlign: 'left' } }, 'Browse all ' + HELP_TOPICS.length + ' help topics');
-}
-
-function helpBotBubbleBox(children, who) {
-  const mine = who === 'user';
-  return h('div', { style: { display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' } },
-    h('div', { style: {
-      maxWidth: mine ? '82%' : '100%',
-      // #A83D0F, not #BF4C1A: the latter is this app's primary-ACTION fill, identical to the
-      // "Open the full walkthrough" CTA a few hundred pixels below in the same panel, so a message
-      // read as a button. Also lifts white-on-fill contrast from 4.92:1 to 6.29:1.
-      background: mine ? '#A83D0F' : '#FFF6F1',
-      color: mine ? '#FFFFFF' : '#554A52',
-      border: mine ? 'none' : '1px solid #EFDCD4',
-      borderRadius: mine ? '15px 15px 4px 15px' : '15px 15px 15px 4px',
-      padding: '10px 12px', fontSize: '13.5px', lineHeight: '1.5', fontWeight: '500',
-      wordBreak: 'break-word'
-    } }, ...children)
-  );
-}
-
-function helpBotReply(msg) {
-  const rows = [];
-  if (msg.kind === 'person') {
-    rows.push(h('div', { style: { fontSize: '13.5px', fontWeight: '800', color: '#2A2127', marginBottom: '4px' } }, "No — I'm not a person, and I'm not AI either."));
-    rows.push(h('div', {}, 'I look through help pages that were written into ChemoWell before it shipped, and show you the one that best matches what you typed. Nothing you type here leaves this device, and nobody reads it.'));
-    rows.push(helpBotBrowseLink());
-  } else if (msg.kind === 'clinical') {
-    const tone = NOTICE_TONES.urgent;
-    if (msg.topic) {
-      rows.push(helpBotCallout(msg.topic));
-      rows.push(helpBotChip('Open the full walkthrough', () => helpBotOpenTopic(msg.topic), true));
-      rows.push(helpBotBrowseLink());
-    } else {
-      // Through the same shell as every other callout. This is the most safety-critical state in
-      // the feature and it was rendering as a bare left rule, weaker than the fever answer beside
-      // it -- which inverted the hierarchy exactly where it matters most.
-      rows.push(helpBotNotice(tone, 'heart', "That's a question for the care team.", [
-        h('div', { style: { fontSize: '13.5px', lineHeight: '1.55', color: '#554A52', fontWeight: '500', marginTop: '3px' } },
-          "I can't answer anything about doses, symptoms, or whether something is safe — this app only keeps a record of what you tell it, and it has no way to judge how serious something is. Please call the care team, the on-call number, or your local emergency number if it's urgent."),
-        h('div', { style: { marginTop: '8px', fontSize: '12.5px', lineHeight: '1.5', color: '#7A6E76', fontWeight: '500' } }, HELP_CARE_TEAM_LINE)
-      ]));
-      const recId = msg.measure === 'temp' ? 'vit-temp-log' : msg.measure === 'weight' ? 'vit-weight-log' : msg.measure === 'symptom' ? 'sym-log' : 'rep-where';
-      const rec = helpTopicById(recId);
-      if (rec) rows.push(h('div', { style: { marginTop: '9px' } }, helpBotChip('How do I record this in the app?', () => helpBotOpenTopic(rec))));
-      rows.push(helpBotBrowseLink());
-    }
-  } else if (msg.kind === 'answer') {
-    const t = msg.topic;
-    const call = helpBotCallout(t);
-    if (call) rows.push(call);
-    rows.push(h('div', { style: { fontSize: '14px', fontWeight: '800', color: '#2A2127', lineHeight: '1.35' } }, t.q));
-    // careLead topics already showed topic.a inside the callout -- printing it twice is how the
-    // walkthrough page used to read before v55 fixed the same thing.
-    if (!t.careLead && t.a) rows.push(h('div', { style: { marginTop: '5px' } }, ...helpRich(t.a)));
-    if (t.steps && t.steps.length) rows.push(...helpBotSteps(t.steps));
-    rows.push(h('div', { style: { marginTop: '11px' } }, helpBotChip('Open the full walkthrough', () => helpBotOpenTopic(t), true)));
-    rows.push(helpBotBrowseLink());
-    if (msg.alts && msg.alts.length) {
-      rows.push(h('div', { style: { ...TYPE.label, color: '#A83D0F', margin: '12px 0 6px' } }, 'Not what you meant?'));
-      rows.push(h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-        ...msg.alts.map(a => helpBotChip(a.q, () => helpBotOpenTopic(a)))));
-    }
-  } else if (msg.kind === 'list') {
-    // A one-row list under "I'm not certain which one you mean" reads as a bug -- there is nothing
-    // to choose between. Say what is actually true instead.
-    rows.push(h('div', { style: { fontSize: '13.5px', fontWeight: '800', color: '#2A2127', marginBottom: '2px' } },
-      msg.hits.length === 1 ? 'This looks like the closest match:' : "I'm not certain which one you mean — do any of these match?"));
-    rows.push(h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' } },
-      ...msg.hits.map(x => h('button', {
-        onClick: () => helpBotOpenTopic(x),
-        style: { display: 'block', width: '100%', textAlign: 'left', minHeight: '44px', padding: '9px 12px', borderRadius: '13px', border: '1px solid #EFDCD4', background: '#FFFFFF' }
-      },
-        h('div', { style: { fontSize: '13.5px', fontWeight: '700', color: '#2A2127', lineHeight: '1.35' } }, x.q),
-        h('div', { style: { ...TYPE.caption, color: '#915E48', marginTop: '2px' } }, helpCategoryLabel(x.cat))
-      ))));
-    rows.push(helpBotBrowseLink());
-  } else {
-    // No red, no error styling, no "0 results". This is a normal outcome and must look like one.
-    rows.push(h('div', { style: { fontSize: '13.5px', fontWeight: '800', color: '#2A2127', marginBottom: '4px' } }, "I don't have an answer for that one."));
-    rows.push(h('div', {}, "I can only look through the help pages written into ChemoWell, so anything outside the app isn't something I can find. If it's about the treatment itself, a dose, or how someone is feeling, that's a question for the care team — not for this app."));
-    rows.push(h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' } },
-      helpBotChip('Browse all ' + HELP_TOPICS.length + ' help topics', helpBotBrowseAll),
-      helpBotChip('Try different words', () => {
-        helpBotDraft = '';
-        render();
-        const el = document.getElementById('helpbot-input');
-        if (el) { el.value = ''; el.focus(); }
-      })
-    ));
-  }
-  return rows;
-}
-
-function renderHelpBot() {
-  if (!helpBotVisible()) { helpBotAnimated = false; return null; }
-
-  if (!state.helpBotOpen) {
-    helpBotAnimated = false;
-    return h('button', {
-      id: 'helpbot-fab',
-      onClick: openHelpBot,
-      // The bubble only exists while the panel is closed, so aria-expanded was permanently
-      // "false" and aria-controls pointed at a node that never co-existed with it -- both were
-      // noise. The label carries the meaning instead.
-      'aria-label': 'Ask for help',
-      style: {
-        position: 'fixed', right: '14px', bottom: 'calc(' + HELPBOT_BASE_BOTTOM + 'px + env(safe-area-inset-bottom))',
-        zIndex: '37', width: '56px', height: '56px', borderRadius: '50%',
-        // White with the rose glyph, not the solid primary fill: on Meds and Symptoms the bubble
-        // sat inches from an identically-coloured "+ Add" button, so the one control that answers
-        // questions looked like the one that creates records. This is the same treatment the
-        // panel's own header chip uses, so opening it is visually continuous with what you tapped.
-        // The 2px rose ring is load-bearing, not decoration: white-on-white measured 1.00:1
-        // against the Temperature and Weight cards the bubble overlaps on a POPULATED Home screen,
-        // and 1.30:1 for the original hairline border -- WCAG 2.2 1.4.11 wants 3:1. The empty
-        // test profile never showed it, which is why it took a populated app to find.
-        background: '#FFFFFF', color: '#BF4C1A', border: '2px solid #BF4C1A',
-        boxShadow: '0 8px 22px rgba(136,57,24,0.28)',
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
-      }
-    }, appIcon('help', 25));
-  }
-
-  // Same guard the plans sheet uses: without it the 1s tick replays the entry animation once a
-  // second, which is the "flickering, adjusting popup" Aaron reported.
-  const animateIn = !helpBotAnimated;
-  helpBotAnimated = true;
-
-  const wide = window.innerWidth >= HELPBOT_WIDE_MIN;
-  const empty = helpBotLog.length === 0;
-
-  return h('div', {
-    id: 'helpbot-panel',
-    role: 'dialog',
-    'aria-label': 'Ask for help',
-    tabindex: '-1',
-    style: {
-      // Above the toast (z50), not below it: a 4.5s toast was painting over the panel and covering
-      // two of the starter chips. While someone is mid-conversation here, a transient confirmation
-      // sitting on top of the thing they are reading is the worse of the two.
-      position: 'fixed', zIndex: '51',
-      bottom: 'calc(' + HELPBOT_BASE_BOTTOM + 'px + env(safe-area-inset-bottom))',
-      ...(wide ? { right: '14px', width: '380px' } : { left: '8px', right: '8px' }),
-      // Aaron, on the shape he asked for: "it should not take over the whole screen so they can
-      // still see the rest of the screen", then when asked how small: "scrolling is fine. doesn't
-      // need to cover more than half." So: half, hard. The first cap was 72vh/560px, which used
-      // about 70% of a tall phone on a long answer. Long replies scroll inside the panel, which he
-      // explicitly accepted, rather than the panel growing to fit them.
-      maxHeight: 'min(' + HELPBOT_MAX_VH + 'vh, ' + HELPBOT_MAX_H + 'px)',
-      background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '20px',
-      boxShadow: '0 -12px 48px rgba(60,21,4,0.30)',
-      display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      ...(animateIn ? { animation: 'sheetUp .26s cubic-bezier(0.32,0.72,0,1)' } : {})
-    }
-  },
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', padding: '11px 8px 11px 14px', borderBottom: '1px solid #F2E4DE', flexShrink: '0' } },
-      h('span', { 'aria-hidden': 'true', style: { width: '28px', height: '28px', borderRadius: '9px', background: 'rgba(191,76,26,0.12)', color: '#A83D0F', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('help', 16)),
-      h('div', { style: { flex: '1', minWidth: '0' } },
-        h('div', { style: { fontSize: '14px', fontWeight: '800', color: '#2A2127' } }, 'ChemoWell help'),
-        h('div', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76' } }, 'Searches this app\u2019s help')
-      ),
-      h('button', { onClick: closeHelpBot, 'aria-label': 'Close help', style: { width: '44px', height: '44px', borderRadius: '50%', background: 'transparent', color: '#8A3D14', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: '0' } }, appIcon('x', 19))
-    ),
-
-    // role="log" with aria-live on the CONTAINER cannot work here: render() replaces this node on
-    // every submit, and a live region that is itself re-created announces nothing reliably. The
-    // announcement is done by the dedicated #helpbot-announce node below, written after the
-    // rebuild, which is why this one is explicitly aria-live="off" rather than left ambiguous.
-    h('div', { id: 'helpbot-log', role: 'log', 'aria-live': 'off', style: { flex: '1', minHeight: '0', overflowY: 'auto', padding: '13px', display: 'flex', flexDirection: 'column', gap: '10px', boxShadow: 'inset 0 10px 8px -8px rgba(60,21,4,0.10), inset 0 -10px 8px -8px rgba(60,21,4,0.10)' } },
-      empty ? helpBotBubbleBox([
-        h('div', { style: { fontSize: '13.5px', fontWeight: '800', color: '#2A2127', marginBottom: '4px' } }, "Hi — type what's going wrong in your own words."),
-        h('div', {}, "I'll look through ChemoWell's help pages and show you the one that matches. I'm not a person and I'm not AI — these are pages written into the app before it shipped, and nothing you type here leaves this device. I can't answer medical questions."),
-        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '11px' } },
-          ...HELPBOT_STARTERS.map(sIt => {
-            const topic = helpTopicById(sIt.id);
-            return topic ? helpBotChip(sIt.label, () => helpBotOpenTopic(topic)) : null;
-          }).filter(Boolean),
-          helpBotChip('Browse all ' + HELP_TOPICS.length + ' help topics', helpBotBrowseAll)
-        )
-      ], 'bot') : null,
-      ...helpBotLog.map(msg => msg.who === 'user'
-        ? helpBotBubbleBox([msg.text], 'user')
-        : helpBotBubbleBox(helpBotReply(msg), 'bot'))
-    ),
-
-    h('div', { id: 'helpbot-announce', role: 'status', 'aria-live': 'polite', style: { position: 'absolute', width: '1px', height: '1px', padding: '0', margin: '-1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: '0' } }),
-
-    h('form', {
-      onSubmit: (ev) => { ev.preventDefault(); const el = document.getElementById('helpbot-input'); helpBotAsk(el ? el.value : helpBotDraft); },
-      // NOT calc(10px + env(safe-area-inset-bottom)): the panel is already lifted clear of the
-      // inset by its own `bottom`, so adding it again cost 34px of dead white inside a 560px-capped
-      // panel on every notched phone.
-      style: { display: 'flex', gap: '8px', alignItems: 'center', padding: '10px', borderTop: '1px solid #F2E4DE', flexShrink: '0', background: '#FFFFFF' }
-    },
-      h('input', {
-        id: 'helpbot-input', type: 'text', value: helpBotDraft,
-        'aria-label': 'Type your question',
-        placeholder: 'e.g. why is the daily limit locked',
-        maxlength: '200', autocomplete: 'off', enterkeyhint: 'send',
-        // This handler assigns a module variable and NOTHING else -- no setState, no render. The
-        // hazard this file has shipped five times is an input whose handler RE-RENDERS; an input
-        // with no handler at all is a different bug, and self-verification caught it: any setState
-        // from anywhere rebuilds the tree, and the rebuilt input is constructed with
-        // `value: helpBotDraft`, so a stale draft silently erases what the user typed. Reproduced
-        // live -- the toast auto-dismiss at :1319 fires setState 4.5s after any toast and wiped a
-        // half-typed question. Keeping the draft in step here means the rebuild restores it, and
-        // render()'s existing focus/caret restore (it re-focuses by id and re-applies the
-        // selection range) puts the cursor back where it was.
-        onInput: (ev) => { helpBotDraft = ev.target.value; },
-        style: { flex: '1', minWidth: '0', minHeight: '44px', padding: '10px 13px', borderRadius: '13px', border: '1px solid #E9D8D1', background: '#FFF9F6', color: '#2A2127', fontSize: '16px', fontWeight: '500' }
-      }),
-      // Always enabled: h() sets attributes via setAttribute, so disabled:false would render
-      // disabled="false" and permanently disable it. An empty submit is a harmless no-op instead.
-      h('button', { type: 'submit', 'aria-label': 'Send question', style: { flexShrink: '0', width: '44px', height: '44px', borderRadius: '13px', background: '#BF4C1A', color: '#FFFFFF', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('send', 19))
-    )
-  );
-}
-
 function renderHelpView(now) {
   const secStyle = { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '17px', padding: '14px' };
   const st = state.help || { cat: null, topic: null };
   const topic = st.topic ? helpTopicById(st.topic) : null;
-  const results = topic ? [] : helpSearch(helpQuery);
+  const searchRes = topic ? { hits: [], total: 0, shown: 0, cov: 0 } : helpSearchFull(helpQuery);
+  const results = searchRes.hits;
   const searching = !topic && helpQuery.trim().length > 0;
 
   const backRow = (label, onClick) => h('div', null,
@@ -6874,8 +6333,13 @@ function renderHelpView(now) {
       appIcon('arrow', 17), label)
   );
 
+  // v57 (Designer S7): the eyebrow renders on the page GRADIENT, not on a card. #BF4C1A measured
+  // 2.79:1 against the sampled backdrop rgb(255,175,163) -- under the 4.5:1 AA floor for 12px text,
+  // and the icon beside it under the 3:1 non-text floor too. #7A2E08 measures 5.36:1 there and
+  // 9.45:1 on white. This label is what tells a lost person which section they are in, so colour is
+  // carrying meaning and it has to clear.
   const pageHead = (label, title, caption) => h('section', null,
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#BF4C1A' } }, appIcon('help', 19), h('span', { style: { ...TYPE.label } }, label)),
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#7A2E08' } }, appIcon('help', 19), h('span', { style: { ...TYPE.label } }, label)),
     h('h1', { style: { ...TYPE.display, color: '#2A2127', marginTop: '5px' } }, title),
     caption ? h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', maxWidth: '470px', lineHeight: '1.45' } }, caption) : null
   );
@@ -6904,7 +6368,12 @@ function renderHelpView(now) {
     )
   );
 
-  const listCard = (rows) => h('section', { style: secStyle },
+  // R2D-3 (Designer, round 2) wanted the result count moved ABOVE the list -- it was rendering after
+  // all twelve rows, 1,070px below the fold, which is not where anyone decides whether to search
+  // again. Moving it as its OWN section cost two 18px main-flex gaps plus its height and ate most of
+  // R2D-1's height saving, so it goes INSIDE this card as a caption on the rows it describes.
+  const listCard = (rows, caption) => h('section', { style: secStyle },
+    caption ? h('div', { style: { ...TYPE.caption, color: '#5E4337', marginBottom: '6px' } }, caption) : null,
     h('div', { style: { borderRadius: '13px', overflow: 'hidden', border: '1px solid #E9D8D1' } }, ...rows)
   );
 
@@ -6927,8 +6396,15 @@ function renderHelpView(now) {
     // reads as an instruction to phone the oncologist about a UI control -- and an audience that
     // is already frightened does not need a false alarm on a mechanics page. The urgent four keep
     // the call-to-action heading, because for those it IS the action.
-    const tone = topic.careLead ? NOTICE_TONES.urgent : NOTICE_TONES.attention;
-    const careHeading = topic.careLead ? 'Contact your care team' : 'Not medical advice';
+    // v57 (Designer S8): careLead was doing two jobs at once -- deciding the ROUTE (this is a
+    // question for a person, not for the app) and the TONE (red, call now). sym-medical-question is
+    // squarely the first and not the second: "is this a side effect, is this normal" is not an
+    // emergency, and dressing it in the same red as "something new and frightening is happening"
+    // re-introduces exactly the false alarm the V55-3 comment above was written to remove. careTone
+    // splits them. The four original careLead pages set nothing and keep red, unchanged.
+    const calmCare = topic.careTone === 'calm';
+    const tone = (topic.careLead && !calmCare) ? NOTICE_TONES.urgent : NOTICE_TONES.attention;
+    const careHeading = topic.careLead ? (calmCare ? 'Ask your care team' : 'Contact your care team') : 'Not medical advice';
     const careCallout = topic.medical ? h('section', { style: { ...secStyle, borderLeft: '4px solid ' + tone.accent, display: 'flex', gap: '11px', alignItems: 'flex-start' } },
       h('span', { 'aria-hidden': 'true', style: { flexShrink: '0', width: '36px', height: '36px', borderRadius: '12px', background: tone.chipBg, color: tone.chipFg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, appIcon(topic.careLead ? 'heart' : 'bulb', 19)),
       h('div', { style: { flex: '1', minWidth: '0' } },
@@ -6976,24 +6452,69 @@ function renderHelpView(now) {
   }
 
   // ---- Search results ----
+  //
+  // v57 (Auditor V57-1, High). The strip below is UNCONDITIONAL, and that is the whole point.
+  //
+  // The Auditor typed real emergencies into this box and watched what a caregiver at 2am would see:
+  // "she collapsed" ranks *All my medications vanished from Home* -- a true keyword hit on the word
+  // `collapsed`, so no score threshold anywhere can catch it -- and "she is unresponsive" ranks
+  // *I tap something and nothing happens*. Both still do, deliberately; suppressing them would mean
+  // building a classifier that decides which queries are the frightening ones, and that classifier
+  // is precisely what failed twice in v56 and got this feature cut.
+  //
+  // So the fix is not to guess at the query. It is to make sure that whatever this list says, the
+  // one true sentence is above it and the route to a person is one tap away, every single time.
+  // HELP_CARE_TEAM_LINE already ships and already renders on the walkthrough pages; this is the same
+  // sentence, on the one screen a person reaches by typing their own words instead of browsing.
   if (searching) {
+    const cTone = NOTICE_TONES.attention;
     return [
-      pageHead('Help', 'Search help', null),
+      // R2D-1 (Designer, round 2) made "a legible result row above the bottom nav" the bar, and at
+      // 320px this screen was still short. The space came from a duplication of exactly the kind he
+      // flagged inside the strip: a 28px display heading reading "Search help" sat directly above a
+      // card whose own field label reads "Search help", on the one screen where the person has
+      // already typed and is waiting for rows. The section eyebrow stays -- it is the orientation --
+      // and the H1 goes, which is 45px back on every width. The Help LANDING keeps its heading; this
+      // is scoped to the results screen.
+      h('section', null,
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#7A2E08' } }, appIcon('help', 19), h('span', { style: { ...TYPE.label } }, 'Help & FAQ'))
+      ),
       searchCard(),
+      // R2D-1 (Designer, round 2, Must-fix): the strip was 235px at 320 and put ZERO of 12 result rows
+      // -- and the empty state's advice line -- under the 69px fixed bottom nav. The Auditor's
+      // clearance figures treated the fold as the viewport edge and did not subtract that nav. The
+      // height was self-inflicted: the heading restated the body's first clause verbatim, which is a
+      // copy defect on its own merits and cost three lines. Cutting the duplicate takes 39px at both
+      // widths, which lands the first row fully above the nav at 360 and takes 320 from a 21px sliver
+      // to a legible row. R2D-4: its own #FFFBF5 surface, so it reads as an aside above the results
+      // rather than as the first result -- it was the same white as both the search card and the
+      // list. R2D-9: capped at 560px so the line length at 768 stays under WCAG 1.4.8's 80 chars.
+      h('section', { style: { background: '#FFFBF5', border: '1px solid #E9D8D1', borderLeft: '4px solid ' + cTone.accent, borderRadius: '14px', padding: '11px 14px', maxWidth: '560px', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
+        h('div', { style: { ...TYPE.bodyBold, fontSize: '13.5px', color: '#2A2127', lineHeight: '1.35' } }, 'ChemoWell can’t tell you if something is serious'),
+        h('div', { style: { fontSize: '13px', fontWeight: '500', color: '#554A52', lineHeight: '1.5', marginTop: '3px' } }, 'It holds no medical information. For anything about symptoms, doses, or how someone is feeling, contact the care team.'),
+        h('button', { onClick: () => helpGo({ topic: 'sym-severe' }), style: { marginTop: '9px', minHeight: '44px', padding: '0 14px', borderRadius: '12px', background: cTone.chipFg, color: '#fff', fontSize: '13px', fontWeight: '700', border: 'none', cursor: 'pointer', textAlign: 'left', lineHeight: '1.3' } }, 'When to call the care team straight away')
+      ),
+      // Honest about the cap: a person who reads "12 results" and a person who reads "the closest 12
+      // of 19" make different decisions about whether to search again. Colour is R2D-3's other half
+      // -- inside the card #5E4337 measures 8.0:1 on white, and the old #7A6E76 was on the page
+      // GRADIENT at 3.23-3.68:1, failing AA at every width on the one line carrying the fact that
+      // matches are being withheld.
       results.length
-        ? listCard(results.map((t, i) => topicRow(t, i, helpCategoryLabel(t.cat))))
+        ? listCard(results.map((t, i) => topicRow(t, i, helpCategoryLabel(t.cat))),
+            searchRes.total > searchRes.shown
+              ? ('The closest ' + searchRes.shown + ' of ' + searchRes.total + ' matches')
+              : (searchRes.total + (searchRes.total === 1 ? ' result' : ' results')))
         : h('section', { style: secStyle },
             h('div', { style: { ...TYPE.bodyBold, color: '#2A2127' } }, 'Nothing matched that'),
             h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.5' } }, 'Try a single plain word — “reminder”, “greyed”, “export”, “missed”. Or tap Clear and pick the area from the list instead.')
-          ),
-      results.length ? h('section', { style: { ...TYPE.caption, color: '#7A6E76' } }, results.length + (results.length === 1 ? ' result' : ' results')) : null
+          )
     ];
   }
 
   // ---- Level 2: one category ----
   if (st.cat) {
     const cat = helpCategory(st.cat);
-    if (!cat) { return [pageHead('Help', 'Help', null), searchCard()]; }
+    if (!cat) { return [pageHead('Help & FAQ', 'Help & FAQ', null), searchCard()]; }
     const rows = [];
     if (cat.id === 'common') {
       // Unchanged from the standalone FAQ view: same accordion, same faqOpenId state, same styling.
@@ -7032,7 +6553,7 @@ function renderHelpView(now) {
     }
     return [
       backRow('All help topics', () => helpGo({ cat: null, topic: null })),
-      pageHead('Help', cat.label, cat.blurb),
+      pageHead('Help & FAQ', cat.label, cat.blurb),
       searchCard(),
       listCard(rows)
     ];
@@ -7040,7 +6561,7 @@ function renderHelpView(now) {
 
   // ---- Level 1: the categories ----
   return [
-    pageHead('Help', 'Find and fix a problem', 'Pick the area that matches what you are seeing, or search. ' + HELP_TOPICS.length + ' step-by-step walkthroughs plus the ' + FAQ_ITEMS.length + ' common questions, all stored in the app — nothing is sent anywhere.'),
+    pageHead('Help & FAQ', 'Find and fix a problem', 'Pick the area that matches what you are seeing, or search. ' + HELP_TOPICS.length + ' step-by-step walkthroughs plus the ' + FAQ_ITEMS.length + ' common questions, all stored in the app — nothing is sent anywhere.'),
     searchCard(),
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
       ...HELP_CATEGORIES.map(cat => h('button', { onClick: () => helpGo({ cat: cat.id, topic: null }), style: { width: '100%', minHeight: '76px', display: 'flex', alignItems: 'center', gap: '13px', padding: '13px 14px', textAlign: 'left', borderRadius: '18px', background: '#FFFFFF', border: '1px solid #E9D8D1', color: '#2A2127', boxShadow: '0 4px 18px rgba(203,122,87,0.09)' } },
@@ -8815,7 +8336,7 @@ unsubPrefs = subscribePrefs((prefs) => {
   // v33: a profile just created via "Add profile" carries the name typed there — prefill the
   // setup form with it (once; never clobber something the user has since typed on the form).
   if (!CONFIG.patientName && prefs.pendingName && !setupNameDraft) setupNameDraft = prefs.pendingName;
-  setState({ missedClearedAt: prefs.missedClearedAt || 0, dismissedMisses: prefs.dismissedMisses || [], patientName: CONFIG.patientName, prefsLoaded: true, supportPromptAt: prefs.supportPromptAt || 0, supportOptOut: !!prefs.supportOptOut });
+  setState({ missedClearedAt: prefs.missedClearedAt || 0, dismissedMisses: prefs.dismissedMisses || [], patientName: CONFIG.patientName, prefsLoaded: true, supportPromptAt: prefs.supportPromptAt || 0, supportOptOut: !!prefs.supportOptOut, browserNoticeSeen: !!prefs.browserNoticeSeen });
 });
 unsub = subscribeEntries((entries) => {
   const wasEmpty = state.entries.length === 0 && !state.loaded;
@@ -8857,7 +8378,7 @@ setInterval(() => {
   // excluded outright because nothing on it is time-dependent, so there is nothing for the
   // tick to update there and no reason to leave a second way for this bug to come back a
   // fifth time. Interaction re-renders (setState/render) still repaint it instantly.
-  if (state.view !== 'help' && !state.helpBotOpen
+  if (state.view !== 'help'
       && !state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.noteModal && !state.checkinModal && !state.medEditor && !state.infoModal && !state.eraseAllModalOpen && !state.confirmDeleteMed && !state.confirmDeleteAppt && !state.confirmDeleteNote && !state.confirmDeleteProfile && !state.confirmRemove && !isEditing) render();
   checkNotifications();
   checkAppointmentReminders();
