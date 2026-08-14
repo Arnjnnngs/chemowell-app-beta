@@ -19,9 +19,23 @@ when you're about to touch the relevant code; delete the line once it's actually
   bringing both scripts back). It is low-impact in practice — every call site in TEAM.md and in this
   project's own docs invokes them as `bash release_check.sh`, which ignores the bit entirely — but
   the CI workflow that runs `android_smoke_test.sh` directly would exit 126. **The only real fix is
-  a push path that can carry a mode**, i.e. a working `git push`, which is blocked here by the
-  proxy (403). Worth one attempt at a token-authenticated HTTPS push next session; if that works it
-  removes the whole manual-upload apparatus, not just this.
+  a push path that can carry a mode**, i.e. a working `git push`. **Attempted at the end of the
+  app-v57 push, and the proxy's actual error is now on record and is ACTIONABLE — it is not a
+  generic 403:**
+
+  > `remote: access denied by the git proxy: Arnjnnngs/chemowell-app-beta is not in this session's`
+  > `authorized repository set, so the proxy will not inject a credential for it. To fix, add the`
+  > `repository to the session's sources.`
+
+  So this was never a network limitation, and the note elsewhere in this file that once called it
+  "no network" was wrong twice over. **`git push` is blocked purely because the repo is not in the
+  session's authorized source list** — a configuration Aaron can change when starting a session,
+  not a sandbox constraint anyone has to engineer around. If `chemowell-app-beta` (and
+  `chemowell-beta`) are added as sources, the entire manual web-upload apparatus goes away: no
+  batching, no per-file mode loss, no risk of a half-landed push, and `release_check.sh` can trust
+  `origin/main` directly instead of needing `PUBLISHED.json` as a stand-in baseline.
+  **This is the single highest-leverage piece of setup available on this project. Try it first
+  next session.**
 - **`test/v55-help.mjs`'s "every careLead topic is also flagged medical" check cannot fail**
   (app-v57 PM gate, **PM-1**, proven by a full-suite mutation run, not inferred). Same lazy
   multiline-regex class as the Auditor's R2-C, sitting three lines below the per-line fix R2-C
