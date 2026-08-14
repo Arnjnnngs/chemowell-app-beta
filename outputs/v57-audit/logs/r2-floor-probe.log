@@ -1,0 +1,78 @@
+FLOOR=0.22 MAX=12
+
+[P1] topic NOT in the shown list for one of its own keywords: 18
+   rem-tap-notification  <- "does it log"  (shown 12/58: log-forgot-yesterday, ip-meds-restricted, log-button-locked)
+   med-asneeded-vs-scheduled  <- "as needed"  (shown 0/0: )
+   med-limit-unit  <- "pills"  (shown 12/51: med-add-first, med-edit-delete, rem-no-reminder-for-med)
+   med-limit-unit  <- "which"  (shown 0/0: )
+   miss-what-counts  <- "when"  (shown 0/0: )
+   miss-banner  <- "alert"  (shown 12/28: rem-none, rem-appointment, rem-tap-notification)
+   miss-real-missed  <- "what do i do"  (shown 0/0: )
+   vit-temp-log  <- "log"  (shown 12/58: log-forgot-yesterday, ip-meds-restricted, log-button-locked)
+   sym-log  <- "log"  (shown 12/58: log-forgot-yesterday, ip-meds-restricted, log-button-locked)
+   sym-severity  <- "where"  (shown 0/0: )
+   sym-medical-question  <- "what does it do"  (shown 0/0: )
+   sym-bowel-confusion  <- "where"  (shown 0/0: )
+   rep-where  <- "where"  (shown 0/0: )
+   rep-entry-missing  <- "not there"  (shown 12/63: note-add, note-edit-delete, appt-year)
+   exp-where-file  <- "where"  (shown 0/0: )
+   set-beta-date-controls  <- "what is this"  (shown 0/0: )
+   app-version  <- "which"  (shown 0/0: )
+   app-version  <- "about"  (shown 0/0: )
+
+[P2] topic NOT in the shown list for the first two content words of its own title: 2
+   med-notes-field  <- "where put"  (shown 0/0: )
+   exp-where-file  <- "where did"  (shown 0/0: )
+   ok   "change the temperature to celsius" -> shown 10/10 : vit-units, vit-temp-rejected, vit-temp-log, vit-temp-high
+   ok   "turn off a reminder" -> shown 12/19 : vit-checkin-missing, rem-exact-toggle-missing, rem-none, set-card-missing
+   ok   "pause my meds while on holiday" -> shown 12/14 : med-pause-resume, ip-meds-restricted, rem-no-reminder-for-med, med-not-on-home
+   ok   "what does restricted mean" -> shown 11/11 : ip-meds-restricted, med-windows, faq:schedule-windows, log-button-locked
+   ok   "send the csv to the doctor" -> shown 10/10 : exp-printable, priv-who-sees, exp-csv-columns, exp-csv
+   ok   "pin the app to my home screen" -> shown 12/28 : rem-web-vs-app, set-card-missing, app-blank, app-back-button
+   ok   "stop the red banner" -> shown 7/7 : miss-banner, tour-blocking, miss-resolve, med-pause-resume
+   ok   "reminder came at the wrong time" -> shown 10/10 : rem-late, rem-appointment, log-wrong-time, rem-checkin-time
+   ok   "put in yesterdays dose" -> shown 8/8 : log-forgot-yesterday, log-basic, miss-resolve, miss-real-missed
+   ok   "nothing happens when i tap" -> shown 9/9 : app-nothing-happens, faq:missed-dose, priv-lost-phone, rep-history-slow
+   ok   "app looks empty" -> shown 12/29 : rem-none-scheduled, set-quicklog-collapsed, exp-csv-columns, exp-nothing
+   ok   "where is the export button" -> shown 12/44 : exp-nothing, exp-csv, exp-where-file, app-back-button
+   ok   "blood pressure" -> shown 12/15 : vit-bp-log, vit-temp-cant-remove, vit-temp-log, vit-temp-high
+   ok   "appetite" -> shown 7/7 : vit-checkin-modal, faq:weight-reason, rem-checkin-time, log-remove
+   ok   "bowel" -> shown 6/6 : sym-bowel-confusion, vit-checkin-modal, rem-checkin-time, log-remove
+   ok   "delete a note" -> shown 11/11 : note-edit-delete, sym-edit-delete, pro-delete, med-edit-delete
+   ok   "change units to kg" -> shown 6/6 : vit-units, med-edit-delete, note-edit-delete, treat-clear
+   ok   "hours between doses" -> shown 12/12 : med-gap-hours, faq:gap-timer, med-asneeded-vs-scheduled, log-remove
+   ok   "daily limit" -> shown 12/16 : med-daily-limit-locked, faq:daily-limit, med-limit-unit, rem-checkin-time
+   ok   "take with food" -> shown 3/3 : med-notes-field, log-group-take-all, sym-medical-question
+   ok   "morning meds card" -> shown 12/26 : log-group-take-all, med-placement, med-windows, set-quicklog-collapsed
+   ok   "radiation sessions" -> shown 8/8 : treat-radiation, treat-no-card, treat-set-date, treat-clear
+   ok   "hospital stay" -> shown 8/8 : ip-start-end, ip-past-stay, ip-forgot-end, ip-meds-restricted
+   ok   "print for the doctor" -> shown 5/5 : exp-printable, exp-print-blocked, priv-who-sees, rem-appointment
+   ok   "back button" -> shown 12/15 : app-back-button, app-nothing-happens, log-button-locked, app-report
+   ok   "walkthrough again" -> shown 1/1 : tour-replay
+   ok   "erase everything" -> shown 7/7 : set-erase-all, faq:reset, priv-delete, pro-delete
+   ok   "lost my phone" -> shown 4/4 : priv-lost-phone, exp-where-file, rem-none, app-blank
+   ok   "is it private" -> shown 2/2 : faq:privacy, priv-who-sees
+   ok   "offline" -> shown 7/7 : app-offline, app-old-version, app-version, app-blank
+   ok   "version" -> shown 12/13 : app-version, app-old-version, set-something-flickering, app-report
+   ok   "double logged" -> shown 6/6 : log-double-tap, miss-real-missed, rep-entry-missing, rep-where
+   ok   "missed dose" -> shown 12/16 : miss-resolve, miss-real-missed, miss-what-counts, miss-clear-all
+   ok   "weight went down" -> shown 12/23 : rep-weight, vit-weight-log, vit-weight-change, faq:weight-reason
+   ok   "cycle" -> shown 4/4 : rep-cycle-missing, vit-period, rep-where, set-card-missing
+   ok   "symptom severity" -> shown 6/6 : sym-severity, sym-edit-delete, sym-log, sym-bowel-confusion
+   ok   "check in" -> shown 12/32 : vit-checkin-modal, rem-checkin-time, vit-checkin-missing, note-vs-checkin
+   ok   "pro plan cost" -> shown 5/5 : pro-plans, pro-limit, pro-add, faq:caregiver-multi
+   ok   "switch profile" -> shown 12/16 : pro-switch, faq:switch-profile, pro-limit, pro-delete
+   ok   "notifications blocked" -> shown 12/24 : rem-blocked, exp-print-blocked, med-save-blocked, log-button-locked
+   ok   "samsung alarms" -> shown 2/2 : rem-exact-toggle-missing, rem-none
+   ok   "flickering screen" -> shown 4/4 : set-something-flickering, set-card-missing, app-blank, set-beta-date-controls
+   ok   "browser version" -> shown 9/9 : rem-web-vs-app, exp-print-blocked, app-version, app-old-version
+   ok   "web preview" -> shown 1/1 : rem-web-vs-app
+   ok   "add to home screen" -> shown 12/30 : rem-web-vs-app, set-card-missing, med-not-on-home, med-placement
+   ok   "7 days safari" -> shown 1/1 : rem-web-vs-app
+   ok   "share sheet" -> shown 2/2 : exp-where-file, rem-web-vs-app
+   ok   "downloads folder" -> shown 2/2 : exp-where-file, rem-web-vs-app
+
+[P3] ordinary queries the floor broke: 1
+   CUT    "add a second patient" -> shown 12/17 : ip-undo, ip-start-end, faq:in-patient, ip-past-stay   want pro-add
+
+[P4] 50 clinical questions after the floor: care@top4=20/50 care@top8=23/50 zeroResults=5 avgTotal=14.9

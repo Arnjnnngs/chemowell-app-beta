@@ -1,0 +1,35 @@
+PASS  the notice is gated on !isNativeApp()
+PASS  the notice is gated on the first-run guide being finished (state.tourStep == null)
+PASS  the notice waits for prefs to load, so it cannot flash before browserNoticeSeen is known
+PASS  dismissal writes browserNoticeSeen to on-device prefs
+PASS  the prefs subscriber reads browserNoticeSeen back into state
+PASS  browserNoticeSeen has an initial value in state (undefined would be a silent falsy)
+PASS  iPad-on-desktop-UA is detected via maxTouchPoints, not the UA string alone
+PASS  installed-PWA detection checks BOTH display-mode and iOS navigator.standalone
+PASS  manifest no longer describes the app as chemo-only  |  Track medications, doses and symptoms through cancer treatment — all data stays on your device
+PASS  manifest still states the on-device promise
+PASS  manifest short_name is short enough for a Home Screen label  |  ChemoWell
+PASS  [360px] the first-run guide is showing, and the notice is not on top of it  |  guide up
+FAIL  [360px] the notice appears on Home after the guide  |  ChemoWell | BETA | Test Patient’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | TEMPERATURE | No readings yet | Log | WEIGHT | No readi
+FAIL  [360px] it names the Home Screen step, which is the data-loss one
+FAIL  [360px] it says why: 7 days without a visit
+FAIL  [360px] it says reminders need the page open
+FAIL  [360px] it says exports download rather than opening the share sheet
+FAIL  [360px] it repeats the on-device promise
+PASS  [360px] no horizontal overflow with the notice on screen  |  overflow=0px
+FAIL  [360px] the non-iOS install wording is the branch that rendered  |  (neither branch found)
+FAIL  [360px] all three notice controls exist  |  [{"l":"Got it","h":0,"w":0,"found":false},{"l":"Open Help & FAQ","h":0,"w":0,"found":false},{"l":"Dismiss","h":0,"w":0,"found":false}]
+FAIL  [360px] Got it and Open Help & FAQ meet the 44px target floor  |  [{"l":"Got it","h":0,"w":0,"found":false},{"l":"Open Help & FAQ","h":0,"w":0,"found":false},{"l":"Dismiss","h":0,"w":0,"found":false}]
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+locator.click: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('button', { name: 'Open Help & FAQ' }).first()[22m
+
+    at /tmp/mut/test/v57-browser-notice.mjs:128:71 {
+  name: 'TimeoutError'
+}
+
+Node.js v22.22.2

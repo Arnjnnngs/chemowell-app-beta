@@ -1,0 +1,2 @@
+MISSED  H1 delete one help topic (118 -> 117)   
+CAUGHT  H2 landing copy hardcodes the old 117 count   FAIL  [360px] landing states the walkthrough count (118)  |  117 step-by-step walkthroughs plus the 15 common questions, all stored in the app — nothing is sent anywhere ;; FAIL  [390px] landing states the walkthrough count (118)  |  117 step-by-step walkthroughs plus the 15 common questions, all stored in the app — nothing is sent anywhere

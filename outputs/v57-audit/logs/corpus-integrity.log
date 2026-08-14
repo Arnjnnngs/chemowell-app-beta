@@ -1,0 +1,7 @@
+topics=118 faq=15 cats=17
+medical=10 careLead=5
+duplicate ids: none
+integrity problems: NONE
+
+sym-medical-question copy scanned for numeric/threshold/advice shapes: \bis (normal|fine|safe|ok)\b
+word count: 169

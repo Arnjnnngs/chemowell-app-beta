@@ -1,0 +1,27 @@
+PASS  read-more lands on rem-web-vs-app
+PASS  opening Help from the menu afterwards lands on the LANDING page, not the deep-linked topic  |  LS | ▼ | HELP & FAQ | Find and fix a problem | Pick the area that matches what you are seeing, or 
+PASS  deep-linking twice still lands on the walkthrough
+PASS  double-tapping read-more is harmless
+PASS  the notice is still there after all of that (read-more never dismisses)
+PASS  a daily limit is stored and echoed on the Meds row  |  Rules: Min 4-hour gap · Daily limit 4000 mg
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+elementHandle.fill: Element is not attached to the DOM
+Call log:
+[2m    - fill("999")[22m
+[2m  - attempting fill action[22m
+[2m    - waiting for element to be visible, enabled and editable[22m
+
+    at /tmp/r2-spot.mjs:34:58 {
+  name: 'Error'
+}
+
+Node.js v22.22.2
+PASS  absurd temperature (999) still rejected with a clear message  |  Enter a valid temperature in °F (86–113)
+PASS  absurd blood pressure still rejected
+PASS  app renders offline after reload  |  ChemoWell | BETA | Spot2’s Meds | Thursday, Aug 13 | BETA DATE CONTR
+PASS  the care-team strip renders offline too
+PASS  the strip button is present offline
+PASS  zero console errors

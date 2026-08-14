@@ -1,0 +1,6 @@
+﻿Date,Time,Type,Detail,Note
+2026-08-11,9:35 PM,Weight,150 lbs,
+2026-08-11,9:35 PM,Blood Pressure,118/76 mmHg,
+2026-08-12,9:35 PM,Weight,149.2 lbs,
+2026-08-12,9:35 PM,Blood Pressure,122/80 mmHg,
+2026-08-13,9:35 PM,Blood Pressure,120/78 mmHg,

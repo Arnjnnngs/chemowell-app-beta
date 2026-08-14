@@ -1,0 +1,56 @@
+PASS  [Chemo] notice hidden while the guide is up
+PASS  [Chemo/skip] notice appears on Home  |   | ▼ | You’re using the web preview | Everything works. Three things are different in a browser:
+PASS  [Chemo] card height under 620px (M1)  |  {"h":548,"col":291,"xw":44,"xh":44,"ov":0}
+PASS  [Chemo] body column >= 250px (M1)  |  col=291
+PASS  [Chemo] the ✕ is 44x44 (M2)  |  x=44x44
+PASS  [Chemo] no horizontal overflow  |  ov=0
+PASS  [Chemo] Safari sentence not shown on this (non-iOS) UA (S4)
+PASS  [Chemo] zero console errors
+PASS  [Radiation] notice hidden while the guide is up
+PASS  [Radiation] guide ran to Finish
+PASS  [Radiation/tour] notice appears on Home  |   | ▼ | You’re using the web preview | Everything works. Three things are different in a browser:
+PASS  [Radiation] card height under 620px (M1)  |  {"h":548,"col":291,"xw":44,"xh":44,"ov":0}
+PASS  [Radiation] body column >= 250px (M1)  |  col=291
+PASS  [Radiation] the ✕ is 44x44 (M2)  |  x=44x44
+PASS  [Radiation] no horizontal overflow  |  ov=0
+PASS  [Radiation] Safari sentence not shown on this (non-iOS) UA (S4)
+PASS  [Radiation] zero console errors
+PASS  [Both] notice hidden while the guide is up
+PASS  [Both/skip] notice appears on Home  |   | ▼ | You’re using the web preview | Everything works. Three things are different in a browser:
+PASS  [Both] card height under 620px (M1)  |  {"h":548,"col":291,"xw":44,"xh":44,"ov":0}
+PASS  [Both] body column >= 250px (M1)  |  col=291
+PASS  [Both] the ✕ is 44x44 (M2)  |  x=44x44
+PASS  [Both] no horizontal overflow  |  ov=0
+PASS  [Both] Safari sentence not shown on this (non-iOS) UA (S4)
+PASS  [Both] zero console errors
+PASS  [Other] notice hidden while the guide is up
+PASS  [Other] guide ran to Finish
+PASS  [Other/tour] notice appears on Home  |   | ▼ | You’re using the web preview | Everything works. Three things are different in a browser:
+PASS  [Other] card height under 620px (M1)  |  {"h":548,"col":291,"xw":44,"xh":44,"ov":0}
+PASS  [Other] body column >= 250px (M1)  |  col=291
+PASS  [Other] the ✕ is 44x44 (M2)  |  x=44x44
+PASS  [Other] no horizontal overflow  |  ov=0
+PASS  [Other] Safari sentence not shown on this (non-iOS) UA (S4)
+PASS  [Other] zero console errors
+PASS  read-more deep-links straight to rem-web-vs-app  |  LS | ▼ | Reminders & notifications | REMINDERS & NOTIFICATIONS | I'm using ChemoWell in a web browser, not the installed app | Three things 
+PASS  the deep-linked page carries the 7-day Safari detail moved out of the card
+PASS  the deep-linked page carries the reminders point
+PASS  the deep-linked page carries the exports point
+PASS  the deep-linked page carries BOTH platform instructions
+PASS  the deep-linked page keeps the on-device promise
+PASS  the deep-linked page has a working Back row  |  Reminders & notifications
+PASS  reading more did NOT dismiss the notice
+PASS  dismissing scrolls back to the top of Home (S2)  |  scrollY=0
+PASS  the notice is gone and Home renders
+PASS  still dismissed after a reload
+PASS  zero console errors
+PASS  toast sits 96px from the bottom on a normal screen  |  {"gap":96}
+PASS  toast lifts to 142px on the Reports detail screen (M3)  |  {"gap":142,"toastBottom":658,"pillTop":670,"overlap":-12}
+PASS  toast no longer overlaps the Back-to-reports pill (M3)  |  {"gap":142,"toastBottom":658,"pillTop":670,"overlap":-12}
+PASS  zero console errors
+PASS  the HELP & FAQ eyebrow uses the darkened #7A2E08 (S7)  |  rgb(122, 46, 8)
+PASS  Help search still eats no keystrokes across 3+ ticks  |  "why cant i type in the daily limit box"
+PASS  the slow-typed sentence still ranks the daily-limit page first  |  Adding & editing medications | Which Limit unit should I pick? | Adding & editing medications
+PASS  Help view still keeps its scroll across ticks  |  y=300
+PASS  no helpbot CSS survives
+PASS  zero console errors

@@ -1,0 +1,52 @@
+PASS  the notice is gated on !isNativeApp()
+PASS  the notice is gated on the first-run guide being finished (state.tourStep == null)
+PASS  the notice waits for prefs to load, so it cannot flash before browserNoticeSeen is known
+PASS  dismissal writes browserNoticeSeen to on-device prefs
+PASS  the prefs subscriber reads browserNoticeSeen back into state
+PASS  browserNoticeSeen has an initial value in state (undefined would be a silent falsy)
+PASS  iPad-on-desktop-UA is detected via maxTouchPoints, not the UA string alone
+PASS  installed-PWA detection checks BOTH display-mode and iOS navigator.standalone
+PASS  manifest no longer describes the app as chemo-only  |  Track medications, doses and symptoms through cancer treatment — all data stays on your device
+PASS  manifest still states the on-device promise
+PASS  manifest short_name is short enough for a Home Screen label  |  ChemoWell
+PASS  [360px] the first-run guide is showing, and the notice is not on top of it  |  guide up
+PASS  [360px] the notice appears on Home after the guide  |  ChemoWell | BETA | Test Patient’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | You’re using the web preview | Everything here wo
+PASS  [360px] it names the Home Screen step, which is the data-loss one
+PASS  [360px] it says why: 7 days without a visit
+PASS  [360px] it says reminders need the page open
+PASS  [360px] it says exports download rather than opening the share sheet
+PASS  [360px] it repeats the on-device promise
+PASS  [360px] no horizontal overflow with the notice on screen  |  overflow=0px
+FAIL  [360px] the non-iOS install wording is the branch that rendered  |  Tap the Share button, then Add to Home Screen.
+PASS  [360px] all three notice controls exist  |  [{"l":"Got it","h":44,"w":77,"found":true},{"l":"Open Help & FAQ","h":44,"w":149,"found":true},{"l":"Dismiss","h":28,"w":28,"found":true}]
+PASS  [360px] Got it and Open Help & FAQ meet the 44px target floor  |  [{"l":"Got it","h":44,"w":77,"found":true},{"l":"Open Help & FAQ","h":44,"w":149,"found":true},{"l":"Dismiss","h":28,"w":28,"found":true}]
+PASS  [360px] "Open Help & FAQ" lands on the Help centre  |  ChemoWell | BETA | Test Patient’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | HELP & FAQ | Find a
+PASS  [360px] the Help centre eyebrow matches the menu row wording
+PASS  [360px] opening Help also dismissed the notice
+PASS  [360px] reloaded, back on Home, the notice does not come back  |  ChemoWell | BETA | Test Patient’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | TEMPERATURE | No readings yet
+PASS  [360px] no app console errors through the whole flow (CDN/proxy noise excluded)
+PASS  [390px] the first-run guide is showing, and the notice is not on top of it  |  guide up
+PASS  [390px] the notice appears on Home after the guide  |  ChemoWell | BETA | Test Patient’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | You’re using the web preview | Everything here wo
+PASS  [390px] it names the Home Screen step, which is the data-loss one
+PASS  [390px] it says why: 7 days without a visit
+PASS  [390px] it says reminders need the page open
+PASS  [390px] it says exports download rather than opening the share sheet
+PASS  [390px] it repeats the on-device promise
+PASS  [390px] no horizontal overflow with the notice on screen  |  overflow=0px
+FAIL  [390px] the non-iOS install wording is the branch that rendered  |  Tap the Share button, then Add to Home Screen.
+PASS  [390px] all three notice controls exist  |  [{"l":"Got it","h":44,"w":77,"found":true},{"l":"Open Help & FAQ","h":44,"w":149,"found":true},{"l":"Dismiss","h":28,"w":28,"found":true}]
+PASS  [390px] Got it and Open Help & FAQ meet the 44px target floor  |  [{"l":"Got it","h":44,"w":77,"found":true},{"l":"Open Help & FAQ","h":44,"w":149,"found":true},{"l":"Dismiss","h":28,"w":28,"found":true}]
+PASS  [390px] "Open Help & FAQ" lands on the Help centre  |  ChemoWell | BETA | Test Patient’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | HELP & FAQ | Find a
+PASS  [390px] the Help centre eyebrow matches the menu row wording
+PASS  [390px] opening Help also dismissed the notice
+PASS  [390px] reloaded, back on Home, the notice does not come back  |  ChemoWell | BETA | Test Patient’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | TEMPERATURE | No readings yet
+PASS  [390px] no app console errors through the whole flow (CDN/proxy noise excluded)
+PASS  [X path] the notice is showing before the X is tapped
+PASS  [X path] the X dismisses the notice
+PASS  [X path] it stays dismissed after a reload
+PASS  [Got it path] "Got it" dismisses the notice
+PASS  [Got it path] it stays dismissed after a reload
+PASS  [Got it path] Home still renders its journal section after dismissal  |  ChemoWell | BETA | Test Patient’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | TEMPERATURE | No readings yet | Log | WEIGHT | No readings yet | Log | BLOOD PR
+PASS  the installed-PWA branch has its own headline, not the instruction  |  Your data is safe on this device
+
+2 FAILURES

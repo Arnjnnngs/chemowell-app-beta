@@ -1,0 +1,154 @@
+
+Q: is 101.4 a fever   [7 results, careRank=1]
+   1. *CARE* The temperature is high — what should I do?   (vit-temp-high)
+   2. How do I record a temperature?   (vit-temp-log)
+   3. It won't accept the temperature I typed   (vit-temp-rejected)
+   4. What’s “Hours between doses” / minimum gap?   (faq:gap-timer)
+   5. [med] How do I add a medication?   (med-add-first)
+   6. What is 'Hours between doses' / minimum gap?   (med-gap-hours)
+
+Q: should i give him a double dose   [36 results, careRank=1]
+   1. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+   2. I think I logged the same dose twice   (log-double-tap)
+   3. How do I record that a dose was taken?   (log-basic)
+   4. How do I clear a missed dose?   (miss-resolve)
+   5. I forgot to log a dose at the time — can I put in the right time?   (log-wrong-time)
+   6. When does a dose count as missed?   (miss-what-counts)
+
+Q: her lips are turning blue   [2 results, careRank=1]
+   1. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+   2. The 'Alarms & reminders' switch isn't there, or won't turn on   (rem-exact-toggle-missing)
+
+Q: can he take ibuprofen with this   [7 results, careRank=3]
+   1. What does 'Take all' do on the Morning/Evening card?   (log-group-take-all)
+   2. Where do I put instructions like 'take with food'?   (med-notes-field)
+   3. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+   4. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+   5. Where does this medication show up on Home?   (med-placement)
+   6. *CARE* The weight has changed a lot in a few days   (vit-weight-change)
+
+Q: is 2 tablets too many   [60 results, careRank=35]
+   1. What is 'Hours between doses' / minimum gap?   (med-gap-hours)
+   2. It won't let me save the medication   (med-save-blocked)
+   3. This medication isn't taken every day   (med-days-taken)
+   4. I've got weeks of missed doses and I don't want to tap them one by one   (miss-clear-all)
+   5. What's the difference between 'As needed' and 'Scheduled'?   (med-asneeded-vs-scheduled)
+   6. How do I record a weight, and why does it ask for a reason?   (vit-weight-log)
+
+Q: she is coughing up blood   [66 results, careRank=2]
+   1. How do I record blood pressure?   (vit-bp-log)
+   2. *CARE* The temperature is high — what should I do?   (vit-temp-high)
+   3. Where does this medication show up on Home?   (med-placement)
+   4. The printable report says pop-ups are blocked   (exp-print-blocked)
+   5. How do I record a weight, and why does it ask for a reason?   (vit-weight-log)
+   6. What am I looking at in the CSV?   (exp-csv-columns)
+
+Q: he is having trouble breathing   [1 results, careRank=1]
+   1. *CARE* The symptom is severe, or something new and frightening is happening   (sym-severe)
+
+Q: she collapsed   [2 results, careRank=NONE]
+   1. All my medications vanished from Home   (set-quicklog-collapsed)
+   2. I added a medication but I can't find it on Home   (med-not-on-home)
+
+Q: is 38.5 too high   [8 results, careRank=1]
+   1. *CARE* The temperature is high — what should I do?   (vit-temp-high)
+   2. What is 'Hours between doses' / minimum gap?   (med-gap-hours)
+   3. How do I note why weight changed?   (faq:weight-reason)
+   4. What’s “Hours between doses” / minimum gap?   (faq:gap-timer)
+   5. What's the difference between 'As needed' and 'Scheduled'?   (med-asneeded-vs-scheduled)
+   6. I forgot to log a dose at the time — can I put in the right time?   (log-wrong-time)
+
+Q: can he take paracetamol with the chemo   [11 results, careRank=1]
+   1. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+   2. What does 'Take all' do on the Morning/Evening card?   (log-group-take-all)
+   3. Where do I put instructions like 'take with food'?   (med-notes-field)
+   4. I picked the wrong treatment type during setup   (pro-wrong-treatment-type)
+   5. How do I set a treatment date?   (treat-set-date)
+   6. I picked 'Other' as the treatment type and the wording is different   (treat-other-profile)
+
+Q: he has chest pain   [1 results, careRank=NONE]
+   1. Can I record how bad it was, or where on the body?   (sym-severity)
+
+Q: she is unresponsive   [1 results, careRank=NONE]
+   1. I tap something and nothing happens   (app-nothing-happens)
+
+Q: how many tylenol can he take   [15 results, careRank=4]
+   1. What does 'Take all' do on the Morning/Evening card?   (log-group-take-all)
+   2. Where do I put instructions like 'take with food'?   (med-notes-field)
+   3. I've got weeks of missed doses and I don't want to tap them one by one   (miss-clear-all)
+   4. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+   5. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+   6. How does In-Patient tracking work?   (faq:in-patient)
+
+Q: is it safe to give her two at once   [32 results, careRank=3]
+   1. The same medication comes in two strengths   (med-many-strengths)
+   2. I'm caring for more than one person   (pro-add)
+   3. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+   4. Is my information stored on a server somewhere?   (priv-server)
+   5. I think I logged the same dose twice   (log-double-tap)
+   6. [med] I'm not getting any reminders at all   (rem-none)
+
+Q: he took twice his dose by accident   [35 results, careRank=5]
+   1. I think I logged the same dose twice   (log-double-tap)
+   2. How do I clear a missed dose?   (miss-resolve)
+   3. I tapped In-Patient Start by mistake   (ip-undo)
+   4. What does 'Reminds at' mean under Schedule windows?   (med-windows)
+   5. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+   6. What happens if I miss a dose?   (faq:missed-dose)
+
+Q: she has a rash all over   [39 results, careRank=NONE]
+   1. How do I erase everything and start over?   (set-erase-all)
+   2. Can I start over / erase everything?   (faq:reset)
+   3. All my medications vanished from Home   (set-quicklog-collapsed)
+   4. How do I record blood pressure?   (vit-bp-log)
+   5. What does 'Take all' do on the Morning/Evening card?   (log-group-take-all)
+   6. How do I make sure my data is really gone?   (priv-delete)
+
+Q: what temperature is a fever   [15 results, careRank=1]
+   1. *CARE* The temperature is high — what should I do?   (vit-temp-high)
+   2. How do I record a temperature?   (vit-temp-log)
+   3. I typed a temperature wrong and there's no Remove button   (vit-temp-cant-remove)
+   4. It won't accept the temperature I typed   (vit-temp-rejected)
+   5. I want pounds instead of kilograms, or Celsius instead of Fahrenheit   (vit-units)
+   6. How do I record blood pressure?   (vit-bp-log)
+
+Q: can i crush the tablet   [54 results, careRank=24]
+   1. Where do I put instructions like 'take with food'?   (med-notes-field)
+   2. [med] How do I add a medication?   (med-add-first)
+   3. How do I change or delete a medication?   (med-edit-delete)
+   4. One particular medication never reminds me   (rem-no-reminder-for-med)
+   5. The same medication comes in two strengths   (med-many-strengths)
+   6. It won't let me save the medication   (med-save-blocked)
+
+Q: does this interact with grapefruit   [1 results, careRank=1]
+   1. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+
+Q: is this medicine safe for children   [54 results, careRank=1]
+   1. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+   2. Is my information stored on a server somewhere?   (priv-server)
+   3. [med] How do I add a medication?   (med-add-first)
+   4. How do I change or delete a medication?   (med-edit-delete)
+   5. One particular medication never reminds me   (rem-no-reminder-for-med)
+   6. The same medication comes in two strengths   (med-many-strengths)
+
+Q: what are the side effects of cisplatin   [2 results, careRank=1]
+   1. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+   2. How do I record a symptom?   (sym-log)
+
+Q: should i stop the chemo   [16 results, careRank=3]
+   1. I picked the wrong treatment type during setup   (pro-wrong-treatment-type)
+   2. I want to stop a medication for a while without deleting it   (med-pause-resume)
+   3. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+   4. How do I set a treatment date?   (treat-set-date)
+   5. I picked 'Other' as the treatment type and the wording is different   (treat-other-profile)
+   6. My reminders stopped after I didn't open the app for a while   (rem-after-3-days)
+
+Q: her lips are blue and she cant breathe   [22 results, careRank=12]
+   1. [med] My medications say 'Restricted' and I can't log them   (ip-meds-restricted)
+   2. I added a medication but I can't find it on Home   (med-not-on-home)
+   3. I typed a temperature wrong and there's no Remove button   (vit-temp-cant-remove)
+   4. I can't find the Treatment schedule card   (treat-no-card)
+   5. I can't tell what year an appointment or note is from   (appt-year)
+   6. There's a red 'missed doses' banner and I can't get rid of it   (miss-banner)
+
+=== totals: n=23 care@top8=16 care@top5=16 care@top3=14 care@rank1=10 zeroResults=0

@@ -1,0 +1,14 @@
+care pages: miss-real-missed, vit-temp-high, vit-weight-change, sym-severe, sym-medical-question
+coverage@top8 with all: 23/50   (test floor is 20)
+  drop miss-real-missed       -> 18/50   [would FAIL the floor]
+  drop vit-temp-high          -> 20/50   [still PASSES the floor]
+  drop vit-weight-change      -> 22/50   [still PASSES the floor]
+  drop sym-severe             -> 22/50   [still PASSES the floor]
+  drop sym-medical-question   -> 19/50   [would FAIL the floor]
+  drop BOTH vit-weight-change + sym-severe -> 21/50   [still PASSES]
+
+coverage measured against what is actually on screen at 360px:
+  top 3: 17/50
+  top 4: 20/50
+  top 5: 20/50
+  top 8: 23/50

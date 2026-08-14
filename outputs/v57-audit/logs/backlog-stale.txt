@@ -1,0 +1,12 @@
+BACKLOG.md entries describing code deleted in app-v57 (10):
+
+- **The best remaining lever on the medical guard is not another pattern — it is the LIST reply**
+- **Move `symptoms`, `morning`, `evening` and `night` from tier 1 to tier 2 of the guard's
+- **On the held-out fixture, 7 of 72 medical questions still get a list of app pages, and 3 of 66
+- **The Designer's S1 residual was decided against and never written down** (app-v56). The user's
+- **A toast paints over the help panel's content** (app-v56, Lead Designer). The panel now sits at
+- **The help panel's callout and the walkthrough page's are two separate components that merely
+- **The medical guard misses 11 of 50 tuned clinical questions; they land on "I don't have an
+- **The screen-reader announcer node is re-created on every reply** (`index.html`, `helpbot-announce`;
+- **The help bubble is re-focused once per second while it holds focus** (app-v56, Lead Auditor).
+- **`BY_MEASURE` in the clinical guard has no `symptom` entry** (`index.html`, `helpBotAsk`). The

@@ -1,0 +1,7 @@
+﻿Date,Time,Type,Detail,Note
+2026-08-11,9:33 PM,Aquaphor (tour),8 mg,
+2026-08-11,9:34 PM,Blood Pressure,118/76 mmHg,
+2026-08-12,9:34 PM,Aquaphor (tour),8 mg,
+2026-08-12,9:34 PM,Blood Pressure,122/80 mmHg,
+2026-08-13,9:34 PM,Aquaphor (tour),8 mg,
+2026-08-13,9:34 PM,Blood Pressure,120/78 mmHg,

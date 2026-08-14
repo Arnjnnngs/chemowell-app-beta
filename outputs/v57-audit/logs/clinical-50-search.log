@@ -1,0 +1,336 @@
+
+Q: he keeps throwing up after every meal what do i do   [84 results, careRank=10]
+   1. My reminders stopped after I didn't open the app for a while   (rem-after-3-days)
+   2. Where does this medication show up on Home?   (med-placement)
+   3. What is 'Treatment-day availability'?   (med-treatment-availability)
+   4. The screen keeps refreshing or flickering   (set-something-flickering)
+   5. This medication isn't taken every day   (med-days-taken)
+   6. [med] How do I log something the app is blocking?   (log-anyway-override)
+
+Q: her feet are swelling up is that from the chemo   [54 results, careRank=1]
+   1. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+   2. I picked the wrong treatment type during setup   (pro-wrong-treatment-type)
+   3. I picked 'Other' as the treatment type and the wording is different   (treat-other-profile)
+   4. How do I set a treatment date?   (treat-set-date)
+   5. Where does this medication show up on Home?   (med-placement)
+   6. The printable report says pop-ups are blocked   (exp-print-blocked)
+
+Q: the nurse said watch for infection what should i look for   [20 results, careRank=2]
+   1. What am I looking at in the CSV?   (exp-csv-columns)
+   2. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+   3. Who is ChemoWell for?   (faq:who-for)
+   4. [med] The Daily limit box is greyed out and says 'Locked'   (med-daily-limit-locked)
+   5. *CARE* The temperature is high — what should I do?   (vit-temp-high)
+   6. Something I logged isn't in History   (rep-entry-missing)
+
+Q: he has a sore mouth and cant eat anything   [44 results, careRank=17]
+   1. How do I record a symptom?   (sym-log)
+   2. How do I record a weight, and why does it ask for a reason?   (vit-weight-log)
+   3. What's the difference between Notes and the check-in's 'Anything else?' box?   (note-vs-checkin)
+   4. [med] My medications say 'Restricted' and I can't log them   (ip-meds-restricted)
+   5. I added a medication but I can't find it on Home   (med-not-on-home)
+   6. I can't find the Treatment schedule card   (treat-no-card)
+
+Q: how do i stop the nausea   [14 results, careRank=NONE]
+   1. How do I record a symptom?   (sym-log)
+   2. I want to stop a medication for a while without deleting it   (med-pause-resume)
+   3. My reminders stopped after I didn't open the app for a while   (rem-after-3-days)
+   4. How do I record a weight, and why does it ask for a reason?   (vit-weight-log)
+   5. It says reminders couldn't be set on this device   (rem-failed)
+   6. The printable report says pop-ups are blocked   (exp-print-blocked)
+
+Q: what helps with the mouth sores   [2 results, careRank=NONE]
+   1. How do I record a symptom?   (sym-log)
+   2. What's the Generic name field for?   (med-generic-name)
+
+Q: she cant sleep since starting treatment   [45 results, careRank=23]
+   1. I can't find the Treatment schedule card   (treat-no-card)
+   2. I picked 'Other' as the treatment type and the wording is different   (treat-other-profile)
+   3. What is 'Treatment-day availability'?   (med-treatment-availability)
+   4. I picked the wrong treatment type during setup   (pro-wrong-treatment-type)
+   5. How do I set a treatment date?   (treat-set-date)
+   6. [med] My medications say 'Restricted' and I can't log them   (ip-meds-restricted)
+
+Q: his hands are numb and tingly   [3 results, careRank=NONE]
+   1. [med] I'm not getting any reminders at all   (rem-none)
+   2. How do I record a symptom?   (sym-log)
+   3. How do I get a report to hand to the doctor?   (exp-printable)
+
+Q: her white count is low what does that mean   [28 results, careRank=10]
+   1. The screen is blank or the app won't load   (app-blank)
+   2. When does a dose count as missed?   (miss-what-counts)
+   3. What does 'Reminds at' mean under Schedule windows?   (med-windows)
+   4. How do I clear a missed dose?   (miss-resolve)
+   5. What does “Reminds at” mean on a scheduled medication?   (faq:schedule-windows)
+   6. I picked 'Other' as the treatment type and the wording is different   (treat-other-profile)
+
+Q: what does neutropenic mean   [12 results, careRank=7]
+   1. What does 'Reminds at' mean under Schedule windows?   (med-windows)
+   2. What does “Reminds at” mean on a scheduled medication?   (faq:schedule-windows)
+   3. The reminder came a few minutes early, or a few minutes late   (rem-late)
+   4. It says 'No reminders are currently due in the next 3 days'   (rem-none-scheduled)
+   5. It won't let me save the medication   (med-save-blocked)
+   6. How do I clear a missed dose?   (miss-resolve)
+
+Q: he has a nosebleed that wont stop   [21 results, careRank=NONE]
+   1. The 'Alarms & reminders' switch isn't there, or won't turn on   (rem-exact-toggle-missing)
+   2. The printable report says pop-ups are blocked   (exp-print-blocked)
+   3. I want to stop a medication for a while without deleting it   (med-pause-resume)
+   4. It won't let me save the medication   (med-save-blocked)
+   5. It won't accept the temperature I typed   (vit-temp-rejected)
+   6. History is slow or won't respond when I tap   (rep-history-slow)
+
+Q: she fell this morning should she be seen   [10 results, careRank=4]
+   1. What does 'Take all' do on the Morning/Evening card?   (log-group-take-all)
+   2. What does 'Reminds at' mean under Schedule windows?   (med-windows)
+   3. Where does this medication show up on Home?   (med-placement)
+   4. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+   5. How do I get a reminder for an appointment?   (faq:calendar)
+   6. My appointment reminder never came   (rem-appointment)
+
+Q: hes been sleeping 20 hours a day   [55 results, careRank=13]
+   1. My reminders stopped after I didn't open the app for a while   (rem-after-3-days)
+   2. I logged something by mistake   (log-remove)
+   3. What is 'Hours between doses' / minimum gap?   (med-gap-hours)
+   4. What’s “Hours between doses” / minimum gap?   (faq:gap-timer)
+   5. I typed a temperature wrong and there's no Remove button   (vit-temp-cant-remove)
+   6. It says 'No reminders are currently due in the next 3 days'   (rem-none-scheduled)
+
+Q: the injection site is red and hot   [7 results, careRank=2]
+   1. There's a red 'missed doses' banner and I can't get rid of it   (miss-banner)
+   2. *CARE* The temperature is high — what should I do?   (vit-temp-high)
+   3. It won't let me save the medication   (med-save-blocked)
+   4. I need to fix or delete a symptom I logged   (sym-edit-delete)
+   5. The printable report says pop-ups are blocked   (exp-print-blocked)
+   6. How do I clear a missed dose?   (miss-resolve)
+
+Q: her port is leaking   [1 results, careRank=NONE]
+   1. The back button closes the whole app   (app-back-button)
+
+Q: when will his hair grow back   [35 results, careRank=1]
+   1. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+   2. The back button closes the whole app   (app-back-button)
+   3. It says notifications are blocked for ChemoWell   (rem-blocked)
+   4. The Cycle report isn't in the list   (rep-cycle-missing)
+   5. The 'Alarms & reminders' switch isn't there, or won't turn on   (rem-exact-toggle-missing)
+   6. I forgot to log yesterday's doses   (log-forgot-yesterday)
+
+Q: how long until the chemo starts working   [27 results, careRank=2]
+   1. I picked the wrong treatment type during setup   (pro-wrong-treatment-type)
+   2. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+   3. How do I set a treatment date?   (treat-set-date)
+   4. I picked 'Other' as the treatment type and the wording is different   (treat-other-profile)
+   5. It says reminders are paused because of the beta date controls   (rem-paused-sim)
+   6. [med] The Daily limit box is greyed out and says 'Locked'   (med-daily-limit-locked)
+
+Q: does radiation burn the skin   [11 results, careRank=NONE]
+   1. How do I track radiation sessions?   (treat-radiation)
+   2. I can't find the Treatment schedule card   (treat-no-card)
+   3. I picked the wrong treatment type during setup   (pro-wrong-treatment-type)
+   4. How do I record a symptom?   (sym-log)
+   5. Can I record how bad it was, or where on the body?   (sym-severity)
+   6. How do I set a treatment date?   (treat-set-date)
+
+Q: what cream can i put on the radiation burn   [90 results, careRank=34]
+   1. How do I track radiation sessions?   (treat-radiation)
+   2. I can't find the Treatment schedule card   (treat-no-card)
+   3. I picked the wrong treatment type during setup   (pro-wrong-treatment-type)
+   4. A card I want isn't on my Home screen   (set-card-missing)
+   5. How do I set a treatment date?   (treat-set-date)
+   6. Which Limit unit should I pick?   (med-limit-unit)
+
+Q: he has a headache can he take anything for it   [26 results, careRank=3]
+   1. What does 'Take all' do on the Morning/Evening card?   (log-group-take-all)
+   2. Where do I put instructions like 'take with food'?   (med-notes-field)
+   3. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+   4. What's the difference between Notes and the check-in's 'Anything else?' box?   (note-vs-checkin)
+   5. How do I record a symptom?   (sym-log)
+   6. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+
+Q: she is constipated from the painkillers   [1 results, careRank=NONE]
+   1. [med] How do I add a medication?   (med-add-first)
+
+Q: her lips are turning blue   [2 results, careRank=1]
+   1. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+   2. The 'Alarms & reminders' switch isn't there, or won't turn on   (rem-exact-toggle-missing)
+
+Q: he is confused and not making sense   [70 results, careRank=4]
+   1. What's the Generic name field for?   (med-generic-name)
+   2. How do I write a note?   (note-add)
+   3. I picked 'Other' as the treatment type and the wording is different   (treat-other-profile)
+   4. *CARE* The symptom is severe, or something new and frightening is happening   (sym-severe)
+   5. How do I change or delete a note?   (note-edit-delete)
+   6. I can't tell what year an appointment or note is from   (appt-year)
+
+Q: she has been running a low grade temp for two days   [48 results, careRank=2]
+   1. How do I record a temperature?   (vit-temp-log)
+   2. *CARE* The temperature is high — what should I do?   (vit-temp-high)
+   3. The same medication comes in two strengths   (med-many-strengths)
+   4. I typed a temperature wrong and there's no Remove button   (vit-temp-cant-remove)
+   5. What is 'Treatment-day availability'?   (med-treatment-availability)
+   6. *CARE* The weight has changed a lot in a few days   (vit-weight-change)
+
+Q: he is shivering and his teeth are chattering   [0 results, careRank=NONE]
+
+Q: she is bleeding from her gums   [0 results, careRank=NONE]
+
+Q: how much water should he drink   [19 results, careRank=10]
+   1. How do I clear a missed dose?   (miss-resolve)
+   2. What's the Generic name field for?   (med-generic-name)
+   3. What happens if I miss a dose?   (faq:missed-dose)
+   4. I picked the wrong treatment type during setup   (pro-wrong-treatment-type)
+   5. [med] How do I add a medication?   (med-add-first)
+   6. [med] How do I log something the app is blocking?   (log-anyway-override)
+
+Q: his appetite is gone completely   [22 results, careRank=NONE]
+   1. How do I make sure my data is really gone?   (priv-delete)
+   2. What is the Daily check-in?   (vit-checkin-modal)
+   3. I added a medication but I can't find it on Home   (med-not-on-home)
+   4. All my medications vanished from Home   (set-quicklog-collapsed)
+   5. What happens if I lose my phone or the app is uninstalled?   (priv-lost-phone)
+   6. I'm caring for more than one person   (pro-add)
+
+Q: her heart is racing   [0 results, careRank=NONE]
+
+Q: he has a fever of 103 what do i do   [2 results, careRank=1]
+   1. *CARE* The temperature is high — what should I do?   (vit-temp-high)
+   2. How do I record a temperature?   (vit-temp-log)
+
+Q: she threw up her pill right after taking it   [100 results, careRank=8]
+   1. My reminders stopped after I didn't open the app for a while   (rem-after-3-days)
+   2. Where do I put instructions like 'take with food'?   (med-notes-field)
+   3. Where does this medication show up on Home?   (med-placement)
+   4. What does 'Take all' do on the Morning/Evening card?   (log-group-take-all)
+   5. What is 'Treatment-day availability'?   (med-treatment-availability)
+   6. I added a medication but I can't find it on Home   (med-not-on-home)
+
+Q: what do i do about the diarrhea   [1 results, careRank=NONE]
+   1. Should diarrhoea go in Symptoms or the bowel tracker?   (sym-bowel-confusion)
+
+Q: when should i call the on call number   [96 results, careRank=1]
+   1. *CARE* The temperature is high — what should I do?   (vit-temp-high)
+   2. How do I check which version I'm on?   (app-version)
+   3. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+   4. *CARE* The symptom is severe, or something new and frightening is happening   (sym-severe)
+   5. I added a medication but I can't find it on Home   (med-not-on-home)
+   6. How do I record blood pressure?   (vit-bp-log)
+
+Q: can he drink alcohol on chemo   [89 results, careRank=2]
+   1. I picked the wrong treatment type during setup   (pro-wrong-treatment-type)
+   2. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+   3. How do I set a treatment date?   (treat-set-date)
+   4. I picked 'Other' as the treatment type and the wording is different   (treat-other-profile)
+   5. A card I want isn't on my Home screen   (set-card-missing)
+   6. The 'Alarms & reminders' switch isn't there, or won't turn on   (rem-exact-toggle-missing)
+
+Q: is it safe to be around the grandkids   [5 results, careRank=1]
+   1. *CARE* Is this a side effect? Will there be hair loss, sickness, tiredness — is this normal?   (sym-medical-question)
+   2. Is my information stored on a server somewhere?   (priv-server)
+   3. What is 'Treatment-day availability'?   (med-treatment-availability)
+   4. One particular medication never reminds me   (rem-no-reminder-for-med)
+   5. [med] How do I log something the app is blocking?   (log-anyway-override)
+
+Q: does he need a mask in public   [0 results, careRank=NONE]
+
+Q: can she get the flu shot during chemo   [6 results, careRank=2]
+   1. I picked the wrong treatment type during setup   (pro-wrong-treatment-type)
+   2. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+   3. How do I set a treatment date?   (treat-set-date)
+   4. I picked 'Other' as the treatment type and the wording is different   (treat-other-profile)
+   5. *CARE* The weight has changed a lot in a few days   (vit-weight-change)
+   6. How do I track periods?   (vit-period)
+
+Q: how do i know if its an infection   [0 results, careRank=NONE]
+
+Q: his stool is black   [36 results, careRank=4]
+   1. There's a 'Beta date controls' box on my screen   (set-beta-date-controls)
+   2. The back button closes the whole app   (app-back-button)
+   3. Who is ChemoWell for?   (faq:who-for)
+   4. *CARE* The symptom is severe, or something new and frightening is happening   (sym-severe)
+   5. It says notifications are blocked for ChemoWell   (rem-blocked)
+   6. The Cycle report isn't in the list   (rep-cycle-missing)
+
+Q: she has a lump under her arm   [16 results, careRank=NONE]
+   1. What does 'Reminds at' mean under Schedule windows?   (med-windows)
+   2. It says reminders couldn't be set on this device   (rem-failed)
+   3. How do I read the History screen?   (rep-history-read)
+   4. How do I set a treatment date?   (faq:treatment-date)
+   5. What does “Reminds at” mean on a scheduled medication?   (faq:schedule-windows)
+   6. How does Daily limit work?   (faq:daily-limit)
+
+Q: what are the signs of dehydration   [1 results, careRank=NONE]
+   1. Is my information stored on a server somewhere?   (priv-server)
+
+Q: should we go to the er   [28 results, careRank=NONE]
+   1. Should diarrhoea go in Symptoms or the bowel tracker?   (sym-bowel-confusion)
+   2. Can I go through the guided walkthrough again?   (tour-replay)
+   3. Where did the exported file go? I can't find a 'save to this phone' option   (exp-where-file)
+   4. There's a red 'missed doses' banner and I can't get rid of it   (miss-banner)
+   5. One particular medication never reminds me   (rem-no-reminder-for-med)
+   6. How do I switch or add a profile?   (faq:switch-profile)
+
+Q: he wont eat or drink anything today   [43 results, careRank=14]
+   1. The Log button is greyed out or won't do anything   (log-button-locked)
+   2. The 'Alarms & reminders' switch isn't there, or won't turn on   (rem-exact-toggle-missing)
+   3. It won't let me save the medication   (med-save-blocked)
+   4. It won't accept the temperature I typed   (vit-temp-rejected)
+   5. History is slow or won't respond when I tap   (rep-history-slow)
+   6. The screen is blank or the app won't load   (app-blank)
+
+Q: her chemo brain is getting worse is that permanent   [10 results, careRank=1]
+   1. *CARE* The symptom is severe, or something new and frightening is happening   (sym-severe)
+   2. I picked the wrong treatment type during setup   (pro-wrong-treatment-type)
+   3. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+   4. How do I set a treatment date?   (treat-set-date)
+   5. I picked 'Other' as the treatment type and the wording is different   (treat-other-profile)
+   6. How do I record a weight, and why does it ask for a reason?   (vit-weight-log)
+
+Q: how long does chemo stay in the body   [17 results, careRank=6]
+   1. Can I record how bad it was, or where on the body?   (sym-severity)
+   2. How do I record a hospital stay?   (ip-start-end)
+   3. I want to add a hospital stay that already happened   (ip-past-stay)
+   4. I forgot to end a hospital stay and it still says Active   (ip-forgot-end)
+   5. I picked the wrong treatment type during setup   (pro-wrong-treatment-type)
+   6. *CARE* A dose was genuinely missed — what should I do?   (miss-real-missed)
+
+Q: what happens if he misses a whole week of pills   [64 results, careRank=36]
+   1. I've got weeks of missed doses and I don't want to tap them one by one   (miss-clear-all)
+   2. What happens if I miss a dose?   (faq:missed-dose)
+   3. History is slow or won't respond when I tap   (rep-history-slow)
+   4. I tap something and nothing happens   (app-nothing-happens)
+   5. The back button closes the whole app   (app-back-button)
+   6. What happens if I lose my phone or the app is uninstalled?   (priv-lost-phone)
+
+Q: she is coughing up blood   [66 results, careRank=2]
+   1. How do I record blood pressure?   (vit-bp-log)
+   2. *CARE* The temperature is high — what should I do?   (vit-temp-high)
+   3. Where does this medication show up on Home?   (med-placement)
+   4. The printable report says pop-ups are blocked   (exp-print-blocked)
+   5. How do I record a weight, and why does it ask for a reason?   (vit-weight-log)
+   6. What am I looking at in the CSV?   (exp-csv-columns)
+
+Q: the pharmacist gave a different colour tablet is it the same drug   [74 results, careRank=3]
+   1. The same medication comes in two strengths   (med-many-strengths)
+   2. I want my medications in a different order on Home   (med-reorder)
+   3. *CARE* The temperature is high — what should I do?   (vit-temp-high)
+   4. What goes in 'Dosage options', and why are there commas?   (med-dose-options)
+   5. How do I see my appointments on a calendar?   (appt-month-view)
+   6. I picked 'Other' as the treatment type and the wording is different   (treat-other-profile)
+
+Q: his temperature keeps going up and down all day   [113 results, careRank=1]
+   1. *CARE* The temperature is high — what should I do?   (vit-temp-high)
+   2. How do I record a temperature?   (vit-temp-log)
+   3. [med] I'm not getting any reminders at all   (rem-none)
+   4. I typed a temperature wrong and there's no Remove button   (vit-temp-cant-remove)
+   5. The screen keeps refreshing or flickering   (set-something-flickering)
+   6. I've got weeks of missed doses and I don't want to tap them one by one   (miss-clear-all)
+
+Q: can i give her the tablet with her heart medicine   [57 results, careRank=17]
+   1. How do I add a medication?   (faq:add-med)
+   2. I'm caring for more than one person   (pro-add)
+   3. I’m caring for more than one person — can I track them all?   (faq:caregiver-multi)
+   4. [med] How do I add a medication?   (med-add-first)
+   5. How do I change or delete a medication?   (med-edit-delete)
+   6. One particular medication never reminds me   (rem-no-reminder-for-med)
+
+=== totals: n=50 care@top8=23 care@top5=20 care@top3=17 care@rank1=8 zeroResults=5

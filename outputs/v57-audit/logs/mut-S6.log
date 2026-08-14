@@ -1,0 +1,26 @@
+PASS  no help-bubble symbol survives anywhere in shipped code
+PASS  stemmer collapses the verb/plural families the design depends on
+PASS  stemmer is idempotent (stem(stem(x)) === stem(x))
+PASS  apostrophes are deleted, not spaced  |  cant type
+PASS  curly apostrophes normalise the same as straight
+PASS  decimals split identically on both sides  |  100 4
+PASS  index covers every topic + FAQ  |  133 docs
+PASS  HELP_POINTERS folded in as keyword aliases on their target (BACKLOG gap closed)  |  missing from vit-units.kw: 
+PASS  searching the pointer text finds its target topic  |  vit-units, vit-weight-change
+PASS  no document indexes an empty vocabulary
+PASS  every fixture question ranks an acceptable topic in the top 3
+PASS  at least 45 of 53 rank an acceptable topic FIRST  |  53 first, 0 recovered in top 3
+PASS  gibberish returns no results at all
+PASS  "will she lose her hair" does not rank the lost-phone page first  |  sym-medical-question, priv-lost-phone, priv-server
+PASS  the corpus still carries at least one careLead page  |  miss-real-missed, vit-temp-high, vit-weight-change, sym-severe, sym-medical-question
+PASS  a "contact your care team" page is in the visible results for at least 20 of the 50 clinical questions  |  23/50 surfaced, 5 returned nothing
+PASS  a query resolves in under 25ms on this machine  |  1.56 ms/query
+PASS  Help search finds the daily-limit topic  |  med-daily-limit-locked, log-button-locked
+PASS  Help search returns a broad set for a broad word  |  28 results
+PASS  Help search returns [] for an empty query
+FAIL  LA-2 searching "help" in the Help view returns results  |  0 results
+PASS  every topic is still found first by its own question text  |  0 not first: 
+
+53/53 exact, 0 recovered in top 3, 0 missed
+
+1 FAILURES

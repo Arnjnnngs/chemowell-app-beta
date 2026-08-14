@@ -1,0 +1,21 @@
+FLOOR=0.22 CAP=12
+
+queries where the right page was visible before round 2 and is NOT reachable now: 2 of 56
+
+  [FLOOR] "add a second patient"  wanted pro-add (was rank 29 of 57); now shows 12 of 17
+  [CAP] "app is out of date"  wanted app-old-version (was rank 21 of 69); now shows 12 of 27
+
+over 59 natural queries: floor removed rows on 55, cap hid rows on 26
+FLOOR=0.22 CAP=12
+
+queries where the right page was visible before round 2 and is NOT reachable now: 2 of 56
+
+  [FLOOR] "add a second patient"  wanted pro-add (was rank 29 of 57); now shows 12 of 17
+  [CAP] "app is out of date"  wanted app-old-version (was rank 21 of 69); now shows 12 of 27
+
+over 59 natural queries: floor removed rows on 55, cap hid rows on 26
+
+=== EXHAUSTIVE: 1164 probes from every topic keyword + title bigram/trigram ===
+pages that were in the TOP 12 before round 2 and are now unreachable:
+  cut by the FLOOR: 0
+  hidden by the CAP: 0

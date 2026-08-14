@@ -1,0 +1,13 @@
+R1 delete the care-team strip from the results screen  |  caught (2)  |  FAIL  V57-1 the results screen carries the care-team sentence unconditionally (no `?` gate on it)  |  found, 2227 chars ;; FAIL  V57-1 the strip routes to sym-severe in one tap
+R2a make the strip conditional with a TERNARY on coverage  |  *** STILL ALL GREEN ***  |  
+R2b make the strip conditional with && (no question mark anywhere)  |  *** STILL ALL GREEN ***  |  
+R3 the strip routes to the calm page instead of sym-severe  |  caught (1)  |  FAIL  V57-1 the strip routes to sym-severe in one tap
+R4 drop careLead from sym-severe (the V57-2 re-verify)  |  caught (1)  |  FAIL  a "contact your care team" page is in the 4 rows a phone actually shows, for at least 18 of the 50 clinical questions  |  14/50 surfaced in the top 4, 5 returned nothing
+R5 raise the relevance floor to 0.90 (destroys ordinary search)  |  caught (1)  |  FAIL  a "contact your care team" page is in the 4 rows a phone actually shows, for at least 18 of the 50 clinical questions  |  11/50 surfaced in the top 4, 5 returned nothing
+R6 report "N results" and hide the fact that the list was capped  |  caught (1)  |  FAIL  V57-1 the results list is capped and the true total is still reported
+R7 remove the cap entirely (MAX 999)  |  caught (1)  |  FAIL  the cap holds the shown list to 12  |  19 shown
+R8 lower the floor to 0.001 (floor stops filtering)  |  caught (1)  |  FAIL  the relevance floor cuts the long tail (was 66 rows)  |  66 survive the floor
+R4 drop careLead from sym-severe ONLY  |  caught (1)  |  FAIL  sym-severe is still flagged careLead (the emergency page the coverage metric exists for)  |  miss-real-missed, vit-temp-high, vit-weight-change, sym-medical-question
+R4b drop careLead from vit-temp-high ONLY  |  caught (1)  |  FAIL  a "contact your care team" page is in the 4 rows a phone actually shows, for at least 18 of the 50 clinical questions  |  14/50 surfaced in the top 4, 5 returned nothing
+R4c drop careLead from vit-weight-change ONLY  |  *** STILL ALL GREEN ***  |  
+R9 add careTone to a topic that is NOT careLead  |  *** STILL ALL GREEN ***  |  

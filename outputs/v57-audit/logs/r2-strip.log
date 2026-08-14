@@ -1,0 +1,66 @@
+PASS  ["she collapsed"] care-team strip renders above the results  |  {"stripTop":360,"stripH":216,"firstRow":610,"tail":"2 results"}
+PASS  ["she collapsed"] the whole strip incl. its button is above the fold without scrolling  |  strip 360-576 fold=710 btnH=44
+    rowsAboveFold=2  first rows: 1.All my medications vanished from Home@610 | 2.I added a medication but I can't find it o@691   tail="2 results"
+PASS  ["she is unresponsive"] care-team strip renders above the results  |  {"stripTop":360,"stripH":216,"firstRow":610,"tail":"1 result"}
+PASS  ["she is unresponsive"] the whole strip incl. its button is above the fold without scrolling  |  strip 360-576 fold=710 btnH=44
+    rowsAboveFold=1  first rows: 1.I tap something and nothing happens@610   tail="1 result"
+PASS  ["he has chest pain"] care-team strip renders above the results  |  {"stripTop":360,"stripH":216,"firstRow":610,"tail":"1 result"}
+PASS  ["he has chest pain"] the whole strip incl. its button is above the fold without scrolling  |  strip 360-576 fold=710 btnH=44
+    rowsAboveFold=1  first rows: 1.Can I record how bad it was, or where on t@610   tail="1 result"
+PASS  ["she has a rash all over"] care-team strip renders above the results  |  {"stripTop":360,"stripH":216,"firstRow":610,"tail":"The closest 12 of 17 matches"}
+PASS  ["she has a rash all over"] the whole strip incl. its button is above the fold without scrolling  |  strip 360-576 fold=710 btnH=44
+    rowsAboveFold=2  first rows: 1.How do I erase everything and start over?@610 | 2.Can I start over / erase everything?@691 | 3.All my medications vanished from Home@772   tail="The closest 12 of 17 matches"
+PASS  ["she is coughing up blood"] care-team strip renders above the results  |  {"stripTop":360,"stripH":216,"firstRow":610,"tail":"The closest 12 of 19 matches"}
+PASS  ["she is coughing up blood"] the whole strip incl. its button is above the fold without scrolling  |  strip 360-576 fold=710 btnH=44
+    rowsAboveFold=2  first rows: 1.How do I record blood pressure?@610 | 2.The temperature is high — what should I do@709 | 3.Where does this medication show up on Home@808   tail="The closest 12 of 19 matches"
+PASS  ["is 2 tablets too many"] care-team strip renders above the results  |  {"stripTop":360,"stripH":216,"firstRow":610,"tail":"The closest 12 of 32 matches"}
+PASS  ["is 2 tablets too many"] the whole strip incl. its button is above the fold without scrolling  |  strip 360-576 fold=710 btnH=44
+    rowsAboveFold=2  first rows: 1.What is 'Hours between doses' / minimum ga@610 | 2.It won't let me save the medication@691 | 3.This medication isn't taken every day@772   tail="The closest 12 of 32 matches"
+PASS  ["her lips are turning blue"] care-team strip renders above the results  |  {"stripTop":360,"stripH":216,"firstRow":610,"tail":"1 result"}
+PASS  ["her lips are turning blue"] the whole strip incl. its button is above the fold without scrolling  |  strip 360-576 fold=710 btnH=44
+    rowsAboveFold=1  first rows: 1.Side effects — hair loss, sickness, tiredn@610   tail="1 result"
+PASS  ["is 101.4 a fever"] care-team strip renders above the results  |  {"stripTop":360,"stripH":216,"firstRow":610,"tail":"4 results"}
+PASS  ["is 101.4 a fever"] the whole strip incl. its button is above the fold without scrolling  |  strip 360-576 fold=710 btnH=44
+    rowsAboveFold=2  first rows: 1.The temperature is high — what should I do@610 | 2.How do I record a temperature?@709 | 3.It won't accept the temperature I typed@808   tail="4 results"
+PASS  ["export to excel"] care-team strip renders above the results  |  {"stripTop":360,"stripH":216,"firstRow":610,"tail":"5 results"}
+PASS  ["export to excel"] the whole strip incl. its button is above the fold without scrolling  |  strip 360-576 fold=710 btnH=44
+    rowsAboveFold=2  first rows: 1.How do I get everything out of the app?@610 | 2.It says there's nothing to export@691 | 3.What am I looking at in the CSV?@772   tail="5 results"
+PASS  ["zzzzqqq"] care-team strip renders above the results  |  {"stripTop":360,"stripH":216,"firstRow":null,"tail":"Nothing matched that"}
+PASS  ["zzzzqqq"] the whole strip incl. its button is above the fold without scrolling  |  strip 360-576 fold=710 btnH=44
+    rowsAboveFold=0  first rows:    tail="Nothing matched that"
+PASS  ["reminder"] care-team strip renders above the results  |  {"stripTop":360,"stripH":216,"firstRow":610,"tail":"The closest 12 of 28 matches"}
+PASS  ["reminder"] the whole strip incl. its button is above the fold without scrolling  |  strip 360-576 fold=710 btnH=44
+    rowsAboveFold=2  first rows: 1.I'm not getting any reminders at all@610 | 2.My appointment reminder never came@691 | 3.I tapped the reminder and I'm not sure wha@772   tail="The closest 12 of 28 matches"
+PASS  the strip button lands on sym-severe  |  ChemoWell | BETA | Rita’s Meds | Thursday, Aug 13 | BETA DATE CONTROLS | ▼ | Search results | SYMPTOMS & REACTIONS | The symptom is severe, or something new and frightening is 
+PASS  sym-severe opens with the urgent Contact-the-care-team callout
+PASS  landing on sym-severe scrolls to the top  |  scrollY=0
+
+===== sym-severe as rendered =====
+SYMPTOMS & REACTIONS
+The symptom is severe, or something new and frightening is happening
+Contact your care team
+Contact the care team, or emergency services if it's urgent. Do that first. Logging it in the app can wait — this app has no way to judge how serious something is, and it will never try to.
+STEP BY STEP
+1
+If the person is very unwell, struggling to breathe, confused, or you're frightened, call your local emergency number.
+2
+Otherwise call the care team or the on-call number they gave you.
+3
+Once they've been contacted, come back and log the symptom with the time it started, so there's an accurate record.
+4
+Use the note field to write down exactly what you saw, in your own words. That's genuinely useful to the care team later.
+WORTH KNOWING
+ChemoWell is a record-keeping tool, not medical advice. Never delay care because of anything shown in this app.
+RELATED
+How do I record a symptom?
+The temperature is high — what should I do?
+
+PASS  Back from sym-severe returns to the search results with the query intact  |  she collapsed
+PASS  the strip is still there after coming back
+PASS  zero console errors
+PASS  [390px] strip and its button fit above the fold  |  {"top":360,"bot":526,"fold":754}
+PASS  [390px] no horizontal overflow on the results screen  |  overflow=0
+PASS  [390px] zero console errors
+PASS  [320px] strip and its button fit above the fold  |  {"top":360,"bot":583,"fold":630}
+PASS  [320px] no horizontal overflow on the results screen  |  overflow=0
+PASS  [320px] zero console errors
