@@ -29,7 +29,7 @@ The **native mobile app** codebase (APP-BETA). Seeded from `chemowell-beta` v71,
    positioning, app-v34) but state consumer-health-data laws (e.g. Washington's My Health My Data Act)
    may, regardless of encryption — the Formal Privacy Policy REQUESTS.md item now explicitly covers
    this too, and ships before the sync feature is offered to real (non-testing) users.
-2. This repo must never reference or write to the `caretracker_*` Firestore collections — those belong to WEB-MAIN/WEB-BETA (Brandi's data).
+2. This repo must never reference or write to the `caretracker_*` Firestore collections — those belong to WEB-MAIN/WEB-BETA (the owner's private data).
 3. Aaron's 4-target routing: only work here when the task targets **APP-BETA** (or APP-LIVE when it exists). WEB work goes to `care-tracker` / `chemowell-beta`.
 4. Keep `TEST_MODE = true` (date-override controls) until store submission prep.
 5. **The Quality Chain (per Aaron, 2026-07-24; tightened 2026-08-08 — see `TEAM.md`'s
