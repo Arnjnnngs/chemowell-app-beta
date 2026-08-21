@@ -837,7 +837,7 @@ function restoreView() {
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -1533,6 +1533,12 @@ async function confirmTimeAndLog() {
     setState({ tempInput: '', timeModal: null });
     await addEntryDB(entry);
     setToast('Temperature ' + v + ' ' + suffix + ' logged at ' + fmtTime(ts));
+  } else if (m.type === 'para') {
+    const v = m.paraValue;
+    setState({ paraInput: '', timeModal: null });
+    await addEntryDB({ medId: PARA_MED_ID, paraId: paraNewId(), liters: v, dose: paraFmtLiters(v) + ' L',
+                       mg: 0, ts, loggedAt: Date.now() });
+    setToast('Paracentesis ' + paraFmtLiters(v) + ' L logged at ' + fmtTime(ts));
   } else if (m.type === 'weight') {
     const v = m.weightValue;
     // Liters is optional, but if the user typed something while Paracentesis is selected, it must
@@ -1673,6 +1679,90 @@ function daysSinceCycleStart() {
 // backdating a session renumbers everything correctly for free. The planned total is a
 // per-profile pref (radiationPlannedTotal) since it's one fact about the course, not an entry.
 function radiationSessionsSorted() { return state.entries.filter(e => e.medId === 'radiation_session').sort((a, b) => a.ts - b.ts); }
+
+// ---- PARACENTESIS (app-v59) ----
+// Its own entry type. Shape matches care-tracker v52 exactly, deliberately -- one design across
+// both apps means one set of bugs, not two.
+//   { medId:'paracentesis', paraId, liters:<number>, dose:'<n> L', mg:0, ts, loggedAt }
+// Correct or remove by appending another document with the SAME paraId and a newer loggedAt;
+// newest wins and cancelled:true is a tombstone.
+const PARA_MED_ID = 'paracentesis';
+const PARA_MAX_LITERS = 25;
+function paraNewId() { return 'para_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10); }
+function paraSupersedes(a, b) { return (a.loggedAt || a.ts || 0) > (b.loggedAt || b.ts || 0); }
+// A Map, NOT a plain object -- a paraId of 'constructor' or '__proto__' would read back a truthy
+// INHERITED value on a plain object and the first such record would vanish with no error.
+function paracentesisResolved() {
+  const byGroup = new Map();
+  for (const d of (state.entries || [])) {
+    if (!d || d.medId !== PARA_MED_ID) continue;
+    const key = (typeof d.paraId === 'string' && d.paraId) ? d.paraId : ('doc:' + String(d.id));
+    const prev = byGroup.get(key);
+    if (!prev || paraSupersedes(d, prev)) byGroup.set(key, d);
+  }
+  const live = [];
+  byGroup.forEach((p, key) => {
+    if (p.cancelled) return;
+    if (!(typeof p.ts === 'number' && isFinite(p.ts) && p.ts > 0)) return;
+    const L = Number(p.liters);
+    if (!isFinite(L) || L <= 0) return;
+    live.push(Object.assign({}, p, { paraId: key, liters: L }));
+  });
+  return live.sort((a, b) => b.ts - a.ts);
+}
+function paraTotalLiters(list) { return (list || []).reduce((s, p) => s + p.liters, 0); }
+function paraFmtLiters(n) { return (Math.round(n * 10) / 10).toFixed(1); }
+function paraLatest() { const l = paracentesisResolved(); return l.length ? l[0] : null; }
+async function logParacentesis() {
+  const raw = (state.paraInput || '').trim();
+  const v = parseFloat(raw);
+  if (!raw || isNaN(v) || v <= 0 || v > PARA_MAX_LITERS) { setToast('Enter the litres drained (up to ' + PARA_MAX_LITERS + ')'); return; }
+  setState({ timeModal: { type: 'para', paraValue: Math.round(v * 10) / 10, timeValue: nowLocalISO() } });
+}
+async function removeParacentesis(paraId) {
+  const p = paracentesisResolved().find(x => x.paraId === paraId);
+  if (!p) return;
+  try {
+    await addEntryDB({ medId: PARA_MED_ID, paraId: paraId, liters: p.liters, dose: 'Paracentesis removed',
+                       mg: 0, ts: p.ts, cancelled: true, loggedAt: Date.now() });
+    setState({ confirmRemovePara: null });
+    setToast('Paracentesis removed');
+  } catch (e) {
+    setToast('Could not remove — try again');
+  }
+}
+
+// ---- ONE-TIME MIGRATION, app-v21 shape -> app-v59 shape ----
+// Every weight entry carrying weightReason:'paracentesis' becomes a standalone record, and the two
+// fields come OFF the weight entry so the same procedure is never counted from two places. The
+// weight VALUE is not touched. Idempotent twice over: the scan no longer matches once the fields
+// are stripped, AND every record it creates carries migratedFrom, so a half-completed run cannot
+// duplicate on the next load. Runs per profile, because entries are profile-scoped.
+function paraMigrateLegacy() {
+  const all = allEntriesRaw();
+  const already = new Set();
+  all.forEach(e => { if (e && e.medId === PARA_MED_ID && e.migratedFrom) already.add(String(e.migratedFrom)); });
+  const legacy = all.filter(e => e && e.medId === 'weight' && e.weightReason === 'paracentesis');
+  if (!legacy.length) return 0;
+  let made = 0;
+  legacy.forEach(w => {
+    const srcId = String(w.id != null ? w.id : (w.ts + ':' + w.weight));
+    const L = Number(w.litersDrained);
+    if (!already.has(srcId) && isFinite(L) && L > 0) {
+      all.push({ id: 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+                 medId: PARA_MED_ID, paraId: 'mig_' + srcId, liters: Math.round(L * 10) / 10,
+                 dose: paraFmtLiters(L) + ' L', mg: 0, ts: w.ts, migratedFrom: srcId,
+                 loggedAt: (w.loggedAt || w.ts || Date.now()) });
+      already.add(srcId); made++;
+    }
+    // Strip the legacy fields whether or not a litres value existed: a reason with no litres has
+    // nothing to carry across, and leaving it behind would keep printing a duplicate on the report.
+    delete w.weightReason; delete w.litersDrained;
+  });
+  saveJSON(ENTRIES_KEY, all);
+  notifyEntries();
+  return made;
+}
 function radiationPlannedTotal() { const v = parseInt(getPrefsDB().radiationPlannedTotal, 10); return (!isNaN(v) && v > 0 && v <= 99) ? v : null; }
 function radiationSessionToday(now) { const d0 = dayStart(now); return radiationSessionsSorted().find(e => dayStart(e.ts) === d0) || null; }
 async function logRadiationSession() {
@@ -1733,7 +1823,7 @@ function yesterdayStart(now) { return dayStart(now) - 86400000; }
 // Home screen & daily check-in preferences (audit §4). Vitals cards default ON; the daily
 // check-in alerts default OFF for a general audience — they were the original family's
 // care-team instruction, not a universal need. Cycle tracking is opt-in.
-const HOME_PREF_DEFAULTS = { showTemperature: true, showWeight: true, showBloodPressure: true, showChemoSchedule: true, showRadiationSessions: true, dailyWeightCheckin: false, bowelCheckin: false, appetiteCheckin: false, cycleTracking: false };
+const HOME_PREF_DEFAULTS = { showTemperature: true, showWeight: true, showBloodPressure: true, showChemoSchedule: true, showRadiationSessions: true, dailyWeightCheckin: false, bowelCheckin: false, appetiteCheckin: false, cycleTracking: false, paracentesisTracking: false };
 
 // ---- Profile identity (app-v33): sex + treatment type, set during onboarding ----
 // Both live in per-profile prefs. Empty string = "not set yet" (profiles created before v33);
@@ -2099,8 +2189,12 @@ function symptomEntries() { return state.entries.filter(e => e.medId && e.medId.
 // cancer-society guidance on what's worth documenting. 'paracentesis' is the one that unlocks the
 // Liters Drained field below, since fluid volume removed is the standard companion metric to a
 // paracentesis-driven weight drop (~1 L ≈ 1 kg of the "weight" that just left the room).
+// 'paracentesis' was removed from this list in app-v59. It is a PROCEDURE, not a reason a weight
+// reading moved, and storing its litres on the weight entry meant a drain on a day nobody weighed
+// in could not be recorded at all. It is now its own record -- see paracentesisResolved() below.
+// weightReasonLabel() still resolves the old id so any legacy entry the migration has not reached
+// still reads correctly instead of printing a raw slug.
 const WEIGHT_REASONS = [
-  { id: 'paracentesis', label: 'Paracentesis (fluid drained)' },
   { id: 'fluid_retention', label: 'Fluid retention / swelling' },
   { id: 'poor_appetite', label: 'Poor appetite / eating less' },
   { id: 'nausea_vomiting', label: 'Nausea, vomiting, or diarrhea' },
@@ -2109,7 +2203,7 @@ const WEIGHT_REASONS = [
   { id: 'increased_appetite', label: 'Eating more / appetite up' },
   { id: 'other', label: 'Other' }
 ];
-function weightReasonLabel(id) { const r = WEIGHT_REASONS.find(x => x.id === id); return r ? r.label : id; }
+function weightReasonLabel(id) { if (id === 'paracentesis') return 'Paracentesis (fluid drained)'; const r = WEIGHT_REASONS.find(x => x.id === id); return r ? r.label : id; }
 // Common oncology steroid names/brands (dexamethasone/Decadron is the standard chemo antiemetic
 // steroid; the rest cover other regimens) — used only to power the tap-to-fill weight-reason
 // suggestion above, never to auto-select anything on the user's behalf.
@@ -2246,7 +2340,8 @@ const HELP_TOPICS = [
   { id: "vit-temp-high", cat: "vitals", q: "The temperature is high — what should I do?", a: "**Contact the care team now.** For someone on chemotherapy, a fever can be an emergency, and it is not something to look up in an app. Call the number the care team gave you, or the on-call line, straight away.", steps: ["Call the care team, the on-call oncology number, or your local emergency number if the person is very unwell.", "Do not wait for a reminder, an appointment, or anything in this app.", "Once the person is being looked after, record the reading in ChemoWell so there's a record of when it happened.", "Add a note about anything else you noticed — menu → **Notes**."], note: "ChemoWell shows temperature readings in a different colour when they're high, but the colour is only a visual cue. It is not an assessment, and there is no threshold in this app that means \"it's fine\".", keywords: ["fever", "high temperature", "100.4", "38", "hot", "emergency"], related: ["vit-temp-log"], medical: true, careLead: true },
   { id: "vit-temp-rejected", cat: "vitals", q: "It won't accept the temperature I typed", a: "There's a sensible range, and it's checking which unit you're in.", steps: ["If you're in Fahrenheit, it accepts roughly 86 to 113.", "If you get an error, check whether the app is set to the unit you're reading — menu → **Settings** → **Units**.", "Check for a stray extra digit — 1014 instead of 101.4 is the usual culprit.", "Retype it and tap **Log** again."], keywords: ["invalid", "won't accept", "error", "range", "celsius", "fahrenheit"], related: ["vit-units"] },
   { id: "vit-temp-cant-remove", cat: "vitals", q: "I typed a temperature wrong and there's no Remove button", a: "Temperature entries lock after 48 hours, the same as medication doses.", steps: ["Go to **Reports** → **History** and find the entry.", "If it's less than 48 hours old, tap **Remove** and confirm.", "If it's older, it can't be removed today. Log the correct reading with the right date and time so the true reading is on record alongside it.", "Add a note explaining the wrong one — menu → **Notes**."], note: "This is a known gap. Weight and blood pressure can be corrected at any age; temperature currently can't.", keywords: ["wrong temperature", "can't remove", "typo", "48 hours", "locked"], related: ["log-remove"] },
-  { id: "vit-weight-log", cat: "vitals", q: "How do I record a weight, and why does it ask for a reason?", a: "The Weight card on Home. The reason is optional, and it exists because weight can move fast for reasons that aren't about eating.", steps: ["Go to **Home** and find the **Weight** card.", "Type the weight and tap **Log**.", "A **Reason for change** list appears. It's optional — skip it if nothing applies.", "Choose from things like fluid drained, fluid retention, poor appetite, nausea, steroid medication, illness, or eating more.", "If you pick **Paracentesis (fluid drained)**, an extra box appears for how many litres were drained.", "There's a free-text note too. All of it shows up in the Weight report."], keywords: ["weight", "reason", "paracentesis", "fluid", "litres", "drained"], related: ["vit-weight-change", "rep-weight"] },
+  { id: "vit-weight-log", cat: "vitals", q: "How do I record a weight, and why does it ask for a reason?", a: "The Weight card on Home. The reason is optional, and it exists because weight can move fast for reasons that aren't about eating.", steps: ["Go to **Home** and find the **Weight** card.", "Type the weight and tap **Log**.", "A **Reason for change** list appears. It's optional — skip it if nothing applies.", "Choose from things like fluid retention, poor appetite, nausea, steroid medication, illness, or eating more.", "There's a free-text note too. All of it shows up in the Weight report."], keywords: ["weight", "reason", "fluid", "appetite", "steroid"], related: ["vit-weight-change", "rep-weight", "proc-para"] },
+  { id: "proc-para", cat: "vitals", q: "How do I record a paracentesis (fluid drained)?", a: "It has its own card and its own report, kept separate from weight on purpose.", steps: ["Menu → **Settings** → **Procedures** → switch on **Paracentesis tracking**.", "A **Paracentesis** card appears on **Home**. Type how many litres were drained and tap **Log**.", "The full list, the total drained and the number of procedures live under **Reports** → **Paracentesis**.", "The **Weight** report marks each drain on the chart and adds up the litres for whatever range you're viewing."], note: "It used to be an option inside the weight card's reason list. It was moved out because a drain is a procedure, not a reason a number moved — and tying it to a weigh-in meant a drain on a day nobody weighed in couldn't be recorded at all. Anything logged the old way was moved across automatically; nothing was lost. Weight readings are still shown exactly as the scale reported them and are never adjusted for drainage.", keywords: ["paracentesis", "para", "fluid", "drained", "litres", "liters", "ascites", "tap"], related: ["vit-weight-log", "rep-weight"] },
   { id: "vit-weight-change", cat: "vitals", q: "The weight has changed a lot in a few days", a: "**Tell the care team.** A fast weight change during treatment is something they want to know about, and what it means depends entirely on the person's situation.", steps: ["Contact the care team and tell them what you're seeing.", "In the app, record the reading and, if you know it, pick the **Reason for change** — that gives the trend chart context so a drop after fluid was drained doesn't look like the same thing as a drop from not eating.", "Look at **Reports** → **Weight** for the trend and the list of readings with their reasons.", "Take that report with you to the next appointment, or export it — menu → **Settings** → **Download CSV**."], note: "ChemoWell does not interpret weight changes and has no \"concerning\" threshold.", keywords: ["weight loss", "dropping", "gaining", "fast", "worried"], related: ["vit-weight-log", "exp-csv"], medical: true, careLead: true },
   { id: "vit-bp-log", cat: "vitals", q: "How do I record blood pressure?", a: "The Blood pressure card on Home. It records straight away with no time screen.", steps: ["Go to **Home** and find the **Blood pressure** card. If it isn't there, switch it on: menu → **Settings** → **Home screen** → **Blood pressure card**.", "Type the top number, then the bottom number.", "Tap **Log**.", "It records immediately, at the current time.", "See all readings under **Reports** → **Blood Pressure**."], note: "Unlike temperature and weight, blood pressure can't be backdated from Home — it always records as now. If you need a reading on an earlier day, log it and then remove and re-add it isn't possible either; note the real time in **Notes** instead.", keywords: ["blood pressure", "bp", "systolic", "diastolic", "120 over 80"], related: [] },
   { id: "vit-checkin-modal", cat: "vitals", q: "What is the Daily check-in?", a: "One short screen that asks about today, once a day.", steps: ["On **Home**, tap the **Daily check-in** card when it appears.", "Answer whichever of appetite, bowel movement, and weight are switched on. Skip anything that doesn't apply.", "There's a free-text box at the bottom — anything you write there goes into today's **Notes**.", "Tap **Save**.", "Once saved, the card stops appearing for the rest of the day."], keywords: ["check-in", "daily", "appetite", "bowel", "questions"], related: ["vit-checkin-missing", "rem-checkin-time"] },
@@ -4163,6 +4258,28 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // chemo schedule card. One-tap "done today" logging, a derived Session-N-of-M counter with a
   // progress bar (planned total is optional — the counter alone still works without it), and a
   // "+" for backdating a forgotten session through the shared time modal.
+  // Paracentesis card (app-v59, toggleable, OFF by default). Modelled on the Radiation sessions
+  // card directly below, minus the capability gate -- paracentesis is not tied to a treatment type.
+  if (homePref('paracentesisTracking')) {
+    const pLast = paraLatest();
+    const pAll = paracentesisResolved();
+    const pTone = NOTICE_TONES.info;
+    parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '14px', padding: '14px 16px', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
+      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' } },
+        h('div', { style: { minWidth: '0' } },
+          h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127' } }, 'Paracentesis'),
+          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '2px' } },
+            pLast ? ('Last ' + new Date(pLast.ts).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' · ' + paraFmtLiters(pLast.liters) + ' L') : 'No procedures logged yet')
+        ),
+        pAll.length ? h('div', { className: 'mono', style: { fontSize: '15px', fontWeight: '700', color: '#8B3C1B', flexShrink: '0' } }, paraFmtLiters(paraTotalLiters(pAll)) + ' L') : null
+      ),
+      h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px' } },
+        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', min: '0', max: String(PARA_MAX_LITERS), placeholder: 'Litres drained', value: state.paraInput || '', onInput: (e) => { state.paraInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid rgba(246,108,49,0.2)', borderRadius: '12px', padding: '0 12px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } }),
+        h('button', { onClick: logParacentesis, style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: pTone.accent, color: '#fff', fontSize: '13px', fontWeight: '700' } }, 'Log')
+      )
+    ));
+  }
+
   if (hasRadiation() && homePref('showRadiationSessions')) {
     const rSessions = radiationSessionsSorted();
     const rPlanned = radiationPlannedTotal();
@@ -5822,7 +5939,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v58';
+const APP_VERSION = 'app-v59';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -6652,6 +6769,13 @@ function renderSettings(now) {
         toggle('bowelCheckin', 'Bowel movement in daily check-in', 'Include a bowel movement question in the daily check-in below.'),
         toggle('appetiteCheckin', 'Appetite in daily check-in', 'Include an appetite question in the daily check-in below.')
       ),
+      // Registered unconditionally and defaulting OFF. Radiation sessions sits behind hasRadiation(),
+      // which is right for a treatment-type card; doing the same here would make a default-off
+      // feature impossible to switch on for anyone.
+      h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A97E6B', marginTop: '16px' } }, 'Procedures'),
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px', marginTop: '8px' } },
+        toggle('paracentesisTracking', 'Paracentesis tracking', 'Log fluid drainage and litres taken. Recorded separately from weight.')
+      ),
       // app-v37: one shared reminder time for the daily check-in (Appetite/Bowel/Weight above, plus
       // a free-text Notes field), replacing three separate banners that used to nag with rising
       // urgency about YESTERDAY until answered. Only shown once at least one metric is opted in —
@@ -6744,6 +6868,7 @@ function buildExportRows() {
     if (e.medId === 'temp') detail = e.dose || (e.temp + ' ' + (e.unit === 'Celsius' ? '°C' : '°F'));
     else if (e.medId === 'blood_pressure') detail = e.sys + '/' + e.dia + ' mmHg';
     else if (e.medId === 'weight') { detail = e.dose || (e.weight + ' ' + (e.unit || '')); if (e.weightReason) detail += ' (' + e.weightReason + (e.litersDrained ? ', ' + e.litersDrained + 'L drained' : '') + ')'; note = e.weightNote || note; }
+    else if (e.medId === 'paracentesis') { detail = e.cancelled ? 'Removed' : ((Math.round(Number(e.liters) * 10) / 10).toFixed(1) + ' L drained'); }
     else if (e.medId === 'radiation_session') detail = 'Session ' + radIds[e.id];
     else if (e.medId === 'bowel_movement') detail = (typeof BOWEL_MOVEMENT_LABELS === 'object' && BOWEL_MOVEMENT_LABELS[e.value]) || e.value || '';
     else if (e.medId === 'appetite') detail = (typeof APPETITE_LABELS === 'object' && APPETITE_LABELS[e.value]) || e.value || '';
@@ -7062,13 +7187,28 @@ function reportDescriptor(type, now) {
     const bLatest = bEntries[0];
     return { label: 'Bowel Movement', icon: 'notes', description: 'Review bowel movement history logged from Home.', meta: bLatest ? ((BOWEL_MOVEMENT_LABELS[bLatest.value] || bLatest.value) + ' most recent') : 'No entries yet' };
   }
-  const yStart = dayStart(now);
-  const yEntry = appetiteFor(yStart);
-  return { label: 'Appetite', icon: 'notes', description: 'Review appetite history logged from Home.', meta: yEntry ? ((APPETITE_LABELS[yEntry.value] || yEntry.value) + ' today') : 'Not yet logged for today' };
+  if (type === 'paracentesis') {
+    const pList = paracentesisResolved();
+    const pLast = pList[0];
+    return { label: 'Paracentesis', icon: 'chart', description: 'Fluid drainage procedures and how much was taken.',
+             meta: pLast ? (paraFmtLiters(paraTotalLiters(pList)) + ' L over ' + pList.length + (pList.length === 1 ? ' procedure' : ' procedures')) : 'No procedures logged yet' };
+  }
+  // This function used to END on the Appetite object with no `if`, exactly like renderReportDetail
+  // did -- so a type registered in reportTypes but missed here rendered a SECOND card reading
+  // "Appetite". That is precisely what the first build of app-v59 shipped into the test run: the
+  // dispatch was fixed and the descriptor was not, and the Reports menu listed Appetite twice with
+  // no Paracentesis anywhere. Appetite is now explicit and an unknown type is a reported error.
+  if (type === 'appetite') {
+    const yStart = dayStart(now);
+    const yEntry = appetiteFor(yStart);
+    return { label: 'Appetite', icon: 'notes', description: 'Review appetite history logged from Home.', meta: yEntry ? ((APPETITE_LABELS[yEntry.value] || yEntry.value) + ' today') : 'Not yet logged for today' };
+  }
+  console.warn('[reports] unknown report type:', type);
+  return { label: 'Report', icon: 'notes', description: 'This report is not available.', meta: '' };
 }
 
 function renderReportsMenu(now) {
-  const reportTypes = ['history', 'weight', 'blood_pressure', 'radiation', 'cycle', 'bowel_movement', 'appetite'].filter(t => (t !== 'cycle' || (cycleAllowed() && homePref('cycleTracking'))) && (t !== 'radiation' || hasRadiation()));
+  const reportTypes = ['history', 'weight', 'paracentesis', 'blood_pressure', 'radiation', 'cycle', 'bowel_movement', 'appetite'].filter(t => (t !== 'cycle' || (cycleAllowed() && homePref('cycleTracking'))) && (t !== 'radiation' || hasRadiation()) && (t !== 'paracentesis' || homePref('paracentesisTracking') || paracentesisResolved().length));
   return [
     h('section', null,
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#BF4C1A' } }, appIcon('chart', 19), h('span', { style: { ...TYPE.label } }, 'Care reports')),
@@ -7094,7 +7234,9 @@ function renderReportsMenu(now) {
 
 function renderReportDetail(type, now) {
   const report = reportDescriptor(type, now);
-  const content = type === 'history' ? renderHistory(now) : type === 'weight' ? renderWeightTrend(now) : type === 'blood_pressure' ? renderBloodPressureReport(now) : type === 'radiation' ? renderRadiationReport(now) : type === 'cycle' ? renderCycle(now) : type === 'bowel_movement' ? renderBowelMovementReport(now) : renderAppetite(now);
+  // The bare trailing `: renderAppetite(now)` was a trap -- a type added to reportTypes but missed
+  // here rendered the Appetite report silently, under the new report's own heading.
+  const content = type === 'history' ? renderHistory(now) : type === 'weight' ? renderWeightTrend(now) : type === 'paracentesis' ? renderParacentesis(now) : type === 'blood_pressure' ? renderBloodPressureReport(now) : type === 'radiation' ? renderRadiationReport(now) : type === 'cycle' ? renderCycle(now) : type === 'bowel_movement' ? renderBowelMovementReport(now) : renderAppetite(now);
   return [
     h('section', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' } },
       h('div', null,
@@ -7421,6 +7563,46 @@ function renderSymptoms(now) {
   return [header, list];
 }
 
+// The Paracentesis report. Removal appends a tombstone rather than deleting, matching care-tracker
+// v52 -- one design across both apps.
+function renderParacentesis(now) {
+  const list = paracentesisResolved();
+  if (!list.length) {
+    return [h('div', { style: { background: '#FFFFFF', border: '1px dashed #E9D8D1', borderRadius: '14px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } },
+      'No paracentesis procedures logged yet.\nLog the litres drained from the card on Home.')];
+  }
+  const total = paraTotalLiters(list);
+  const avg = total / list.length;
+  const daysSince = Math.floor((dayStart(now) - dayStart(list[0].ts)) / 86400000);
+  const sinceLabel = daysSince <= 0 ? 'Today' : daysSince === 1 ? '1 day' : (daysSince + ' days');
+  const statCard = (label, value) => h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '14px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
+    h('div', { style: { ...TYPE.label, color: '#7A6E76', marginBottom: '6px' } }, label),
+    h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '700', color: '#2A2127' } }, value)
+  );
+  const stats = h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '10px' } },
+    statCard('Total drained', paraFmtLiters(total) + ' L'),
+    statCard('Procedures', String(list.length)),
+    statCard('Since last', sinceLabel)
+  );
+  const note = h('div', { style: { background: 'rgba(203,122,87,0.08)', border: '1px solid #E9D8D1', borderRadius: '14px', padding: '12px 14px', fontSize: '12.5px', color: '#554A52', lineHeight: '1.5' } },
+    'Averaging ' + paraFmtLiters(avg) + ' L per procedure. These are recorded separately from weight — the Weight report still shows what the scale actually said, with a marker on each drain date.');
+  const rows = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
+    ...list.map(p => h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '14px', padding: '13px 14px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
+      h('div', { style: { flex: '1', minWidth: '0' } },
+        h('div', { style: { ...TYPE.bodyBold, fontSize: '14.5px', color: '#2A2127' } }, paraFmtLiters(p.liters) + ' L drained'),
+        h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px' } }, new Date(p.ts).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ' · ' + fmtTime(p.ts))
+      ),
+      state.confirmRemovePara === p.paraId
+        ? h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center', flexShrink: '0' } },
+            h('button', { onClick: () => removeParacentesis(p.paraId), style: { color: '#fff', background: '#B3261E', fontSize: '12.5px', fontWeight: '700', padding: '9px 12px', borderRadius: '10px' } }, 'Delete'),
+            h('button', { onClick: () => setState({ confirmRemovePara: null }), style: { color: '#7A6E76', fontSize: '12.5px', padding: '9px 6px', fontWeight: '600' } }, 'Keep')
+          )
+        : h('button', { onClick: () => setState({ confirmRemovePara: p.paraId }), style: { flexShrink: '0', color: '#A83D0F', fontSize: '12.5px', fontWeight: '700', padding: '9px 10px', borderRadius: '10px', background: 'rgba(200,83,32,0.10)' } }, 'Remove')
+    ))
+  );
+  return [stats, note, rows];
+}
+
 function renderWeightTrend(now) {
   // v12b: convert every reading to the current display unit ONCE at ingestion — bounds, axis,
   // stats, dot labels, and the readings list below all inherit converted values, so mixed-unit
@@ -7567,6 +7749,21 @@ function renderWeightTrend(now) {
 
   // Readings list — reason/liters/note (app-v21) get their own lines below the date, since this
   // view has the room History's compact single-line format doesn't.
+  // Aaron's "notes for weight that can add the para together to see how much was drained" --
+  // reported against the SAME window the chart shows, so the number always matches the picture.
+  // The plotted weights are not adjusted by any of it.
+  const paraAll = paracentesisResolved();
+  const paraInRange = paraAll.filter(p => p.ts >= tMin && p.ts <= tMax);
+  const paraLine = paraInRange.length
+    ? h('div', { style: { background: 'rgba(62,116,158,0.09)', border: '1px solid rgba(62,116,158,0.22)', borderRadius: '14px', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '10px' } },
+        h('span', { style: { flexShrink: '0', width: '10px', height: '10px', borderRadius: '50%', background: '#3E749E' } }),
+        h('div', { style: { fontSize: '12.5px', color: '#4A5C6B', lineHeight: '1.45' } },
+          h('span', { style: { fontWeight: '800' } }, paraInRange.length + ' paracentesis ' + (paraInRange.length === 1 ? 'procedure' : 'procedures') + ' in this range · ' + paraFmtLiters(paraTotalLiters(paraInRange)) + ' L drained'),
+          h('span', { style: { display: 'block', marginTop: '2px' } }, 'Marked on the chart. Weight readings are shown exactly as recorded and are not adjusted for drainage.')
+        )
+      )
+    : null;
+
   const readingsItems = points.slice().reverse().map((p, i) => {
     const d = new Date(p.ts);
     const day = d.toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
@@ -7592,7 +7789,7 @@ function renderWeightTrend(now) {
     )
   );
 
-  return [toggle, chart, stats, readings];
+  return paraLine ? [toggle, chart, stats, paraLine, readings] : [toggle, chart, stats, readings];
 }
 
 
@@ -8323,6 +8520,13 @@ unsub = subscribeEntries((entries) => {
     return;
   }
   setState({ entries, loaded: true });
+  // One-time move of the app-v21 weightReason:'paracentesis' shape into standalone records.
+  // Idempotent, so running it on every load is safe and self-healing; it returns 0 and touches
+  // nothing once there is nothing left to move.
+  try {
+    const moved = paraMigrateLegacy();
+    if (moved) console.info('[paracentesis] moved ' + moved + ' legacy record(s) off the weight entry');
+  } catch (err) { console.warn('[paracentesis] migration skipped:', err); }
 
 });
 

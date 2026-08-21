@@ -1,4 +1,4 @@
-const CACHE = 'chemowell-app-v58-1';
+const CACHE = 'chemowell-app-v59-1';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {

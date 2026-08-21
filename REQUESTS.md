@@ -512,6 +512,43 @@ reconstruct it from history.
 
 ## Completed
 
+- [x] **Paracentesis moved out of the weight entry into its own record — shipped as app-v59** —
+  added and closed 2026-08-21. Aaron: *"we need to add para, but maybe leave it as a standalone so
+  it doesn't affect weight trend. there can be notes for weight that can add the para together to
+  see how much was drained."*
+
+  **This was a replacement, not an addition.** ChemoWell has recorded paracentesis since app-v21 as
+  two optional fields on the *weight* entry — `weightReason: 'paracentesis'` plus `litersDrained` —
+  with a reason picker, a conditional litres box, CSV output, a line on the Weight report, and a
+  Help answer instructing people to log it that way. That is exactly the coupling Aaron ruled out.
+  Tying a procedure to a measurement means a drain on a day nobody weighed in cannot be recorded at
+  all, two drains in one week collide on a single entry, and the total litres is only ever as
+  complete as the weigh-in history.
+
+  What shipped: a standalone `paracentesis` record (identical in shape to care-tracker v52, one
+  design across both apps); a **one-time, idempotent migration** that lifts every legacy record into
+  a standalone one and strips the two fields off the weight entry so the same procedure is never
+  counted twice; the option retired from `WEIGHT_REASONS` so the old shape can never be created
+  again (`weightReasonLabel` still resolves it for display); a **Settings → Procedures →
+  Paracentesis tracking** toggle, **off by default**, per Aaron's call that most patients never
+  have this procedure; its own report with total drained, procedure count and days since the last;
+  an annotation on the Weight report reading *"2 paracentesis procedures in this range · 7.5 L
+  drained"* against whatever window the chart is showing; and a corrected Help topic (`proc-para`),
+  because the old one told people to do the wrong thing.
+
+  **The weight value is never touched** — not by the migration, not by the report. The report says
+  so on screen.
+
+  Gate: `test/v59-para.mjs` **15/15**, falsified at **4/15** against app-v58. The migration checks
+  are the important half: records moved, legacy fields stripped, weight values unchanged, an
+  unrelated weight reason left alone, and idempotent across two loads.
+
+  **Two bugs this gate caught in my own work**, both recorded because they are the kind that ship
+  silently: (1) the first build fixed `renderReportDetail` but **not** `reportDescriptor` — both end
+  in a bare unguarded Appetite return — so the Reports menu listed *Appetite twice* and no
+  Paracentesis at all; (2) the drained-total line was computed and never rendered. Both now have
+  post-conditions in the patch script that refuse the build.
+
 - [x] **Daily check-in waits for the end of the day — shipped as app-v58** — added and closed
   2026-08-21. Aaron: *"bowel movement and appetite should be at the end of the day for both
   caretracker and chemowell. no longer for the day before."* Half of this was already true here:
