@@ -29,13 +29,10 @@ planned survives, but read this box first and ignore item 2.**
 
 Current order, top to bottom:
 
-1. **app-v57 is signed off and NOT yet pushed** — remove the help bubble, rename the menu row to
-   Help & FAQ, add the browser first-run notice for testers, fix the manifest wording. **Both gates
-   ran TWICE.** Round 1: both NOT READY (Auditor 1 High + 2 Medium + 3 Low; Designer 3 Must-fix +
-   8 Should-fix). Round 2: Auditor READY with 7 further Lows, Designer NOT READY with 1 Must-fix +
-   3 Should-fix. Everything from both rounds is fixed. **The Project Manager gate has since signed
-   off: GO** (`outputs/PM_v57.md`), conditional on four bookkeeping items and on the live checks in
-   its §8 after the push. Next action is the push itself, then those live checks.
+1. **app-v57 is built and gated but NOT pushed** — remove the help bubble, rename the menu row to
+   Help & FAQ, add the browser first-run notice for testers, fix the manifest wording. Both gates
+   returned NOT READY on the first pass and the findings are fixed; it re-enters the gates from
+   scratch per the restart rule.
 2. **Limit Units + the CSV unit bug** — the oldest open functional defect left.
 3. **Device-to-device encrypted-file sharing** (`outputs/SHARING_DEVELOPER_BRIEF_v3.md`). This is
    what replaced sync. Gets the full Quality Chain.
@@ -144,7 +141,7 @@ reconstruct it from history.
 
 ## Open
 
-- [ ] **app-v57, signed off by all three gates, NOT yet pushed — Aaron, 2026-08-13:**
+- [ ] **app-v57, built and through one full gate round, NOT yet pushed — Aaron, 2026-08-13:**
   *"what's next and what's left on my tasks. I don't really care for the 'bot'. it's not doing what
   I want. but I do think all of those things can be in a FAQ under the 3 hamburger menu. can this be
   shared via HTML so others can see it even though its not on the stores yet? I know that
@@ -514,6 +511,23 @@ reconstruct it from history.
   — queued behind the sync architecture item above, per Aaron's own priority order.
 
 ## Completed
+
+- [x] **Daily check-in waits for the end of the day — shipped as app-v58** — added and closed
+  2026-08-21. Aaron: *"bowel movement and appetite should be at the end of the day for both
+  caretracker and chemowell. no longer for the day before."* Half of this was already true here:
+  app-v37 replaced the three yesterday-retrospective banners with one Daily check-in that asks
+  about **today**, so "no longer for the day before" needed no change. What did need changing was
+  the timing — the card was on Home **from midnight**, so the app asked "how did today go?" over
+  breakfast. The caregiver already picks a check-in time in Settings (`dailyCheckinTime`, default
+  19:00) and the scheduled notification already fired at exactly that time; the card just ignored
+  it. It is now gated on `checkinWindowOpen(now)`, which reads that same setting, so **no second
+  number was introduced** — the window is whatever time they chose. Also fixed a leftover from the
+  pre-v37 design: Reports → Appetite still summarised *yesterday* ("Not yet logged for yesterday"),
+  describing a day the app no longer asks about. Gate: `test/v58-eod-checkin.mjs` **10/10**,
+  falsified at **6/10** against app-v57 (EOD-1, 7, 8, 9 go red on the old build; EOD-2/4/5 pass on
+  both, correctly — v57 already asked about today, only the timing was wrong). The matching
+  care-tracker change shipped as v51 the same day, where the work was larger because that app
+  genuinely still asked about yesterday.
 
 - [x] **Treatment type is now editable in Settings — shipped as app-v53** — added and closed
   2026-08-10. Aaron: *"there should be a way for people to update their treatment as you described.

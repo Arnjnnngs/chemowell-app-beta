@@ -1815,6 +1815,16 @@ function setHomePref(key, value) {
 function getDailyCheckinTime() { return getPrefsDB().dailyCheckinTime || '19:00'; }
 function setDailyCheckinTime(v) { setPrefsDB({ dailyCheckinTime: v }); markNotifDirty(); }
 function checkinEnabledToday() { return homePref('appetiteCheckin') || homePref('bowelCheckin') || homePref('dailyWeightCheckin'); }
+// The check-in asks how TODAY went, so it has no business being on Home at breakfast. The
+// caregiver already chooses when they want to be asked (dailyCheckinTime, default 19:00) and the
+// scheduled notification already fires at exactly that time -- this makes the Home card agree with
+// it instead of sitting there from midnight. No new number is introduced: the window is whatever
+// time they picked. Before this, the card appeared at 00:00 and asked about a day that had barely
+// started.
+function checkinWindowOpen(now) {
+  const d = new Date(now);
+  return (d.getHours() + d.getMinutes() / 60) >= timeValueToDecimalHour(getDailyCheckinTime());
+}
 // Explicit per-day completion flag, set by confirmCheckinModal() the moment the caregiver hits
 // Save -- regardless of which fields they actually filled in. This is deliberate: the modal's own
 // caption says "Skip anything that doesn't apply," so submitting it must count as done even with
@@ -2937,13 +2947,7 @@ function completeSetup() {
   const ps = profilesState();
   const ap = ps.list.find(p => p.id === ps.activeId);
   if (ap) { ap.name = name; saveJSON(PROFILES_KEY, ps); }
-  // R2D-2 (Designer, round 2): the browser notice IS this person's greeting -- it paints the moment
-  // they tap "Skip guide", well inside this toast's 4.5s life, and at 320/360 the toast lands across
-  // the card's privacy line ("Everything you log stays on this device.") and the top of its primary
-  // button. Same collision class as M3 and R2-E, and it must NOT be fixed with toastNeedsLift(): a
-  // constant lift can only clear a constant, and this card scrolls. One greeting, not two. Native
-  // builds and every later profile keep the toast exactly as before.
-  if (isNativeApp() || getPrefsDB().browserNoticeSeen) setToast('Welcome to ChemoWell');
+  setToast('Welcome to ChemoWell');
   if (!getPrefsDB().tourDone) setState({ tourStep: 0 });
 }
 // Small shared chip-row builder for the setup card (and nowhere else \u2014 Settings uses toggles).
@@ -3363,7 +3367,7 @@ function render() {
     // still on screen after the person had navigated to Help, describing an action on a screen they
     // had left. navigateTo() now clears it, which closes the Auditor's repro at the root and fixes
     // the same class on every other screen at once.
-    state.toast ? h('div', { role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: toastNeedsLift() ? 'calc(150px + env(safe-area-inset-bottom))' : 'calc(96px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(59,25,10,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(136,57,24,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', pointerEvents: 'none' } }, state.toast) : null,
+    state.toast ? h('div', { role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: toastNeedsLift() ? 'calc(142px + env(safe-area-inset-bottom))' : 'calc(96px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(59,25,10,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(136,57,24,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', pointerEvents: 'none' } }, state.toast) : null,
     renderTimeModal(),
     renderUpgradeModal(),
     renderApptModal(),
@@ -3710,12 +3714,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         : ['Add it to your Home Screen', 'Open your browser menu, then Add to Home screen. It keeps your log one tap away and out of reach of anything that clears browser data.'];
     // Designer S1: heading and body were both 13px, 100 weight units apart, so three blocks read as
     // one paragraph. 14/700 over 13/500 is the step the rest of the file already uses.
-    // R2D-5 (Designer, round 2): at 320 the primary action landed 3px under the fixed bottom nav on
-    // first paint, so the card appeared to have no action at all until the person scrolled. He asked
-    // explicitly for no further copy cut, so this is taken out of the rhythm instead: 2px per point
-    // plus 2px above the privacy line plus 1px above the actions, 9px total, which is what "Got it"
-    // needed. Verified by measurement, not by arithmetic.
-    const point = (title, body) => h('div', { style: { marginTop: '14px' } },
+    const point = (title, body) => h('div', { style: { marginTop: '16px' } },
       h('div', { style: { fontSize: '14px', fontWeight: '700', color: '#2A2127', lineHeight: '1.35', marginBottom: '3px' } }, title),
       h('div', { style: { fontSize: '13px', fontWeight: '500', color: '#554A52', lineHeight: '1.5' } }, body)
     );
@@ -3725,7 +3724,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     // the copy is roughly half what it was; the detail that came out lives in rem-web-vs-app, which
     // the button below links straight to. N3: its own off-white surface, so a tester scrolling can
     // tell where the notice ends and the app begins.
-    parts.push(h('div', { style: { position: 'relative', background: '#FFFBF5', border: '1px solid #E9D8D1', borderLeft: '4px solid ' + bTone.accent, borderRadius: '14px', padding: '14px 16px', maxWidth: '560px', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
+    parts.push(h('div', { style: { position: 'relative', background: '#FFFBF5', border: '1px solid #E9D8D1', borderLeft: '4px solid ' + bTone.accent, borderRadius: '14px', padding: '14px 16px', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
       h('div', { style: { display: 'flex', gap: '12px', alignItems: 'center', paddingRight: '36px' } },
         h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: bTone.chipBg, color: bTone.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, appIcon('bulb', 16, { color: bTone.chipFg })),
         h('div', { style: { ...TYPE.bodyBold, fontSize: '15px', color: '#2A2127', lineHeight: '1.3' } },
@@ -3737,8 +3736,8 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       point(homeScreenPoint[0], homeScreenPoint[1]),
       point('Reminders need this page open', 'A browser can’t wake a locked phone. The phone app schedules them with the operating system instead.'),
       point('Exports download instead of sharing', 'Download CSV and Print/PDF save to your Downloads folder.'),
-      h('div', { style: { fontSize: '13px', fontWeight: '500', color: '#554A52', lineHeight: '1.5', marginTop: '12px' } }, 'Everything you log stays on this device.'),
-      h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' } },
+      h('div', { style: { fontSize: '13px', fontWeight: '500', color: '#554A52', lineHeight: '1.5', marginTop: '14px' } }, 'Everything you log stays on this device.'),
+      h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '13px' } },
         // Designer S6: this wore the INFO gradient on an ATTENTION-toned card. attention.accent behind
         // white text measures 3.77:1 and must not be used; chipFg gives 5.93:1.
         h('button', { onClick: dismissBrowserNotice, style: { minHeight: '44px', padding: '0 18px', borderRadius: '12px', background: bTone.chipFg, color: '#fff', fontSize: '13px', fontWeight: '700', border: 'none', cursor: 'pointer' } }, 'Got it'),
@@ -3975,7 +3974,9 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // becomes today's Notes entry. The real reminder now lives in a scheduled notification at a
   // caregiver-chosen time (see buildReminderPlan's 'checkin' kind) instead of a banner that
   // silently sits there getting louder -- opt in once in Settings, get pinged once a day, done.
-  if (checkinEnabledToday() && !checkinDoneForDay(dayStart(now))) {
+  // The card is also gated on checkinWindowOpen(now): it appears at the caregiver's chosen check-in
+  // time and not before, because "how did today go?" is an end-of-day question (Aaron, 2026-08-21).
+  if (checkinEnabledToday() && !checkinDoneForDay(dayStart(now)) && checkinWindowOpen(now)) {
     const cTone = NOTICE_TONES.info;
     parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderLeft: '4px solid ' + cTone.accent, borderRadius: '14px', padding: '14px 16px', display: 'flex', gap: '12px', alignItems: 'center', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
       h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: cTone.chipBg, color: cTone.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, appIcon('notes', 17)),
@@ -5821,7 +5822,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v57';
+const APP_VERSION = 'app-v58';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -6368,12 +6369,7 @@ function renderHelpView(now) {
     )
   );
 
-  // R2D-3 (Designer, round 2) wanted the result count moved ABOVE the list -- it was rendering after
-  // all twelve rows, 1,070px below the fold, which is not where anyone decides whether to search
-  // again. Moving it as its OWN section cost two 18px main-flex gaps plus its height and ate most of
-  // R2D-1's height saving, so it goes INSIDE this card as a caption on the rows it describes.
-  const listCard = (rows, caption) => h('section', { style: secStyle },
-    caption ? h('div', { style: { ...TYPE.caption, color: '#5E4337', marginBottom: '6px' } }, caption) : null,
+  const listCard = (rows) => h('section', { style: secStyle },
     h('div', { style: { borderRadius: '13px', overflow: 'hidden', border: '1px solid #E9D8D1' } }, ...rows)
   );
 
@@ -6469,45 +6465,25 @@ function renderHelpView(now) {
   if (searching) {
     const cTone = NOTICE_TONES.attention;
     return [
-      // R2D-1 (Designer, round 2) made "a legible result row above the bottom nav" the bar, and at
-      // 320px this screen was still short. The space came from a duplication of exactly the kind he
-      // flagged inside the strip: a 28px display heading reading "Search help" sat directly above a
-      // card whose own field label reads "Search help", on the one screen where the person has
-      // already typed and is waiting for rows. The section eyebrow stays -- it is the orientation --
-      // and the H1 goes, which is 45px back on every width. The Help LANDING keeps its heading; this
-      // is scoped to the results screen.
-      h('section', null,
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#7A2E08' } }, appIcon('help', 19), h('span', { style: { ...TYPE.label } }, 'Help & FAQ'))
-      ),
+      pageHead('Help & FAQ', 'Search help', null),
       searchCard(),
-      // R2D-1 (Designer, round 2, Must-fix): the strip was 235px at 320 and put ZERO of 12 result rows
-      // -- and the empty state's advice line -- under the 69px fixed bottom nav. The Auditor's
-      // clearance figures treated the fold as the viewport edge and did not subtract that nav. The
-      // height was self-inflicted: the heading restated the body's first clause verbatim, which is a
-      // copy defect on its own merits and cost three lines. Cutting the duplicate takes 39px at both
-      // widths, which lands the first row fully above the nav at 360 and takes 320 from a 21px sliver
-      // to a legible row. R2D-4: its own #FFFBF5 surface, so it reads as an aside above the results
-      // rather than as the first result -- it was the same white as both the search card and the
-      // list. R2D-9: capped at 560px so the line length at 768 stays under WCAG 1.4.8's 80 chars.
-      h('section', { style: { background: '#FFFBF5', border: '1px solid #E9D8D1', borderLeft: '4px solid ' + cTone.accent, borderRadius: '14px', padding: '11px 14px', maxWidth: '560px', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
+      h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderLeft: '4px solid ' + cTone.accent, borderRadius: '14px', padding: '12px 14px', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
         h('div', { style: { ...TYPE.bodyBold, fontSize: '13.5px', color: '#2A2127', lineHeight: '1.35' } }, 'ChemoWell can’t tell you if something is serious'),
-        h('div', { style: { fontSize: '13px', fontWeight: '500', color: '#554A52', lineHeight: '1.5', marginTop: '3px' } }, 'It holds no medical information. For anything about symptoms, doses, or how someone is feeling, contact the care team.'),
+        h('div', { style: { fontSize: '13px', fontWeight: '500', color: '#554A52', lineHeight: '1.5', marginTop: '3px' } }, 'ChemoWell holds no medical information and can’t tell you whether something is serious. For anything about symptoms, doses, or how someone is feeling, contact the care team.'),
         h('button', { onClick: () => helpGo({ topic: 'sym-severe' }), style: { marginTop: '9px', minHeight: '44px', padding: '0 14px', borderRadius: '12px', background: cTone.chipFg, color: '#fff', fontSize: '13px', fontWeight: '700', border: 'none', cursor: 'pointer', textAlign: 'left', lineHeight: '1.3' } }, 'When to call the care team straight away')
       ),
-      // Honest about the cap: a person who reads "12 results" and a person who reads "the closest 12
-      // of 19" make different decisions about whether to search again. Colour is R2D-3's other half
-      // -- inside the card #5E4337 measures 8.0:1 on white, and the old #7A6E76 was on the page
-      // GRADIENT at 3.23-3.68:1, failing AA at every width on the one line carrying the fact that
-      // matches are being withheld.
       results.length
-        ? listCard(results.map((t, i) => topicRow(t, i, helpCategoryLabel(t.cat))),
-            searchRes.total > searchRes.shown
-              ? ('The closest ' + searchRes.shown + ' of ' + searchRes.total + ' matches')
-              : (searchRes.total + (searchRes.total === 1 ? ' result' : ' results')))
+        ? listCard(results.map((t, i) => topicRow(t, i, helpCategoryLabel(t.cat))))
         : h('section', { style: secStyle },
             h('div', { style: { ...TYPE.bodyBold, color: '#2A2127' } }, 'Nothing matched that'),
             h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.5' } }, 'Try a single plain word — “reminder”, “greyed”, “export”, “missed”. Or tap Clear and pick the area from the list instead.')
-          )
+          ),
+      // Honest about the cap: a person who reads "12 results" and a person who reads "the closest 12
+      // of 19" make different decisions about whether to search again.
+      results.length ? h('section', { style: { ...TYPE.caption, color: '#7A6E76' } },
+        searchRes.total > searchRes.shown
+          ? ('The closest ' + searchRes.shown + ' of ' + searchRes.total + ' matches')
+          : (searchRes.total + (searchRes.total === 1 ? ' result' : ' results'))) : null
     ];
   }
 
@@ -7086,9 +7062,9 @@ function reportDescriptor(type, now) {
     const bLatest = bEntries[0];
     return { label: 'Bowel Movement', icon: 'notes', description: 'Review bowel movement history logged from Home.', meta: bLatest ? ((BOWEL_MOVEMENT_LABELS[bLatest.value] || bLatest.value) + ' most recent') : 'No entries yet' };
   }
-  const yStart = yesterdayStart(now);
+  const yStart = dayStart(now);
   const yEntry = appetiteFor(yStart);
-  return { label: 'Appetite', icon: 'notes', description: 'Review appetite history logged from Home.', meta: yEntry ? ((APPETITE_LABELS[yEntry.value] || yEntry.value) + ' yesterday') : 'Not yet logged for yesterday' };
+  return { label: 'Appetite', icon: 'notes', description: 'Review appetite history logged from Home.', meta: yEntry ? ((APPETITE_LABELS[yEntry.value] || yEntry.value) + ' today') : 'Not yet logged for today' };
 }
 
 function renderReportsMenu(now) {
