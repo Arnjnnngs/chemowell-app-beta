@@ -323,10 +323,17 @@ for (const vp of [{ name: '360px', width: 360, height: 800 }, { name: '390px', w
   body = await page.evaluate(() => document.body.innerText);
   t(L('back from a search hit returns to the results'), /Search help/i.test(body) && /The temperature is high/.test(body));
 
-  // a term that only appears in `keywords` (not in q or a) must still match
-  await setQuery(page, 'paracentesis');
+  // A term that only appears in `keywords` (not in q or a) must still match.
+  //
+  // app-v59: this used to search 'paracentesis' and expect the WEIGHT topic, because paracentesis
+  // was logged as a reason on the weight card and carried that keyword. It is now its own procedure
+  // with its own topic, so 'paracentesis' appears in that topic's question text -- which makes it no
+  // longer a keyword-ONLY term and would quietly hollow out the property this check exists to guard.
+  // Switched to 'ascites', which appears in proc-para's keywords and nowhere in any question or
+  // answer text, so the check still proves exactly what it was written to prove.
+  await setQuery(page, 'ascites');
   body = await page.evaluate(() => document.body.innerText);
-  t(L('keyword-only search term matches'), /How do I record a weight/.test(body));
+  t(L('keyword-only search term matches'), /How do I record a paracentesis/.test(body));
 
   // --- back out, all the way
   await page.getByRole('button', { name: 'Clear' }).first().click();
