@@ -512,6 +512,41 @@ reconstruct it from history.
 
 ## Completed
 
+- [x] **Backup & restore — shipped as app-v61** — added and closed 2026-08-22. Aaron: *"go ahead."*
+
+  **Plus has been selling this since before it existed** (*"Backup & restore — move your data to a
+  new phone (coming in beta)"*, $4.99). It now exists, and that bullet no longer says "coming".
+
+  **Save backup file** writes one JSON holding everything the profile owns — entries, appointments,
+  notes, the medication list (active and archived), and preferences — and says **where it went**,
+  naming the Downloads folder and the filename on the download route.
+
+  **Restore asks where it should go, and never guesses.** After the file is read and *before
+  anything is written*, it shows a manifest taken from the file itself — who it is for, when it was
+  saved, how many records and medications — then offers two destinations: merge into the open
+  profile, or put it in a new one. Preselected by whether the patient name matches, never decided.
+  Merging two patients' records together is far worse than an extra profile, so the app does not
+  take that risk on the person's behalf.
+
+  Merging is **additive and idempotent**: records already present are left alone, nothing is ever
+  removed, and loading the same file twice is a no-op. The medication list is only applied when the
+  target has none — and when it is declined, it says so and gives the count, which is the defect
+  care-tracker shipped in v54 and fixed in v55.
+
+  **Restoring your own data is never paywalled.** Free caps at one profile, so a restore needing a
+  new profile would hit that cap. `createProfileForRestore()` deliberately skips the tier check. The
+  cap governs *creating* profiles; it does not govern getting your own medical history back, and
+  `BK-9` fails if that ever changes.
+
+  Gate: `test/v61-backup.mjs` **15/15**, falsified at **0/15** against app-v60.
+
+  **One real defect found while writing the gate:** `cwDeliverFile` treated `NotAllowedError` from
+  the share sheet as "the person cancelled". It is not — it means the platform refused the share,
+  and reporting it as a cancellation would leave someone believing they declined a backup they never
+  actually got. Only `AbortError` now counts as cancelled; anything else falls through and saves the
+  file. A duplicate file is a nuisance; a missing backup is the entire failure mode this exists to
+  prevent.
+
 - [x] **Paracentesis moved out of the weight entry into its own record — shipped as app-v59** —
   added and closed 2026-08-21. Aaron: *"we need to add para, but maybe leave it as a standalone so
   it doesn't affect weight trend. there can be notes for weight that can add the para together to

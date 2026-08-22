@@ -159,6 +159,163 @@ const PROFILES_KEY = 'chemowell-app-profiles-v1';
 function profilesState() { return loadJSON(PROFILES_KEY, { list: [{ id: 'p1', name: '', createdAt: 0 }], activeId: 'p1' }); }
 const ACTIVE_PROFILE_ID = (function () { const ps = profilesState(); return ps.list.some(p => p.id === ps.activeId) ? ps.activeId : ps.list[0].id; })();
 let newProfileNameDraft = '';
+// Deliberately WITHOUT the tier check in createProfile(). Free caps at one profile, and a restore
+// that needs a second one would otherwise be blocked -- which means holding a person's own medical
+// records hostage to a $4.99 upgrade. The cap governs CREATING profiles. It does not govern getting
+// your own data back, and it never will.
+function createProfileForRestore(name) {
+  const ps = profilesState();
+  const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  ps.list.push({ id: id, name: name || '', createdAt: Date.now() });
+  saveJSON(PROFILES_KEY, ps);
+  return id;
+}
+
+// Writes a bundle into ONE profile, by profile id, additively. Never deletes, never overwrites an
+// existing record, and loading the same file twice is a no-op -- which is what makes it safe to
+// hand someone a restore button at the worst moment of their week.
+// The file input is created once and reused. Rebuilding it per tap loses the change listener on
+// some Android webviews, which produced a picker that opened and then did nothing.
+let cwBkInput = null;
+function cwBkEnsureInput() {
+  if (cwBkInput) return cwBkInput;
+  cwBkInput = document.createElement('input');
+  cwBkInput.type = 'file';
+  cwBkInput.accept = 'application/json,.json';
+  cwBkInput.style.display = 'none';
+  cwBkInput.addEventListener('change', () => {
+    const f = cwBkInput.files && cwBkInput.files[0];
+    cwBkInput.value = '';                       // so choosing the SAME file twice still fires
+    if (f) cwBkReadChosenFile(f);
+  });
+  document.body.appendChild(cwBkInput);
+  return cwBkInput;
+}
+function cwBkPickFile() {
+  if (state.bkBusy) return;
+  setState({ bkNotice: null, bkPending: null });
+  try { cwBkEnsureInput().click(); }
+  catch (e) { setState({ bkNotice: { kind: 'bad', message: "This phone wouldn't open the file picker. Nothing was changed." } }); }
+}
+async function cwBkReadChosenFile(file) {
+  setState({ bkBusy: true, bkNotice: null, bkPending: null });
+  try {
+    if (file && typeof file.size === 'number' && file.size > CW_BK_MAX_BYTES) {
+      setState({ bkNotice: { kind: 'bad', message: 'That file is far too big to be a ChemoWell backup. Nothing was changed.' } });
+      return;
+    }
+    let text = '';
+    try { text = await file.text(); }
+    catch (e) {
+      setState({ bkNotice: { kind: 'bad', message: "Couldn't read that file. Nothing was changed — try choosing it again." } });
+      return;
+    }
+    let parsed = null;
+    try { parsed = JSON.parse(text); }
+    catch (e) {
+      setState({ bkNotice: { kind: 'bad', message: "That doesn't look like a ChemoWell backup. Choose the file whose name ends in .json — the CSV and the printable report can't be loaded back." } });
+      return;
+    }
+    let bundle = null;
+    try { bundle = cwBkReadIncoming(parsed); }
+    catch (err) {
+      setState({ bkNotice: { kind: 'bad', message: (err && err.message === 'newer-format')
+        ? 'This backup was made by a newer version of ChemoWell than the one on this phone. Update the app first — loading it here could leave part of it out without saying so.'
+        : "That doesn't look like a ChemoWell backup. Choose the file whose name ends in .json." } });
+      return;
+    }
+    const total = bundle.entries.length + bundle.appointments.length + bundle.notes.length;
+    const nMeds = (bundle.medications && Array.isArray(bundle.medications.meds)) ? bundle.medications.meds.length : 0;
+    if (!total && !nMeds) {
+      setState({ bkNotice: { kind: 'bad', message: 'That backup file is empty. Nothing was changed.' } });
+      return;
+    }
+    // Preselect by whether the file is about the person whose profile is open. Never decide -- a
+    // wrong merge mixes two patients' records together, which is far worse than an extra profile.
+    const here = String((getPrefsDB().patientName || '')).trim().toLowerCase();
+    const there = String(bundle.profileName || '').trim().toLowerCase();
+    const sameName = !!here && !!there && here === there;
+    setState({ bkPending: { bundle: bundle, total: total, nMeds: nMeds, dest: sameName ? 'merge' : 'new' } });
+  } finally {
+    setState({ bkBusy: false });
+  }
+}
+
+async function cwBkConfirmRestore() {
+  const p = state.bkPending;
+  if (!p || state.bkBusy) return;
+  setState({ bkBusy: true });
+  try {
+    const b = p.bundle;
+    if (p.dest === 'new') {
+      const id = createProfileForRestore(b.profileName || '');
+      const r = cwBkApplyTo(id, b, { forceMeds: true });   // a brand-new profile has nothing to protect
+      const ps = profilesState(); ps.activeId = id; saveJSON(PROFILES_KEY, ps);
+      // Reloading is how this app switches profiles -- every storage key is bound at module load.
+      setToast('Restored into a new profile — opening it now');
+      setTimeout(() => location.reload(), 700);
+      return;
+    }
+    const r = cwBkApplyTo(ACTIVE_PROFILE_ID, b, null);
+    const bits = [];
+    const moved = r.entries + r.appointments + r.notes;
+    bits.push(moved === 0
+      ? 'Nothing new to add — everything in that file was already in this profile.'
+      : ('Restored ' + moved + ' record' + (moved === 1 ? '' : 's') + '.'));
+    if (r.meds === 'restored') bits.push('The medication list came back too.');
+    if (r.meds === 'skipped') {
+      bits.push('The medication list was left exactly as it is — this profile already has one. The file also holds ' +
+        r.skippedMeds + ' medication' + (r.skippedMeds === 1 ? '' : 's') + '.');
+    }
+    if (r.prefs) bits.push('Settings that were not already set were filled in.');
+    bits.push('Nothing was removed, and loading the same file again is safe.');
+    setState({ bkPending: null, bkNotice: { kind: 'ok', message: bits.join(' ') } });
+    setToast(moved ? ('Restored ' + moved + ' record' + (moved === 1 ? '' : 's')) : 'Nothing new to restore');
+    setTimeout(() => location.reload(), 900);
+  } catch (err) {
+    console.error('[restore]', err);
+    setState({ bkPending: null, bkNotice: { kind: 'bad', message: 'Something went wrong part-way through. Nothing was removed — load the file again; doing it twice is safe.' } });
+  } finally {
+    setState({ bkBusy: false });
+  }
+}
+
+function cwBkApplyTo(profileId, bundle, opts) {
+  const K = (suffix) => 'chemowell-app-p-' + profileId + '-' + suffix;
+  const res = { entries: 0, appointments: 0, notes: 0, meds: 'none', prefs: false, skippedMeds: 0 };
+
+  const e = cwBkMergeById(loadJSON(K('entries-v1'), []), bundle.entries);
+  saveJSON(K('entries-v1'), e.list); res.entries = e.added;
+  const a = cwBkMergeById(loadJSON(K('appts-v1'), []), bundle.appointments);
+  saveJSON(K('appts-v1'), a.list); res.appointments = a.added;
+  const n = cwBkMergeById(loadJSON(K('notes-v1'), []), bundle.notes);
+  saveJSON(K('notes-v1'), n.list); res.notes = n.added;
+
+  // The medication list is REPLACED only when the target has none. Same rule as care-tracker, and
+  // for the same reason: a restore must never wipe a list someone is maintaining. When it is
+  // declined, the count is reported -- silence here is the exact defect that shipped in v54.
+  const incomingMeds = (bundle.medications && Array.isArray(bundle.medications.meds)) ? bundle.medications.meds : null;
+  if (incomingMeds && incomingMeds.length) {
+    const current = loadJSON(K('med-v1'), null);
+    const hasLocal = !!(current && Array.isArray(current.meds) && current.meds.length);
+    if (!hasLocal || (opts && opts.forceMeds)) {
+      saveJSON(K('med-v1'), { version: 1, meds: incomingMeds, archivedMeds: (bundle.medications.archivedMeds || {}) });
+      res.meds = 'restored';
+    } else {
+      res.meds = 'skipped'; res.skippedMeds = incomingMeds.length;
+    }
+  }
+
+  // Preferences fill GAPS only. Overwriting them would silently change reminder times and units on
+  // a phone whose owner had already set them.
+  if (bundle.prefs) {
+    const cur = loadJSON(K('prefs-v1'), {}) || {};
+    const merged = Object.assign({}, bundle.prefs, cur);
+    if (JSON.stringify(merged) !== JSON.stringify(cur)) { saveJSON(K('prefs-v1'), merged); res.prefs = true; }
+  }
+  return res;
+}
+
 function createProfile(name) {
   const ps = profilesState();
   if (ps.list.length >= tierLimit(getLicense().tier)) return false;
@@ -837,7 +994,7 @@ function restoreView() {
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null };
+let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -3194,7 +3351,7 @@ function renderUpgradeModal() {
         // leads instead, since it's the one benefit Aaron himself said would actually sell him
         // ("I wouldn't be sold on that besides the shared access"), with the export/insights
         // features he confirmed building right behind it, profiles last as he asked.
-        planCard('plus', 'Plus', '$4.99', 'one-time', ['Up to 3 patient profiles', 'Printable doctor’s report (print or save as PDF)', 'Backup & restore — move your data to a new phone (coming in beta)'], 'plus'),
+        planCard('plus', 'Plus', '$4.99', 'one-time', ['Up to 3 patient profiles', 'Printable doctor’s report (print or save as PDF)', 'Backup & restore — move your data to a new phone'], 'plus'),
         // Sharing is no longer the LEAD bullet. It was, at $14.99, while being the one thing in the
         // list that does not exist -- so the price was anchored to a promise. It now sits third,
         // describes the mechanism honestly (an encrypted transfer between two phones), and states
@@ -5943,7 +6100,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v60';
+const APP_VERSION = 'app-v61';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -6911,6 +7068,131 @@ function buildExportRows() {
 // answer to "where does that go" (Files, Drive, Mail, AirDrop, etc., user's choice). Desktop
 // browsers generally don't support sharing files, so they fall back to the original blob-download
 // link, with clearer toast copy pointing at the Downloads folder instead of leaving it unsaid.
+// ================================================================================================
+// BACKUP & RESTORE (app-v61).  See cwbackup-patch.py for why this is load-bearing rather than nice.
+// ================================================================================================
+const CW_BK_FORMAT = 'chemowell-backup';
+const CW_BK_FORMAT_VERSION = 1;
+const CW_BK_MAX_BYTES = 25 * 1024 * 1024;
+
+// One delivery path for every file this app produces, and it REPORTS which route it took. The CSV
+// export inlines this same logic and throws the answer away, which on care-tracker produced a
+// "saved!" message that never named a location and told Android users to check their "Files app".
+async function cwDeliverFile(blob, filename, mime) {
+  try {
+    if (await nativeShareFile(blob, filename, mime, filename)) return { method: 'native', cancelled: false };
+  } catch (e) { /* fall through to the web paths rather than losing the file */ }
+  try {
+    if (navigator.share && navigator.canShare) {
+      const file = new File([blob], filename, { type: mime });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+        return { method: 'share', cancelled: false };
+      }
+    }
+  } catch (e) {
+    // ONLY AbortError means the person closed the sheet, and only that must not fall through to a
+    // download they just declined. NotAllowedError is different: it means the platform refused the
+    // share (no user activation, an unsupported webview), and reporting that as "cancelled" would
+    // leave someone believing they declined a backup they actually never got. Fall through and save
+    // the file. A duplicate file is a nuisance; a missing backup is the whole failure mode this
+    // feature exists to prevent.
+    if (e && e.name === 'AbortError') return { method: 'share', cancelled: true };
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  return { method: 'download', cancelled: false };
+}
+
+// Everything this profile owns. Read straight from storage rather than from state, so a backup is
+// a picture of what is SAVED -- not of what a half-finished render happens to be holding.
+function cwBkCollect() {
+  const prefs = getPrefsDB();
+  return {
+    profileName: String(prefs.patientName || ''),
+    entries: loadJSON(ENTRIES_KEY, []),
+    appointments: loadJSON(APPTS_KEY, []),
+    notes: loadJSON(NOTES_KEY, []),
+    medications: loadJSON(MED_CONFIG_STORAGE_KEY, null),
+    prefs: prefs
+  };
+}
+function cwBkBuildPayload(b, atMs) {
+  return {
+    format: CW_BK_FORMAT,
+    formatVersion: CW_BK_FORMAT_VERSION,
+    app: APP_VERSION,
+    createdAt: atMs,
+    profileName: b.profileName,
+    entries: Array.isArray(b.entries) ? b.entries : [],
+    appointments: Array.isArray(b.appointments) ? b.appointments : [],
+    notes: Array.isArray(b.notes) ? b.notes : [],
+    medications: (b.medications && typeof b.medications === 'object') ? b.medications : null,
+    prefs: (b.prefs && typeof b.prefs === 'object') ? b.prefs : null
+  };
+}
+async function downloadBackupFile() {
+  const b = cwBkCollect();
+  const total = b.entries.length + b.appointments.length + b.notes.length;
+  const nMeds = (b.medications && Array.isArray(b.medications.meds)) ? b.medications.meds.length : 0;
+  if (!total && !nMeds) { setToast('Nothing to back up yet — log something first'); return; }
+  const name = 'chemowell-backup-' + ((b.profileName || 'profile').replace(/[^a-z0-9]/gi, '-').toLowerCase()) +
+               '-' + new Date(simNow()).toLocaleDateString('en-CA') + '.json';
+  const res = await cwDeliverFile(new Blob([JSON.stringify(cwBkBuildPayload(b, simNow()), null, 2)],
+                                  { type: 'application/json' }), name, 'application/json');
+  if (res.cancelled) { setToast('Backup cancelled — nothing was saved.'); return; }
+  const where = (res.method === 'download')
+    ? 'It is in your Downloads folder, named ' + name + '.'
+    : 'Pick where to keep it in the sheet that just opened.';
+  setState({ bkNotice: { kind: 'ok', message: 'Backup saved — ' + total + ' record' + (total === 1 ? '' : 's') +
+    (nMeds ? ' and ' + nMeds + ' medication' + (nMeds === 1 ? '' : 's') : '') + '. ' + where +
+    ' Keep it somewhere you will still have it if this phone is lost — there is no cloud copy and no password to reset.' } });
+  setToast('Backup saved. ' + where);
+}
+
+// Validation is deliberately strict about the FORMAT and forgiving about missing SECTIONS: a file
+// written by an older build simply has fewer keys, and absent must mean none rather than broken.
+function cwBkReadIncoming(parsed) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not-a-backup');
+  if (parsed.format !== CW_BK_FORMAT) throw new Error('not-a-backup');
+  const fv = Number(parsed.formatVersion);
+  if (!isFinite(fv) || fv < 1) throw new Error('not-a-backup');
+  // A file from a NEWER build may carry sections this build cannot read. Importing the parts it
+  // understands would look like a complete restore and quietly not be one.
+  if (fv > CW_BK_FORMAT_VERSION) throw new Error('newer-format');
+  const arr = (v) => Array.isArray(v) ? v.filter(r => r && typeof r === 'object' && !Array.isArray(r)) : [];
+  return {
+    profileName: typeof parsed.profileName === 'string' ? parsed.profileName : '',
+    createdAt: Number(parsed.createdAt) || 0,
+    entries: arr(parsed.entries),
+    appointments: arr(parsed.appointments),
+    notes: arr(parsed.notes),
+    medications: (parsed.medications && typeof parsed.medications === 'object' && !Array.isArray(parsed.medications)) ? parsed.medications : null,
+    prefs: (parsed.prefs && typeof parsed.prefs === 'object' && !Array.isArray(parsed.prefs)) ? parsed.prefs : null
+  };
+}
+
+// A Map, not a plain object. Record ids come out of a FILE, and a file is free to contain an id of
+// "constructor" or "__proto__" -- on a plain object those read back a truthy INHERITED value, so
+// the record would be silently treated as already-present and dropped. That exact class of bug has
+// already cost this project one blocker.
+function cwBkMergeById(existing, incoming) {
+  const seen = new Map();
+  (existing || []).forEach(r => { if (r && r.id != null) seen.set(String(r.id), true); });
+  const out = (existing || []).slice();
+  let added = 0;
+  (incoming || []).forEach(r => {
+    const id = (r && r.id != null) ? String(r.id) : null;
+    if (id && seen.has(id)) return;          // already here: leave the local copy alone
+    if (id) seen.set(id, true);
+    out.push(r); added++;
+  });
+  return { list: out, added: added };
+}
+
 async function downloadEntriesCSV() {
   const rows = buildExportRows();
   if (!rows.length) { setToast('Nothing to export yet — log something first'); return; }
@@ -7023,6 +7305,71 @@ function renderExportSection() {
     h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
       h('button', { onClick: downloadEntriesCSV, style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 6px 18px rgba(168,61,15,0.32)' } }, 'Download CSV'),
       h('button', { onClick: openPrintReport, style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1.5px solid rgba(200,83,32,0.35)', color: '#A83D0F', fontSize: '13px', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '7px' } }, 'Printable report', isFree ? h('span', { style: { fontSize: '10.5px', fontWeight: '800', background: 'rgba(191,76,26,0.14)', color: '#A83D0F', borderRadius: '99px', padding: '2px 8px' } }, 'PLUS') : null)
+    ),
+    renderBackupSection()
+  );
+}
+
+// Backup and restore. Deliberately inside the Export section rather than a screen of its own: the
+// person looking for "how do I get my data out or onto a new phone" is already here.
+function renderBackupSection() {
+  const b = state.bkBusy;
+  return h('div', { 'data-backup-section': 'true', style: { marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #E9D8D1' } },
+    h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#A83D0F' } }, 'Backup & restore'),
+    h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } },
+      'A backup holds everything for this profile — logged entries, appointments, notes, the medication list and your settings. It is the only way to move to a new phone, and the only way back if this one is lost. ChemoWell keeps no copy and there is no password to reset, so keep the file somewhere safe.'),
+    h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
+      h('button', Object.assign({ 'data-bk-save': 'true', onClick: downloadBackupFile,
+        style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 6px 18px rgba(168,61,15,0.32)' } },
+        // Spread, never `disabled: b ? 'disabled' : null` -- h() does a bare setAttribute and the
+        // string "null" would disable the button permanently.
+        b ? { disabled: 'disabled' } : {}), 'Save backup file'),
+      h('button', Object.assign({ 'data-bk-restore': 'true', onClick: cwBkPickFile,
+        style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1.5px solid rgba(200,83,32,0.35)', color: '#A83D0F', fontSize: '13px', fontWeight: '800' } },
+        b ? { disabled: 'disabled' } : {}), b ? 'Reading…' : 'Restore from a backup')
+    ),
+    renderBackupChoice(),
+    state.bkNotice ? h('div', Object.assign({ 'data-bk-notice': 'true', 'data-bk-notice-kind': state.bkNotice.kind,
+      style: { marginTop: '11px', padding: '11px 13px', borderRadius: '12px', fontSize: '12.5px', lineHeight: '1.45', fontWeight: '600',
+        background: state.bkNotice.kind === 'bad' ? 'rgba(179,38,30,0.10)' : 'rgba(46,125,79,0.10)',
+        border: '1px solid ' + (state.bkNotice.kind === 'bad' ? 'rgba(179,38,30,0.32)' : 'rgba(46,125,79,0.30)'),
+        color: state.bkNotice.kind === 'bad' ? '#8E2018' : '#1F5A3D' } },
+      state.bkNotice.kind === 'bad' ? { role: 'alert' } : {}), state.bkNotice.message) : null
+  );
+}
+
+// The destination question. Shown AFTER the file is read and BEFORE anything is written, with a
+// manifest taken from the file itself so the choice is made against real content rather than a
+// filename.
+function renderBackupChoice() {
+  const p = state.bkPending;
+  if (!p) return null;
+  const who = p.bundle.profileName ? p.bundle.profileName : 'an unnamed profile';
+  const made = p.bundle.createdAt ? new Date(p.bundle.createdAt).toLocaleDateString() : 'an unknown date';
+  const hereName = String(getPrefsDB().patientName || '').trim() || 'this profile';
+  const opt = (key, title, sub) => {
+    const on = p.dest === key;
+    return h('button', { 'data-bk-dest': key, onClick: () => setState({ bkPending: Object.assign({}, p, { dest: key }) }),
+      style: { width: '100%', textAlign: 'left', minHeight: '54px', padding: '11px 13px', borderRadius: '12px', marginTop: '7px',
+        background: on ? 'rgba(191,76,26,0.10)' : '#FFFFFF',
+        border: '1.5px solid ' + (on ? '#BF4C1A' : '#E9D8D1') } },
+      h('div', { style: { ...TYPE.bodyBold, fontSize: '13.5px', color: on ? '#A83D0F' : '#2A2127' } }, title),
+      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '2px', lineHeight: '1.4' } }, sub)
+    );
+  };
+  return h('div', { 'data-bk-choice': 'true', style: { marginTop: '12px', background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '14px', padding: '13px 14px' } },
+    h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127' } }, 'This backup is for ' + who),
+    h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '3px', lineHeight: '1.45' } },
+      'Saved ' + made + ' · ' + p.total + ' record' + (p.total === 1 ? '' : 's') +
+      (p.nMeds ? ' · ' + p.nMeds + ' medication' + (p.nMeds === 1 ? '' : 's') : '') + '. Where should it go?'),
+    opt('merge', 'Add it to ' + hereName, 'Records that are already here are left alone. Nothing is removed.'),
+    opt('new', 'Put it in a new profile', 'Keeps it completely separate from the profile you have open.'),
+    h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } },
+      h('button', Object.assign({ 'data-bk-go': 'true', onClick: cwBkConfirmRestore,
+        style: { flex: '1', minHeight: '46px', borderRadius: '12px', background: '#BF4C1A', color: '#fff', fontSize: '14px', fontWeight: '800' } },
+        state.bkBusy ? { disabled: 'disabled' } : {}), state.bkBusy ? 'Restoring…' : 'Restore'),
+      h('button', { 'data-bk-cancel': 'true', onClick: () => setState({ bkPending: null }),
+        style: { flexShrink: '0', minHeight: '46px', padding: '0 16px', borderRadius: '12px', color: '#7A6E76', fontSize: '14px', fontWeight: '700', background: 'transparent' } }, 'Cancel')
     )
   );
 }
