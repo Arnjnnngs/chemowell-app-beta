@@ -193,12 +193,12 @@ function cwBkEnsureInput() {
 }
 function cwBkPickFile() {
   if (state.bkBusy) return;
-  setState({ bkNotice: null, bkPending: null });
+  setState({ bkNotice: null, bkPending: null, bkLocked: null, bkUnlockPw: '' });
   try { cwBkEnsureInput().click(); }
   catch (e) { setState({ bkNotice: { kind: 'bad', message: "This phone wouldn't open the file picker. Nothing was changed." } }); }
 }
 async function cwBkReadChosenFile(file) {
-  setState({ bkBusy: true, bkNotice: null, bkPending: null });
+  setState({ bkBusy: true, bkNotice: null, bkPending: null, bkLocked: null });
   try {
     if (file && typeof file.size === 'number' && file.size > CW_BK_MAX_BYTES) {
       setState({ bkNotice: { kind: 'bad', message: 'That file is far too big to be a ChemoWell backup. Nothing was changed.' } });
@@ -216,29 +216,66 @@ async function cwBkReadChosenFile(file) {
       setState({ bkNotice: { kind: 'bad', message: "That doesn't look like a ChemoWell backup. Choose the file whose name ends in .json — the CSV and the printable report can't be loaded back." } });
       return;
     }
-    let bundle = null;
-    try { bundle = cwBkReadIncoming(parsed); }
-    catch (err) {
-      setState({ bkNotice: { kind: 'bad', message: (err && err.message === 'newer-format')
-        ? 'This backup was made by a newer version of ChemoWell than the one on this phone. Update the app first — loading it here could leave part of it out without saying so.'
-        : "That doesn't look like a ChemoWell backup. Choose the file whose name ends in .json." } });
+    // A protected file cannot be inspected at all until it is opened, so the destination question
+    // has to wait behind the password rather than being asked against a manifest that isn't
+    // readable yet.
+    if (cwBkIsEncrypted(parsed)) {
+      setState({ bkLocked: { env: parsed, createdAt: Number(parsed.createdAt) || 0 }, bkUnlockPw: '' });
       return;
     }
-    const total = bundle.entries.length + bundle.appointments.length + bundle.notes.length;
-    const nMeds = (bundle.medications && Array.isArray(bundle.medications.meds)) ? bundle.medications.meds.length : 0;
-    if (!total && !nMeds) {
-      setState({ bkNotice: { kind: 'bad', message: 'That backup file is empty. Nothing was changed.' } });
-      return;
-    }
-    // Preselect by whether the file is about the person whose profile is open. Never decide -- a
-    // wrong merge mixes two patients' records together, which is far worse than an extra profile.
-    const here = String((getPrefsDB().patientName || '')).trim().toLowerCase();
-    const there = String(bundle.profileName || '').trim().toLowerCase();
-    const sameName = !!here && !!there && here === there;
-    setState({ bkPending: { bundle: bundle, total: total, nMeds: nMeds, dest: sameName ? 'merge' : 'new' } });
+    cwBkAcceptParsed(parsed);
   } finally {
     setState({ bkBusy: false });
   }
+}
+
+// Everything from "we have a parsed backup object" onward, shared by the plain path and by the
+// path that had to decrypt first. Returns true when a destination choice is now on screen.
+function cwBkAcceptParsed(parsed) {
+  let bundle = null;
+  try { bundle = cwBkReadIncoming(parsed); }
+  catch (err) {
+    setState({ bkNotice: { kind: 'bad', message: (err && err.message === 'newer-format')
+      ? 'This backup was made by a newer version of ChemoWell than the one on this phone. Update the app first — loading it here could leave part of it out without saying so.'
+      : "That doesn't look like a ChemoWell backup. Choose the file whose name ends in .json." } });
+    return false;
+  }
+  const total = bundle.entries.length + bundle.appointments.length + bundle.notes.length;
+  const nMeds = (bundle.medications && Array.isArray(bundle.medications.meds)) ? bundle.medications.meds.length : 0;
+  if (!total && !nMeds) {
+    setState({ bkNotice: { kind: 'bad', message: 'That backup file is empty. Nothing was changed.' } });
+    return false;
+  }
+  // Preselect by whether the file is about the person whose profile is open. Never decide -- a
+  // wrong merge mixes two patients' records together, which is far worse than an extra profile.
+  const here = String((getPrefsDB().patientName || '')).trim().toLowerCase();
+  const there = String(bundle.profileName || '').trim().toLowerCase();
+  const sameName = !!here && !!there && here === there;
+  setState({ bkPending: { bundle: bundle, total: total, nMeds: nMeds, dest: sameName ? 'merge' : 'new' } });
+  return true;
+}
+
+async function cwBkUnlock() {
+  const lock = state.bkLocked;
+  if (!lock || state.bkBusy) return;
+  const pw = String(state.bkUnlockPw || '');
+  if (!pw) { setState({ bkNotice: { kind: 'bad', message: 'Type the password this file was protected with.' } }); return; }
+  setState({ bkBusy: true, bkNotice: null });
+  let payload = null;
+  try {
+    payload = await cwBkDecryptEnvelope(lock.env, pw);
+  } catch (err) {
+    const m = (err && err.message) || '';
+    setState({ bkBusy: false, bkNotice: { kind: 'bad', message:
+      m === 'unsupported-cipher'
+        ? 'This protected backup was made by a newer version of ChemoWell than the one on this phone. Update the app first — this version cannot open it.'
+        : (m === 'damaged'
+          ? 'That file is damaged and cannot be opened, even with the right password. Use another copy of the backup if you have one. Nothing was changed.'
+          : "That password did not open the file. Nothing was changed — check for a capital letter or a space at the end, and try again.") } });
+    return;
+  }
+  setState({ bkBusy: false, bkLocked: null, bkUnlockPw: '' });
+  cwBkAcceptParsed(payload);
 }
 
 async function cwBkConfirmRestore() {
@@ -296,6 +333,100 @@ async function cwBkConfirmRestore() {
 // ---- UNDO (app-v62) ----
 // One slot, most recent restore only. A stack of undos on a phone is a way to put the wrong thing
 // back twice.
+// ================================================================================================
+// THE LOG (app-v64) — what went wrong, and what should be better
+// Aaron: "we were also going to build in a logger for errors or improvements."
+// This app has no backend and no crash reporting, which means that until now a beta tester hitting
+// a real error had exactly one way to tell anyone: remember it, and describe it later in their own
+// words. So the app writes down its own failures as they happen, and gives the person a place to
+// add theirs, and one button that turns the whole lot into a file they can send.
+// Deliberately NOT profile-scoped: a fault belongs to the install, not to a patient, and scoping it
+// per profile would scatter the record of one bug across however many profiles were open when it
+// happened. Nothing here is ever sent anywhere on its own — it is a file, produced when asked for.
+// ================================================================================================
+const CW_LOG_KEY = 'chemowell-app-log-v1';
+const CW_LOG_MAX = 100;          // a ring buffer: the newest 100 events, oldest dropped first
+const CW_LOG_MAX_TEXT = 2000;    // one runaway stack must not fill the whole allowance
+const CW_LOG_DEDUPE_MS = 60000;  // a render error repeating every tick is one fault, not sixty
+function cwLogRead() {
+  try {
+    const raw = localStorage.getItem(CW_LOG_KEY);
+    if (!raw) return [];
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((e) => e && typeof e === 'object' && !Array.isArray(e)) : [];
+  } catch (e) { return []; }
+}
+// Not a plain ring buffer, and the gate is why. A person types a careful description of what went
+// wrong; the fault they are describing then throws on every render tick; and a straight
+// slice(-MAX) evicts their words within seconds, leaving only the machine's account of an event
+// that already had a human one. So trimming drops the OLDEST ERRORS first and takes what the
+// person wrote last -- the half nobody can reconstruct.
+function cwLogTrim(list) {
+  if (list.length <= CW_LOG_MAX) return list;
+  const mine = list.filter((e) => e.kind !== 'error');
+  const keptMine = mine.slice(-CW_LOG_MAX);
+  const room = Math.max(0, CW_LOG_MAX - keptMine.length);
+  const keptErrs = list.filter((e) => e.kind === 'error').slice(-room);
+  // Identity, not ids: two entries created in the same millisecond could in principle collide on a
+  // generated id, and a set membership test that drops the wrong one is silent.
+  const keep = new Set(keptMine.concat(keptErrs));
+  return list.filter((e) => keep.has(e));
+}
+function cwLogWrite(list) {
+  try { localStorage.setItem(CW_LOG_KEY, JSON.stringify(cwLogTrim(list))); return true; }
+  catch (e) { return false; }
+}
+function cwLogClear() { try { localStorage.removeItem(CW_LOG_KEY); } catch (e) {} }
+// Every path in here is wrapped. A logger that throws while recording a fault turns one broken
+// screen into a broken app, which is the exact opposite of the job.
+function cwLogAdd(kind, text, where) {
+  try {
+    const now = Date.now();
+    const t = String(text == null ? '' : text).slice(0, CW_LOG_MAX_TEXT);
+    if (!t) return null;
+    const w = String(where == null ? '' : where).slice(0, 200);
+    const list = cwLogRead();
+    // Automatic entries dedupe; something the person typed never does, even word for word.
+    if (kind === 'error') {
+      for (let i = list.length - 1; i >= 0 && i >= list.length - 12; i--) {
+        const e = list[i];
+        if (e.kind === 'error' && e.text === t && e.where === w && (now - (Number(e.ts) || 0)) < CW_LOG_DEDUPE_MS) {
+          e.count = (Number(e.count) || 1) + 1;
+          e.lastTs = now;
+          cwLogWrite(list);
+          return e;
+        }
+      }
+    }
+    const entry = { id: 'log_' + now.toString(36) + '_' + Math.random().toString(36).slice(2, 8),
+                    kind: kind, text: t, where: w, ts: now, count: 1, app: APP_VERSION };
+    list.push(entry);
+    cwLogWrite(list);
+    return entry;
+  } catch (e) { return null; }
+}
+// Installed once, at module scope. Both handlers are passive listeners -- neither preventDefault()s
+// nor swallows anything, so the browser still reports the error exactly as it would have.
+function cwInstallErrorLog() {
+  try {
+    window.addEventListener('error', (ev) => {
+      try {
+        const msg = (ev && ev.message) ? ev.message : 'Unknown error';
+        const at = (ev && ev.filename) ? ((ev.filename.split('/').pop() || '') + ':' + (ev.lineno || 0)) : '';
+        cwLogAdd('error', msg + (ev && ev.error && ev.error.stack ? ('\n' + String(ev.error.stack).split('\n').slice(0, 4).join('\n')) : ''), at || ('screen: ' + state.view));
+      } catch (e) {}
+    });
+    window.addEventListener('unhandledrejection', (ev) => {
+      try {
+        const r = ev && ev.reason;
+        const msg = (r && r.message) ? r.message : String(r);
+        cwLogAdd('error', 'Unfinished background task: ' + msg + ((r && r.stack) ? ('\n' + String(r.stack).split('\n').slice(0, 4).join('\n')) : ''), 'screen: ' + state.view);
+      } catch (e) {}
+    });
+  } catch (e) {}
+}
+cwInstallErrorLog();
+
 const CW_UNDO_KEY = 'chemowell-app-restore-undo-v1';
 const CW_PROFILE_SUFFIXES = ['entries-v1', 'appts-v1', 'notes-v1', 'med-v1', 'prefs-v1'];
 
@@ -579,6 +710,13 @@ if (typeof window !== 'undefined') {
     generateSyncKey, encryptRecord, decryptRecord, generateEcdhKeyPair, exportEcdhPublicKey,
     wrapSyncKeyForTransport, unwrapSyncKeyFromTransport, getOrCreateInstallId,
   };
+  // app-v63 backup-file crypto, exposed on the same debug-only hook and for the same reason: this
+  // is a single module, so a harness cannot otherwise reach it to prove a real browser round-trips
+  // the file, that a wrong password fails closed, and that a tampered byte is rejected rather than
+  // silently restored. Assigned lazily -- these are declared far below this point in the file.
+  queueMicrotask(() => {
+    Object.assign(window.__syncTest, { cwBkEncryptPayload, cwBkDecryptEnvelope, cwBkIsEncrypted, cwBkBuildPayload, cwBkReadIncoming });
+  });
 }
 
 // ---- Sync: backend API layer ----
@@ -1079,7 +1217,7 @@ const initialMedicationConfig = loadMedicationConfig();
 // through a strict whitelist (anything unexpected falls back to 'home'). Deliberately NOT
 // persisted: reportsView, open modals, drafts, confirms, and the TEST_MODE date offset.
 const UI_VIEW_KEY = 'chemowell-app-ui-view';
-const VALID_VIEWS = ['home', 'meds', 'reports', 'inpatient', 'symptoms', 'settings', 'calendar', 'account', 'notes', 'help'];
+const VALID_VIEWS = ['home', 'meds', 'reports', 'inpatient', 'symptoms', 'settings', 'calendar', 'account', 'notes', 'help', 'report'];
 function restoreView() {
   try { const v = sessionStorage.getItem(UI_VIEW_KEY); return VALID_VIEWS.indexOf(v) >= 0 ? v : 'home'; }
   catch (e) { return 'home'; }
@@ -3083,6 +3221,10 @@ function renderDrawer() {
     // houses the app's other "check in on sometimes, not a daily quick-log" destinations.
     { key: 'notes', label: 'Notes', icon: 'notes', helper: 'Daily journal' },
     { key: 'help', label: 'Help & FAQ', icon: 'help', helper: 'Find and fix a problem' },
+    // Directly under Help, because the two are the same journey: Help is "is this already answered",
+    // and this is "it isn't, and someone should know". A tester who cannot find this row is a
+    // tester whose bug report never gets written.
+    { key: 'report', label: 'Report a problem', icon: 'bulb', helper: 'Errors & ideas for the app' },
     { key: 'settings', label: 'Settings', icon: 'gear', helper: 'Units, guide & data' }
   ];
   return h('div', { style: { position: 'fixed', inset: '0', zIndex: '90' } },
@@ -3260,6 +3402,7 @@ function renderContent(now, mg, pct, tyColor, ceiling) {
   // with confident comments are how the next reader gets misled about what the router accepts.
   // (state.faqOpenId is unrelated and still live: it is the Common-questions accordion.)
   if (state.view === 'help') return renderHelpView(now);
+  if (state.view === 'report') return renderReportView(now);
   if (state.view === 'notes') return renderNotesView(now);
   return [...renderToday(now, mg, pct, tyColor, ceiling)];
 }
@@ -6191,7 +6334,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v62';
+const APP_VERSION = 'app-v64';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -7163,8 +7306,89 @@ function buildExportRows() {
 // BACKUP & RESTORE (app-v61).  See cwbackup-patch.py for why this is load-bearing rather than nice.
 // ================================================================================================
 const CW_BK_FORMAT = 'chemowell-backup';
-const CW_BK_FORMAT_VERSION = 1;
+// Two numbers, not one. A PLAIN file is still written at 1 so a phone running an older build can
+// still read a backup made here; an ENCRYPTED file is written at 2, which makes an older build
+// report "made by a newer version -- update first" instead of reading zero records out of an
+// envelope it cannot open and calling the file empty. FORMAT_VERSION is the highest this build can
+// read, and is what the newer-format guard compares against.
+const CW_BK_PLAIN_VERSION = 1;
+const CW_BK_ENC_VERSION = 2;
+const CW_BK_FORMAT_VERSION = 2;
 const CW_BK_MAX_BYTES = 25 * 1024 * 1024;
+
+// ================================================================================================
+// PASSWORD-PROTECTED BACKUP FILES (app-v63)
+// A backup file is the one thing in this app that leaves the phone. It gets emailed, dropped into a
+// shared folder, handed to a second caregiver -- and in plaintext it is a complete medical record,
+// readable by anyone who ends up holding it. This wraps the whole payload in AES-256-GCM under a
+// key derived from a password the person chooses, using PBKDF2-SHA256 and the same three
+// crypto.subtle primitives already in this file. No new dependency, no server, nothing to sign up
+// for. There is deliberately NO recovery path: the password is never stored, never transmitted, and
+// not derivable from the file. That is the property that makes the file safe to send, and it is
+// also the reason the UI makes the person type it twice and tells them to write it down.
+// ================================================================================================
+const CW_BK_KDF = 'PBKDF2-SHA256';
+const CW_BK_KDF_ITERATIONS = 310000;
+const CW_BK_KDF_MIN_ITERATIONS = 100000;
+const CW_BK_KDF_MAX_ITERATIONS = 2000000;
+const CW_BK_MIN_PASSWORD = 8;
+async function cwBkDeriveFileKey(password, saltBytes, iterations) {
+  const baseKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(password)), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: saltBytes, iterations: iterations, hash: 'SHA-256' },
+    baseKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+  );
+}
+// format / formatVersion / createdAt sit in the CLEAR so a build that cannot open the file still
+// recognises WHAT it is and says so. Everything that identifies a patient -- the profile name
+// included -- is inside the ciphertext, which is why the saved filename drops the name too.
+async function cwBkEncryptPayload(payload, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await cwBkDeriveFileKey(password, salt, CW_BK_KDF_ITERATIONS);
+  const blob = await syncAesEncryptObject(key, payload);
+  return {
+    format: CW_BK_FORMAT,
+    formatVersion: CW_BK_ENC_VERSION,
+    app: APP_VERSION,
+    createdAt: payload.createdAt,
+    encrypted: true,
+    kdf: CW_BK_KDF,
+    iterations: CW_BK_KDF_ITERATIONS,
+    salt: syncB64FromBytes(salt),
+    cipher: 'AES-GCM',
+    blob: blob
+  };
+}
+function cwBkIsEncrypted(parsed) {
+  return !!(parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.encrypted === true);
+}
+// Reports 'bad-password' for anything that fails to open under the given password, because from the
+// person's side a wrong password and a truncated download are the same event, and telling them the
+// file is corrupt when they simply mistyped sends them hunting a problem that isn't there. The two
+// cases retyping can NEVER fix -- an unreadable envelope and a cipher this build doesn't know --
+// are reported separately so the advice can differ.
+async function cwBkDecryptEnvelope(env, password) {
+  if (!cwBkIsEncrypted(env)) throw new Error('not-encrypted');
+  if (env.kdf !== CW_BK_KDF || env.cipher !== 'AES-GCM') throw new Error('unsupported-cipher');
+  const iters = Number(env.iterations);
+  // An iteration count read out of a FILE is an attacker-controlled denial-of-service knob: two
+  // billion rounds locks the phone up for minutes. Bounded, not trusted.
+  if (!isFinite(iters) || iters < CW_BK_KDF_MIN_ITERATIONS || iters > CW_BK_KDF_MAX_ITERATIONS) throw new Error('unsupported-cipher');
+  if (typeof env.salt !== 'string' || !env.blob || typeof env.blob !== 'object' || Array.isArray(env.blob)) throw new Error('damaged');
+  if (typeof env.blob.ciphertext !== 'string' || typeof env.blob.iv !== 'string') throw new Error('damaged');
+  let saltBytes = null;
+  try { saltBytes = syncBytesFromB64(env.salt); } catch (e) { throw new Error('damaged'); }
+  if (saltBytes.length < 8) throw new Error('damaged');
+  let obj = null;
+  try {
+    const key = await cwBkDeriveFileKey(password, saltBytes, iters);
+    obj = await syncAesDecryptObject(key, env.blob);
+  } catch (e) { throw new Error('bad-password'); }
+  // GCM has already proved the ciphertext was produced under this exact key. The plaintext still
+  // has to be a BACKUP rather than merely well-formed JSON before it goes anywhere near storage.
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj) || obj.format !== CW_BK_FORMAT) throw new Error('damaged');
+  return obj;
+}
 
 // One delivery path for every file this app produces, and it REPORTS which route it took. The CSV
 // export inlines this same logic and throws the answer away, which on care-tracker produced a
@@ -7214,7 +7438,7 @@ function cwBkCollect() {
 function cwBkBuildPayload(b, atMs) {
   return {
     format: CW_BK_FORMAT,
-    formatVersion: CW_BK_FORMAT_VERSION,
+    formatVersion: CW_BK_PLAIN_VERSION,
     app: APP_VERSION,
     createdAt: atMs,
     profileName: b.profileName,
@@ -7226,21 +7450,56 @@ function cwBkBuildPayload(b, atMs) {
   };
 }
 async function downloadBackupFile() {
+  if (state.bkBusy) return;
+  const enc = !!state.bkProtect;
+  const pw = String(state.bkPw || '');
+  if (enc) {
+    if (pw.length < CW_BK_MIN_PASSWORD) {
+      setState({ bkNotice: { kind: 'bad', message: 'Choose a password of at least ' + CW_BK_MIN_PASSWORD + ' characters, or switch the password off to save this file unprotected.' } });
+      return;
+    }
+    if (pw !== String(state.bkPw2 || '')) {
+      setState({ bkNotice: { kind: 'bad', message: 'The two passwords are not the same. Nothing was saved — type it again in both boxes.' } });
+      return;
+    }
+  }
   const b = cwBkCollect();
   const total = b.entries.length + b.appointments.length + b.notes.length;
   const nMeds = (b.medications && Array.isArray(b.medications.meds)) ? b.medications.meds.length : 0;
   if (!total && !nMeds) { setToast('Nothing to back up yet — log something first'); return; }
-  const name = 'chemowell-backup-' + ((b.profileName || 'profile').replace(/[^a-z0-9]/gi, '-').toLowerCase()) +
-               '-' + new Date(simNow()).toLocaleDateString('en-CA') + '.json';
-  const res = await cwDeliverFile(new Blob([JSON.stringify(cwBkBuildPayload(b, simNow()), null, 2)],
-                                  { type: 'application/json' }), name, 'application/json');
+  const stamp = new Date(simNow()).toLocaleDateString('en-CA');
+  // A protected file is meant to be sent somewhere. Putting the patient's name in the filename
+  // would hand back, in the clear, the very thing the encryption was for.
+  const name = enc
+    ? ('chemowell-backup-protected-' + stamp + '.json')
+    : ('chemowell-backup-' + ((b.profileName || 'profile').replace(/[^a-z0-9]/gi, '-').toLowerCase()) + '-' + stamp + '.json');
+  const payload = cwBkBuildPayload(b, simNow());
+  let text = '';
+  if (enc) {
+    setState({ bkBusy: true, bkNotice: null });
+    try {
+      text = JSON.stringify(await cwBkEncryptPayload(payload, pw), null, 2);
+    } catch (e) {
+      setState({ bkBusy: false, bkNotice: { kind: 'bad', message: "This phone could not encrypt the backup, so nothing was saved. Switch the password off to save an unprotected file, and keep that one off email." } });
+      return;
+    }
+    setState({ bkBusy: false });
+  } else {
+    text = JSON.stringify(payload, null, 2);
+  }
+  const res = await cwDeliverFile(new Blob([text], { type: 'application/json' }), name, 'application/json');
   if (res.cancelled) { setToast('Backup cancelled — nothing was saved.'); return; }
   const where = (res.method === 'download')
     ? 'It is in your Downloads folder, named ' + name + '.'
     : 'Pick where to keep it in the sheet that just opened.';
+  const tail = enc
+    ? ' It is protected with your password — whoever opens it will need that password, and nobody can reset it, so write it down before you send the file.'
+    : ' Keep it somewhere you will still have it if this phone is lost — there is no cloud copy and no password to reset.';
   setState({ bkNotice: { kind: 'ok', message: 'Backup saved — ' + total + ' record' + (total === 1 ? '' : 's') +
-    (nMeds ? ' and ' + nMeds + ' medication' + (nMeds === 1 ? '' : 's') : '') + '. ' + where +
-    ' Keep it somewhere you will still have it if this phone is lost — there is no cloud copy and no password to reset.' } });
+    (nMeds ? ' and ' + nMeds + ' medication' + (nMeds === 1 ? '' : 's') : '') + '. ' + where + tail } });
+  // The password is not kept anywhere once the file exists. Retyping it for the next backup is a
+  // smaller cost than leaving it sitting in memory behind a screen the person has walked away from.
+  if (enc) setState({ bkPw: '', bkPw2: '' });
   setToast('Backup saved. ' + where);
 }
 
@@ -7405,20 +7664,26 @@ function renderExportSection() {
 // person looking for "how do I get my data out or onto a new phone" is already here.
 function renderBackupSection() {
   const b = state.bkBusy;
+  // While a file is waiting to be unlocked or placed, the password fields are off screen -- so a
+  // Save button that still reads "Save protected backup" would demand a password the person has no
+  // way to type. One job on screen at a time, including this button.
+  const saveBlocked = b || !!state.bkPending || !!state.bkLocked;
   return h('div', { 'data-backup-section': 'true', style: { marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #E9D8D1' } },
     h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#A83D0F' } }, 'Backup & restore'),
     h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } },
-      'A backup holds everything for this profile — logged entries, appointments, notes, the medication list and your settings. It is the only way to move to a new phone, and the only way back if this one is lost. ChemoWell keeps no copy and there is no password to reset, so keep the file somewhere safe.'),
+      'A backup holds everything for this profile — logged entries, appointments, notes, the medication list and your settings. It is the only way to move to a new phone, the only way back if this one is lost, and how you hand everything to another caregiver. Put a password on it before you send it anywhere.'),
     h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
       h('button', Object.assign({ 'data-bk-save': 'true', onClick: downloadBackupFile,
         style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13px', fontWeight: '800', boxShadow: '0 6px 18px rgba(168,61,15,0.32)' } },
         // Spread, never `disabled: b ? 'disabled' : null` -- h() does a bare setAttribute and the
         // string "null" would disable the button permanently.
-        b ? { disabled: 'disabled' } : {}), 'Save backup file'),
+        saveBlocked ? { disabled: 'disabled' } : {}), b ? 'Saving…' : (state.bkProtect ? 'Save protected backup' : 'Save backup file')),
       h('button', Object.assign({ 'data-bk-restore': 'true', onClick: cwBkPickFile,
         style: { minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1.5px solid rgba(200,83,32,0.35)', color: '#A83D0F', fontSize: '13px', fontWeight: '800' } },
         b ? { disabled: 'disabled' } : {}), b ? 'Reading…' : 'Restore from a backup')
     ),
+    renderBackupProtect(),
+    renderBackupUnlock(),
     renderBackupChoice(),
     renderUndoRow(),
     state.bkNotice ? h('div', Object.assign({ 'data-bk-notice': 'true', 'data-bk-notice-kind': state.bkNotice.kind,
@@ -7427,6 +7692,70 @@ function renderBackupSection() {
         border: '1px solid ' + (state.bkNotice.kind === 'bad' ? 'rgba(179,38,30,0.32)' : 'rgba(46,125,79,0.30)'),
         color: state.bkNotice.kind === 'bad' ? '#8E2018' : '#1F5A3D' } },
       state.bkNotice.kind === 'bad' ? { role: 'alert' } : {}), state.bkNotice.message) : null
+  );
+}
+
+// The password switch, above the two buttons it changes the behaviour of. Hidden while a file is
+// waiting to be unlocked or placed, so there is only ever one question on this screen at a time.
+function renderBackupProtect() {
+  if (state.bkPending || state.bkLocked) return null;
+  const on = !!state.bkProtect;
+  const pw = String(state.bkPw || '');
+  const pw2 = String(state.bkPw2 || '');
+  const short = on && pw.length > 0 && pw.length < CW_BK_MIN_PASSWORD;
+  const mismatch = on && pw2.length > 0 && pw !== pw2;
+  return h('div', { 'data-bk-protect': on ? 'on' : 'off',
+    style: { marginTop: '11px', background: '#FFFFFF', border: '1px solid ' + (on ? 'rgba(191,76,26,0.38)' : '#E9D8D1'), borderRadius: '14px', padding: '12px 13px' } },
+    h('button', { 'data-bk-protect-toggle': 'true', role: 'switch', 'aria-checked': on ? 'true' : 'false',
+      onClick: () => setState({ bkProtect: !on, bkPw: '', bkPw2: '', bkNotice: null }),
+      style: { width: '100%', display: 'flex', alignItems: 'center', gap: '11px', textAlign: 'left', minHeight: '44px', background: 'transparent' } },
+      h('span', { style: { flexShrink: '0', width: '44px', height: '26px', borderRadius: '99px', padding: '3px', display: 'flex', alignItems: 'center', justifyContent: on ? 'flex-end' : 'flex-start', background: on ? '#BF4C1A' : '#DCCFC8', transition: 'background 140ms ease' } },
+        h('span', { style: { width: '20px', height: '20px', borderRadius: '50%', background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.22)' } })),
+      h('span', { style: { ...TYPE.bodyBold, flex: '1', minWidth: '0', fontSize: '14px', color: '#2A2127' } }, 'Protect the file with a password')
+    ),
+    h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '2px', lineHeight: '1.45' } },
+      'Turn this on before emailing a backup or putting it in a shared folder. Without it, anyone who opens the file can read every entry, note and medication in it.'),
+    on ? h('div', { style: { marginTop: '11px' } },
+      formInput({ id: 'bk-pw', type: 'password', autocomplete: 'new-password', value: pw,
+        placeholder: 'Password (' + CW_BK_MIN_PASSWORD + '+ characters)',
+        onInput: (e) => setState({ bkPw: e.target.value, bkNotice: null }),
+        style: { fontSize: '16px' } }),
+      h('div', { style: { height: '8px' } }),
+      formInput({ id: 'bk-pw2', type: 'password', autocomplete: 'new-password', value: pw2,
+        placeholder: 'Type it again',
+        onInput: (e) => setState({ bkPw2: e.target.value, bkNotice: null }),
+        style: { fontSize: '16px' } }),
+      (short || mismatch) ? h('div', { 'data-bk-pw-hint': 'true', style: { ...TYPE.caption, color: '#8E2018', marginTop: '6px', lineHeight: '1.4' } },
+        short ? ('A little longer — ' + CW_BK_MIN_PASSWORD + ' characters or more.') : 'The two do not match yet.') : null,
+      h('div', { style: { ...TYPE.caption, color: '#7A5214', background: 'rgba(154,100,25,0.10)', border: '1px solid rgba(154,100,25,0.28)', borderRadius: '11px', padding: '9px 11px', marginTop: '9px', lineHeight: '1.45' } },
+        'Write this password down somewhere separate from the file, and give it to the other caregiver by text or in person — not in the same email as the backup. If it is lost the file cannot be opened again by anyone, including us.')
+    ) : null
+  );
+}
+
+// Shown when the chosen file turned out to be protected. Nothing about its contents can be named
+// here -- not the profile, not the record count -- because none of it is readable yet.
+function renderBackupUnlock() {
+  const lock = state.bkLocked;
+  if (!lock) return null;
+  const b = state.bkBusy;
+  const made = lock.createdAt ? new Date(lock.createdAt).toLocaleDateString() : 'an unknown date';
+  return h('div', { 'data-bk-unlock': 'true', style: { marginTop: '12px', background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '14px', padding: '13px 14px' } },
+    h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127' } }, 'This backup is password protected'),
+    h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '3px', lineHeight: '1.45' } },
+      'Saved ' + made + '. Type the password the person who made it gave you. Nothing is changed on this phone until it opens.'),
+    h('div', { style: { marginTop: '10px' } },
+      formInput({ id: 'bk-unlock-pw', type: 'password', autocomplete: 'current-password', value: String(state.bkUnlockPw || ''),
+        placeholder: 'Password', onInput: (e) => setState({ bkUnlockPw: e.target.value, bkNotice: null }),
+        onKeyDown: (e) => { if (e.key === 'Enter') { e.preventDefault(); cwBkUnlock(); } },
+        style: { fontSize: '16px' } })),
+    h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } },
+      h('button', Object.assign({ 'data-bk-unlock-go': 'true', onClick: cwBkUnlock,
+        style: { flex: '1', minHeight: '46px', borderRadius: '12px', background: '#BF4C1A', color: '#fff', fontSize: '14px', fontWeight: '800' } },
+        b ? { disabled: 'disabled' } : {}), b ? 'Opening…' : 'Open backup'),
+      h('button', { 'data-bk-unlock-cancel': 'true', onClick: () => setState({ bkLocked: null, bkUnlockPw: '', bkNotice: null }),
+        style: { flexShrink: '0', minHeight: '46px', padding: '0 16px', borderRadius: '12px', color: '#7A6E76', fontSize: '14px', fontWeight: '700', background: 'transparent' } }, 'Cancel')
+    )
   );
 }
 
@@ -7487,6 +7816,176 @@ function renderBackupChoice() {
         style: { flexShrink: '0', minHeight: '46px', padding: '0 16px', borderRadius: '12px', color: '#7A6E76', fontSize: '14px', fontWeight: '700', background: 'transparent' } }, 'Cancel')
     )
   );
+}
+
+// ------------------------------------------------------------------------------------------------
+// REPORT A PROBLEM (app-v64) — the log, and the person's side of it.
+// Three things on one screen, in the order a person needs them: say what happened, see that the app
+// already noticed something, and take the whole lot away as a file. There is no "send" button that
+// silently posts anywhere, because there is nowhere to post to and a button that pretends otherwise
+// is worse than none.
+// ------------------------------------------------------------------------------------------------
+const CW_REPORT_KINDS = [
+  { key: 'problem', label: "Something's wrong", hint: 'What were you doing, and what happened instead?' },
+  { key: 'idea', label: 'An idea', hint: 'What would make this easier to use?' }
+];
+function cwReportKind() { return state.reportKind === 'idea' ? 'idea' : 'problem'; }
+function cwSubmitReport() {
+  const text = String(state.reportDraft || '').trim();
+  if (!text) { setToast('Type what happened first'); return; }
+  const entry = cwLogAdd(cwReportKind(), text, 'screen: ' + (state.reportFrom || 'report'));
+  if (!entry) {
+    setState({ reportNotice: { kind: 'bad', message: 'There is no room left on this phone to save it, so nothing was written down. Free up some space and try again.' } });
+    return;
+  }
+  setState({ reportDraft: '', reportNotice: { kind: 'ok', message: 'Saved to this phone. It stays here until you send the file — nothing was uploaded anywhere.' } });
+  setToast('Written down');
+}
+function cwLogEntryLabel(kind) {
+  if (kind === 'error') return 'The app noticed';
+  if (kind === 'idea') return 'Your idea';
+  return 'You reported';
+}
+// One plain-text file. Plain text rather than JSON on purpose: the person sending it, and whoever
+// reads it, should both be able to see what is in it before it goes anywhere.
+function cwBuildReportFile() {
+  const list = cwLogRead().slice().reverse();
+  const lines = [];
+  lines.push('ChemoWell report');
+  lines.push('App version: ' + APP_VERSION);
+  lines.push('Made: ' + new Date(simNow()).toLocaleString());
+  lines.push('Device: ' + (navigator.userAgent || 'unknown'));
+  lines.push('Screen: ' + (window.innerWidth || 0) + 'x' + (window.innerHeight || 0));
+  lines.push('Entries: ' + list.length);
+  lines.push('');
+  lines.push('This file holds what you typed and the errors the app recorded. It does NOT');
+  lines.push('include your medications, entries, appointments or notes.');
+  lines.push('------------------------------------------------------------');
+  if (!list.length) lines.push('(nothing recorded)');
+  list.forEach((e, i) => {
+    lines.push('');
+    lines.push('#' + (i + 1) + '  ' + cwLogEntryLabel(e.kind).toUpperCase() +
+      '  ' + new Date(Number(e.ts) || 0).toLocaleString() +
+      ((Number(e.count) || 1) > 1 ? ('  (x' + e.count + ')') : '') +
+      (e.app ? ('  [' + e.app + ']') : ''));
+    if (e.where) lines.push('   where: ' + e.where);
+    String(e.text || '').split('\n').forEach((ln) => lines.push('   ' + ln));
+  });
+  lines.push('');
+  return lines.join('\n');
+}
+async function cwSaveReportFile() {
+  if (state.reportBusy) return;
+  const list = cwLogRead();
+  if (!list.length) { setToast('Nothing to send yet'); return; }
+  setState({ reportBusy: true });
+  try {
+    const name = 'chemowell-report-' + new Date(simNow()).toLocaleDateString('en-CA') + '.txt';
+    const res = await cwDeliverFile(new Blob([cwBuildReportFile()], { type: 'text/plain;charset=utf-8' }), name, 'text/plain');
+    if (res.cancelled) { setState({ reportNotice: { kind: 'bad', message: 'Cancelled — nothing was sent.' } }); return; }
+    setState({ reportNotice: { kind: 'ok', message: (res.method === 'download')
+      ? ('The report is in your Downloads folder, named ' + name + '. Attach it to an email or a message to send it.')
+      : 'Pick where to send it in the sheet that just opened.' } });
+  } finally {
+    setState({ reportBusy: false });
+  }
+}
+
+function renderReportView(now) {
+  const secStyle = { marginTop: '14px', background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '17px', padding: '14px' };
+  const list = cwLogRead().slice().reverse();
+  const errors = list.filter((e) => e.kind === 'error');
+  const mine = list.filter((e) => e.kind !== 'error');
+  const kind = cwReportKind();
+  const active = CW_REPORT_KINDS.filter((k) => k.key === kind)[0];
+  const draft = String(state.reportDraft || '');
+  const showAll = !!state.reportShowAll;
+  const shownErrors = showAll ? errors : errors.slice(0, 3);
+
+  const entryRow = (e, i) => h('div', { 'data-log-entry': e.kind, key: e.id,
+    style: { borderTop: i > 0 ? '1px solid rgba(246,108,49,0.10)' : 'none', padding: '11px 13px' } },
+    h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' } },
+      h('span', { style: { fontSize: '11.5px', fontWeight: '800', letterSpacing: '0.05em', textTransform: 'uppercase', color: e.kind === 'error' ? '#8E2018' : '#0A6B4A' } },
+        cwLogEntryLabel(e.kind) + ((Number(e.count) || 1) > 1 ? (' · ' + e.count + ' times') : '')),
+      h('span', { style: { ...TYPE.caption, color: '#7A6E76', flexShrink: '0' } }, new Date(Number(e.ts) || 0).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))),
+    h('div', { style: { fontSize: '13px', color: '#2A2127', marginTop: '4px', lineHeight: '1.45', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: e.kind === 'error' ? 'ui-monospace, SFMono-Regular, Menlo, monospace' : 'inherit' } },
+      String(e.text || '').slice(0, e.kind === 'error' && !showAll ? 220 : CW_LOG_MAX_TEXT)),
+    e.where ? h('div', { style: { ...TYPE.caption, color: '#915E48', marginTop: '3px' } }, e.where) : null
+  );
+
+  return [
+    h('section', null,
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#7A2E08' } }, appIcon('bulb', 19), h('span', { style: { ...TYPE.label } }, 'Report a problem')),
+      h('h1', { style: { ...TYPE.display, color: '#2A2127', marginTop: '5px' } }, 'Errors and ideas'),
+      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', maxWidth: '470px', lineHeight: '1.45' } },
+        'Everything here stays on this phone until you choose to send it. The app also writes down its own errors as they happen, so a fault you saw once is still described accurately days later.')
+    ),
+
+    h('section', { style: secStyle },
+      h('div', { style: { display: 'flex', gap: '7px' } },
+        ...CW_REPORT_KINDS.map((k) => {
+          const on = k.key === kind;
+          return h('button', { 'data-report-kind': k.key, onClick: () => setState({ reportKind: k.key, reportNotice: null }),
+            style: { flex: '1', minHeight: '46px', padding: '0 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '800', lineHeight: '1.25',
+              background: on ? '#BF4C1A' : 'rgba(255,255,255,0.75)', color: on ? '#FFFFFF' : '#A83D0F',
+              border: on ? '1.5px solid #BF4C1A' : '1.5px solid rgba(200,83,32,0.35)' } }, k.label);
+        })
+      ),
+      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '10px', lineHeight: '1.45' } }, active.hint),
+      // fontFamily is explicit: a <textarea> defaults to the browser's monospace face, which is
+      // what shipped in the first screenshot pass -- a typewriter block in the middle of a card of
+      // rounded UI text. The placeholder is deliberately NOT active.hint: that sentence is already
+      // the label directly above this box.
+      h('textarea', { id: 'report-draft', value: draft, rows: '5', placeholder: 'Type here…',
+        onInput: (e) => { state.reportDraft = e.target.value; },
+        style: { width: '100%', marginTop: '8px', minHeight: '110px', border: '1px solid rgba(246,108,49,0.22)', borderRadius: '12px', padding: '11px', fontFamily: 'inherit', fontSize: '16px', lineHeight: '1.45', background: 'rgba(255,255,255,0.72)', color: '#2A2127', resize: 'vertical' } }),
+      h('button', { 'data-report-save': 'true', onClick: cwSubmitReport,
+        style: { width: '100%', minHeight: '46px', marginTop: '9px', borderRadius: '12px', background: '#BF4C1A', color: '#fff', fontSize: '14px', fontWeight: '800' } }, 'Write it down'),
+      state.reportNotice ? h('div', Object.assign({ 'data-report-notice': 'true', 'data-report-notice-kind': state.reportNotice.kind,
+        style: { marginTop: '10px', padding: '11px 13px', borderRadius: '12px', fontSize: '12.5px', lineHeight: '1.45', fontWeight: '600',
+          background: state.reportNotice.kind === 'bad' ? 'rgba(179,38,30,0.10)' : 'rgba(46,125,79,0.10)',
+          border: '1px solid ' + (state.reportNotice.kind === 'bad' ? 'rgba(179,38,30,0.32)' : 'rgba(46,125,79,0.30)'),
+          color: state.reportNotice.kind === 'bad' ? '#8E2018' : '#1F5A3D' } },
+        state.reportNotice.kind === 'bad' ? { role: 'alert' } : {}), state.reportNotice.message) : null
+    ),
+
+    h('section', { style: secStyle },
+      h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#A83D0F' } }, 'What the app noticed on its own'),
+      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } },
+        errors.length
+          ? 'The newest ' + (errors.length === 1 ? 'error is' : errors.length + ' errors are') + ' listed below. They are technical on purpose — they are for whoever fixes it, not for you to act on.'
+          : 'Nothing so far. If the app hits an error it will appear here by itself, with the time and the screen it happened on.'),
+      errors.length ? h('div', { 'data-log-errors': String(errors.length), style: { marginTop: '10px', borderRadius: '13px', overflow: 'hidden', border: '1px solid #E9D8D1' } },
+        ...shownErrors.map(entryRow)) : null,
+      (errors.length > 3) ? h('button', { 'data-log-more': 'true', onClick: () => setState({ reportShowAll: !showAll }),
+        style: { minHeight: '44px', marginTop: '8px', padding: '0 14px', borderRadius: '11px', background: 'transparent', color: '#A83D0F', fontSize: '13px', fontWeight: '800' } },
+        showAll ? 'Show fewer' : ('Show all ' + errors.length)) : null
+    ),
+
+    mine.length ? h('section', { style: secStyle },
+      h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#A83D0F' } }, 'What you have written down'),
+      h('div', { 'data-log-mine': String(mine.length), style: { marginTop: '10px', borderRadius: '13px', overflow: 'hidden', border: '1px solid #E9D8D1' } },
+        ...mine.map(entryRow))
+    ) : null,
+
+    h('section', { style: secStyle },
+      h('div', { style: { fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#A83D0F' } }, 'Send it'),
+      h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '5px', lineHeight: '1.45' } },
+        'This saves one text file holding what you typed and the errors above — and nothing else. Your medications, entries, appointments and notes are not in it.'),
+      h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
+        h('button', Object.assign({ 'data-report-file': 'true', onClick: cwSaveReportFile,
+          style: { minHeight: '46px', padding: '0 15px', borderRadius: '12px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13.5px', fontWeight: '800', boxShadow: '0 6px 18px rgba(168,61,15,0.32)' } },
+          state.reportBusy ? { disabled: 'disabled' } : {}), state.reportBusy ? 'Saving…' : 'Save report file'),
+        list.length ? h('button', { 'data-report-clear': 'true',
+          onClick: () => {
+            if (state.reportConfirmClear) { cwLogClear(); setState({ reportConfirmClear: false, reportShowAll: false, reportNotice: { kind: 'ok', message: 'The list is empty again.' } }); return; }
+            setState({ reportConfirmClear: true });
+          },
+          style: { minHeight: '46px', padding: '0 15px', borderRadius: '12px', background: 'transparent', border: '1.5px solid ' + (state.reportConfirmClear ? '#8E2018' : 'rgba(122,110,118,0.35)'), color: state.reportConfirmClear ? '#8E2018' : '#7A6E76', fontSize: '13.5px', fontWeight: '800' } },
+          state.reportConfirmClear ? 'Tap again to erase' : 'Clear the list') : null
+      )
+    )
+  ];
 }
 
 function renderAccount(now) {

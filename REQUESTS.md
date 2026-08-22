@@ -162,8 +162,10 @@ reconstruct it from history.
   2026-08-13; if it needs to live anywhere permanent, it belongs in `rem-web-vs-app`, which app-v57
   expanded for exactly this purpose.
 
-- [ ] **In-app issue/bug logger — testers (including Aaron) can log something that isn't working,
-  building a real list to work from** — added 2026-08-08. Aaron: "I want to be able to have a
+- [x] **In-app issue/bug logger — testers (including Aaron) can log something that isn't working,
+  building a real list to work from** — added 2026-08-08, **BUILT app-v64 (2026-08-22)**. The fork
+  named below was resolved the way it recommended: no backend, a *Report a problem* drawer row, the
+  app recording its own errors automatically, and one plain-text file the tester sends. See Completed. Aaron: "I want to be able to have a
   logger to the app. like if something isn't working correctly, it can be reported there. not sure
   if you can pick up those logs and see it to fix the issues. that way me or other testers can log
   stuff and then there is a full list we can work from." Real fork to resolve before building: this
@@ -511,6 +513,24 @@ reconstruct it from history.
   — queued behind the sync architecture item above, per Aaron's own priority order.
 
 ## Completed
+
+- [x] **Password-protected backup files** — asked 2026-08-22 ("build the encryption part"), asked
+  again the same day when it still had not been built. **Shipped app-v63.** A switch above the
+  backup buttons, off by default; on, the file is AES-256-GCM under a PBKDF2-SHA256 key at 310,000
+  rounds, reusing the crypto.subtle layer already in this file for sync. Locked files show no
+  manifest until they open, the profile name is inside the ciphertext and out of the filename, and
+  it fails closed on a wrong password, a tampered byte, a hostile iteration count, and a file that
+  decrypts but is not a backup. No server and no legal answer needed, which is why it went first.
+  `test/v63-encrypted-backup.mjs` 22/22, falsified at 16 red on app-v62.
+
+- [x] **In-app logger for errors and improvements** — asked 2026-08-22 ("we were also going to
+  build in a logger for errors or improvements. so many thing I've said has gotten lost").
+  **Shipped app-v64.** Drawer row *Report a problem* under Help & FAQ; the app records its own
+  errors and unhandled rejections without swallowing them; repeats collapse to one counted entry;
+  the list is capped, survives a full disk, and a flood of errors can no longer evict what the
+  person wrote (a real defect the gate caught before release); one plain-text file carries the
+  version, device and the log, and provably not one medication, entry, appointment or note.
+  `test/v64-logger.mjs` 23/23, falsified at 20 red on app-v63.
 
 - [x] **A restore can be taken back — shipped as app-v62** — added and closed 2026-08-22. Aaron:
   *"if someone is doing a backup and it fits wrong or they accidentally add to wrong profile. there
