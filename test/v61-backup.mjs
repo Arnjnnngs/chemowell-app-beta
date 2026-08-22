@@ -207,6 +207,44 @@ t('BK-10 the new profile holds the restored records and nothing leaked into the 
   'new=' + (newEnts ? newEnts.length : 'null'));
 
 t('BK-11 no console or page errors across the whole run', errs.length === 0, errs[0]);
+
+// ---- app-v62: a restore can be taken back ----
+// Aaron: "if someone is doing a backup and it fits wrong or they accidentally add to wrong profile.
+// there needs to be a way to undo or capture their live data before input." The destination picker
+// reduces the chance of choosing wrong; these checks cover the person who chooses wrong anyway.
+t('BK-16 an undo point is captured before a restore writes anything',
+  await page.evaluate(() => !!localStorage.getItem('chemowell-app-restore-undo-v1')),
+  'the snapshot must exist after the restores above');
+
+t('BK-17 the undo control is offered after a restore',
+  await (async () => { await gotoSettings(); return page.evaluate(() => !!document.querySelector('[data-bk-undo]')); })(),
+  'not a toast — the person realises a minute later, not in four seconds');
+
+// Undo the LAST restore, which created a second profile for Beta Patient.
+const beforeUndo = await profiles();
+// Captured BEFORE the undo so BK-20 can require that a point actually existed. Without this it
+// passes VACUOUSLY on any build that never creates one -- which is exactly what it did on app-v61.
+const undoPointExisted = await page.evaluate(() => !!localStorage.getItem('chemowell-app-restore-undo-v1'));
+await page.evaluate(async () => {
+  const b = document.querySelector('[data-bk-undo]');
+  if (b) b.click();
+}).catch(() => {});
+await page.waitForTimeout(2600);
+await page.waitForLoadState('domcontentloaded').catch(() => {});
+const afterUndo = await profiles();
+
+t('BK-18 undoing a restore that created a profile removes that profile',
+  beforeUndo.list.length === 2 && afterUndo && afterUndo.list.length === 1,
+  'before=' + beforeUndo.list.length + ' after=' + (afterUndo ? afterUndo.list.length : 'null'));
+
+t('BK-19 the original profile is untouched by the undo',
+  undoPointExisted && (await readKey('chemowell-app-p-' + pid + '-entries-v1')).length === 3,
+  'the profile that was not restored into must be exactly as it was');
+
+t('BK-20 the undo point is consumed, so it cannot be applied twice',
+  undoPointExisted && await page.evaluate(() => !localStorage.getItem('chemowell-app-restore-undo-v1')),
+  'a second undo would put back a state that is no longer the previous one');
+
 await browser.close(); server.close();
 
 // ---- source guards ----
@@ -221,6 +259,18 @@ t('BK-13 the restore path only ever adds', (() => {
 t('BK-14 record ids merge on a Map, so an id of "constructor" cannot vanish',
   /function cwBkMergeById[\s\S]{0,400}new Map\(\)/.test(raw));
 t('BK-15 Plus no longer says backup is coming', !/Backup & restore[^']*coming in beta/.test(raw));
+
+t('BK-21 a restore refuses to run when no undo point can be saved', (() => {
+  // Source-level: both restore paths must bail out with the same honest message rather than
+  // writing anyway. Restoring with no way back is the exact risk this feature exists to remove.
+  const m = raw.match(/function cwBkConfirmRestore[\s\S]*?\n\}/);
+  return !!m && (m[0].match(/not enough free space/g) || []).length === 2;
+})(), 'both the new-profile and the merge path must refuse');
+
+t('BK-22 the snapshot copies raw values rather than re-serialising them', (() => {
+  const m = raw.match(/function cwSnapshotProfile[\s\S]*?\n\}/);
+  return !!m && !/JSON\.parse/.test(m[0]);
+})(), 'an undo that returns almost what was there is worse than no undo');
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
 process.exit(fail === 0 ? 0 : 1);
