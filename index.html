@@ -3195,7 +3195,11 @@ function renderUpgradeModal() {
         // ("I wouldn't be sold on that besides the shared access"), with the export/insights
         // features he confirmed building right behind it, profiles last as he asked.
         planCard('plus', 'Plus', '$4.99', 'one-time', ['Up to 3 patient profiles', 'Printable doctor’s report (print or save as PDF)', 'Backup & restore — move your data to a new phone (coming in beta)'], 'plus'),
-        planCard('pro', 'Pro', '$14.99', 'one-time', ['Real-time shared access for caregivers, so updates show up on their phone automatically (coming soon)', 'Complete data export — entries, appointments, and notes bundled into one shareable file for your care team or another caregiver (coming soon)', 'Chemo/treatment trend insights — spot patterns like symptoms peaking a few days after treatment (coming soon)', 'Unlimited patient profiles — includes everything in Plus'], 'pro')
+        // Sharing is no longer the LEAD bullet. It was, at $14.99, while being the one thing in the
+        // list that does not exist -- so the price was anchored to a promise. It now sits third,
+        // describes the mechanism honestly (an encrypted transfer between two phones), and states
+        // the privacy property as the benefit it actually is: none of the big trackers can say it.
+        planCard('pro', 'Pro', '$14.99', 'one-time', ['Unlimited patient profiles — includes everything in Plus', 'Chemo/treatment trend insights — spot patterns like symptoms peaking a few days after treatment (coming soon)', 'Send an encrypted copy to another caregiver’s phone — no account for either of you, and nothing ChemoWell can read (in development)', 'Complete data export — entries, appointments, and notes bundled into one file for your care team (coming soon)'], 'pro')
       ),
       TEST_MODE ? h('button', { onClick: () => { setLicense({ tier: 'free', simulated: true }); setToast('License reset to Free (beta)'); setState({}); }, style: { marginTop: '12px', width: '100%', minHeight: '44px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: '#6D5247', background: 'transparent', cursor: 'pointer' } }, 'Reset to Free (beta testing)') : null,
       h('div', { style: { marginTop: '10px', fontSize: '12px', color: '#7A6E76', lineHeight: '1.5' } }, 'Beta build: purchases are simulated so upgrading can be tested end to end. The store version uses real App Store / Google Play purchases.')
@@ -5939,7 +5943,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v59';
+const APP_VERSION = 'app-v60';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
