@@ -512,6 +512,30 @@ reconstruct it from history.
 
 ## Completed
 
+- [x] **A restore can be taken back — shipped as app-v62** — added and closed 2026-08-22. Aaron:
+  *"if someone is doing a backup and it fits wrong or they accidentally add to wrong profile. there
+  needs to be a way to undo or capture their live data before input."*
+
+  He was right and app-v61 shipped without it. The destination picker lowers the odds of choosing
+  wrong; it does nothing for the person who chooses wrong anyway, which on a phone, one-handed, in a
+  hospital corridor, is going to happen.
+
+  Immediately before a restore writes anything, every key the target profile owns is copied
+  **verbatim, as raw strings** — not parsed and re-serialised, because an undo that returns *almost*
+  what was there is worse than no undo. Afterwards the confirmation carries **Undo this restore**,
+  which puts those exact bytes back, and — if the restore created a profile — removes that profile
+  too, so an accidental restore leaves no trace. One slot, most recent restore only: a stack of
+  undos on a phone is a way to put the wrong thing back twice.
+
+  **If the snapshot cannot be saved, the restore does not happen.** Copying a profile roughly
+  doubles its storage while the undo is kept, and phones run out of space. The honest failure is to
+  say so before writing and let the person decide — not to restore anyway and quietly have no way
+  back, which is the exact risk this feature exists to remove. `BK-21` fails if either restore path
+  ever writes without one.
+
+  Gate: `test/v61-backup.mjs` **22/22** (was 15), falsified at **15/22** against app-v61.
+
+
 - [x] **Backup & restore — shipped as app-v61** — added and closed 2026-08-22. Aaron: *"go ahead."*
 
   **Plus has been selling this since before it existed** (*"Backup & restore — move your data to a

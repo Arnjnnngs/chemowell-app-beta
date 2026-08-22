@@ -249,11 +249,24 @@ async function cwBkConfirmRestore() {
     const b = p.bundle;
     if (p.dest === 'new') {
       const id = createProfileForRestore(b.profileName || '');
+      // Snapshot BEFORE the first write. For a new profile every key is absent, and that absence is
+      // exactly what undo needs in order to remove it again cleanly.
+      if (!cwSaveUndoPoint(id, b.profileName || '', true)) {
+        const ps0 = profilesState();
+        ps0.list = ps0.list.filter((x) => x.id !== id);
+        saveJSON(PROFILES_KEY, ps0);
+        setState({ bkPending: null, bkNotice: { kind: 'bad', message: 'There is not enough free space on this phone to save an undo point, so nothing was restored. Free up some space and try again — restoring without a way back is not worth the risk.' } });
+        return;
+      }
       const r = cwBkApplyTo(id, b, { forceMeds: true });   // a brand-new profile has nothing to protect
       const ps = profilesState(); ps.activeId = id; saveJSON(PROFILES_KEY, ps);
       // Reloading is how this app switches profiles -- every storage key is bound at module load.
       setToast('Restored into a new profile — opening it now');
       setTimeout(() => location.reload(), 700);
+      return;
+    }
+    if (!cwSaveUndoPoint(ACTIVE_PROFILE_ID, String(getPrefsDB().patientName || ''), false)) {
+      setState({ bkPending: null, bkNotice: { kind: 'bad', message: 'There is not enough free space on this phone to save an undo point, so nothing was restored. Free up some space and try again — restoring without a way back is not worth the risk.' } });
       return;
     }
     const r = cwBkApplyTo(ACTIVE_PROFILE_ID, b, null);
@@ -277,6 +290,84 @@ async function cwBkConfirmRestore() {
     setState({ bkPending: null, bkNotice: { kind: 'bad', message: 'Something went wrong part-way through. Nothing was removed — load the file again; doing it twice is safe.' } });
   } finally {
     setState({ bkBusy: false });
+  }
+}
+
+// ---- UNDO (app-v62) ----
+// One slot, most recent restore only. A stack of undos on a phone is a way to put the wrong thing
+// back twice.
+const CW_UNDO_KEY = 'chemowell-app-restore-undo-v1';
+const CW_PROFILE_SUFFIXES = ['entries-v1', 'appts-v1', 'notes-v1', 'med-v1', 'prefs-v1'];
+
+// Copies every key the profile owns, verbatim, as raw strings -- not parsed and re-serialised.
+// Round-tripping through JSON would silently normalise anything the app does not currently model,
+// and an undo that returns *almost* what was there is worse than no undo at all.
+function cwSnapshotProfile(profileId) {
+  const snap = {};
+  CW_PROFILE_SUFFIXES.forEach((s) => {
+    const k = 'chemowell-app-p-' + profileId + '-' + s;
+    const v = localStorage.getItem(k);
+    snap[s] = (v === null) ? null : v;      // null means "this key did not exist", which undo must recreate
+  });
+  return snap;
+}
+
+// Returns true only if the snapshot is genuinely saved and readable back. A snapshot that silently
+// failed to write is the exact trap this feature exists to avoid, so it is verified, not assumed.
+function cwSaveUndoPoint(profileId, profileName, createdProfile) {
+  const point = {
+    at: Date.now(),
+    profileId: profileId,
+    profileName: String(profileName || ''),
+    createdProfile: !!createdProfile,
+    keys: cwSnapshotProfile(profileId)
+  };
+  try {
+    localStorage.setItem(CW_UNDO_KEY, JSON.stringify(point));
+    const back = localStorage.getItem(CW_UNDO_KEY);
+    return !!back && JSON.parse(back).at === point.at;
+  } catch (e) {
+    // Quota, private mode, anything. Do NOT swallow it -- the caller refuses to restore.
+    try { localStorage.removeItem(CW_UNDO_KEY); } catch (e2) {}
+    return false;
+  }
+}
+function cwGetUndoPoint() {
+  try {
+    const raw = localStorage.getItem(CW_UNDO_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    return (p && p.profileId && p.keys) ? p : null;
+  } catch (e) { return null; }
+}
+function cwClearUndoPoint() { try { localStorage.removeItem(CW_UNDO_KEY); } catch (e) {} }
+
+function cwUndoRestore() {
+  const p = cwGetUndoPoint();
+  if (!p) return;
+  try {
+    // Put the exact bytes back. A key that did not exist before is REMOVED again rather than left
+    // holding an empty array, so the profile is byte-for-byte what it was.
+    CW_PROFILE_SUFFIXES.forEach((s) => {
+      const k = 'chemowell-app-p-' + p.profileId + '-' + s;
+      if (p.keys[s] === null || p.keys[s] === undefined) localStorage.removeItem(k);
+      else localStorage.setItem(k, p.keys[s]);
+    });
+    // If the restore created a profile, the profile itself is part of what gets undone.
+    if (p.createdProfile) {
+      const ps = profilesState();
+      ps.list = ps.list.filter((x) => x.id !== p.profileId);
+      if (!ps.list.length) ps.list = [{ id: 'p1', name: '', createdAt: Date.now() }];
+      if (ps.activeId === p.profileId) ps.activeId = ps.list[0].id;
+      saveJSON(PROFILES_KEY, ps);
+      CW_PROFILE_SUFFIXES.forEach((s) => { try { localStorage.removeItem('chemowell-app-p-' + p.profileId + '-' + s); } catch (e) {} });
+    }
+    cwClearUndoPoint();
+    setToast('Restore undone — everything is back as it was');
+    setTimeout(() => location.reload(), 700);
+  } catch (err) {
+    console.error('[undo]', err);
+    setState({ bkNotice: { kind: 'bad', message: 'Could not undo automatically. Nothing else was changed — your backup file will still load if you need it.' } });
   }
 }
 
@@ -6100,7 +6191,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v61';
+const APP_VERSION = 'app-v62';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -7329,12 +7420,36 @@ function renderBackupSection() {
         b ? { disabled: 'disabled' } : {}), b ? 'Reading…' : 'Restore from a backup')
     ),
     renderBackupChoice(),
+    renderUndoRow(),
     state.bkNotice ? h('div', Object.assign({ 'data-bk-notice': 'true', 'data-bk-notice-kind': state.bkNotice.kind,
       style: { marginTop: '11px', padding: '11px 13px', borderRadius: '12px', fontSize: '12.5px', lineHeight: '1.45', fontWeight: '600',
         background: state.bkNotice.kind === 'bad' ? 'rgba(179,38,30,0.10)' : 'rgba(46,125,79,0.10)',
         border: '1px solid ' + (state.bkNotice.kind === 'bad' ? 'rgba(179,38,30,0.32)' : 'rgba(46,125,79,0.30)'),
         color: state.bkNotice.kind === 'bad' ? '#8E2018' : '#1F5A3D' } },
       state.bkNotice.kind === 'bad' ? { role: 'alert' } : {}), state.bkNotice.message) : null
+  );
+}
+
+// Offered only while an undo point exists, which is from the moment a restore finishes until it is
+// used or dismissed. Deliberately not a toast: a toast is gone in four seconds, and the person who
+// needs this is the one who has just realised, a minute later, that it went to the wrong profile.
+function renderUndoRow() {
+  const p = cwGetUndoPoint();
+  if (!p) return null;
+  const who = p.profileName ? p.profileName : 'that profile';
+  return h('div', { 'data-bk-undo-row': 'true', style: { marginTop: '11px', background: 'rgba(154,100,25,0.10)', border: '1px solid rgba(154,100,25,0.34)', borderRadius: '12px', padding: '12px 13px' } },
+    h('div', { style: { fontSize: '12.5px', fontWeight: '700', color: '#7A5214', lineHeight: '1.45' } },
+      p.createdProfile ? ('Restored into a new profile for ' + who) : ('Restored into ' + who)),
+    h('div', { style: { ...TYPE.caption, color: '#7A5214', marginTop: '3px', lineHeight: '1.45' } },
+      p.createdProfile
+        ? 'Undo puts this phone back exactly as it was and removes the profile that was just created.'
+        : 'Undo puts this profile back exactly as it was before the file was loaded.'),
+    h('div', { style: { display: 'flex', gap: '8px', marginTop: '11px' } },
+      h('button', { 'data-bk-undo': 'true', onClick: cwUndoRestore,
+        style: { flex: '1', minHeight: '44px', borderRadius: '11px', background: '#9A6419', color: '#fff', fontSize: '13.5px', fontWeight: '800' } }, 'Undo this restore'),
+      h('button', { 'data-bk-undo-keep': 'true', onClick: () => { cwClearUndoPoint(); setState({}); },
+        style: { flexShrink: '0', minHeight: '44px', padding: '0 15px', borderRadius: '11px', color: '#7A6E76', fontSize: '13.5px', fontWeight: '700', background: 'transparent' } }, 'Keep it')
+    )
   );
 }
 
