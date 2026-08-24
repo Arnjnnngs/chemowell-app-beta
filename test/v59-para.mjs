@@ -15,7 +15,20 @@ import { createRequire } from 'node:module';
 import http from 'node:http';
 import fs from 'node:fs';
 const require = createRequire(import.meta.url);
-const { chromium } = require('/home/claude/.npm-global/lib/node_modules/playwright');
+// Playwright's location is environment-specific: the old sandbox kept it under a user-global npm
+// prefix, this one ships it alongside node. Resolving a LIST of candidates instead of one pinned
+// absolute path is what lets the same suite run in both. The pinned path made all 39 browser
+// suites in these three repos unrunnable the moment the environment changed -- a gate that cannot
+// start is indistinguishable from a gate that passes, which is the failure Rule 5 is about.
+const { chromium } = (() => {
+  const _p = require('node:path');
+  const tries = ['playwright',
+    _p.join(_p.dirname(process.execPath), '..', 'lib', 'node_modules', 'playwright'),
+    '/opt/node22/lib/node_modules/playwright',
+    '/home/claude/.npm-global/lib/node_modules/playwright'];
+  for (const c of tries) { try { return require(c); } catch (e) {} }
+  throw new Error('playwright not found; tried:\n  ' + tries.join('\n  '));
+})();
 for (const v of ['HTTPS_PROXY','https_proxy','HTTP_PROXY','http_proxy'])
   if (process.env[v]) { console.error('REFUSING: ' + v + ' set.'); process.exit(3); }
 
@@ -103,9 +116,23 @@ const b = await boot();
 
 // Asserted BY ABSENCE against the shipped bytes, not against a screen. Two of the ten were in copy
 // no suite opens, so a screen check would have missed them.
-t('PARA-0 one spelling only, everywhere in the file',
-  (raw.match(/[Ll]itre/g) || []).length === 0,
-  (raw.match(/[Ll]itre/g) || []).length + ' occurrence(s) of "litre" remain');
+//
+// app-v66 narrowed this from "nowhere" to "nowhere visible". There is exactly ONE legitimate home
+// for the British spelling: the Help search keyword aliases, which are never rendered -- they exist
+// to catch what a user TYPES. app-v65 stripped the alias along with the visible copy, and a search
+// for "litres" then matched nothing at all: helpStem() turns it into "litr", the index only holds
+// "liter", and helpFuzzy()'s 1-edit budget for a 6-letter word cannot bridge the 2-edit gap. The
+// term scored 0 AND counted against the denominator, so it actively pushed the topic down.
+//
+// This gate fails in BOTH directions, which is the point: a "Litres" that creeps back into a
+// placeholder or a Help step makes total > inKeywords, and deleting the alias again makes
+// inKeywords 0.
+const kwBlocks = (raw.match(/keywords:\s*\[[^\]]*\]/g) || []).join(' ');
+const litreTotal = (raw.match(/[Ll]itre/g) || []).length;
+const litreInKw = (kwBlocks.match(/[Ll]itre/g) || []).length;
+t('PARA-0 "litre" appears only as a search alias, never in visible copy',
+  litreTotal === litreInKw && litreInKw === 1,
+  litreTotal + ' occurrence(s) of "litre", ' + litreInKw + ' of them inside keyword arrays');
 
 t('CW-PARA-1 off by default — no card on Home until it is switched on',
   !/paracentesis/i.test(await b.home()), (await b.home()).slice(0, 120));

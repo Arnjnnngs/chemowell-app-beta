@@ -1,7 +1,20 @@
 // Auditor pass 3 — regression with real data entered through the UI.
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { chromium } = require('/home/claude/.npm-global/lib/node_modules/playwright');
+// Playwright's location is environment-specific: the old sandbox kept it under a user-global npm
+// prefix, this one ships it alongside node. Resolving a LIST of candidates instead of one pinned
+// absolute path is what lets the same suite run in both. The pinned path made all 39 browser
+// suites in these three repos unrunnable the moment the environment changed -- a gate that cannot
+// start is indistinguishable from a gate that passes, which is the failure Rule 5 is about.
+const { chromium } = (() => {
+  const _p = require('node:path');
+  const tries = ['playwright',
+    _p.join(_p.dirname(process.execPath), '..', 'lib', 'node_modules', 'playwright'),
+    '/opt/node22/lib/node_modules/playwright',
+    '/home/claude/.npm-global/lib/node_modules/playwright'];
+  for (const c of tries) { try { return require(c); } catch (e) {} }
+  throw new Error('playwright not found; tried:\n  ' + tries.join('\n  '));
+})();
 const fs = require('fs');
 const BASE = 'http://127.0.0.1:8899/index.html';
 const noise = (s) => /ERR_CERT_AUTHORITY_INVALID|ERR_TUNNEL_CONNECTION_FAILED|ERR_PROXY|cdn\.jsdelivr|Failed to load resource/i.test(s);

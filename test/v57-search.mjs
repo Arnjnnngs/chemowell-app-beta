@@ -40,7 +40,12 @@ const require = createRequire(import.meta.url);
 const fs = require('fs');
 const vm = require('vm');
 
-const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+// --file lets this suite be pointed at a mutated copy, which is what makes its assertions
+// FALSIFIABLE -- break the build under test, watch the check go red, restore it.
+const FILE = process.argv.includes('--file')
+  ? process.argv[process.argv.indexOf('--file') + 1]
+  : new URL('../index.html', import.meta.url);
+const html = fs.readFileSync(FILE, 'utf8');
 
 // Slice by declaration name and brace/bracket matching, so adding a topic or renaming a function
 // cannot silently drop a chunk from the harness.
@@ -329,8 +334,16 @@ t('a "contact your care team" page is in the ' + VISIBLE_ROWS + ' rows a phone a
   // four queries into the real UI (including `export to excel`, the high-coverage query any
   // coverage-based gate would suppress) and requires the sentence and the route on every one. What
   // survives here is only that the sentence exists in this screen's source at all.
+  // app-v66: this pinned the sentence VERBATIM. app-v58 reworded it -- "...holds no medical
+  // information AND CAN'T TELL YOU WHETHER SOMETHING IS SERIOUS. For anything about..." -- and this
+  // gate went red on 2026-08-20 and STAYED red through app-v58, v59, v60, v61, v62, v63, v64 and
+  // v65. Eight releases shipped past a failing safety check because it was failing for a reason
+  // nobody read. Pinning a literal is the same mistake that has already cost this project three
+  // patches; this time it was wearing a safety label, which is what made it dangerous.
+  // The property worth asserting is that the screen still disclaims medical authority AND names the
+  // care team. The exact phrasing is copy, and copy is allowed to change.
   t('V57-1 the results screen source carries the care-team sentence',
-    /It holds no medical information\. For anything about symptoms, doses, or how someone is feeling, contact the care team\./.test(searchScreen),
+    /holds no medical information/.test(searchScreen) && /contact the care team/.test(searchScreen),
     searchScreen ? 'found, ' + searchScreen.length + ' chars' : '(search screen block not found)');
   t('V57-1 the strip routes to sym-severe in one tap',
     /helpGo\(\{ topic: 'sym-severe' \}\)/.test(searchScreen));
@@ -376,6 +389,35 @@ A.HELP_TOPICS.forEach(topic => {
 });
 t('every topic is still found first by its own question text', unfindable.length === 0,
   unfindable.length + ' not first: ' + unfindable.slice(0, 5).join(', '));
+
+// app-v66. The British spelling is not decoration in a keyword array -- it is the only thing that
+// catches a user who TYPES it. app-v65 removed it along with the visible copy, and the topic then
+// scored ZERO for "litres": helpStem('litres') is 'litr', the index holds only 'liter', and
+// helpFuzzy's 1-edit budget for a 6-letter word cannot bridge a 2-edit gap. Worse than a miss --
+// an unmatched term still counts against helpScore's denominator, so it pushed the topic DOWN.
+// Asserted on the RANKED OUTPUT, not on the presence of a string in the file, because the source
+// check (PARA-0 in v59-para.mjs) cannot tell a working alias from a decorative one.
+// FIRST DRAFT OF THIS CHECK WAS WORTHLESS, and the record is more useful than the fix. It asserted
+// helpSearch('litres')[0] === 'proc-para' -- which PASSED on app-v65, the very build it was written
+// to indict. app-v65 was never broken: the vocabulary holds the unstemmed 'liters' as well as the
+// stem, and helpFuzzy() bridges litres->liters as a single transposition inside its 1-edit budget.
+// The topic was found either way. So the check could not fail, and a check that cannot fail is
+// worse than no check at all (Rule 5).
+//
+// What actually differs is the QUALITY of the match, and that is worth locking. Without the alias
+// the term is a 0.65 fuzzy guess that also drags faq:weight-reason into the results; with it, the
+// term is a 1.0 exact keyword hit that returns the one right topic. Relying on a coincidence of the
+// stemmer is the fragile part -- rename a keyword and the coincidence evaporates silently.
+const litresTerms = A.helpTerms('litres');
+t('app-v66 "litres" is an EXACT keyword hit, not a 0.65 fuzzy coincidence',
+  litresTerms.length === 1 && litresTerms[0].quality === 1,
+  JSON.stringify(litresTerms));
+t('app-v66 and it still resolves to the paracentesis topic, alone',
+  JSON.stringify(A.helpSearch('litres').map(x => x.id)) === JSON.stringify(['proc-para']),
+  'litres -> ' + (A.helpSearch('litres').map(x => x.id).join(', ') || 'NOTHING'));
+t('app-v66 the American spelling is unchanged by the alias',
+  A.helpSearch('liters')[0] && A.helpSearch('liters')[0].id === 'proc-para',
+  'liters -> ' + (A.helpSearch('liters').slice(0, 3).map(x => x.id).join(', ') || 'NOTHING'));
 
 console.log('\n' + exact + '/' + FIXTURE.length + ' exact, ' + top3 + ' recovered in top 3, ' + missed.length + ' missed');
 console.log(fail === 0 ? 'ALL GREEN' : '\n' + fail + ' FAILURES');
