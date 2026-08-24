@@ -23,6 +23,11 @@ const FILE = process.argv.includes('--file')
   ? process.argv[process.argv.indexOf('--file') + 1]
   : new URL('../index.html', import.meta.url).pathname;
 const raw = fs.readFileSync(FILE, 'utf8');
+// Read from the file under test, never typed in. This suite pinned the literal 'app-v64' and broke
+// on the very next release -- the same anti-pattern that had already cost this project three
+// patches, and the same one its CareTracker twin was fixed for a day earlier.
+const APP_VER = (raw.match(/APP_VERSION\s*=\s*'([^']+)'/) || [])[1];
+if (!APP_VER) { console.error('REFUSING: could not read APP_VERSION out of the file under test.'); process.exit(3); }
 
 let fail = 0, pass = 0;
 const t = (n, c, d) => { console.log((c ? '  PASS  ' : '  FAIL  ') + n + (d ? '  |  ' + String(d).replace(/\s+/g,' ').slice(0,220) : '')); c ? pass++ : fail++; };
@@ -87,7 +92,7 @@ await page.getByRole('button', { name: 'Get started' }).click();
 await page.waitForTimeout(900);
 await skipGuide();
 
-console.log('\nTHE LOG — ChemoWell app-v64\n');
+console.log('\nTHE LOG — ChemoWell ' + APP_VER + '\n');
 
 // ---- it is findable ----
 const drawerHas = await page.evaluate(async () => {
@@ -117,7 +122,7 @@ await tapSel('[data-report-save]');
 await page.waitForTimeout(600);
 let log = await logNow();
 t('LOG-3 what the person types is written down',
-  log.length === 1 && log[0].kind === 'problem' && /decimal point/.test(log[0].text) && log[0].app === 'app-v64',
+  log.length === 1 && log[0].kind === 'problem' && /decimal point/.test(log[0].text) && log[0].app === APP_VER,
   JSON.stringify(log.map(e => e.kind)));
 
 t('LOG-4 the box is emptied so the same report is not filed twice',
@@ -263,7 +268,7 @@ const report = await page.evaluate(async () => {
 t('LOG-16 it produces a file that can actually be sent',
   !!report.text && /\.txt$/.test(report.name || ''), 'filename: ' + report.name);
 t('LOG-17 the file says which build and which device it came from',
-  !!report.text && /App version: app-v64/.test(report.text) && /Device: /.test(report.text),
+  !!report.text && report.text.indexOf('App version: ' + APP_VER) >= 0 && /Device: /.test(report.text),
   'a bug report without a version number is a guess');
 t('LOG-18 both the errors and what the person wrote are in it',
   !!report.text && /decimal point/.test(report.text) && /reorder the medication list/.test(report.text) &&

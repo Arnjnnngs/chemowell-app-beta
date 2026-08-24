@@ -101,6 +101,12 @@ console.log('\nPARACENTESIS — ChemoWell app-v59, standalone record plus legacy
 
 const b = await boot();
 
+// Asserted BY ABSENCE against the shipped bytes, not against a screen. Two of the ten were in copy
+// no suite opens, so a screen check would have missed them.
+t('PARA-0 one spelling only, everywhere in the file',
+  (raw.match(/[Ll]itre/g) || []).length === 0,
+  (raw.match(/[Ll]itre/g) || []).length + ' occurrence(s) of "litre" remain');
+
 t('CW-PARA-1 off by default — no card on Home until it is switched on',
   !/paracentesis/i.test(await b.home()), (await b.home()).slice(0, 120));
 
