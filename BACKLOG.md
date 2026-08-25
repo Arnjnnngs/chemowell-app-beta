@@ -6,6 +6,16 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
+- **PM RULING, app-v66 gate, 2026-08-24 — the four-profile sweep runs on the next release that
+  touches application code, however small it looks.** It has now been skipped three times running
+  (audit round 1, audit round 2, and the PM itself), defensibly each time because none of those
+  releases touched dose, schedule or storage logic. Three in a row is how a habit forms. This is a
+  standing instruction from the gate that has authority to set it, not a suggestion.
+
+- **PM RULING — the Help search results screen is the NEXT release, with the Designer stage.** The
+  regression below may stay open through app-v66 (it is not a safety failure; the care-team sentence
+  and the one-tap `sym-severe` route are both present and were verified) but it binds the next one.
+
 - **app-v58 quietly undid two of the v57 Designer's fixes to the Help search results screen, and the
   test guarding them has been red for NINE releases (v58 -> v66).** Found by the round-2 Zero Day
   Auditor while running the twenty browser suites that nothing runs automatically. Two regressions at
