@@ -9,7 +9,7 @@ when you're about to touch the relevant code; delete the line once it's actually
 - **app-v58 quietly undid two of the v57 Designer's fixes to the Help search results screen, and the
   test guarding them has been red for NINE releases (v58 -> v66).** Found by the round-2 Zero Day
   Auditor while running the twenty browser suites that nothing runs automatically. Two regressions at
-  `index.html:6981` and `:6994-6998`: the care-team strip lost its own surface colour (`#FFFBF5` in
+  `index.html:6982` and `:6994-6998`: the care-team strip lost its own surface colour (`#FFFBF5` in
   app-v57 -> `#FFFFFF` now), so it reads as the first search result instead of an aside; and the
   results count line moved from inside `listCard()` above the rows back out to a standalone `section`
   **after** all twelve rows — the exact defect v57 fixed. Bisected by colour count in `index.html`:
