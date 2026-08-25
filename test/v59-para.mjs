@@ -114,25 +114,24 @@ console.log('\nPARACENTESIS — ChemoWell app-v59, standalone record plus legacy
 
 const b = await boot();
 
-// Asserted BY ABSENCE against the shipped bytes, not against a screen. Two of the ten were in copy
-// no suite opens, so a screen check would have missed them.
+// PARA-0 LIVED HERE AND WAS DELETED IN app-v66 ROUND 2, BECAUSE IT DID NOT WORK.
 //
-// app-v66 narrowed this from "nowhere" to "nowhere visible". There is exactly ONE legitimate home
-// for the British spelling: the Help search keyword aliases, which are never rendered -- they exist
-// to catch what a user TYPES. app-v65 stripped the alias along with the visible copy, and a search
-// for "litres" then matched nothing at all: helpStem() turns it into "litr", the index only holds
-// "liter", and helpFuzzy()'s 1-edit budget for a 6-letter word cannot bridge the 2-edit gap. The
-// term scored 0 AND counted against the denominator, so it actively pushed the topic down.
+// It asserted the spelling by absence against the raw bytes, locating the Help keyword arrays with
+// /keywords:\s*\[[^\]]*\]/g. The Zero Day Auditor defeated it, and the reproduction is worth
+// keeping: write the literal text "keywords: [" into Help COPY and that regex opens a region the
+// gate then counts as a safe keyword array. A build with the alias DELETED and a visible
+// "Litres" sitting in a Help answer reported 16/16 all green -- both of the defects it exists to
+// catch, present at once, and the gate said fine. A regex cannot tell a keyword array from prose
+// that merely looks like one; only parsing can.
 //
-// This gate fails in BOTH directions, which is the point: a "Litres" that creeps back into a
-// placeholder or a Help step makes total > inKeywords, and deleting the alias again makes
-// inKeywords 0.
-const kwBlocks = (raw.match(/keywords:\s*\[[^\]]*\]/g) || []).join(' ');
-const litreTotal = (raw.match(/[Ll]itre/g) || []).length;
-const litreInKw = (kwBlocks.match(/[Ll]itre/g) || []).length;
-t('PARA-0 "litre" appears only as a search alias, never in visible copy',
-  litreTotal === litreInKw && litreInKw === 1,
-  litreTotal + ' occurrence(s) of "litre", ' + litreInKw + ' of them inside keyword arrays');
+// It also hardcoded `litreInKw === 1`, so adding the same alias to a second topic -- an ordinary
+// Help edit -- would have turned it red with nothing wrong. That is the pinned-version-literal
+// anti-pattern in numeric form, in a gate written to replace a pinned-literal gate.
+//
+// The real check now lives in test/v57-search.mjs, which already parses HELP_TOPICS into a VM and
+// can therefore walk the actual objects: every DISPLAYED field of every topic must be free of the
+// British spelling, while the keywords field -- which is never rendered -- may carry it. Duplicating
+// a weaker copy of a check in a second suite is what produced this defect; it is not re-added here.
 
 t('CW-PARA-1 off by default — no card on Home until it is switched on',
   !/paracentesis/i.test(await b.home()), (await b.home()).slice(0, 120));

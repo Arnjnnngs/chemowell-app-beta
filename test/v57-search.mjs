@@ -408,6 +408,43 @@ t('every topic is still found first by its own question text', unfindable.length
 // the term is a 0.65 fuzzy guess that also drags faq:weight-reason into the results; with it, the
 // term is a 1.0 exact keyword hit that returns the one right topic. Relying on a coincidence of the
 // stemmer is the fragile part -- rename a keyword and the coincidence evaporates silently.
+// ---- the spelling gate, moved here in app-v66 round 2 ----
+// It used to live in test/v59-para.mjs and assert against the RAW BYTES, finding keyword arrays with
+// /keywords:\s*\[[^\]]*\]/g. The Zero Day Auditor defeated it: writing the literal text
+// "keywords: [" into Help COPY opens a region that regex treats as a safe keyword array, so a build
+// with the alias DELETED and a visible "Litres" in a Help answer passed 16/16. A regex cannot tell a
+// keyword array from prose shaped like one. This suite already parses HELP_TOPICS into a VM, so here
+// the actual objects can be walked -- which is not defeatable by anything written inside a string.
+const displayedText = (tp) => [tp.q, tp.a, tp.note]
+  .concat(tp.steps || [])
+  .concat((tp.branches || []).flatMap(br => [br.when].concat(br.steps || [])))
+  .filter(v => typeof v === 'string');
+const corpus = A.HELP_TOPICS.concat(A.FAQ_ITEMS || []);
+const litreVisible = corpus.filter(tp => displayedText(tp).some(v => /litre/i.test(v))).map(tp => tp.id);
+const litreKeyed = corpus.filter(tp => (tp.keywords || []).some(k => /litre/i.test(k))).map(tp => tp.id);
+t('app-v66 no Help topic shows the British spelling anywhere a reader can see it',
+  litreVisible.length === 0, litreVisible.join(', ') || 'none — correct');
+t('app-v66 the paracentesis topic still carries it as an invisible search keyword',
+  litreKeyed.includes('proc-para'), litreKeyed.join(', ') || 'NONE — the alias is gone');
+
+// COVERAGE HOLE FOUND WHILE FALSIFYING THE ABOVE, and closed here rather than shipped.
+// The two checks above walk the Help corpus, so they catch nothing outside it -- and the ten strings
+// app-v65 actually fixed were mostly NOT in Help: the paracentesis input placeholder, the validation
+// toast, the Reports empty state, the Settings toggle description. Falsifying with a visible
+// "Litres drained" placeholder passed both checks above. Replacing a raw-bytes check with a parsed
+// one narrowed the blast radius without anyone noticing, which is the same class of mistake as the
+// gate this release replaces.
+//
+// So: cross-check the two counts. Every occurrence of the British spelling in the shipped bytes must
+// be accounted for by an occurrence in a PARSED keywords array. Prose containing it raises the raw
+// count without raising the parsed one, so it cannot be hidden inside a string that merely looks
+// like a keyword array -- which is precisely how the old gate was defeated.
+const rawLitre = (html.match(/litre/gi) || []).length;
+const keyedLitre = corpus.reduce((n, tp) => n + (tp.keywords || []).filter(k => /litre/i.test(k)).length, 0);
+t('app-v66 every "litre" in the shipped bytes is accounted for by a parsed search keyword',
+  rawLitre === keyedLitre,
+  rawLitre + ' in the file, ' + keyedLitre + ' in parsed keyword arrays');
+
 const litresTerms = A.helpTerms('litres');
 t('app-v66 "litres" is an EXACT keyword hit, not a 0.65 fuzzy coincidence',
   litresTerms.length === 1 && litresTerms[0].quality === 1,

@@ -116,7 +116,10 @@ t('Amount (mg) carries the numeric dose', data.some(r => col(r, 'Amount (mg)') =
 t('Timestamp is ISO-8601 wherever there is a real time',
   data.filter(r => col(r, 'Timestamp')).every(r => /^\d{4}-\d{2}-\d{2}T/.test(col(r, 'Timestamp'))));
 t('derived missed doses are labelled derived, never logged',
-  data.filter(r => col(r, 'Source') === 'derived').every(r => /not logged/.test(col(r, 'Detail')) || true));
+  // app-v66: this carried a literal `|| true`, which made the predicate unconditionally true and
+  // the assertion permanently green -- a check that cannot fail, in the exact form CLAUDE.md records
+  // as having shipped here before. Removed, so the assertion is now the one its name claims.
+  data.filter(r => col(r, 'Source') === 'derived').every(r => /not logged/.test(col(r, 'Detail'))));
 t('rows are in chronological order', (() => {
   const ts = data.map(r => col(r, 'Timestamp')).filter(Boolean);
   return ts.every((v, i) => i === 0 || ts[i-1] <= v);
