@@ -124,6 +124,11 @@ const b = await boot();
 // catch, present at once, and the gate said fine. A regex cannot tell a keyword array from prose
 // that merely looks like one; only parsing can.
 //
+// Precision, from the round-2 audit: that reproduction with an UNBALANCED '[' does not make the
+// replacement check fail -- it makes the suite THROW, because the unbalanced bracket breaks
+// sliceBlock() before any assertion runs. Right outcome (nothing green), wrong description, and
+// worth knowing: a stray bracket in Help copy now takes the spelling gate down with the parser.
+//
 // It also hardcoded `litreInKw === 1`, so adding the same alias to a second topic -- an ordinary
 // Help edit -- would have turned it red with nothing wrong. That is the pinned-version-literal
 // anti-pattern in numeric form, in a gate written to replace a pinned-literal gate.

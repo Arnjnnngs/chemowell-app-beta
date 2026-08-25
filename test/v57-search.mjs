@@ -391,12 +391,16 @@ t('every topic is still found first by its own question text', unfindable.length
   unfindable.length + ' not first: ' + unfindable.slice(0, 5).join(', '));
 
 // app-v66. The British spelling is not decoration in a keyword array -- it is the only thing that
-// catches a user who TYPES it. app-v65 removed it along with the visible copy, and the topic then
-// scored ZERO for "litres": helpStem('litres') is 'litr', the index holds only 'liter', and
-// helpFuzzy's 1-edit budget for a 6-letter word cannot bridge a 2-edit gap. Worse than a miss --
-// an unmatched term still counts against helpScore's denominator, so it pushed the topic DOWN.
-// Asserted on the RANKED OUTPUT, not on the presence of a string in the file, because the source
-// check (PARA-0 in v59-para.mjs) cannot tell a working alias from a decorative one.
+// catches a user who TYPES it, and it is asserted on the RANKED OUTPUT rather than on a string's
+// presence in the file, because a source check cannot tell a working alias from a decorative one.
+//
+// WHAT THIS PARAGRAPH USED TO SAY, AND WHY IT WAS DELETED: it claimed app-v65 made the topic score
+// ZERO for "litres" and that helpFuzzy could not bridge the gap. That is FALSE, it was retracted in
+// the round-1 commit message, and it survived here anyway -- eight lines above its own correction --
+// until a second audit caught it. Measured twice, by two different readers: with the alias removed,
+// proc-para still comes back and still comes back FIRST, at 0.65 via a fuzzy transposition.
+// A correction that lives only in a commit message is not a correction. Nobody reads those; they
+// read the file. This is the same failure as the V57-1 gate that sat red for nine releases.
 // FIRST DRAFT OF THIS CHECK WAS WORTHLESS, and the record is more useful than the fix. It asserted
 // helpSearch('litres')[0] === 'proc-para' -- which PASSED on app-v65, the very build it was written
 // to indict. app-v65 was never broken: the vocabulary holds the unstemmed 'liters' as well as the
@@ -439,7 +443,10 @@ t('app-v66 the paracentesis topic still carries it as an invisible search keywor
 // be accounted for by an occurrence in a PARSED keywords array. Prose containing it raises the raw
 // count without raising the parsed one, so it cannot be hidden inside a string that merely looks
 // like a keyword array -- which is precisely how the old gate was defeated.
-const rawLitre = (html.match(/litre/gi) || []).length;
+// codeOnly(): comments are stripped first. That helper's own header records THREE false positives
+// across two releases from a comment mentioning the token its assertion forbade, and this check
+// walked straight into a fourth -- a source comment saying "litres" made it red for no defect.
+const rawLitre = (codeOnly(html).match(/litre/gi) || []).length;
 const keyedLitre = corpus.reduce((n, tp) => n + (tp.keywords || []).filter(k => /litre/i.test(k)).length, 0);
 t('app-v66 every "litre" in the shipped bytes is accounted for by a parsed search keyword',
   rawLitre === keyedLitre,

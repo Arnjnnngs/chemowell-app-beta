@@ -6,6 +6,55 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
+- **app-v58 quietly undid two of the v57 Designer's fixes to the Help search results screen, and the
+  test guarding them has been red for NINE releases (v58 -> v66).** Found by the round-2 Zero Day
+  Auditor while running the twenty browser suites that nothing runs automatically. Two regressions at
+  `index.html:6981` and `:6994-6998`: the care-team strip lost its own surface colour (`#FFFBF5` in
+  app-v57 -> `#FFFFFF` now), so it reads as the first search result instead of an aside; and the
+  results count line moved from inside `listCard()` above the rows back out to a standalone `section`
+  **after** all twelve rows — the exact defect v57 fixed. Bisected by colour count in `index.html`:
+  3 at `32b297f` (v57), 1 at `9155fd3` (v58), 1 today. Measured: the strip is **216px at 360px wide
+  and 235px at 320px** against a 200px bar, leaving the first result row **21px visible** above the
+  bottom nav at 320px. **This is NOT a safety failure** — the care-team sentence and the one-tap
+  `sym-severe` route are both present, so `V57-1` passing is honest. It is the 17 failures in
+  `test/v57-browser-notice.mjs` already logged in care-tracker's REQUESTS.md, now with a cause and a
+  commit. Needs a design pass plus rule 5's gates; sized as its own release.
+
+- **NOTHING RUNS THESE SUITES, and that is the mechanism behind both nine-release blind spots.**
+  `npm test` is a stub that exits 1, `release_check.sh` runs no suites, and `.github/workflows/
+  android-build.yml` runs none either. Twenty browser suites exist and are only ever run when
+  somebody remembers to. `V57-1` sat red for eight releases and the layout regressions above for
+  nine, both silently. A runner script that executes every suite and exits non-zero on any failure is
+  the single highest-value fix on this list — it is what would have caught both on the day they
+  landed. Note `test/v57-browser-notice.mjs` needs a server on port 8899 that it does not start
+  itself; the runner must start and stop it.
+
+- **`test/audit-v55b.mjs` cannot start at all** — it reads `/tmp/topics.js`, a path from the retired
+  sandbox. Same class as the 39 hardcoded playwright paths fixed in app-v66: a gate that cannot start
+  is indistinguishable from a gate that passes.
+
+- **`audit-v55.mjs`, `pm-v55.mjs` and `pm-v55b.mjs` pin a stale topic count (133, actual 135).** The
+  pinned-literal anti-pattern again. They should read the count from the corpus under test. Separately
+  `audit-v55`'s `A6` ("0 chips followed") and `B8` are NOT count pins, so one of them may be a real
+  finding — worth ten minutes.
+
+- **All three apps on `arnjnnngs.github.io` evict each other's offline cache.** Each service worker
+  deletes every cache on the origin that is not its own (`chemowell-app-beta/sw.js:20` and the same
+  handler in the other two). Real consequence is small and self-healing: one "can't load" screen if
+  someone opens an evicted app while offline, cleared by a single online visit. **No logged data can
+  be lost** — entries live in `localStorage`, which Cache Storage eviction cannot touch. One-line fix:
+  scope the filter to `k.startsWith('<this-app-prefix>-')`. Round 1 of the audit rated this MAJOR and
+  said network-first made it worse; round 2 measured it and found the opposite — network-first
+  re-caches on every successful navigation, so it is the only variant that self-heals.
+
+- **The app-v66 spelling cross-check can be defeated by a deliberately escaped alias** (`"lit\u0072es"`
+  in the keywords array frees a raw count that can then be spent on a visible "Litres"). Contrived —
+  it requires someone to escape a keyword on purpose — and explicitly not a reason to distrust the
+  gate against anything a person would plausibly write. Recorded so it is not rediscovered as news.
+
+- **A four-profile sweep has now been skipped by two consecutive audits.** Defensible both times
+  (neither release touched dose, schedule or storage logic) but it should not become three.
+
 - **The sandbox filesystem silently rolled back mid-session for the SECOND time, and this one could
   have overwritten a good live build with a regressed one** (app-v57, after the push). Symptom: local
   `HEAD` had quietly moved back to the gate-round-2 commit, `index.html` was 733,357 bytes against
