@@ -225,6 +225,72 @@ If there's real doubt which tier a miss falls into, treat it as the functional t
 lighter tier is for genuinely unambiguous wording-only misses, not a way to talk down a real
 defect.
 
+### What a re-audit IS, and what it is NOT (Aaron, 2026-08-24)
+
+Aaron, on the restart: *"I don't want it to only check that one thing when it starts over. it's
+supposed to try to break it."* He is right, and the rule above did not say so.
+
+**A re-audit is a fresh attempt to break the WHOLE change. It is not a verification that the
+reported defect is gone.** Confirming the fix is the cheapest part of the job and must never be
+the whole of it. An auditor that returns "the fix is confirmed" and nothing else has not audited —
+it has re-tested, which is the Lead Developer's job and was already done before the re-audit was
+requested.
+
+Three rules follow, and they are not optional:
+
+1. **The brief may name suspects, but must state they are a FLOOR, not a ceiling.** Pointing a
+   re-audit at the riskiest part of the fix is good practice. Writing a brief that reads as a
+   checklist is how a re-audit quietly becomes a re-test. Every re-audit brief says, in these
+   words or better: *these are where I think it is weakest; they are the minimum, not the scope.*
+2. **The re-audit must go where the previous round did not reach, and must say what it still did
+   not reach.** Every audit runs out of road. An audit that does not name its own gaps hands the
+   next one no map.
+3. **Attack the GATES, not only the app.** This is the lesson that paid for the rule.
+
+**The evidence, from the day this was written.** app-v66's round-1 audit found a BLOCKER: a gate
+the Lead Developer had written, and had asserted in writing was "falsified in both directions",
+passed on a build carrying BOTH defects it existed to catch. The round-2 audit cleared the
+replacement in minutes — and then, because its scope was the whole change rather than the fix,
+found two things nobody had asked it to look for:
+
+  * app-v58 had undone two Designer fixes to the Help search results screen, red for NINE releases;
+  * **nothing runs these suites at all** — the reason both blind spots survived.
+
+Neither was in its brief. Both were worth more than the thing it was sent to check. **That is what
+the extra scope buys, and it is why "just confirm the fix" is banned.**
+
+### The gates are code, and they are audited like code
+
+Every defect found in the app-v66 chain lived in a TEST or a DOCUMENT, not in the application. The
+app diff was one keyword. So:
+
+- **The Auditor attacks the gates**: can this check pass on a build that has the defect? Can it
+  fail on a build that does not? Is it pinned to a literal that the next release will move? Can it
+  START — a gate that cannot start is indistinguishable from a gate that passes.
+- **`pm.py` now enforces the mechanical half of this** (sections 7 and 8, added 2026-08-24): a
+  `|| true` anywhere in a suite, a direct `require()`/`readFileSync()` of a path from a dead
+  environment, and pinned version literals. It checks the suites, not just `index.html` — because
+  the `|| true` that shipped here sat in a test file that `pm.py` never looked at.
+
+### Notes move with the code — every final push, every commit (Aaron, 2026-08-24)
+
+Aaron: *"we need to make sure that notes are being updated each final push and commit."*
+
+**Documentation failure is silent.** Nothing breaks when a changelog goes stale, the build stays
+green, and no amount of careful reading reliably catches it. Only a check that fails loudly does.
+What that cost, all found on one day: `BETA_HANDOFF.md` still said *"Last updated July 23"* and
+*"Current version v71"* seven releases later; its debug checklist told a reader to look for a banner
+renamed months earlier and to conclude, if it was missing, that the beta was writing to **the
+patient's real records**; and `STATUS.md`'s dispatch key defined `IDLE` twice and `ACTIVE` never.
+
+- The docs are written by whoever made the change, **in the same commit** — not afterwards, not as
+  a follow-up task. The person who made the change is the only one who knows what changed.
+- `pm.py` section 8 **BLOCKS** when `index.html` or `sw.js` differ from `origin/main` and the
+  release notes do not. It is not a reminder; it is a gate.
+- A correction that lives only in a commit message **is not a correction.** Nobody reads those;
+  they read the file. Fix the file, and fix *every* copy of the wrong sentence — the uncorrected
+  copy is always the one somebody actually reads.
+
 ## Release mechanics checklist
 
 - **Run `./release_check.sh` and confirm it exits 0 before every single GitHub web-upload,
