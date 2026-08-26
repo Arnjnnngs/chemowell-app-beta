@@ -1168,6 +1168,25 @@ function migrateSenokotV37(med) { return med; } // legacy migration retired (aud
 // whose id isn't already present in the saved list AND isn't archived (deliberately deleted) gets
 // appended, in DEFAULT_MEDS order at the end; existing customizations for meds already present are
 // left untouched.
+// Backfill properties a device's saved medication list never knew about. Ported from care-tracker
+// v60, where the absence of this caused three weeks of false Dexamethasone alerts: `chemoOnly` was
+// added to DEFAULT_MEDS after the device saved its list, mergeMissingDefaultMeds() adds missing
+// MEDICATIONS but never missing PROPERTIES, and normalizeMedication() then froze "never heard of it"
+// into a permanent false -- so a chemo-only steroid was tracked as an everyday medication.
+// ABSENT ONLY. A key the saved medication does not have means "never seen"; take the default. A key
+// it HAS, even set to false, is the user's own choice and is left alone. Must run BEFORE
+// normalizeMedication(), which is what destroys the difference between absent and false.
+function backfillDefaultMedFlags(raw) {
+  if (!raw || !raw.id) return raw;
+  const def = DEFAULT_MEDS.find(d => d.id === raw.id);
+  if (!def) return raw;
+  const out = { ...raw };
+  Object.keys(def).forEach(k => {
+    if (!Object.prototype.hasOwnProperty.call(raw, k)) out[k] = deepCopyMeds([def])[0][k];
+  });
+  return out;
+}
+
 function mergeMissingDefaultMeds(meds, archivedMeds) {
   // APP: no auto-seeding of defaults — the user's list is entirely their own.
   return meds;
@@ -1188,7 +1207,7 @@ function loadMedicationConfig() {
     // an empty meds array is valid data, not corruption, and must still carry its archivedMeds through.
     if (!saved || !Array.isArray(saved.meds)) return fallback;
     const archivedMeds = normalizeArchivedMeds(saved.archivedMeds);
-    const meds = mergeMissingDefaultMeds(saved.meds.map(normalizeMedication).map(migrateSenokotV37), archivedMeds);
+    const meds = mergeMissingDefaultMeds(saved.meds.map(backfillDefaultMedFlags).map(normalizeMedication).map(migrateSenokotV37), archivedMeds);
     return { meds, archivedMeds };
   } catch (error) {
     console.warn('Medication configuration could not be loaded:', error);
@@ -1431,10 +1450,30 @@ function nextChemoTs() {
   const latest = state.chemoDates.reduce((a, b) => (((a.loggedAt || 0) > (b.loggedAt || 0)) ? a : b));
   return latest.ts > 0 ? latest.ts : null;
 }
+// Every treatment date on record, one per calendar day, oldest first. Deduplicated because
+// duplicates happen -- care-tracker's live record carries two chemo_date entries for 2026-08-24, and
+// two entries on one day must never mean two treatments.
+function chemoDayList() {
+  const seen = new Set();
+  return (state.chemoDates || [])
+    .filter(e => e && e.ts > 0)
+    .map(e => dayStart(e.ts))
+    .filter(d => { if (seen.has(d)) return false; seen.add(d); return true; })
+    .sort((a, b) => a - b);
+}
+// THE TREATMENT DATE RELEVANT TO *THIS* DAY -- the nearest one, in either direction.
+// This used to call nextChemoTs(), which despite its name returns the most recently ENTERED date,
+// not the one nearest the day being asked about. Every treatment-relative decision -- whether
+// Dexamethasone is expected, whether Zofran is blocked, which Dexamethasone windows exist -- was
+// measured from whatever was typed in last, for every day in history. Log a past treatment after a
+// future one and the whole timeline shifts. Ported from care-tracker v60.
 function chemoOffsetFor(dayTs) {
-  const c = nextChemoTs();
-  if (c === null) return null;
-  return Math.round((dayStart(dayTs) - dayStart(c)) / 86400000);
+  const days = chemoDayList();
+  if (!days.length) return null;
+  const d0 = dayStart(dayTs);
+  let best = days[0];
+  for (const d of days) if (Math.abs(d - d0) < Math.abs(best - d0)) best = d;
+  return Math.round((d0 - best) / 86400000);
 }
 function dexActiveOn(dayTs) { const o = chemoOffsetFor(dayTs); return o !== null && o >= -1 && o <= 1; }
 // Generic version of dexActiveOn for the per-medication "treatment day" toggle (v16). dexActiveOn's
@@ -1540,7 +1579,8 @@ function nextDay(dayTs) { const d = new Date(dayStart(dayTs)); d.setDate(d.getDa
 function missedDosesFor(dayTs, now) {
   const d0 = dayStart(dayTs);
   if (d0 < dayStart(MISSED_TRACK_SINCE)) return [];
-  if (isInpatientDay(d0)) return []; // meds given by hospital staff that day — not tracked here
+  // The whole-day early return here was removed 2026-08-26. Suppression is decided per WINDOW at
+  // the bottom of this function, so a half-day stay suppresses only the doses inside it.
   const out = [];
   state.meds.filter(m => m.alerts && m.windows).forEach(med => {
     if (isPausedOn(med, d0)) return; // v20: skip exactly the days this medication was actually paused
@@ -1574,6 +1614,9 @@ function missedDosesFor(dayTs, now) {
       // createdAt never counts as missed. Medications saved before this fix have no createdAt and
       // keep behaving exactly as before (falls back to the app-wide MISSED_TRACK_SINCE floor above).
       if (med.createdAt && win.we <= med.createdAt) return;
+      // Hospital staff gave this one. Per WINDOW, not per day, so the rest of a half-day stay is
+      // still tracked normally.
+      if (inpatientCoversMoment(win.ws)) return;
       out.push({ missed: true, medId: med.id, ts: win.ws, windowName: win.w.name });
     });
   });
@@ -2704,7 +2747,7 @@ const HELP_TOPICS = [
   { id: "med-reorder", cat: "meds", q: "I want my medications in a different order on Home", a: "The Meds tab has up and down arrows for that.", steps: ["Tap **Meds** at the bottom.", "Find the section about Home screen order.", "Use the small ▲ and ▼ arrows next to each medication to move it.", "Go to Home to see the new order."], note: "Those arrow buttons are small. If you keep missing them, try tapping slightly lower and to the centre of the button.", keywords: ["order", "reorder", "sort", "move", "arrange"], related: ["med-placement"] },
   { id: "med-many-strengths", cat: "meds", q: "The same medication comes in two strengths", a: "That's one medication with two dose buttons, not two medications.", steps: ["Add it once.", "In **Dosage options**, list both with a comma: `500 mg, 1000 mg`.", "On Home you get a button for each strength.", "They share one schedule, one gap timer, and one daily limit — because they're the same medication."], keywords: ["two strengths", "half tablet", "different doses", "same medication"], related: ["med-dose-options"] },
   { id: "log-basic", cat: "logging", q: "How do I record that a dose was taken?", a: "Tap the dose button on that medication's card on Home.", steps: ["Go to **Home**.", "Find the medication under **Quick log**, or inside its Morning/Afternoon/Evening card.", "Tap the button showing the amount that was taken.", "If it asks you to confirm, tap Confirm.", "It appears immediately in **Today's journal** further down the Home screen."], keywords: ["log", "record", "taken", "dose", "tap"], related: ["log-wrong-time", "log-remove"] },
-  { id: "log-button-locked", cat: "logging", q: "The Log button is greyed out or won't do anything", a: "The card tells you which rule is holding it, in the words on the card itself.", steps: ["**Waiting** — the minimum gap since the last dose hasn't passed. The card says when it opens.", "**Limit** — today's daily limit has been reached. It resets after midnight.", "**Restricted** — a hospital stay is currently marked as active, so home logging is paused. End the stay on the **In-Patient** tab if that's wrong.", "**Not scheduled today** — today isn't one of this medication's days.", "**Outside its treatment-day window** — the medication is set to only appear near your treatment day, and today isn't in that window.", "**Paused** — tap **Resume**.", "In every one of these cases except Paused and Restricted, there's a button to log it anyway. See *\"How do I log something the app is blocking?\"*."], keywords: ["greyed", "disabled", "locked", "won't log", "blocked", "waiting", "limit"], related: ["log-anyway-override", "ip-meds-restricted"], safety: true },
+  { id: "log-button-locked", cat: "logging", q: "The Log button is greyed out or won't do anything", a: "The card tells you which rule is holding it, in the words on the card itself.", steps: ["**Waiting** — the minimum gap since the last dose hasn't passed. The card says when it opens.", "**Limit** — today's daily limit has been reached. It resets after midnight.", "**Not scheduled today** — today isn't one of this medication's days.", "**Outside its treatment-day window** — the medication is set to only appear near your treatment day, and today isn't in that window.", "**Paused** — tap **Resume**.", "In every one of these cases except Paused, there's a button to log it anyway. See *\"How do I log something the app is blocking?\"*."], keywords: ["greyed", "disabled", "locked", "won't log", "blocked", "waiting", "limit"], related: ["log-anyway-override", "ip-meds-restricted"], safety: true },
   { id: "log-anyway-override", cat: "logging", q: "How do I log something the app is blocking?", a: "Every lock in ChemoWell can be overridden. It records what happened rather than pretending it didn't.", steps: ["On the blocked card, tap the button that appears — the wording depends on the reason, for example *Daily limit of 3,000 mg reached. Log more anyway?*", "Read what it says. It names the rule you're about to go past.", "Tap the dose amount and confirm.", "The dose is recorded with a small label — **Early**, **Over limit**, or both — so it's clear later that it was outside the usual rule.", "That label shows up in History and in the records you export."], note: "ChemoWell's limits are only what you typed in when you set up the medication. They are not medical guidance. If you're unsure whether a dose is safe, that's a question for the care team or the pharmacist, not for the app.", keywords: ["override", "anyway", "force", "ignore", "past limit", "early"], related: ["med-daily-limit-locked", "med-gap-hours"], medical: true, safety: true },
   { id: "log-double-tap", cat: "logging", q: "I think I logged the same dose twice", a: "Check Today's journal — the app is built to ignore a double-tap, so there's often nothing wrong.", steps: ["Scroll down Home to **Today's journal**.", "Look at the time the dose was recorded. A genuine double-tap does not create two rows.", "If there really are two rows and one is wrong, tap **Remove** next to it and confirm.", "If Remove isn't there, the entry is more than 48 hours old — see *\"I logged something by mistake\"*."], keywords: ["twice", "duplicate", "double", "two entries", "accidental"], related: ["log-remove"] },
   { id: "log-wrong-time", cat: "logging", q: "I forgot to log a dose at the time — can I put in the right time?", a: "Yes. When the app asks for the time, change it before confirming.", steps: ["Log the dose the normal way.", "When the date and time screen appears, tap the time and set it to when it was actually taken.", "You can change the date too if it was a different day.", "Tap **Confirm**.", "If you set a time in the future, it warns you and asks you to press Confirm again — that's deliberate."], note: "Blood pressure is the one exception: it records immediately with no time screen, so it can't be backdated from Home.", keywords: ["wrong time", "backdate", "past", "earlier", "yesterday", "forgot"], related: ["log-forgot-yesterday", "vit-bp-log"] },
@@ -2741,7 +2784,7 @@ const HELP_TOPICS = [
   { id: "sym-medical-question", cat: "symptoms", q: "Side effects — hair loss, sickness, tiredness: is this normal?", a: "**This is a question for the care team, and ChemoWell will not try to answer it.** The app keeps a record of what happened and when. It holds no information about any drug, has no idea what is normal for this person's treatment, and would be guessing if it said otherwise.", steps: ["Write the question down, along with what you have actually seen and when it started.", "Ask the care team, or the pharmacist who dispensed the medication \u2014 they have the person's actual treatment plan in front of them.", "Anything sudden, severe, or frightening is a phone call now, not a question for later.", "Log the symptom here with a note in your own words. Turning up to an appointment with dates and times is worth far more than trying to remember."], note: "ChemoWell is a record-keeping tool, not a source of medical information. Never delay care because of anything shown in this app.", keywords: ["side effect", "side effects", "hair", "hair loss", "sickness", "tiredness", "fatigue", "normal", "expect", "is that normal", "should i worry", "worried", "dangerous", "interact", "interaction", "safe to take", "what does it do"], related: ["sym-severe", "sym-log", "vit-temp-high"], medical: true, careLead: true, careTone: "calm" },
   { id: "sym-bowel-confusion", cat: "symptoms", q: "Should diarrhoea go in Symptoms or the bowel tracker?", a: "Either works, and they're for different things.", steps: ["Use the **Daily check-in** bowel question for the day's overall pattern — normal, very little, none, or diarrhoea.", "Use the **Symptoms** tab for a specific episode with a time and a note.", "The Symptoms list does include diarrhoea and constipation for exactly that reason.", "Both show up in your exported records."], keywords: ["diarrhea", "diarrhoea", "constipation", "bowel", "where"], related: ["vit-checkin-modal", "sym-log"] },
   { id: "ip-start-end", cat: "inpatient", q: "How do I record a hospital stay?", a: "The In-Patient tab at the bottom, with a start and an end.", steps: ["Tap **In-Patient** at the bottom of the screen.", "When the stay begins, tap **Log In-Patient Start**.", "A banner appears on Home showing which day of the stay you're on.", "When the person is discharged, tap **Log In-Patient End** — on that banner or on the In-Patient tab.", "Every past stay is kept in the **In-Patient History** list below."], keywords: ["hospital", "admitted", "in-patient", "stay", "discharged"], related: ["ip-meds-restricted", "ip-forgot-end"] },
-  { id: "ip-meds-restricted", cat: "inpatient", q: "My medications say 'Restricted' and I can't log them", a: "A hospital stay is marked as active. While it is, home logging pauses, because the hospital is giving the medications.", steps: ["If the stay is over, tap **In-Patient** at the bottom and tap **Log In-Patient End**.", "Medication logging on Home goes back to normal straight away.", "If the stay really is still active, that's the intended behaviour — the doses are being given and recorded by the hospital, not by you.", "Days inside a hospital stay are never flagged as missed doses."], keywords: ["restricted", "can't log", "hospital", "paused", "greyed"], related: ["ip-start-end", "log-button-locked"], medical: true },
+  { id: "ip-meds-restricted", cat: "inpatient", q: "Can I still log medications during a hospital stay?", a: "Yes. Everything stays loggable the whole time a stay is active.", steps: ["Log doses exactly as you normally would — nothing is locked.", "Doses the hospital gave are not counted as missed: any dose window that opened while the stay was running is treated as theirs.", "If she comes home part-way through a day, the windows after that point are yours again and are tracked normally. You do NOT need to end the stay early to log them.", "End the stay when it actually ends, on the **In-Patient** tab."], note: "This used to work the other way round. Medications showed as 'Restricted' and could not be logged at all while a stay was active, and this page told you to end the stay early to unlock them — which meant falsifying when she came home in order to record a dose she really took. Fixed 2026-08-26 after Aaron hit exactly that on a half-day stay.", keywords: ["restricted", "can't log", "hospital", "paused", "greyed", "half day", "discharged"], related: ["ip-start-end", "log-button-locked"], medical: true },
   { id: "ip-forgot-end", cat: "inpatient", q: "I forgot to end a hospital stay and it still says Active", a: "End it now — the stay keeps its real start date.", steps: ["Tap **In-Patient** at the bottom.", "Tap **Log In-Patient End**.", "The stay closes and moves into In-Patient History with its length.", "The end time is recorded as now. If the real discharge was earlier, add a note — menu → **Notes** — so the record is accurate."], keywords: ["still active", "forgot", "end", "discharge", "ongoing"], related: ["ip-start-end"] },
   { id: "ip-past-stay", cat: "inpatient", q: "I want to add a hospital stay that already happened", a: "There's a separate control for logging a past stay with both dates.", steps: ["Tap **In-Patient** at the bottom.", "Find the option to log a past stay (Start + End).", "Set the start date and time, then the end date and time.", "Confirm. It appears in In-Patient History."], keywords: ["past stay", "backdate", "previous", "add old"], related: ["ip-start-end"] },
   { id: "ip-undo", cat: "inpatient", q: "I tapped In-Patient Start by mistake", a: "There's an Undo, and it asks twice on purpose.", steps: ["On the **In-Patient** tab, tap the undo option on the active stay.", "It asks you to tap again to confirm.", "Tap it again within a few seconds.", "The entry is removed and home medication logging goes back to normal."], keywords: ["undo", "mistake", "accidental", "remove stay"], related: ["ip-start-end"] },
@@ -2851,15 +2894,29 @@ function daysSinceInpatientStart() {
   if (!cur) return null;
   return Math.floor((dayStart(state.now) - dayStart(cur.start)) / 86400000) + 1; // start day counts as Day 1
 }
+// WHOLE-DAY test -- kept for DISPLAY ("was any part of this day a hospital day"), which is the right
+// question for the History badge and the WRONG one for a dose. See inpatientCoversMoment() below.
 function isInpatientDay(ts) {
   const d0 = dayStart(ts), d1 = d0 + 86400000;
   if (state.entries.some(e => e.medId === 'inpatient' && dayStart(e.ts) === d0)) return true; // legacy marker
   return inpatientPeriods().some(p => p.start < d1 && (p.end === null || p.end > d0));
 }
+// MOMENT test -- was she actually in hospital at this instant?
+// Ported from care-tracker v60. Aaron, 2026-08-26, on a real half-day stay: "they gave the Dex
+// during the morning, but in the evening I had to end in patient bc I couldn't enter the Dex for the
+// evening." Suppressing a whole calendar day makes the evening dose taken at home invisible; ending
+// the stay early to log it flags the hospital's morning doses as missed. No true record was
+// possible. A window belongs to the hospital if she was admitted at the moment it OPENED -- that is
+// when the dose became due and somebody had to give it.
+// The legacy whole-day 'inpatient' marker carries no times, so it still suppresses its whole day.
+function inpatientCoversMoment(ts) {
+  if (state.entries.some(e => e.medId === 'inpatient' && dayStart(e.ts) === dayStart(ts))) return true;
+  return inpatientPeriods().some(p => p.start <= ts && (p.end === null || p.end > ts));
+}
 async function logInpatientStart() {
   if (isInpatientActiveNow()) return;
   await addEntryDB({ medId: 'inpatient_start', dose: null, mg: 0, ts: simNow() });
-  setToast('In-Patient started — meds now show as Restricted');
+  setToast('In-Patient started — hospital doses will not be flagged missed');
 }
 async function logInpatientEnd() {
   if (!isInpatientActiveNow()) return;
@@ -3321,16 +3378,14 @@ function renderGroupedMedsCard(title, meds, now) {
         // v26 (Aaron-requested): matches medCards' equivalent fix -- a day-restricted medication now
         // falls through to the normal override-capable row instead of a dead-end inert row, so every
         // medication has the same "log it anyway" option regardless of why it's not the default
-        // available state. inpatientNow still wins outright (hospital-administered, not overridable).
+        // available state. In-patient USED to win outright here -- "hospital-administered, not
+        // overridable" -- which made it the single blocked state with no way to log anyway. That was
+        // the whole trap: a caregiver at the bedside, or home for the evening on a half-day stay,
+        // had no way to record a real dose. Aaron: "I had to end in patient bc I couldn't enter the
+        // Dex for the evening." An app must never require falsifying one true record to enter
+        // another. In-patient now falls through to the same override-capable row as every other
+        // reason, and the hospital's own doses are handled by inpatientCoversMoment() instead.
         const offDay = !inpatientNow && !medScheduledOn(med, now);
-        if (inpatientNow) {
-          return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(246,108,49,0.08)' : 'none' } },
-            h('div', { style: { flex: '1', minWidth: '0' } },
-              h('div', { style: { ...TYPE.title, color: '#9A6419' } }, med.name + ' - In-Patient (Restricted)'),
-              h('div', { style: { fontSize: '12px', color: '#7A5313' } }, 'Given by hospital staff')
-            )
-          );
-        }
         const st = status(med);
         const locked = !!st.locked || offDay;
         const todayLogs = entriesFor(med.id).filter(e => e.ts >= dayStart(now));
@@ -4288,7 +4343,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: ipTone.chipBg, color: ipTone.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, '+'),
       h('div', { style: { flex: '1' } },
         h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127', marginBottom: '2px' } }, 'In-Patient active'),
-        h('div', { style: { ...TYPE.caption, color: '#554A52' } }, (ipDayN !== null ? ('Day ' + ipDayN + ' — ') : '') + 'meds below show as Restricted')
+        h('div', { style: { ...TYPE.caption, color: '#554A52' } }, (ipDayN !== null ? ('Day ' + ipDayN + ' — ') : '') + 'doses given by hospital staff are not counted as missed. You can still log anything yourself.')
       ),
       h('button', { onClick: logInpatientEnd, style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: ipTone.accent, color: '#fff', fontSize: '13px', fontWeight: '700' } }, 'Log In-Patient End')
     ));
@@ -4769,12 +4824,8 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         h('div', { style: { fontSize: '12px', color: '#7A6E76' } }, isOtherTreatmentType() ? 'Excluded near your date' : 'Excluded near treatment day')
       );
     }
-    if (inpatientActiveNow) {
-      return h('div', { style: { background: 'rgba(154,100,25,0.08)', border: '1.5px dashed rgba(154,100,25,0.35)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
-        h('div', { style: { ...TYPE.title, color: '#8B5715' } }, med.name + ' - In-Patient (Restricted)'),
-        h('div', { style: { fontSize: '12px', color: '#704E22' } }, 'Given by hospital staff — not logged in this app')
-      );
-    }
+    // The unloggable In-Patient tile that stood here is gone -- see the matching note in the grouped
+    // meds card. Medications stay fully loggable during a stay.
     // v26 (Aaron-requested): a medication restricted to specific days used to be a dead-end here \u2014
     // no button at all on an off day, even though every other lock reason (daily limit, gap timer,
     // closed window) has always had an override. Now it falls through to the same card machinery as
@@ -6334,7 +6385,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v66';
+const APP_VERSION = 'app-v67';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
