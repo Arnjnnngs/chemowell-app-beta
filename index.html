@@ -1454,12 +1454,35 @@ function nextChemoTs() {
 // duplicates happen -- care-tracker's live record carries two chemo_date entries for 2026-08-24, and
 // two entries on one day must never mean two treatments.
 function chemoDayList() {
+  // CLEARING A TREATMENT DATE IS APPEND-ONLY. The Firestore rules forbid edits, so Clear appends a
+  // TOMBSTONE: a chemo_date row with ts: 0. The first version of this filtered `ts > 0`, discarding
+  // the tombstone and KEEPING the date it was meant to erase -- so nextChemoTs() honoured the clear
+  // while chemoOffsetFor() did not. Zofran stayed blocked showing a 1 Jan 1970 unlock time,
+  // Dexamethasone kept raising alerts on a deleted schedule, and a mistyped date could never be
+  // taken back. Shipped live in app-v67 before the Zero Day Auditor caught it.
+  // Ordered by loggedAt -- the order the caregiver actually did things in -- and a tombstone wipes
+  // every date recorded BEFORE it. Setting a new date after a clear starts fresh.
+  const evs = (state.chemoDates || []).filter(Boolean).slice()
+    .sort((a, b) => (a.loggedAt || a.ts || 0) - (b.loggedAt || b.ts || 0));
+  let days = [];
+  evs.forEach(e => {
+    if (!e.ts) { days = []; return; } // tombstone
+    days.push(dayStart(e.ts));
+  });
   const seen = new Set();
-  return (state.chemoDates || [])
-    .filter(e => e && e.ts > 0)
-    .map(e => dayStart(e.ts))
-    .filter(d => { if (seen.has(d)) return false; seen.add(d); return true; })
-    .sort((a, b) => a - b);
+  return days.filter(d => { if (seen.has(d)) return false; seen.add(d); return true; })
+             .sort((a, b) => a - b);
+}
+// THE MOST RECENT TREATMENT ON OR BEFORE THIS DAY -- directional, not nearest.
+// Zofran's block runs strictly forward from a treatment (day 0 through +2). "Nearest" answers a
+// different question. With treatments on 24 and 27 Aug, the 26th is one day BEFORE the 27th and two
+// days AFTER the 24th; nearest returns -1 and silently unblocks a day that should be blocked.
+// Dexamethasone's -1..+1 window is symmetric, so nearest stays correct for that one.
+function chemoOffsetSinceLast(dayTs) {
+  const d0 = dayStart(dayTs);
+  let prev = null;
+  chemoDayList().forEach(d => { if (d <= d0 && (prev === null || d > prev)) prev = d; });
+  return prev === null ? null : Math.round((d0 - prev) / 86400000);
 }
 // THE TREATMENT DATE RELEVANT TO *THIS* DAY -- the nearest one, in either direction.
 // This used to call nextChemoTs(), which despite its name returns the most recently ENTERED date,
@@ -1535,7 +1558,7 @@ function isPausedOn(med, dayTs) {
 // blocked Thu/Fri/Sat, opens Sunday). Confirmed by Aaron as the original, correct spec — v61/v62
 // of this file incorrectly "fixed" this to a 2-day block based on stale documentation elsewhere in
 // this repo; reverted in v67. See BETA_README.md's v67 changelog entry.
-function zofranBlockedOn(dayTs) { const o = chemoOffsetFor(dayTs); return o !== null && o >= 0 && o <= 2; }
+function zofranBlockedOn(dayTs) { const o = chemoOffsetSinceLast(dayTs); return o !== null && o >= 0 && o <= 2; }
 function dexWindowsForOffset(offset) { return offset === 1 ? [{ start: 8, end: 12, name: 'Morning' }] : [{ start: 8, end: 12, name: 'Morning' }, { start: 14, end: 18, name: 'Afternoon' }]; }
 
 // Missed-dose tracking starts the day the app was first opened on this device — a fresh
@@ -3339,14 +3362,16 @@ function renderDrawer() {
 // of scattering them across the individual Quick Log cards. Used for the Protonix-linked meds
 // (Buspirone/Paroxetine in the morning, Iron/Compazine in the evening).
 function renderGroupedMedsCard(title, meds, now) {
-  const inpatientNow = isInpatientActiveNow();
   // v20: paused and treatment-window-hidden meds are excluded from "due"/"Take all" the same way
   // medCards' upstream filter already excludes them for standalone Quick Log cards.
   const dueMeds = meds.filter(m => { if (m.paused) return false; if (treatmentOnlyBlocks(m, now)) return false; if (treatmentExcludedNow(m, now)) return false; if (!medScheduledOn(m, now)) return false; const s = status(m); return !s.locked; });
   return h('section', null,
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
       h('div', { style: { ...TYPE.label, color: '#915E48' } }, title),
-      (dueMeds.length >= 2 && !inpatientNow) ? h('button', { onClick: () => setState({ timeModal: { type: 'multi', medIds: dueMeds.map(m => m.id), timeValue: nowLocalISO() } }), style: { minHeight: '44px', padding: '0 16px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: '0 6px 18px rgba(168,61,15,0.32)' } }, 'Take all (' + dueMeds.length + ')') : null
+      // 'Take all' was hidden for the whole of a stay, left behind when the Restricted tiles
+      // were deleted in app-v67. A caregiver home for the evening on a half-day stay needs it
+      // most, not least. Both web builds removed it correctly; this one did not.
+      (dueMeds.length >= 2) ? h('button', { onClick: () => setState({ timeModal: { type: 'multi', medIds: dueMeds.map(m => m.id), timeValue: nowLocalISO() } }), style: { minHeight: '44px', padding: '0 16px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13.5px', fontWeight: '700', boxShadow: '0 6px 18px rgba(168,61,15,0.32)' } }, 'Take all (' + dueMeds.length + ')') : null
     ),
     h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '18px', overflow: 'hidden', marginTop: '11px', boxShadow: '0 4px 24px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
       ...meds.map((med, i) => {
@@ -3385,7 +3410,12 @@ function renderGroupedMedsCard(title, meds, now) {
         // Dex for the evening." An app must never require falsifying one true record to enter
         // another. In-patient now falls through to the same override-capable row as every other
         // reason, and the hospital's own doses are handled by inpatientCoversMoment() instead.
-        const offDay = !inpatientNow && !medScheduledOn(med, now);
+        // `!inpatientNow &&` was left here when the Restricted tile above was deleted, and it
+        // forced offDay FALSE for the whole of a stay -- so an unscheduled medication rendered a
+        // full Log button that did nothing when tapped (logMed re-derives correctly and diverts),
+        // and the override prompt then said 'Closed - opens later' instead of 'Not scheduled
+        // today'. The rewritten Help topic promises nothing is locked; this made that untrue.
+        const offDay = !medScheduledOn(med, now);
         const st = status(med);
         const locked = !!st.locked || offDay;
         const todayLogs = entriesFor(med.id).filter(e => e.ts >= dayStart(now));
@@ -6385,7 +6415,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v67';
+const APP_VERSION = 'app-v68';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
