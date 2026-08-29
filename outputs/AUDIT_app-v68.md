@@ -343,7 +343,10 @@ flex row. I did not render it.
   row present and naming the correct cache key. `release_check.sh` confirms all three before it
   reaches the chain gate.
 * **Assertions that cannot fail** — the seven new checks all fail on a mutant (MINOR-6 table). The
-  gate I *did* break is `release_check.sh` (MAJOR-3).
+  gate I *did* break is `release_check.sh` (MAJOR-3). Separately, two suite reds turned out to be
+  pinned wording rather than defects (`v55-help`, above), and two more turned out to be
+  environment contamination in the previous audit's run — so of the seven reds that release was
+  reported against, **four were never real**.
 
 ---
 
@@ -357,6 +360,31 @@ flex row. I did not render it.
 * `test/v57-browser-notice.mjs` — 17 failures from the app-v58 layout regression. Not reached in my
   own runner pass before my time cap; taking the previous audit's count on trust rather than
   re-measuring it.
+* **`test/v55-help.mjs` is NOT failing on what the previous audit said it was failing on.** That
+  audit attributed its red to *"`v55-help`'s unfalsifiable `careLead`/`medical` check"* per
+  `BACKLOG.md:119`. Measured — the actual failures are two different checks that are logged
+  nowhere:
+
+  ```
+  v55-help   FAIL (exit 1)
+    FAIL  [360px] V55-3 could reach "medications say .Restricted"  | search "restricted log them" found no row
+    FAIL  [390px] V55-3 could reach "medications say .Restricted"  | search "restricted log them" found no row
+  ```
+
+  **This one mattered enough to chase, because it is the same Help topic app-v68's MAJOR-3 fix
+  leans on** (`ip-meds-restricted`, the one that promises *"nothing is locked"*). A reachability
+  check going red on it could have meant a caregiver can no longer find the hospital-stay topic —
+  the Help search has a relevance floor (`HELP_SEARCH_FLOOR = 0.22`, `index.html:6845`) that can
+  cut a topic out of results entirely, so this was not obviously a wording pin.
+
+  **It is a wording pin, and the topic is findable.** The repo's own search gate proves it:
+  `test/v57-search.mjs` asserts `'his meds say restricted' -> 'ip-meds-restricted'` (`:207`) and
+  *"every topic is still found first by its own question text"* across all 134 docs (`:383-391`).
+  Both **PASS**, ALL GREEN. app-v67 rewrote that topic's copy; the v55-help check pins the old
+  phrase `"restricted log them"`, which no longer exists. Same class as V57-1 — a check pinning a
+  sentence a later release deliberately reworded — which sat red for eight releases.
+  **Action: it belongs in `BACKLOG.md` as its own entry, and `BACKLOG.md:119`'s entry should stop
+  being read as the explanation for this suite's red.**
 * **Half of the previous audit's MAJOR-10 is now resolved.** It could not attribute two of the
   seven reds because its browser work shared port 8899 with the runner. On my clean, uncontaminated
   run **`v52-fixes` PASSES (ALL GREEN) and `v55-fixes-shots` PASSES** — so those two were
@@ -371,10 +399,11 @@ flex row. I did not render it.
 * **`chemowell-beta`** — no v68 branch exists in this sandbox, so the third build was not audited
   and **Firestore isolation was not re-verified at runtime this round.** The BLOCKER and MAJOR-2
   are present in beta-v60 and need the same hotfix; that port is unaudited.
-* **One clean full `./run-all-tests.sh` pass to completion** — mine reached `v55-help` and was
-  still running at my time cap, so the final PASS/FAIL/COULD-NOT-START tally is still unmeasured.
-  Everything up to that point ran clean and isolated (see Known issues). Same gap the previous
-  audit named (MAJOR-10); it is now smaller, not closed.
+* **One clean full `./run-all-tests.sh` pass to completion** — mine got as far as
+  `v57-browser-notice` before my time cap, so the final PASS/FAIL/COULD-NOT-START tally is still
+  unmeasured. Everything up to that point ran clean and isolated, and every red in it is now
+  attributed (see Known issues). Same gap the previous audit named (MAJOR-10); much smaller, not
+  closed.
 * **Any rendered screen.** Every finding here is from source reading plus VM-harness measurement.
   No browser was driven against app-v68. MAJOR-2's "Opens Thu, Aug 6" is measured from the same
   expression the card renders, not read off a screen.
