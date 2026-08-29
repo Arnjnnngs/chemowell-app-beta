@@ -408,14 +408,22 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # form look like two different commits, so a forged SHIP declaring the full sha "superseded" a real
   # DO NOT SHIP declaring the short one — the same commit overruling itself. That is how a padded fake
   # cleared this gate while four real refusals were printed above it.
+  # ONE HEADER BLOCK, READ AS A UNIT. report_sha and report_verdict used to scan independently, so a
+  # report's commit and its verdict could come from unrelated lines: a report stating DO NOT SHIP was
+  # read as SHIP because it QUOTED another report's `VERDICT: SHIP` higher in its first 12 lines. The
+  # verdict must be the line immediately after AUDITED-COMMIT, so a quotation cannot be mistaken for
+  # this report's own finding.
+  report_pair() {
+    report_head "$1" | grep -A1 -m1 -E '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}[[:space:]]*$' 2>/dev/null || true
+  }
   report_sha() {
-    _raw=$(report_head "$1" | grep -m1 -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}' | grep -oE '[0-9a-f]{7,40}$' || echo "")
+    _raw=$(report_pair "$1" | head -1 | grep -oE '[0-9a-f]{7,40}[[:space:]]*$' | tr -d '[:space:]' || echo "")
     [ -z "$_raw" ] && { echo ""; return; }
     git rev-parse --verify --quiet "$_raw^{commit}" 2>/dev/null || echo "$_raw"
   }
   # ANCHORED TO END OF LINE. `VERDICT: SHIPPING SOON` used to read as SHIP -- the pattern matched the
   # first four letters and stopped. Trailing whitespace/CR is allowed; trailing words are not.
-  report_verdict() { report_head "$1" | grep -m1 -oiE '^VERDICT:[[:space:]]*(DO NOT SHIP|SHIP)[[:space:]]*$' | sed 's/^[^:]*:[[:space:]]*//' | tr -d '[:space:]' || echo ""; }
+  report_verdict() { report_pair "$1" | tail -1 | grep -m1 -oiE '^VERDICT:[[:space:]]*(DO NOT SHIP|SHIP)[[:space:]]*$' | sed 's/^[^:]*:[[:space:]]*//' | tr -d '[:space:]' || echo ""; }
 
   check_report_current() {   # $1 = path. echoes "" if current AND clearing, else the reason.
     _sha=$(report_sha "$1")
@@ -462,12 +470,23 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
     [ -z "$_rs" ] && continue
     git rev-parse --verify --quiet "$_rs^{commit}" >/dev/null || continue
     git merge-base --is-ancestor "$_rs" HEAD 2>/dev/null || continue
+    # SAME STAGE, and the approval must itself be a valid report. Neither held: a two-line file naming
+    # a commit on an ABANDONED SIDE BRANCH — not in this history at all — cancelled every standing
+    # refusal and erased them from the output, because this loop applied neither the in-this-history
+    # test nor the thinness floor that the clearing path applies. And a PM sign-off could overrule an
+    # Auditor's refusal, because nothing checked which stage either came from. An Auditor's refusal is
+    # answered by the Auditor looking again, not by a different desk signing instead.
+    case "$_r" in outputs/AUDIT*) _stage="$AUDIT_ALL" ;; *) _stage="$PM_ALL" ;; esac
     _superseded=""
-    for _q in $AUDIT_ALL $PM_ALL; do
+    for _q in $_stage; do
       case "$(report_verdict "$_q")" in [Ss][Hh][Ii][Pp]) ;; *) continue ;; esac
+      _qbytes=$(wc -c < "$_q" 2>/dev/null || echo 0); _qlines=$(wc -l < "$_q" 2>/dev/null || echo 0)
+      [ "$_qbytes" -lt 2000 ] && continue
+      [ "$_qlines" -lt 25 ] && continue
       _qs=$(report_sha "$_q")
       [ -z "$_qs" ] && continue
       git rev-parse --verify --quiet "$_qs^{commit}" >/dev/null || continue
+      git merge-base --is-ancestor "$_qs" HEAD 2>/dev/null || continue
       # strictly later: the refusal's commit is an ancestor of the approval's, and they differ
       if [ "$_qs" != "$_rs" ] && git merge-base --is-ancestor "$_rs" "$_qs" 2>/dev/null; then _superseded="$_q"; fi
     done

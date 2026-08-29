@@ -141,16 +141,22 @@ const scanFn = function (vw) {
     // claim this scan exists to catch. A dropdown that does not fit its column is the defect that
     // forced this whole app to 379px, so it gets its own rule.
     if (tag === 'select') {
-      // THE TEXT INSIDE THE CONTROL, not the control's own width. This rule has now been claimed and
-      // been wrong three releases running. Asking "is the box wider than its column" is structurally
-      // DEAD in this app: select{max-width:100%} pins every dropdown to exactly its column, over by
-      // 0.0px, so the rule could never fire — while on a 360px phone the medication-type dropdown was
-      // cutting its own text off by 19px and the schedule dropdown was cutting "Every few days (for
-      // example, every other day)" by 51px. Exactly the case the old comment named.
-      // A <select> renders the SELECTED option's label inside itself, and clips it with no ellipsis.
-      // So measure that label in the control's own font against the room actually left for it, after
-      // the horizontal padding that reserves space for the chevron. Every option is measured, not
-      // just the current one: any of them becomes the visible label the moment it is chosen.
+      // NO ELLIPSIS EXEMPTION. This is the third release in which this rule has been claimed and
+      // been unable to fire, and the last version disabled itself: the same commit that "fixed" the
+      // Days taken dropdown gave it `text-overflow: ellipsis`, and the rule skipped any dropdown
+      // that had one. Both medication-editor dropdowns had one, so neither could ever be measured
+      // again — and the auditor proved it by putting the long labels back and watching the scan
+      // report 60 combinations CLEAN at the very commit that claimed to have caught them.
+      //
+      // The reasoning was wrong, not just the code. An ellipsis makes truncation VISIBLE; it does
+      // not make it ACCEPTABLE. A dropdown whose option reads "As needed — don't flag missed…" has
+      // hidden the words that carry the meaning, on a setting that turns missed-dose alerts off.
+      // So every dropdown is measured, always, and the ellipsis only changes what the finding is
+      // CALLED — a graceful cut is still a cut, and the fix is shorter labels, not a quieter gate.
+      //
+      // Chromium reports overflow:visible on a <select> whatever the stylesheet says (verified
+      // independently by the Zero Day Auditor with hidden/clip/auto and a screenshot) — the control
+      // clips natively. That is why the general `clipped` rule cannot be applied here at all.
       const padSelL = parseFloat(cs.paddingLeft) || 0, padSelR = parseFloat(cs.paddingRight) || 0;
       const room = el.clientWidth - padSelL - padSelR;
       const probe = document.createElement('span');
@@ -158,25 +164,17 @@ const scanFn = function (vw) {
       probe.style.font = cs.font || (cs.fontWeight + ' ' + cs.fontSize + '/' + cs.lineHeight + ' ' + cs.fontFamily);
       probe.style.letterSpacing = cs.letterSpacing;
       document.body.appendChild(probe);
-      // Deliberate truncation is not a defect, and the select branch was ignoring that while the
-      // text branch honoured it -- so a dropdown that ellipsises on purpose was reported as broken.
-      // A hard cut with no ellipsis is a real defect; "As needed - wait a set number of hours..."
-      // with a visible ellipsis is a design decision.
-      // A <select> is NOT judged by the general `clipped` rule, and this is measured, not assumed:
-      // Chromium reports overflow:visible on a select whatever the stylesheet says -- the control
-      // clips its own text natively -- so demanding a clipping overflow before honouring an ellipsis
-      // meant a dropdown that truncates visibly and on purpose was still reported as broken. For a
-      // select, `text-overflow: ellipsis` on its own IS the deliberate-truncation signal.
       let worstOpt = null, worstBy = 0;
-      const selEllipsis = cs.textOverflow === 'ellipsis';
-      if (!selEllipsis) [...el.options].forEach(o => {
+      [...el.options].forEach(o => {
         probe.textContent = o.text;
         const need = probe.getBoundingClientRect().width;
         if (room > 0 && need - room > 1.5 && need - room > worstBy) { worstBy = need - room; worstOpt = o.text; }
       });
       probe.remove();
       if (worstOpt) {
-        kind = 'the dropdown cuts off its own text ("' + worstOpt.slice(0, 40) + '")';
+        const graceful = cs.textOverflow === 'ellipsis';
+        kind = (graceful ? 'the dropdown truncates its own text with an ellipsis ("'
+                         : 'the dropdown cuts off its own text ("') + worstOpt.slice(0, 40) + '")';
         overBy = Math.round(worstBy);
       }
       const parentSel = el.parentElement;
@@ -365,6 +363,50 @@ for (const dev of DEVICES) {
       if (b) b.click();
     });
     return true;
+  } },
+  // THE SAME EDITOR, IN THE OTHER SCHEDULE MODE. Some option labels CHANGE with the mode: the
+  // "Days taken" dropdown reads "No set days" for an as-needed medication and something longer for
+  // a scheduled one. Scanning only the default mode meant the longer text was never rendered, so
+  // the scan reported CLEAN while a real truncation sat one dropdown-change away — found by the
+  // Zero Day Auditor by hand, not by this scan. A screen with modes is more than one screen.
+  { name: 'med-editor-scheduled', open: async page => {
+    const onMeds = await page.evaluate(() => {
+      const b = document.querySelector('[data-tour="nav-meds"]');
+      if (!b) return false; b.click(); return true;
+    });
+    if (!onMeds) return false;
+    await page.waitForTimeout(800);
+    const opened = await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('button')];
+      const edit = btns.find(x => /^edit /i.test((x.getAttribute('aria-label') || '').trim()));
+      if (edit) { edit.click(); return true; }
+      const add = document.querySelector('[data-tour="meds-add"]');
+      if (add) { add.click(); return true; }
+      return false;
+    });
+    if (!opened) return false;
+    await page.waitForTimeout(700);
+    if (!await page.evaluate(() => !!document.querySelector('[data-tour="med-editor"]'))) return false;
+    // Switch Schedule type to "Scheduled" so the mode-dependent option labels actually render.
+    const switched = await page.evaluate(() => {
+      const sel = [...document.querySelectorAll('select')]
+        .find(s => [...s.options].some(o => o.value === 'win'));
+      if (!sel) return false;
+      sel.value = 'win';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    });
+    if (!switched) return false;
+    await page.waitForTimeout(800);
+    // Prove the mode really changed, rather than trusting the dispatch. Read it back off the control
+    // itself: an earlier version of this check asked whether the Days-taken select sat inside a
+    // <label>, which it does not, so the screen was reported unreachable at every width. The scan
+    // refusing to call it clean was the right behaviour — the check was simply wrong.
+    return page.evaluate(() => {
+      const sel = [...document.querySelectorAll('select')]
+        .find(s => [...s.options].some(o => o.value === 'win'));
+      return !!(sel && sel.value === 'win');
+    });
   } }];
 
   for (const screen of SCREENS) {
@@ -373,7 +415,7 @@ for (const dev of DEVICES) {
     // dead -- tapping them did nothing at all -- and this reported "48 combinations, 0 problems,
     // CLEAN". That is the same false-clean trap this file's own header describes, moved one level
     // down. The app marks the live tab with aria-current="page", so that is the receipt to demand.
-    const navigated = await page.evaluate(async key => {
+    const navigated = await page.evaluate(async ([key, seedName]) => {
       const btn = document.querySelector('[data-tour="nav-' + key + '"]');
       if (!btn) return false;
       btn.click();
@@ -383,17 +425,31 @@ for (const dev of DEVICES) {
       // AND THE SCREEN MUST HAVE SOMETHING ON IT. A view that renders completely blank still set
       // aria-current and still counted as scanned and clean — 48 combinations, 0 problems, exit 0.
       // "I navigated there" and "there was anything there" are two different claims.
-      const nav = document.querySelector('nav');
-      const chrome = nav ? nav.innerText.length : 0;
-      const body = document.body.innerText.length;
-      // 150, not 80. Eighty characters is roughly one sentence, so three tabs stripped to a single
-      // 83-character line still passed as scanned and clean. Measured: the thinnest genuinely real
-      // screen in this app carries 181 characters even with no data logged at all, so the bar has
-      // room to sit well above "one sentence" without ever failing an honest empty state.
-      return (body - chrome) > 150;
-    }, screen);
+      // MEASURE THE CONTENT REGION, NOT THE PAGE. The bar was on body text minus the nav — but the
+      // app header renders on every screen no matter what, so roughly 77 of the 150 characters were
+      // furniture and the effective bar was about 74. Two of five screens were unguarded.
+      // <main> is the content region; header and nav are outside it.
+      const main = document.querySelector('main');
+      if (!main) return false;
+      const content = main.innerText.trim().length;
+      // 60, and deliberately LOW, because a character count cannot do the job people want from it.
+      // Measured on this app: the thinnest HONEST screen is 118 characters, and the Meds screen with
+      // no medications saved is 154 — while a BROKEN Meds screen that lost every card but kept its
+      // title is also about 154. Those two are genuinely indistinguishable by length, so no bar can
+      // separate them and a higher one only buys false confidence. This catches what it can honestly
+      // catch: a blank or near-blank render. The real check for "the content vanished" is below.
+      if (content <= 60) return false;
+      // THE FIXTURE MUST STILL BE ON SCREEN. This is the check that actually catches a screen which
+      // lost its content while keeping its heading — the case a length bar cannot see. The scan
+      // seeds a medication precisely so there is something specific to look for, and Home and Meds
+      // are the two screens that must show it.
+      if (key === 'home' || key === 'meds') {
+        if (main.innerText.indexOf(seedName) < 0) return false;
+      }
+      return true;
+    }, [screen, SEED_MEDS.meds[0].name]);
     if (!navigated) {
-      console.log('  COULD NOT REACH ' + screen.toUpperCase() + ' at ' + dev.w + 'px — not scanned');
+      console.log('  COULD NOT REACH ' + screen.toUpperCase() + ' at ' + dev.w + 'px — not scanned (blank, or the seeded medication is missing)');
       unreachable++;
       continue;
     }

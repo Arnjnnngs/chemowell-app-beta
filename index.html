@@ -5888,11 +5888,15 @@ function renderMedicationEditor() {
         );
       })(),
       h('div', { style: { gridColumn: '1 / -1' } },
-        fieldLabel('Days taken', 'Not every medication is daily \u2014 pick which days this one is given.'),
+        fieldLabel('Days taken', 'Not every medication is daily \u2014 pick which days this one is given. "As needed" means no missed-dose alerts for it.'),
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
           h('select', { value: form.scheduleMode, onChange: event => updateMedicationForm('scheduleMode', event.target.value, true), style: selectFix({ minHeight: '43px', maxWidth: '100%', border: '1px solid rgba(246,108,49,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }) },
             h('option', { value: 'daily' }, 'Every day'),
-            h('option', { value: 'asneeded' }, form.type === 'win' ? 'As needed \u2014 don\u2019t flag missed doses' : 'No set days'),
+            // app-v68: was "As needed - don't flag missed doses" in scheduled mode, which is 32px too wide
+            // for this control at 320px and 22px at 330px -- and the words cut off were the ones carrying
+            // the meaning, on the setting that turns missed-dose alerts OFF. The explanation moved into
+            // the field's help text below, which wraps instead of being sliced.
+            h('option', { value: 'asneeded' }, form.type === 'win' ? 'As needed' : 'No set days'),
             h('option', { value: 'weekly' }, 'Specific days of the week'),
             // app-v68: was 'Every few days (for example, every other day)'. That is 43 characters in a
             // control roughly 24 fit on a phone, and this select had no ellipsis -- so the parenthetical
