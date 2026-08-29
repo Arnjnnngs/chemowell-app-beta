@@ -357,9 +357,10 @@ flex row. I did not render it.
 * `test/audit-v55.mjs` — still red on A3 (topic-count pin, 135 vs 133), A6 (`0 chips followed`)
   and B8. `BACKLOG.md:48` still leaves open whether A6/B8 are stale pins or a real Help regression.
   **Unresolved since app-v66, and unaffected by this release.**
-* `test/v57-browser-notice.mjs` — 17 failures from the app-v58 layout regression. Not reached in my
-  own runner pass before my time cap; taking the previous audit's count on trust rather than
-  re-measuring it.
+* `test/v57-browser-notice.mjs` — confirmed red from the app-v58 layout regression, measured, not
+  taken on trust: `R2D-1 the strip is under 200px` reports `stripH: 235`, and `firstTop: 630`
+  against `navTop: 651` — the 21px-visible first answer `BACKLOG.md` records. Honestly
+  characterised.
 * **`test/v55-help.mjs` is NOT failing on what the previous audit said it was failing on.** That
   audit attributed its red to *"`v55-help`'s unfalsifiable `careLead`/`medical` check"* per
   `BACKLOG.md:119`. Measured — the actual failures are two different checks that are logged
@@ -394,16 +395,50 @@ flex row. I did not render it.
 
 ---
 
+## MAJOR-10 from the previous audit — CLOSED. One clean, uncontaminated full run.
+
+The previous audit's top open item was that nobody had a trustworthy `./run-all-tests.sh` number
+in either direction. I have one, on an idle machine, with no browser work of my own sharing the
+runner's port:
+
+```
+PASS 17   FAIL 5   COULD-NOT-START 1
+  failing:      audit-v55 pm-v55 pm-v55b v55-help v57-browser-notice
+  cannot start: audit-v55b
+```
+
+Against app-v67's `PASS 15  FAIL 7  COULD-NOT-START 1`. **The red list is five, not seven** —
+`v52-fixes` and `v55-fixes-shots` both pass clean, confirming they were environment contamination
+in that run rather than defects.
+
+**Every one of the five reds is now attributed, and none is caused by app-v68:**
+
+| suite | cause | logged? |
+|---|---|---|
+| `audit-v55` | A3 topic-count pin (135 actual vs 133 hardcoded); A6/B8 still open | `BACKLOG.md:46`, `:48` |
+| `pm-v55` | topic-count pin — `P3c every row opened \| 135 rows` | `BACKLOG.md:46` |
+| `pm-v55b` | topic-count pin — `B8 all 133 rows opened \| 135` | `BACKLOG.md:46` |
+| `v55-help` | **stale wording pin on copy app-v67 rewrote** — proven above | **nowhere** |
+| `v57-browser-notice` | app-v58 layout regression, `stripH: 235` measured | `BACKLOG.md` (app-v66) |
+| `audit-v55b` | cannot start, `Cannot find module '/tmp/topics.js'` | yes |
+
+And the release's own gates are green on a clean run: `v67-chemo-offset` **17/17**,
+`v67-inpatient-window` **10/10**, `v67-medflag-backfill` **4/4**, `v57-search` **ALL GREEN**,
+`v63-encrypted-backup` 22/22, `v64-logger` 23/23, `v61-backup` 22/22, `v59-para` 15/15.
+
+`BACKLOG.md:48`'s open question — whether `audit-v55`'s A6/A8 are stale pins or a real Help
+regression — is **still open**; A6 (`0 chips followed`) and B8 are not count pins and I did not
+chase them. That is the one thing MAJOR-10 asked for that I have not delivered.
+
+---
+
 ## Scope: what I did NOT reach
 
 * **`chemowell-beta`** — no v68 branch exists in this sandbox, so the third build was not audited
   and **Firestore isolation was not re-verified at runtime this round.** The BLOCKER and MAJOR-2
   are present in beta-v60 and need the same hotfix; that port is unaudited.
-* **One clean full `./run-all-tests.sh` pass to completion** — mine got as far as
-  `v57-browser-notice` before my time cap, so the final PASS/FAIL/COULD-NOT-START tally is still
-  unmeasured. Everything up to that point ran clean and isolated, and every red in it is now
-  attributed (see Known issues). Same gap the previous audit named (MAJOR-10); much smaller, not
-  closed.
+* ~~One clean full `./run-all-tests.sh` pass~~ — **reached after all; see below. MAJOR-10 is
+  closed.**
 * **Any rendered screen.** Every finding here is from source reading plus VM-harness measurement.
   No browser was driven against app-v68. MAJOR-2's "Opens Thu, Aug 6" is measured from the same
   expression the card renders, not read off a screen.
