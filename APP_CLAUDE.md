@@ -48,18 +48,28 @@ The **native mobile app** codebase (APP-BETA). Seeded from `chemowell-beta` v71,
    medication-tracking app for cancer patients and their caregivers — the cost of a missed defect
    is not hypothetical, which is exactly why this rule has no size-based exception. Role reports
    are committed to `outputs/`.
-6. **Commit/push process (per Aaron, 2026-07-24):** Claude is authorized to commit and push to the BETA repos (`chemowell-app-beta`, `chemowell-beta`) directly, using Claude-in-Chrome to drive the GitHub web UI (upload files / create file) — no need to hand files to Aaron for manual upload. This authorization does NOT extend to WEB-MAIN (`care-tracker`): that repo still requires Aaron's explicit, in-the-moment go-ahead before any change. Commit work locally in the sandbox first (clean record + diffable), then push the same files via the web UI.
-7. **Find solutions, don't surface problems and wait (per Aaron, 2026-08-06; scope clarified
+6. **PUSH PERMISSION IS NOT THE QUALITY GATE — clarified by Aaron, 2026-08-29: "you CAN always
+   push to chemowell, after audit pass and PM."** These are two different things and conflating
+   them shipped app-v67 and chemowell-beta v60 straight to `main` with every suite green and no
+   independent review at all. Standing permission to push says WHERE work may go; rule 5 says WHEN
+   it is allowed to go there. The order is: build → self-verify → **independent Auditor** →
+   **PM sign-off** → push. Never push first and audit after.
+   **This is now mechanical, not a promise.** `release_check.sh` refuses to pass unless `outputs/`
+   contains an `AUDIT*<version>*` report and a `PM*<version>*` sign-off naming the exact version
+   being released. A rule enforced only by the person it constrains is the one that gets skipped at
+   the end of a long day.
+7. **Commit/push process (per Aaron, 2026-07-24):** Claude is authorized to commit and push to the BETA repos (`chemowell-app-beta`, `chemowell-beta`) directly, using Claude-in-Chrome to drive the GitHub web UI (upload files / create file) — no need to hand files to Aaron for manual upload. This authorization does NOT extend to WEB-MAIN (`care-tracker`): that repo still requires Aaron's explicit, in-the-moment go-ahead before any change. Commit work locally in the sandbox first (clean record + diffable), then push the same files via the web UI.
+8. **Find solutions, don't surface problems and wait (per Aaron, 2026-08-06; scope clarified
    2026-08-08):** if you notice a bug, an easy fix, or something worth flagging for later while
    working on something else, you do not stop and ask Aaron what to do about it — you either fix
    it yourself or log it in `BACKLOG.md` (this directory) plus the task list. This rule is about
    *whether you act on a finding instead of silently dropping it or leaving it as an open
-   question* — it is NOT a size-based exception to rule 5's mandatory Auditor + PM gates. Fixing
+   question* — it is NOT a size-based exception to rule 5's mandatory Auditor + PM gates, nor to rule 6's ordering. Fixing
    something immediately, rather than deferring it to `BACKLOG.md`, is still subject to rule 5 in
    full: implement it, then it still goes through the independent gates before it's done, no
    matter how small the fix looks. Aaron should never have to tell Claude the same category of
    fix twice, and Claude should never have to tell Aaron "should work" instead of "verified."
-8. **Commit locally often, don't sit on uncommitted work (per Aaron, 2026-08-06, after a real incident):** a local working-tree revert on 2026-08-06 wiped an in-progress feature build before it was committed. Uncommitted `Edit`-tool changes have zero recovery path if that happens again; a local `git commit` does. Commit as soon as a meaningful, self-verified chunk of work exists — don't wait for the full chain to finish before creating a recovery point. This is separate from pushing to GitHub (rule 6), which still waits for chain sign-off.
+9. **Commit locally often, don't sit on uncommitted work (per Aaron, 2026-08-06, after a real incident):** a local working-tree revert on 2026-08-06 wiped an in-progress feature build before it was committed. Uncommitted `Edit`-tool changes have zero recovery path if that happens again; a local `git commit` does. Commit as soon as a meaningful, self-verified chunk of work exists — don't wait for the full chain to finish before creating a recovery point. This is separate from pushing to GitHub (rule 6), which still waits for chain sign-off.
 
 ## Architecture notes
 - Single-file app: `index.html` (h()-based vanilla renderer, no build step).

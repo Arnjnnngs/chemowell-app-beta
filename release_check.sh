@@ -277,7 +277,15 @@ fi
 # the changelog is true -- so this is a mechanical check, not a checklist item.
 if [ -n "$INDEX_CHANGED" ] && [ -f README.md ]; then
   NEW_VER=$(grep -o "APP_VERSION = '[^']*'" index.html | head -1 | sed "s/.*'\(.*\)'/\1/")
-  ROW=$(grep -n "^| $NEW_VER |" README.md | head -1 | cut -d: -f1)
+  # SILENT EXIT, fixed 2026-08-29. Under `set -euo pipefail` a grep that matches nothing fails the
+  # whole pipeline, so this ASSIGNMENT died and took the script with it -- exit 1, no output at all,
+  # never reaching the error message ten lines below that exists to explain exactly this. A gate
+  # whose failure is indistinguishable from a crash teaches people to ignore it. Guarded with a
+  # separate test so the assignment only runs when there is something to assign, and no `|| true`.
+  ROW=""
+  if grep -q "^| $NEW_VER |" README.md; then
+    ROW=$(grep -n "^| $NEW_VER |" README.md | head -1 | cut -d: -f1)
+  fi
   if [ -z "$ROW" ]; then
     echo "❌ RELEASE CHECK FAILED: README.md has no version-history row for $NEW_VER."
     echo "   Two releases (app-v54, app-v55) shipped with no row at all before this check existed."
@@ -292,6 +300,46 @@ if [ -n "$INDEX_CHANGED" ] && [ -f README.md ]; then
       FAIL=1
     fi
   fi
+fi
+
+# ---- THE CHAIN GATE MUST HAVE ACTUALLY RUN FOR *THIS* VERSION ------------------------------
+# Added 2026-08-29 after the Lead Developer shipped app-v67 to main with every suite green and
+# WITHOUT the Auditor + PM gate, having conflated two different things: Aaron's standing permission
+# to PUSH to the ChemoWell repos, and APP_CLAUDE.md rule 5's requirement that an independent Zero
+# Day Auditor and PM sign off first. Aaron, 2026-08-29, settling it: "you CAN always push to
+# chemowell, after audit pass and PM."
+#
+# Rule 5 says "zero exceptions and zero Lead-Developer discretion to waive it", and a rule enforced
+# only by the person it constrains is the one that gets skipped at the end of a long day. So it is
+# a script now. Reports live in outputs/ and are named for the version they cleared.
+if [ -n "${NEW_VERSION:-}" ]; then
+  # Globs, not `ls`. The first version of this gate used
+  #   AUDIT_REPORT=$(ls outputs/AUDIT*"$NEW_VERSION"* 2>/dev/null | head -1)
+  # and under `set -euo pipefail` a non-matching `ls` fails the pipeline, kills the ASSIGNMENT, and
+  # takes the whole script down at exit 2 with no output -- so the gate died silently in exactly the
+  # case it exists to catch. It reintroduced, inside its own fix, the same silent-exit class being
+  # fixed twenty lines above. Found by falsifying it rather than by reading it.
+  # An unmatched glob expands to the literal pattern, which `[ -e ]` simply reports as absent.
+  AUDIT_REPORT=""
+  PM_REPORT=""
+  for _f in outputs/AUDIT*"$NEW_VERSION"*; do
+    if [ -e "$_f" ]; then AUDIT_REPORT="$_f"; break; fi
+  done
+  for _f in outputs/PM*"$NEW_VERSION"*; do
+    if [ -e "$_f" ]; then PM_REPORT="$_f"; break; fi
+  done
+  if [ -z "$AUDIT_REPORT" ] || [ -z "$PM_REPORT" ]; then
+    echo "❌ RELEASE CHECK FAILED: the quality chain has not run for $NEW_VERSION."
+    [ -z "$AUDIT_REPORT" ] && echo "   missing: an outputs/AUDIT*${NEW_VERSION}*.md report"
+    [ -z "$PM_REPORT" ]    && echo "   missing: an outputs/PM*${NEW_VERSION}*.md sign-off"
+    echo "   Every suite passing is SELF-verification. APP_CLAUDE.md rule 5 requires an independent"
+    echo "   Auditor pass and PM sign-off before this ships, with no size exception. Permission to"
+    echo "   push is not that gate."
+    exit 1
+  fi
+  echo "ℹ️  Chain artifacts present for $NEW_VERSION:"
+  echo "     $AUDIT_REPORT"
+  echo "     $PM_REPORT"
 fi
 
 if [ "$FAIL" -eq 1 ]; then
