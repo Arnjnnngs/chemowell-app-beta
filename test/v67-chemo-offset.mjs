@@ -30,12 +30,13 @@ vm.createContext(ctx);
 vm.runInContext([
   'let MISSED_TRACK_SINCE = new Date(2026, 0, 1).getTime();',
   fn('dayStart'), fn('nextDay'), fn('hourTs'), fn('entriesFor'), fn('nextChemoTs'),
-  fn('chemoDayList'), fn('chemoOffsetFor'), fn('chemoOffsetSinceLast'), fn('zofranBlockedOn'), fn('dexActiveOn'), fn('dexWindowsForOffset'),
+  fn('chemoDayList'), fn('chemoOffsetFor'), fn('chemoOffsetSinceLast'), fn('zofranBlockedOn'), fn('chemoDayFor'), fn('zofranBlockingDay'),
+  fn('treatmentActiveOn'), fn('dexActiveOn'), fn('dexWindowsForOffset'),
   'function treatmentType() { return ""; }',
   fn('isOtherTreatmentType'), fn('isPausedOn'), fn('treatmentOnlyBlocks'), fn('treatmentExcludedNow'),
   fn('hasTreatmentDate'), fn('treatmentActiveOn'), fn('medScheduledOn'), fn('inpatientEntries'), fn('inpatientPeriods'),
   fn('isInpatientDay'), fn('inpatientCoversMoment'), fn('missedDosesFor'),
-  'globalThis.__api = { missedDosesFor, chemoOffsetFor, chemoOffsetSinceLast, zofranBlockedOn, dexActiveOn, dexWindowsForOffset, chemoDayList, dayStart };'
+  'globalThis.__api = { missedDosesFor, chemoOffsetFor, chemoOffsetSinceLast, zofranBlockedOn, chemoDayFor, zofranBlockingDay, treatmentActiveOn, dexActiveOn, dexWindowsForOffset, chemoDayList, dayStart };'
 ].join('\n'), ctx);
 const A = ctx.__api;
 
@@ -143,6 +144,44 @@ t('a day before ANY treatment has no since-last offset',
 
 t('no chemo dates at all yields no offset rather than a crash',
   (ctx.state.chemoDates = [], A.chemoOffsetFor(D(8, 4)) === null));
+
+// ---- ASK EVERY TREATMENT, NOT THE NEAREST (Zero Day Auditor, app-v68 round) ------------------
+ctx.state.chemoDates = [
+  { medId: 'chemo_date', ts: D(8, 24), loggedAt: 1 },
+  { medId: 'chemo_date', ts: D(8, 27), loggedAt: 2 }
+];
+t('26 Aug is 2 days after the 24th and stays active, though the 27th is nearer',
+  A.treatmentActiveOn({ treatmentDaysBefore: 0, treatmentDaysAfter: 3 }, D(8, 26)) === true);
+t('an EXCLUDED medication is therefore withheld on that day too, not offered',
+  A.treatmentActiveOn({ treatmentDaysBefore: 0, treatmentDaysAfter: 3 }, D(8, 26)) === true);
+t('Zofran is blocked across BOTH treatments, not just the nearer one',
+  [24, 25, 26, 27, 28, 29].every(d => A.zofranBlockedOn(D(8, d))) && !A.zofranBlockedOn(D(8, 30)));
+
+// A STRING from the text input must not silently collapse the window to 1/1. care-tracker coerced
+// at normalise and this app did not; Number.isFinite("3") is false.
+t('a window typed as text is honoured, not silently reset to the default',
+  A.treatmentActiveOn({ treatmentDaysBefore: '0', treatmentDaysAfter: '3' }, D(8, 26)) === true);
+t('an absurd typed value is clamped rather than honoured for months',
+  A.treatmentActiveOn({ treatmentDaysBefore: '300', treatmentDaysAfter: '0' }, D(7, 1)) === false);
+
+// ---- A LABEL MUST NAME THE DATE ITS OWN ANSWER CAME FROM -------------------------------------
+ctx.state.chemoDates = [
+  { medId: 'chemo_date', ts: D(8, 24), loggedAt: 1 },
+  { medId: 'chemo_date', ts: D(8, 3),  loggedAt: 2 }
+];
+t('the banner names the treatment nearest the day, not the one typed last',
+  A.chemoDayFor(D(8, 25)) === D(8, 24));
+t('with no treatment date there is nothing to name — and never 1 Jan 1970',
+  (ctx.state.chemoDates = [], A.chemoDayFor(D(8, 25)) === null && A.zofranBlockingDay(D(8, 25)) === null));
+ctx.state.chemoDates = [
+  { medId: 'chemo_date', ts: D(8, 24), loggedAt: 1 },
+  { medId: 'chemo_date', ts: D(8, 26), loggedAt: 2 }
+];
+t('Zofran names the treatment actually holding it shut, the later block',
+  A.zofranBlockingDay(D(8, 27)) === D(8, 26));
+const cwCode = html.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ');
+t('no screen derives a date from dayStart(nextChemoTs()) any more',
+  (cwCode.match(/dayStart\(nextChemoTs\(\)\)/g) || []).length === 0);
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
 process.exit(fail ? 1 : 0);

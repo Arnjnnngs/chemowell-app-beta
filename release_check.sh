@@ -159,6 +159,18 @@ else
 fi
 
 INDEX_CHANGED=$(git diff --name-only "$BASE" -- index.html)
+# EVERY FILE RULE 5 COVERS, not just index.html.
+#
+# The chain gate below used to run only when index.html changed, because that is the only thing
+# NEW_VERSION was computed for. The Zero Day Auditor reproduced the consequence twice: with
+# index.html untouched the script printed "✅ Release check passed", exit 0, WITH NO AUDIT OR PM
+# REPORT PRESENT AT ALL -- including for a change to sw.js alone, which is a real release that
+# reaches every installed phone. A gate that only guards one file is a gate with a door beside it.
+#
+# APP_CLAUDE.md rule 5 names index.html, sw.js, .github/workflows/, sync-backend/, package.json,
+# package-lock.json and capacitor.config.ts. All of them count.
+RULE5_CHANGED=$(git diff --name-only "$BASE" -- \
+  index.html sw.js .github/workflows sync-backend package.json package-lock.json capacitor.config.ts 2>/dev/null || true)
 # A readable name for $BASE in messages -- a bare 40-char SHA tells the reader nothing about which
 # build they are being compared against.
 BASE_LABEL="$BASE"
@@ -180,7 +192,15 @@ fi
 # V53-4 (Auditor): comparing the whole sw.js diff let a cosmetic sw.js edit satisfy the check while
 # CACHE stayed put -- the script then printed "sw.js's CACHE constant changed with it", which was
 # untrue and is the exact stranding it exists to block. Compare the CACHE constant itself.
-CACHE_OLD=$(git show "$BASE":sw.js 2>/dev/null | read_cache)
+# GUARDED. Unguarded, a baseline commit with no sw.js makes `git show` fail, the pipeline fails
+# under `set -euo pipefail`, the ASSIGNMENT fails and the script dies at exit 128 with ZERO
+# output. Its sibling on the next line was already guarded, which also made the CACHE_OLD="none"
+# branch below unreachable. Found by the Zero Day Auditor after I fixed two of this class and
+# wrote that both were done.
+CACHE_OLD=""
+if git show "$BASE":sw.js >/dev/null 2>&1; then
+  CACHE_OLD=$(git show "$BASE":sw.js 2>/dev/null | read_cache)
+fi
 CACHE_NEW=$(read_cache < sw.js 2>/dev/null || echo "none")
 [ -z "$CACHE_OLD" ] && CACHE_OLD="none"
 [ -z "$CACHE_NEW" ] && CACHE_NEW="none"
@@ -262,7 +282,12 @@ fi
 if [ -n "$INDEX_CHANGED" ]; then
   # The bare value, not the whole grep match -- this used to print the tautology
   # "APP_VERSION (APP_VERSION = 'app-v55')".
-  OLD_VERSION=$(git show "$BASE":index.html | grep -o "APP_VERSION = '[^']*'" | head -1 | sed "s/.*'\(.*\)'/\1/")
+  # Same class: a baseline with no index.html, or with no APP_VERSION line, killed this
+  # assignment and took the README check and the chain gate down with it, masked behind exit 1.
+  OLD_VERSION=""
+  if git show "$BASE":index.html 2>/dev/null | grep -q "APP_VERSION = '"; then
+    OLD_VERSION=$(git show "$BASE":index.html 2>/dev/null | grep -o "APP_VERSION = '[^']*'" | head -1 | sed "s/.*'\(.*\)'/\1/")
+  fi
   NEW_VERSION=$(grep -o "APP_VERSION = '[^']*'" index.html | head -1 | sed "s/.*'\(.*\)'/\1/")
   if [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
     echo "⚠️  WARNING: index.html changed but APP_VERSION is still $NEW_VERSION."
@@ -294,7 +319,13 @@ if [ -n "$INDEX_CHANGED" ] && [ -f README.md ]; then
     if ! sed -n "${ROW}p" README.md | grep -qF "$CACHE_NEW"; then
       echo "❌ RELEASE CHECK FAILED: README.md's $NEW_VER row does not mention the cache key that"
       echo "   is actually about to ship ($CACHE_NEW). It says:"
-      sed -n "${ROW}p" README.md | grep -o "chemowell-app-v[0-9]*-[0-9]*" | sort -u | sed 's/^/     /'
+      # Guarded too: with no cache key in the row at all this grep failed and cut off the
+      # "Fix the row" explanation immediately below it -- the script truncating its own advice.
+      if sed -n "${ROW}p" README.md | grep -q "chemowell-app-v[0-9]*-[0-9]*"; then
+        sed -n "${ROW}p" README.md | grep -o "chemowell-app-v[0-9]*-[0-9]*" | sort -u | sed 's/^/     /'
+      else
+        echo "     (the row names no cache key at all)"
+      fi
       echo "   Fix the row. A version-history entry wrong about the one fact it exists to record is"
       echo "   worse than no entry, because it will be believed."
       FAIL=1
@@ -312,7 +343,13 @@ fi
 # Rule 5 says "zero exceptions and zero Lead-Developer discretion to waive it", and a rule enforced
 # only by the person it constrains is the one that gets skipped at the end of a long day. So it is
 # a script now. Reports live in outputs/ and are named for the version they cleared.
-if [ -n "${NEW_VERSION:-}" ]; then
+# Read independently of INDEX_CHANGED: the gate needs the version being released even when the
+# release does not touch index.html.
+GATE_VERSION="${NEW_VERSION:-}"
+if [ -z "$GATE_VERSION" ] && [ -f index.html ] && grep -q "APP_VERSION = '" index.html; then
+  GATE_VERSION=$(grep -o "APP_VERSION = '[^']*'" index.html | head -1 | sed "s/.*'\(.*\)'/\1/")
+fi
+if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # Globs, not `ls`. The first version of this gate used
   #   AUDIT_REPORT=$(ls outputs/AUDIT*"$NEW_VERSION"* 2>/dev/null | head -1)
   # and under `set -euo pipefail` a non-matching `ls` fails the pipeline, kills the ASSIGNMENT, and
@@ -322,22 +359,23 @@ if [ -n "${NEW_VERSION:-}" ]; then
   # An unmatched glob expands to the literal pattern, which `[ -e ]` simply reports as absent.
   AUDIT_REPORT=""
   PM_REPORT=""
-  for _f in outputs/AUDIT*"$NEW_VERSION"*; do
+  for _f in outputs/AUDIT*"$GATE_VERSION"*; do
     if [ -e "$_f" ]; then AUDIT_REPORT="$_f"; break; fi
   done
-  for _f in outputs/PM*"$NEW_VERSION"*; do
+  for _f in outputs/PM*"$GATE_VERSION"*; do
     if [ -e "$_f" ]; then PM_REPORT="$_f"; break; fi
   done
   if [ -z "$AUDIT_REPORT" ] || [ -z "$PM_REPORT" ]; then
-    echo "❌ RELEASE CHECK FAILED: the quality chain has not run for $NEW_VERSION."
-    [ -z "$AUDIT_REPORT" ] && echo "   missing: an outputs/AUDIT*${NEW_VERSION}*.md report"
-    [ -z "$PM_REPORT" ]    && echo "   missing: an outputs/PM*${NEW_VERSION}*.md sign-off"
+    echo "❌ RELEASE CHECK FAILED: the quality chain has not run for $GATE_VERSION."
+    echo "   Changed under rule 5: $(echo $RULE5_CHANGED | tr '\n' ' ')"
+    [ -z "$AUDIT_REPORT" ] && echo "   missing: an outputs/AUDIT*${GATE_VERSION}*.md report"
+    [ -z "$PM_REPORT" ]    && echo "   missing: an outputs/PM*${GATE_VERSION}*.md sign-off"
     echo "   Every suite passing is SELF-verification. APP_CLAUDE.md rule 5 requires an independent"
     echo "   Auditor pass and PM sign-off before this ships, with no size exception. Permission to"
     echo "   push is not that gate."
     exit 1
   fi
-  echo "ℹ️  Chain artifacts present for $NEW_VERSION:"
+  echo "ℹ️  Chain artifacts present for $GATE_VERSION:"
   echo "     $AUDIT_REPORT"
   echo "     $PM_REPORT"
 fi

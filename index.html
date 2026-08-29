@@ -1512,11 +1512,50 @@ function dexActiveOn(dayTs) { const o = chemoOffsetFor(dayTs); return o !== null
 // with no message and no way to get it back.
 function hasTreatmentDate() { return nextChemoTs() !== null; }
 function treatmentActiveOn(med, dayTs) {
-  const o = chemoOffsetFor(dayTs);
-  if (o === null) return false;
-  const before = Number.isFinite(med.treatmentDaysBefore) ? med.treatmentDaysBefore : 1;
-  const after = Number.isFinite(med.treatmentDaysAfter) ? med.treatmentDaysAfter : 1;
-  return o >= -before && o <= after;
+  // ANY TREATMENT, not the nearest one. This asked chemoOffsetFor() -- distance to the CLOSEST
+  // treatment -- and tested that one number against the window. Treatments on 24 and 27 Aug with a
+  // 0-before/3-after window: the 26th is two days after the 24th and inside the window, but the
+  // closest date is the 27th, so it measured -1 and the medication vanished. Found by the Zero Day
+  // Auditor after the same directional problem had been "fixed" for Zofran and written up as
+  // settled; it was settled for one caller out of two.
+  // Both directions hurt and one is worse: a treatment-only medication disappears and its misses go
+  // unreported, and an EXCLUDED medication is offered on a day it should be withheld.
+  const days = chemoDayList();
+  if (!days.length) return false;
+  const d0 = dayStart(dayTs);
+  // Coerced, not just tested: these come from a text input, so "3" is a string and Number.isFinite
+  // is false for it -- which silently collapsed every configured window back to 1/1. care-tracker's
+  // port got this right and this one did not; adopting its behaviour.
+  const num = v => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(14, Math.round(n))) : null; };
+  const before = med && med.treatmentDaysBefore !== '' && med.treatmentDaysBefore !== null && med.treatmentDaysBefore !== undefined && num(med.treatmentDaysBefore) !== null ? num(med.treatmentDaysBefore) : 1;
+  const after  = med && med.treatmentDaysAfter  !== '' && med.treatmentDaysAfter  !== null && med.treatmentDaysAfter  !== undefined && num(med.treatmentDaysAfter)  !== null ? num(med.treatmentDaysAfter)  : 1;
+  return days.some(d => {
+    const o = Math.round((d0 - d) / 86400000);
+    return o >= -before && o <= after;
+  });
+}
+// Which treatment date did this day's answer come from? Display sites printed
+// dayStart(nextChemoTs()) -- the most recently ENTERED date -- while the condition around them used
+// the offsets, so a card refused to unlock and then named a date three weeks in the past, and with
+// no date at all dayStart(null) printed 1 Jan 1970.
+function chemoDayFor(dayTs) {
+  const days = chemoDayList();
+  if (!days.length) return null;
+  const d0 = dayStart(dayTs);
+  let best = days[0];
+  days.forEach(d => { if (Math.abs(d - d0) < Math.abs(best - d0)) best = d; });
+  return best;
+}
+// The treatment day actually holding Zofran shut -- the latest one whose 0..+2 block covers this
+// day, which with two treatments close together is not necessarily the nearest.
+function zofranBlockingDay(dayTs) {
+  const d0 = dayStart(dayTs);
+  let best = null;
+  chemoDayList().forEach(d => {
+    const o = Math.round((d0 - d) / 86400000);
+    if (o >= 0 && o <= 2 && (best === null || d > best)) best = d;
+  });
+  return best;
 }
 // v20: "excluded near treatment day" — the inverse of treatmentMode:'only'. Reuses treatmentActiveOn's
 // day-window math unchanged; only the caller's interpretation of "active" flips (only = available
@@ -1558,7 +1597,14 @@ function isPausedOn(med, dayTs) {
 // blocked Thu/Fri/Sat, opens Sunday). Confirmed by Aaron as the original, correct spec — v61/v62
 // of this file incorrectly "fixed" this to a 2-day block based on stale documentation elsewhere in
 // this repo; reverted in v67. See BETA_README.md's v67 changelog entry.
-function zofranBlockedOn(dayTs) { const o = chemoOffsetSinceLast(dayTs); return o !== null && o >= 0 && o <= 2; }
+// Blocked on any treatment day and the two days after it -- every treatment, not one.
+function zofranBlockedOn(dayTs) {
+  const d0 = dayStart(dayTs);
+  return chemoDayList().some(d => {
+    const o = Math.round((d0 - d) / 86400000);
+    return o >= 0 && o <= 2;
+  });
+}
 function dexWindowsForOffset(offset) { return offset === 1 ? [{ start: 8, end: 12, name: 'Morning' }] : [{ start: 8, end: 12, name: 'Morning' }, { start: 14, end: 18, name: 'Afternoon' }]; }
 
 // Missed-dose tracking starts the day the app was first opened on this device — a fresh
@@ -1754,7 +1800,11 @@ function status(med) {
   if (med.paused) return { locked: true, paused: true };
   if (med.id === 'zofran' && zofranBlockedOn(now)) {
     // 3-day block (chemo day + 2 following days, see zofranBlockedOn) — opens on day+3 at 8am.
-    return { locked: true, chemoBlock: true, availableAt: dayStart(nextChemoTs()) + 3 * 86400000 + 8 * 3600000 };
+    // From the day actually blocking, never nextChemoTs(), and never null: returning null would
+    // just move the 1970 downstream into fmtTime(). Falling through to AVAILABLE is the safe
+    // failure -- a caregiver can still give a dose the app should have allowed.
+    const zb = zofranBlockingDay(now);
+    if (zb !== null) return { locked: true, chemoBlock: true, availableAt: zb + 3 * 86400000 + 8 * 3600000 };
   }
   const es = entriesFor(med.id).slice().sort((a, b) => a.ts - b.ts);
   if (med.type === 'gap') {
@@ -4416,7 +4466,8 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // meds two days out" concept, and the radiation card below covers their schedule.
   const chemoOffNow = chemoOffsetFor(now);
   if (!isRadiationOnly() && chemoOffNow !== null && chemoOffNow >= -2 && chemoOffNow <= 1) {
-    const cLabel = new Date(dayStart(nextChemoTs())).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' });
+    const cDay = chemoDayFor(now);
+    const cLabel = cDay === null ? '' : new Date(cDay).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' });
     let cTitle = '', cBody = '';
     // v41 (Aaron-requested): this banner's original copy presumes an oncology regimen ("pre-
     // treatment medications," "the care team"), which read as confusing/inapplicable for an
