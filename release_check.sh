@@ -401,10 +401,28 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # sort order decide the release; and not "every report must be current", which would make the
   # outputs/ archive of past audits block every future release forever. A superseded report is
   # history and is allowed to be stale -- it just cannot be the one clearing the gate.
-  check_report_current() {   # $1 = path. echoes "" if current, else the drift.
+  check_report_current() {   # $1 = path. echoes "" if current AND clearing, else the reason.
     _sha=$(grep -m1 -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}' "$1" 2>/dev/null | grep -oE '[0-9a-f]{7,40}$' || echo "")
     if [ -z "$_sha" ]; then echo "no AUDITED-COMMIT line"; return; fi
     if ! git rev-parse --verify --quiet "$_sha^{commit}" >/dev/null; then echo "names commit $_sha, which does not exist here"; return; fi
+    # THE COMMIT MUST BE IN THIS BRANCH'S HISTORY. Without this, a report could declare any commit
+    # that happens to exist anywhere in the repo -- a stale side branch, an abandoned experiment --
+    # and "no drift since it" would be meaningless.
+    if ! git merge-base --is-ancestor "$_sha" HEAD 2>/dev/null; then
+      echo "names commit ${_sha:0:7}, which is not in this branch's history"; return
+    fi
+    # THE GATE MUST READ A VERDICT, not just confirm a file with the right name exists. Two
+    # three-line files named AUDIT_<version>.md and PM_<version>.md, containing an AUDITED-COMMIT
+    # line and nothing else, cleared this entire gate -- while the real audit saying DO NOT SHIP sat
+    # beside them and was reported as "history, not blocking". A report that does not state a verdict
+    # is not a report.
+    _verdict=$(grep -m1 -oiE '^VERDICT:[[:space:]]*(DO NOT SHIP|SHIP)' "$1" 2>/dev/null | sed 's/^[Vv][Ee][Rr][Dd][Ii][Cc][Tt]:[[:space:]]*//' || echo "")
+    if [ -z "$_verdict" ]; then
+      echo "states no verdict — it needs a line 'VERDICT: SHIP' or 'VERDICT: DO NOT SHIP'"; return
+    fi
+    case "$_verdict" in
+      [Dd][Oo]*) echo "says DO NOT SHIP"; return ;;
+    esac
     # Working tree vs the audited commit, not HEAD vs it -- the working tree is what ships.
     _d=$(git diff --name-only "$_sha" -- $RULE5_PATHS 2>/dev/null || true)
     # Same blind spot as RULE5_CHANGED: a file that did not exist when the report was written is
@@ -432,8 +450,8 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
     echo "   while the head being shipped was 68d3dd6 — 67 further lines of index.html, a rewritten"
     echo "   treatmentActiveOn among them, that no auditor had ever seen. The report was NAMED for"
     echo "   v68, and the name was all this gate checked."
-    [ -z "$CURRENT_AUDIT" ] && echo "   missing: a CURRENT outputs/AUDIT*${GATE_VERSION}* report"
-    [ -z "$CURRENT_PM" ]    && echo "   missing: a CURRENT outputs/PM*${GATE_VERSION}* sign-off"
+    [ -z "$CURRENT_AUDIT" ] && echo "   missing: a CURRENT outputs/AUDIT*${GATE_VERSION}* report saying VERDICT: SHIP"
+    [ -z "$CURRENT_PM" ]    && echo "   missing: a CURRENT outputs/PM*${GATE_VERSION}* sign-off saying VERDICT: SHIP"
     if [ -n "$STALE_NOTES" ]; then
       echo "   Reports found, and why each is not current:$STALE_NOTES"
     fi
@@ -444,7 +462,7 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   AUDIT_REPORT="$CURRENT_AUDIT"
   PM_REPORT="$CURRENT_PM"
   if [ -n "$STALE_NOTES" ]; then
-    echo "ℹ️  Superseded reports present (history, not blocking):$STALE_NOTES"
+    echo "ℹ️  Other reports present and not clearing this release:$STALE_NOTES"
   fi
   echo "ℹ️  Chain artifacts present for $GATE_VERSION, and current against the working tree:"
   echo "     $AUDIT_REPORT"

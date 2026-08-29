@@ -1,6 +1,7 @@
 # PM Gate — app-v68 (chemowell-app-beta), branch `claude/hotfix-treatment-date-clear`
 
 AUDITED-COMMIT: 51ba75f
+VERDICT: DO NOT SHIP
 
 
 # VERDICT: FAIL BACK TO THE CHAIN

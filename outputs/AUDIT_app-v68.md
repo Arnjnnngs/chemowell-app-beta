@@ -1,6 +1,7 @@
 # Zero Day Audit — app-v68 (chemowell-app-beta), branch `claude/hotfix-treatment-date-clear`
 
 AUDITED-COMMIT: 51ba75f
+VERDICT: DO NOT SHIP
 
 
 **Verdict: the three fixes are correct. Ship them. Nothing I found is a reason to leave

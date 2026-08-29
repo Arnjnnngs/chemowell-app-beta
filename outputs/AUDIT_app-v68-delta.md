@@ -1,4 +1,5 @@
 AUDITED-COMMIT: ecebc50db5d8bf35a5e3433599cb1c81e1bdce59
+VERDICT: DO NOT SHIP
 
 # Zero Day Audit — app-v68 unaudited delta (51ba75f..ecebc50)
 

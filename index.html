@@ -59,14 +59,18 @@ input:focus{outline:2px solid #BF4C1A;outline-offset:0;border-color:#BF4C1A;}
    next long option added anywhere would reintroduce it. */
 select{font-family:inherit;-webkit-tap-highlight-color:transparent;max-width:100%;min-width:0;}
 /* The bottom-nav labels sit in five equal grid cells. At 320px a cell is ~58px and 'Symptoms'
-   needs 61px, so the longest label spilled its box. Ported from care-tracker, which hit this first. */
-.navlabel{max-width:100%;}
-/* Two steps, not one, on the auditor's measurement: at 360px 'Symptoms' fits at 11px with about
-   0.3px to spare, so dropping to 9.5px there costs legibility for nothing. It genuinely does not fit
-   at 320px (it needs ~65px in a ~58px cell). Tightening alone buys the 360px margin; the size drop
-   is reserved for the width that actually needs it. */
-@media (max-width:360px){.navlabel{letter-spacing:-0.03em;}}
-@media (max-width:320px){.navlabel{font-size:9.5px;}}
+   needs 65px, so the longest label spilled its box. Ported from care-tracker, which hit this first.
+   NO BREAKPOINT, because a breakpoint is a width nobody tested. This was first a single step at
+   360px, then a two-step (tighten at 360, shrink at 320) on an auditor's measurement that 11px fits
+   at 360px with 0.3px to spare. Both were wrong in the same way: the two-step left 321-345px with
+   neither treatment, and "Symptoms" spilled into its neighbour right through that band — which the
+   render scan passed because its width list jumped 320 to 360 and never looked between. Android's
+   "Display size" setting puts real people there.
+   The label needs to shrink in proportion to its column, and the column is a fifth of the screen, so
+   scale it with the screen and stop guessing at edges. clamp() holds it at the 11px design size on
+   any normal phone and never lets it fall below 9.5px on the narrowest. Verified at 320, 330, 345,
+   360, 375, 384, 390, 393, 412 and 428px rather than at two of them. */
+.navlabel{max-width:100%;letter-spacing:-0.02em;font-size:clamp(9.5px, calc(3.1vw - 1px), 11px);}
 select:focus{outline:2px solid #BF4C1A;outline-offset:0;border-color:#BF4C1A;}
 button:focus-visible, [role="button"]:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #BF4C1A; outline-offset: 2px; }
 ::placeholder{color:#7A6E76 !important;opacity:1;}
