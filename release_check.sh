@@ -401,36 +401,87 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # sort order decide the release; and not "every report must be current", which would make the
   # outputs/ archive of past audits block every future release forever. A superseded report is
   # history and is allowed to be stale -- it just cannot be the one clearing the gate.
+  # A report is read from its FIRST 12 LINES only. The header used to be findable anywhere in the
+  # file, so a report quoting another report's header, or burying its own at line 900, passed.
+  report_head() { head -12 "$1" 2>/dev/null || true; }
+  # RESOLVED TO A FULL SHA, always. Comparing the raw strings made "23aedd6" and its own 40-character
+  # form look like two different commits, so a forged SHIP declaring the full sha "superseded" a real
+  # DO NOT SHIP declaring the short one — the same commit overruling itself. That is how a padded fake
+  # cleared this gate while four real refusals were printed above it.
+  report_sha() {
+    _raw=$(report_head "$1" | grep -m1 -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}' | grep -oE '[0-9a-f]{7,40}$' || echo "")
+    [ -z "$_raw" ] && { echo ""; return; }
+    git rev-parse --verify --quiet "$_raw^{commit}" 2>/dev/null || echo "$_raw"
+  }
+  # ANCHORED TO END OF LINE. `VERDICT: SHIPPING SOON` used to read as SHIP -- the pattern matched the
+  # first four letters and stopped. Trailing whitespace/CR is allowed; trailing words are not.
+  report_verdict() { report_head "$1" | grep -m1 -oiE '^VERDICT:[[:space:]]*(DO NOT SHIP|SHIP)[[:space:]]*$' | sed 's/^[^:]*:[[:space:]]*//' | tr -d '[:space:]' || echo ""; }
+
   check_report_current() {   # $1 = path. echoes "" if current AND clearing, else the reason.
-    _sha=$(grep -m1 -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}' "$1" 2>/dev/null | grep -oE '[0-9a-f]{7,40}$' || echo "")
-    if [ -z "$_sha" ]; then echo "no AUDITED-COMMIT line"; return; fi
+    _sha=$(report_sha "$1")
+    if [ -z "$_sha" ]; then echo "no AUDITED-COMMIT line in its first 12 lines"; return; fi
     if ! git rev-parse --verify --quiet "$_sha^{commit}" >/dev/null; then echo "names commit $_sha, which does not exist here"; return; fi
-    # THE COMMIT MUST BE IN THIS BRANCH'S HISTORY. Without this, a report could declare any commit
-    # that happens to exist anywhere in the repo -- a stale side branch, an abandoned experiment --
-    # and "no drift since it" would be meaningless.
+    # THE COMMIT MUST BE IN THIS BRANCH'S HISTORY. Without this a report could declare any commit
+    # that exists anywhere in the repo -- a stale side branch, an abandoned experiment -- and
+    # "no drift since it" would mean nothing.
     if ! git merge-base --is-ancestor "$_sha" HEAD 2>/dev/null; then
       echo "names commit ${_sha:0:7}, which is not in this branch's history"; return
     fi
-    # THE GATE MUST READ A VERDICT, not just confirm a file with the right name exists. Two
-    # three-line files named AUDIT_<version>.md and PM_<version>.md, containing an AUDITED-COMMIT
-    # line and nothing else, cleared this entire gate -- while the real audit saying DO NOT SHIP sat
-    # beside them and was reported as "history, not blocking". A report that does not state a verdict
-    # is not a report.
-    _verdict=$(grep -m1 -oiE '^VERDICT:[[:space:]]*(DO NOT SHIP|SHIP)' "$1" 2>/dev/null | sed 's/^[Vv][Ee][Rr][Dd][Ii][Cc][Tt]:[[:space:]]*//' || echo "")
+    _verdict=$(report_verdict "$1")
     if [ -z "$_verdict" ]; then
-      echo "states no verdict — it needs a line 'VERDICT: SHIP' or 'VERDICT: DO NOT SHIP'"; return
+      echo "states no verdict — needs a line 'VERDICT: SHIP' or 'VERDICT: DO NOT SHIP' and nothing else on it"; return
     fi
     case "$_verdict" in
       [Dd][Oo]*) echo "says DO NOT SHIP"; return ;;
     esac
-    # Working tree vs the audited commit, not HEAD vs it -- the working tree is what ships.
-    _d=$(git diff --name-only "$_sha" -- $RULE5_PATHS 2>/dev/null || true)
-    # Same blind spot as RULE5_CHANGED: a file that did not exist when the report was written is
-    # drift the report cannot have covered, and `git diff` never mentions it.
+    # SUBSTANCE. Two files of two lines each cleared this entire gate. A gate cannot tell a forged
+    # report from a real one and should not pretend to -- but it CAN refuse a file that could not
+    # possibly be the record of anyone having examined anything. This defends against the failure
+    # that has actually happened here three times: a placeholder standing in for a stage nobody ran.
+    _bytes=$(wc -c < "$1" 2>/dev/null || echo 0)
+    _lines=$(wc -l < "$1" 2>/dev/null || echo 0)
+    if [ "$_bytes" -lt 2000 ] || [ "$_lines" -lt 25 ]; then
+      echo "is too thin to be a report ($_lines lines, $_bytes bytes) — a stage that ran leaves more than a header"; return
+    fi
+    _drift=$(git diff --name-only "$_sha" -- $RULE5_PATHS 2>/dev/null || true)
     _n=$(git ls-files --others --exclude-standard -- $RULE5_PATHS 2>/dev/null || true)
-    if [ -n "$_n" ]; then _d=$(printf '%s\n%s' "$_d" "$_n" | grep -v '^$' || true); fi
-    if [ -n "$_d" ]; then echo "examined ${_sha:0:7}; changed since: $(echo $_d | tr '\n' ' ')"; fi
+    if [ -n "$_n" ]; then _drift=$(printf '%s\n%s' "$_drift" "$_n" | grep -v '^$' || true); fi
+    if [ -n "$_drift" ]; then echo "examined ${_sha:0:7}; changed since: $(echo $_drift | tr '\n' ' ')"; fi
   }
+
+  # A LIVE "DO NOT SHIP" IS A STOP, NOT A SHRUG. The gate used to treat a do-not-ship verdict merely
+  # as "not the report that clears this", so two fake files could clear the release while the gate
+  # printed four real reports all saying DO NOT SHIP directly above the word "passed". A refusal is
+  # only superseded by a report examining a LATER commit -- someone must have looked again after the
+  # thing that was objected to.
+  BLOCKING=""
+  for _r in $AUDIT_ALL $PM_ALL; do
+    [ "$(report_verdict "$_r")" = "" ] && continue
+    case "$(report_verdict "$_r")" in [Dd][Oo]*) ;; *) continue ;; esac
+    _rs=$(report_sha "$_r")
+    [ -z "$_rs" ] && continue
+    git rev-parse --verify --quiet "$_rs^{commit}" >/dev/null || continue
+    git merge-base --is-ancestor "$_rs" HEAD 2>/dev/null || continue
+    _superseded=""
+    for _q in $AUDIT_ALL $PM_ALL; do
+      case "$(report_verdict "$_q")" in [Ss][Hh][Ii][Pp]) ;; *) continue ;; esac
+      _qs=$(report_sha "$_q")
+      [ -z "$_qs" ] && continue
+      git rev-parse --verify --quiet "$_qs^{commit}" >/dev/null || continue
+      # strictly later: the refusal's commit is an ancestor of the approval's, and they differ
+      if [ "$_qs" != "$_rs" ] && git merge-base --is-ancestor "$_rs" "$_qs" 2>/dev/null; then _superseded="$_q"; fi
+    done
+    if [ -z "$_superseded" ]; then BLOCKING="$BLOCKING
+     $_r — examined ${_rs:0:7}"; fi
+  done
+  if [ -n "$BLOCKING" ]; then
+    echo "❌ RELEASE CHECK FAILED: a chain report refuses this release, and nothing supersedes it."
+    echo "   These say DO NOT SHIP:$BLOCKING"
+    echo "   A refusal is cleared by re-running that stage against a LATER commit and it saying"
+    echo "   SHIP — not by adding another file beside it."
+    exit 1
+  fi
+
   CURRENT_AUDIT=""
   CURRENT_PM=""
   STALE_NOTES=""

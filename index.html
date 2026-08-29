@@ -67,9 +67,14 @@ select{font-family:inherit;-webkit-tap-highlight-color:transparent;max-width:100
    render scan passed because its width list jumped 320 to 360 and never looked between. Android's
    "Display size" setting puts real people there.
    The label needs to shrink in proportion to its column, and the column is a fifth of the screen, so
-   scale it with the screen and stop guessing at edges. clamp() holds it at the 11px design size on
-   any normal phone and never lets it fall below 9.5px on the narrowest. Verified at 320, 330, 345,
-   360, 375, 384, 390, 393, 412 and 428px rather than at two of them. */
+   scale it with the screen and stop guessing at edges. clamp() CAPS it at the 11px design size and
+   never lets it fall below 9.5px on the narrowest. An earlier version of this comment said it "holds
+   it at 11px on any normal phone", which is false and is corrected here rather than left to mislead
+   the next reader: the cap is only reached around 388px, so 360px gets 10.16px and 375px 10.63px.
+   Swept at every whole pixel from 300 to 500 by the Zero Day Auditor -- everything fits from 308px
+   up, tightest at 325px with 3.8px of slack, and never smaller than the old 9.5px floor.
+   The letter-spacing is load-bearing, not decoration: without it there is only 1.2px of slack at
+   320px. */
 .navlabel{max-width:100%;letter-spacing:-0.02em;font-size:clamp(9.5px, calc(3.1vw - 1px), 11px);}
 select:focus{outline:2px solid #BF4C1A;outline-offset:0;border-color:#BF4C1A;}
 button:focus-visible, [role="button"]:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #BF4C1A; outline-offset: 2px; }
@@ -5802,7 +5807,7 @@ function renderMedicationEditor() {
       h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, placeholder: 'Generic name', onInput: event => updateMedicationForm('sub', event.target.value) })),
       // v38 (Aaron-requested reorder): Schedule type now sits right under Generic name instead of
       // after Daily limit/Limit unit, several fields away.
-      h('label', null, fieldLabel('Schedule type'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(246,108,49,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }) }, h('option', { value: 'gap' }, 'As needed \u2014 wait a set number of hours between doses'), h('option', { value: 'win' }, 'Scheduled \u2014 remind me at specific times'))),
+      h('label', null, fieldLabel('Schedule type', 'As needed: you set a minimum wait between doses. Scheduled: the app reminds you at times you choose.'), h('select', { value: form.type, onChange: event => updateMedicationForm('type', event.target.value, true), style: selectFix({ width: '100%', minHeight: '43px', border: '1px solid rgba(246,108,49,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }) }, h('option', { value: 'gap' }, 'As needed'), h('option', { value: 'win' }, 'Scheduled'))),
       // v38 (Aaron-requested reorder): Limit unit now comes BEFORE Dosage options, so the unit a
       // daily limit will be measured in is established first -- Aaron: "eliminates the need for the
       // actual 'MG'" i.e. the caregiver picks pills/applications/mg up front instead of writing
@@ -5885,11 +5890,16 @@ function renderMedicationEditor() {
       h('div', { style: { gridColumn: '1 / -1' } },
         fieldLabel('Days taken', 'Not every medication is daily \u2014 pick which days this one is given.'),
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
-          h('select', { value: form.scheduleMode, onChange: event => updateMedicationForm('scheduleMode', event.target.value, true), style: selectFix({ minHeight: '43px', border: '1px solid rgba(246,108,49,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127' }) },
+          h('select', { value: form.scheduleMode, onChange: event => updateMedicationForm('scheduleMode', event.target.value, true), style: selectFix({ minHeight: '43px', maxWidth: '100%', border: '1px solid rgba(246,108,49,0.22)', borderRadius: '11px', padding: '0 10px', fontSize: '13px', background: 'rgba(255,255,255,0.72)', color: '#2A2127', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }) },
             h('option', { value: 'daily' }, 'Every day'),
             h('option', { value: 'asneeded' }, form.type === 'win' ? 'As needed \u2014 don\u2019t flag missed doses' : 'No set days'),
             h('option', { value: 'weekly' }, 'Specific days of the week'),
-            h('option', { value: 'interval' }, 'Every few days (for example, every other day)')
+            // app-v68: was 'Every few days (for example, every other day)'. That is 43 characters in a
+            // control roughly 24 fit on a phone, and this select had no ellipsis -- so the parenthetical
+            // was cut off mid-word at every width from 320px to 428px and taught nobody anything. The
+            // example is redundant anyway: choosing this option reveals an inline "every N days"
+            // control directly beneath, which says the same thing and lets you set it.
+            h('option', { value: 'interval' }, 'Every few days')
           ),
           form.scheduleMode === 'interval' ? h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
             h('span', { style: { fontSize: '12.5px', color: '#554A52', fontWeight: '700' } }, 'every'),

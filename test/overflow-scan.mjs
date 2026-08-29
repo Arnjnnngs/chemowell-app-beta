@@ -141,8 +141,46 @@ const scanFn = function (vw) {
     // claim this scan exists to catch. A dropdown that does not fit its column is the defect that
     // forced this whole app to 379px, so it gets its own rule.
     if (tag === 'select') {
+      // THE TEXT INSIDE THE CONTROL, not the control's own width. This rule has now been claimed and
+      // been wrong three releases running. Asking "is the box wider than its column" is structurally
+      // DEAD in this app: select{max-width:100%} pins every dropdown to exactly its column, over by
+      // 0.0px, so the rule could never fire — while on a 360px phone the medication-type dropdown was
+      // cutting its own text off by 19px and the schedule dropdown was cutting "Every few days (for
+      // example, every other day)" by 51px. Exactly the case the old comment named.
+      // A <select> renders the SELECTED option's label inside itself, and clips it with no ellipsis.
+      // So measure that label in the control's own font against the room actually left for it, after
+      // the horizontal padding that reserves space for the chevron. Every option is measured, not
+      // just the current one: any of them becomes the visible label the moment it is chosen.
+      const padSelL = parseFloat(cs.paddingLeft) || 0, padSelR = parseFloat(cs.paddingRight) || 0;
+      const room = el.clientWidth - padSelL - padSelR;
+      const probe = document.createElement('span');
+      probe.style.cssText = 'position:absolute;left:-9999px;top:0;white-space:pre;visibility:hidden;';
+      probe.style.font = cs.font || (cs.fontWeight + ' ' + cs.fontSize + '/' + cs.lineHeight + ' ' + cs.fontFamily);
+      probe.style.letterSpacing = cs.letterSpacing;
+      document.body.appendChild(probe);
+      // Deliberate truncation is not a defect, and the select branch was ignoring that while the
+      // text branch honoured it -- so a dropdown that ellipsises on purpose was reported as broken.
+      // A hard cut with no ellipsis is a real defect; "As needed - wait a set number of hours..."
+      // with a visible ellipsis is a design decision.
+      // A <select> is NOT judged by the general `clipped` rule, and this is measured, not assumed:
+      // Chromium reports overflow:visible on a select whatever the stylesheet says -- the control
+      // clips its own text natively -- so demanding a clipping overflow before honouring an ellipsis
+      // meant a dropdown that truncates visibly and on purpose was still reported as broken. For a
+      // select, `text-overflow: ellipsis` on its own IS the deliberate-truncation signal.
+      let worstOpt = null, worstBy = 0;
+      const selEllipsis = cs.textOverflow === 'ellipsis';
+      if (!selEllipsis) [...el.options].forEach(o => {
+        probe.textContent = o.text;
+        const need = probe.getBoundingClientRect().width;
+        if (room > 0 && need - room > 1.5 && need - room > worstBy) { worstBy = need - room; worstOpt = o.text; }
+      });
+      probe.remove();
+      if (worstOpt) {
+        kind = 'the dropdown cuts off its own text ("' + worstOpt.slice(0, 40) + '")';
+        overBy = Math.round(worstBy);
+      }
       const parentSel = el.parentElement;
-      if (parentSel && !clipped) {
+      if (!kind && parentSel && !clipped) {
         const pcs = getComputedStyle(parentSel);
         const pr = parentSel.getBoundingClientRect();
         const padL = parseFloat(pcs.paddingLeft) || 0, padR = parseFloat(pcs.paddingRight) || 0;
@@ -348,7 +386,11 @@ for (const dev of DEVICES) {
       const nav = document.querySelector('nav');
       const chrome = nav ? nav.innerText.length : 0;
       const body = document.body.innerText.length;
-      return (body - chrome) > 80;
+      // 150, not 80. Eighty characters is roughly one sentence, so three tabs stripped to a single
+      // 83-character line still passed as scanned and clean. Measured: the thinnest genuinely real
+      // screen in this app carries 181 characters even with no data logged at all, so the bar has
+      // room to sit well above "one sentence" without ever failing an honest empty state.
+      return (body - chrome) > 150;
     }, screen);
     if (!navigated) {
       console.log('  COULD NOT REACH ' + screen.toUpperCase() + ' at ' + dev.w + 'px — not scanned');
