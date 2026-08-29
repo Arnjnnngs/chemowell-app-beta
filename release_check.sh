@@ -106,7 +106,11 @@ elif [ -n "$PUB_COMMIT" ] && git rev-parse --verify --quiet "$PUB_COMMIT^{commit
   # Integrity check. A record that disagrees with the commit it names is worse than no record --
   # it is a baseline someone could hand-edit to make this gate pass. Refuse it outright rather
   # than quietly falling back, so the tampering surfaces instead of being routed around.
-  REC_CACHE=$(git show "$PUB_COMMIT":sw.js 2>/dev/null | read_cache)
+  # GUARDED. The sixth and last of this class (found by the PM after five were fixed): a baseline
+  # commit with no sw.js makes `git show` fail, the pipeline fails under `set -euo pipefail`, the
+  # ASSIGNMENT fails, and the whole script dies at exit 128 with ZERO output -- the gate vanishing
+  # in exactly the case it exists to catch. "none" is a value the comparison below handles.
+  REC_CACHE=$(git show "$PUB_COMMIT":sw.js 2>/dev/null | read_cache || echo "none")
   if [ "$REC_CACHE" != "$PUB_CACHE" ]; then
     echo "❌ RELEASE CHECK FAILED: PUBLISHED.json is not self-consistent."
     echo "   It records cache '$PUB_CACHE' for commit ${PUB_COMMIT:0:7}, but that commit's sw.js"
@@ -375,7 +379,37 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
     echo "   push is not that gate."
     exit 1
   fi
-  echo "ℹ️  Chain artifacts present for $GATE_VERSION:"
+  # STALENESS. Finding a filename is not reading a report. app-v68 was gated by an audit of commit
+  # 51ba75f while the head being shipped was 68d3dd6 -- 67 further lines of index.html, including a
+  # rewritten treatmentActiveOn, that no auditor had ever seen. The gate passed, because the report
+  # was NAMED for v68 and the gate only ever checked its name. Every report must now declare the
+  # commit it actually examined, and that commit must still describe the tree being shipped.
+  for _r in "$AUDIT_REPORT" "$PM_REPORT"; do
+    _sha=$(grep -m1 -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}' "$_r" 2>/dev/null | grep -oE '[0-9a-f]{7,40}$' || echo "")
+    if [ -z "$_sha" ]; then
+      echo "❌ RELEASE CHECK FAILED: $_r does not declare which commit it examined."
+      echo "   Add a line 'AUDITED-COMMIT: <sha>' naming the commit the report was written against."
+      echo "   Without it this gate can only confirm a file exists with the right name in it, which"
+      echo "   is what let an audit of an older commit clear a head it had never read."
+      exit 1
+    fi
+    if ! git rev-parse --verify --quiet "$_sha^{commit}" >/dev/null; then
+      echo "❌ RELEASE CHECK FAILED: $_r names commit $_sha, which does not exist in this repo."
+      exit 1
+    fi
+    # Working tree vs the audited commit, not HEAD vs it -- the working tree is what ships.
+    _drift=$(git diff --name-only "$_sha" -- \
+      index.html sw.js .github/workflows sync-backend package.json package-lock.json capacitor.config.ts 2>/dev/null || true)
+    if [ -n "$_drift" ]; then
+      echo "❌ RELEASE CHECK FAILED: $_r is STALE."
+      echo "   It examined ${_sha:0:7}. Since then these have changed and no one has looked at them:"
+      echo "$_drift" | sed 's/^/     /'
+      echo "   Re-run that stage against the current tree, or drop the unaudited work to a later"
+      echo "   version. Code that ships must be code someone read."
+      exit 1
+    fi
+  done
+  echo "ℹ️  Chain artifacts present for $GATE_VERSION, and current against the working tree:"
   echo "     $AUDIT_REPORT"
   echo "     $PM_REPORT"
 fi

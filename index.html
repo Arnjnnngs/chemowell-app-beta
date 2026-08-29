@@ -1106,8 +1106,12 @@ function normalizeMedication(raw, index) {
     // and treatmentOnly is derived FROM it (matching how saveMedicationEditor already writes them in
     // lockstep at save time), so the two fields can never disagree once they're normalized here.
     treatmentOnly: treatmentMode === 'only',
-    treatmentDaysBefore: Number.isFinite(original.treatmentDaysBefore) ? Math.max(0, Math.round(original.treatmentDaysBefore)) : 1,
-    treatmentDaysAfter: Number.isFinite(original.treatmentDaysAfter) ? Math.max(0, Math.round(original.treatmentDaysAfter)) : 1,
+    // app-v68 (PM finding): was Number.isFinite(original.treatmentDaysBefore), which is FALSE for the
+    // string "3" a text input produces -- so every medication whose window had been saved as text
+    // collapsed back to 1/1 the next time it was normalized, upstream of every read site. Routed
+    // through the shared clamp, which coerces and bounds.
+    treatmentDaysBefore: clampTreatmentDays(original.treatmentDaysBefore),
+    treatmentDaysAfter: clampTreatmentDays(original.treatmentDaysAfter),
     treatmentMode: treatmentMode,
     // v20: pause a medication temporarily, for any reason, without deleting it. `paused` gates live
     // behavior (Home card, reminders, dose logging); `pausePeriods` is a permanent per-day-range record
@@ -1511,6 +1515,25 @@ function dexActiveOn(dayTs) { const o = chemoOffsetFor(dayTs); return o !== null
 // Hiding a medication on an unanswerable question is what made a saved medication vanish from Home
 // with no message and no way to get it back.
 function hasTreatmentDate() { return nextChemoTs() !== null; }
+// ONE definition of a treatment window's size, app-v68 (PM finding). Three places asked "how many
+// days?" and got different answers: this clamp had NO upper bound, so a medication saved with 300
+// days showed the chip "Treatment day -300/+300" -- while the only code that actually evaluated the
+// window silently capped it at 14. The number on screen was not the number the app obeyed. The save
+// path, the editor preview, the med-list chips and treatmentActiveOn all come through here now, so
+// there is exactly one answer and the screen cannot disagree with the behaviour.
+// String-coercing on purpose: these come from a text input, so "3" arrives as a STRING and
+// Number.isFinite("3") is false -- testing instead of coercing collapsed every configured window
+// back to 1/1.
+// Blank/whitespace is checked BEFORE Number(), because Number('') and Number('   ') are both 0 and
+// 0 is a legitimate value ("treatment day itself only") -- so a cleared field must fall back to 1
+// rather than read as a deliberate 0 (audit v16 finding #1).
+const TREATMENT_DAYS_MAX = 14;
+function clampTreatmentDays(value) {
+  if (value === '' || value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return 1;
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 0) return 1;
+  return Math.min(TREATMENT_DAYS_MAX, n);
+}
 function treatmentActiveOn(med, dayTs) {
   // ANY TREATMENT, not the nearest one. This asked chemoOffsetFor() -- distance to the CLOSEST
   // treatment -- and tested that one number against the window. Treatments on 24 and 27 Aug with a
@@ -1523,12 +1546,10 @@ function treatmentActiveOn(med, dayTs) {
   const days = chemoDayList();
   if (!days.length) return false;
   const d0 = dayStart(dayTs);
-  // Coerced, not just tested: these come from a text input, so "3" is a string and Number.isFinite
-  // is false for it -- which silently collapsed every configured window back to 1/1. care-tracker's
-  // port got this right and this one did not; adopting its behaviour.
-  const num = v => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(14, Math.round(n))) : null; };
-  const before = med && med.treatmentDaysBefore !== '' && med.treatmentDaysBefore !== null && med.treatmentDaysBefore !== undefined && num(med.treatmentDaysBefore) !== null ? num(med.treatmentDaysBefore) : 1;
-  const after  = med && med.treatmentDaysAfter  !== '' && med.treatmentDaysAfter  !== null && med.treatmentDaysAfter  !== undefined && num(med.treatmentDaysAfter)  !== null ? num(med.treatmentDaysAfter)  : 1;
+  // Same clamp the editor, the chip and the save path use. This used to be a private copy of the
+  // rule that capped at 14 while the one on screen did not.
+  const before = clampTreatmentDays(med ? med.treatmentDaysBefore : undefined);
+  const after  = clampTreatmentDays(med ? med.treatmentDaysAfter  : undefined);
   return days.some(d => {
     const o = Math.round((d0 - d) / 86400000);
     return o >= -before && o <= after;
@@ -5234,8 +5255,10 @@ function medicationFormFrom(med) {
     // v20: treatmentMode drives the new 3-way picker; base.treatmentMode is already normalized
     // (derived from legacy treatmentOnly) by the time a medication reaches this editor.
     treatmentMode: ['only', 'excluded'].includes(base.treatmentMode) ? base.treatmentMode : (base.treatmentOnly ? 'only' : 'none'),
-    treatmentDaysBefore: Number.isFinite(base.treatmentDaysBefore) ? base.treatmentDaysBefore : 1,
-    treatmentDaysAfter: Number.isFinite(base.treatmentDaysAfter) ? base.treatmentDaysAfter : 1,
+    // Shared clamp, so the editor opens on the number the app will actually obey rather than a
+    // stored string or an out-of-range leftover (app-v68 PM finding).
+    treatmentDaysBefore: clampTreatmentDays(base.treatmentDaysBefore),
+    treatmentDaysAfter: clampTreatmentDays(base.treatmentDaysAfter),
     scheduleMode: base.scheduleDays ? base.scheduleDays.mode : 'daily',
     weekDays: base.scheduleDays && base.scheduleDays.mode === 'weekly' ? (base.scheduleDays.days || []).slice() : [],
     intervalN: base.scheduleDays && base.scheduleDays.mode === 'interval' ? base.scheduleDays.n : 2,
@@ -5384,16 +5407,9 @@ function openMedicationEditor(med) {
   scrollToTop();
 }
 
-// Clamp a treatment-window day-count input to a non-negative integer, falling back to 1 (the old
-// fixed +-1 day behavior) for blank/invalid input rather than silently collapsing to 0. Blank/
-// whitespace must be checked BEFORE Number() coercion -- Number('') and Number('   ') are both 0,
-// a legitimate value, so a cleared field would otherwise silently save as "treatment day only"
-// instead of falling back (audit v16 finding #1).
-function clampTreatmentDays(value) {
-  if (value === '' || value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return 1;
-  const n = Math.round(Number(value));
-  return Number.isFinite(n) && n >= 0 ? n : 1;
-}
+// Moved up to sit beside treatmentActiveOn, the code that USES the window -- see
+// clampTreatmentDays there. Four places used to answer "how many days is this window?" and two of
+// them gave different answers.
 // v26 (Aaron-requested): schedule windows are now a single alert time each — no user-facing End
 // field. `end` still exists internally because two other pieces of logic depend on it: status()
 // uses it to decide when a scheduled window's one-tap Log button is available, and

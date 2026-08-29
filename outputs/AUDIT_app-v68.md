@@ -1,5 +1,8 @@
 # Zero Day Audit — app-v68 (chemowell-app-beta), branch `claude/hotfix-treatment-date-clear`
 
+AUDITED-COMMIT: 51ba75f
+
+
 **Verdict: the three fixes are correct. Ship them. Nothing I found is a reason to leave
 app-v67's blocker live for another day.** Everything below is a condition on shipping, not a
 reason to hold it — with one exception that is not in the app at all: `release_check.sh` can be
