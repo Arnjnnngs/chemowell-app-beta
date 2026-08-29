@@ -25,20 +25,13 @@ function fn(name) {
 }
 function line(re) { const m = html.match(re); if (!m) throw new Error('line not found: ' + re); return m[0]; }
 
-function decl_TDM() {
-  // treatmentActiveOn shares one clamp with the editor and the chips (app-v68), so the
-  // window bound has to come into the sandbox with it.
-  const m = html.match(/^const TREATMENT_DAYS_MAX = \d+;$/m);
-  if (!m) throw new Error('TREATMENT_DAYS_MAX declaration not found');
-  return m[0];
-}
 const ctx = { state: { entries: [], meds: [], chemoDates: [], dismissedMisses: [] }, console };
 vm.createContext(ctx);
 vm.runInContext([
   'let MISSED_TRACK_SINCE = new Date(2026, 0, 1).getTime();',
   fn('dayStart'), fn('nextDay'), fn('hourTs'), fn('entriesFor'), fn('nextChemoTs'),
   fn('chemoDayList'), fn('chemoOffsetFor'), fn('chemoOffsetSinceLast'), fn('zofranBlockedOn'), fn('chemoDayFor'), fn('zofranBlockingDay'),
-  decl_TDM(), fn('clampTreatmentDays'), fn('treatmentActiveOn'), fn('dexActiveOn'), fn('dexWindowsForOffset'),
+  fn('treatmentDaysMax'), fn('clampTreatmentDays'), fn('treatmentActiveOn'), fn('dexActiveOn'), fn('dexWindowsForOffset'),
   'function treatmentType() { return ""; }',
   fn('isOtherTreatmentType'), fn('isPausedOn'), fn('treatmentOnlyBlocks'), fn('treatmentExcludedNow'),
   fn('hasTreatmentDate'), fn('treatmentActiveOn'), fn('medScheduledOn'), fn('inpatientEntries'), fn('inpatientPeriods'),

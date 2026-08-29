@@ -1,0 +1,320 @@
+// LAYOUT AUDIT — does any text escape its box, at real phone widths, on EVERY screen?
+//
+// Ported from care-tracker's harness/overflow-scan.mjs, which was written after Aaron said
+// (2026-08-29): "how is auditing being done if nothing can be seen to make sure everything looks
+// right? ... on an iPhone, some wording spills outside the text box." Both the Zero Day Auditor and
+// the PM said the same about this app independently: every gate here is data-layer, and app-v68
+// changed two render functions with no render verification of any kind.
+//
+// THE TRAPS THE care-tracker VERSION PAID FOR, carried over rather than re-learned:
+//   - A first version scanned only an empty Home and reported "clean". Overflow needs LONG CONTENT,
+//     so this seeds real medication names and a long symptom note.
+//   - A first version called navigateTo() inside page.evaluate. This app is a <script type="module">,
+//     so navigateTo is not on window: every call threw, a try/catch ate it, and the scan never left
+//     Home while reporting five screens walked. This clicks the real nav buttons by data-tour hook.
+//   - An unreachable screen is NOT a clean screen. It fails the run.
+//
+// WHAT IT CANNOT DO, plainly: this is CHROMIUM at iPhone viewport sizes, not Safari. It catches a
+// box too small for its content, which is most "text spills out" bugs. It does NOT catch
+// WebKit-specific font metrics. A clean run narrows the search; it does not clear Safari.
+//
+// Run: env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy node test/overflow-scan.mjs
+//      --shots <dir>   write a screenshot per width per screen
+import { createRequire } from 'node:module';
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+const require = createRequire(import.meta.url);
+const { chromium } = (() => {
+  const _p = require('node:path');
+  const tries = ['playwright',
+    _p.join(_p.dirname(process.execPath), '..', 'lib', 'node_modules', 'playwright'),
+    '/opt/node22/lib/node_modules/playwright'];
+  for (const c of tries) { try { return require(c); } catch (e) {} }
+  throw new Error('playwright not found');
+})();
+for (const v of ['HTTPS_PROXY','https_proxy','HTTP_PROXY','http_proxy'])
+  if (process.env[v]) { console.error('REFUSING: ' + v + ' is set — the suite cannot reach its own local server through a proxy.'); process.exit(3); }
+
+const argv = process.argv.slice(2);
+const arg = n => { const i = argv.indexOf(n); return i >= 0 ? argv[i+1] : null; };
+const APP_FILE = arg('--file') || new URL('../index.html', import.meta.url).pathname;
+const SHOTS = arg('--shots');
+const errs = [], escaped = [], warns = [];
+const rawHtml = fs.readFileSync(APP_FILE, 'utf-8');
+
+// Both platforms. Aaron, 2026-08-29: "this is being viewed on both iPhone and Android. so both
+// matters." Chromium IS Android's engine, so the Android rows are close to what a Galaxy or Pixel
+// really renders; the iPhone rows are Chromium at Apple's viewport SIZES — right about boxes too
+// small for their content, silent about WebKit font metrics.
+// 320 is the iPhone SE/mini floor; 360 is the most common Android width in the world.
+const DEVICES = [
+  { name: 'iPhone SE (1st gen)',      w: 320, h: 568, os: 'iOS' },
+  { name: 'Galaxy S/A (most common)', w: 360, h: 800, os: 'Android' },
+  { name: 'iPhone SE 2/3, 8',         w: 375, h: 667, os: 'iOS' },
+  { name: 'Galaxy S22/S23',           w: 384, h: 854, os: 'Android' },
+  { name: 'iPhone 13/14',             w: 390, h: 844, os: 'iOS' },
+  { name: 'Pixel 7/8',                w: 393, h: 873, os: 'Android' },
+  { name: 'Pixel Pro, Galaxy S+',     w: 412, h: 915, os: 'Android' },
+  { name: 'iPhone 14/15 Plus',        w: 428, h: 926, os: 'iOS' }
+];
+
+// This app keeps everything on the device, so the fixture is localStorage, written before the page
+// script runs. A long medication name, a long dose string and a long free-text symptom are the
+// three things that actually stress these layouts — an empty app looks fine at every width.
+const P = 'chemowell-app-p-p1-';
+const now = Date.now();
+const SEED_ENTRIES = [
+  { id: 's1', medId: 'childrens-liquid-tylenol', dose: '2 tsp (650 mg)', mg: 650, ts: now - 3600000 },
+  { id: 's2', medId: 'dexamethasone', dose: '2 tablets', mg: 8, ts: now - 7200000 },
+  { id: 's3', medId: 'compazine', dose: '10 mg', mg: 10, ts: now - 14400000 },
+  { id: 's4', medId: 'temp', dose: '100.9 F', mg: 0, ts: now - 5400000, temp: 100.9 },
+  { id: 's5', medId: 'weight', dose: '182 lbs', mg: 0, ts: now - 9000000, weight: 182 },
+  { id: 's6', medId: 'chemo_date', dose: 'Treatment scheduled', mg: 0, ts: now - 259200000, loggedAt: now - 259200000 },
+  { id: 's7', medId: 'symptom_nausea', dose: 'Sharp rib pain after the second dose, worse lying down', mg: 0, ts: now - 12600000 }
+];
+// A medication carrying the app-v68 treatment-window fields, because the med editor and the med
+// list chips are exactly what that release changed.
+const SEED_MEDS = { version: 1, archivedMeds: [], meds: [
+  { id: 'dexamethasone', name: 'Dexamethasone', type: 'win', quickLog: true,
+    treatmentMode: 'only', treatmentOnly: true, treatmentDaysBefore: 3, treatmentDaysAfter: 3,
+    windows: [{ start: 6, end: 12, name: 'Morning' }, { start: 17, end: 22, name: 'Evening' }] },
+  { id: 'childrens-liquid-tylenol', name: "Children's Liquid Tylenol", type: 'prn', quickLog: true,
+    doses: ['1 tsp (325 mg)', '2 tsp (650 mg)'] }
+]};
+// tourDone matters: without it the 10-step welcome guide overlays every screen, and the scan
+// measures the tour instead of the app while reporting five screens clean.
+const SEED_PREFS = { patientName: 'Test Patient', sex: 'female', treatmentType: 'chemo',
+  tourDone: true, ceilingMg: 2500, tempUnit: 'Fahrenheit', weightUnit: 'lbs' };
+
+const SCREENS = ['home', 'meds', 'reports', 'inpatient', 'symptoms'];
+
+// ONE scanner body, shared by the tab loop and the overlay loop. In the original these were two
+// copies and they drifted within minutes — the overlay copy silently scanned nothing.
+const scanFn = function (vw) {
+  const out = [], seen = new Set();
+  document.querySelectorAll('*').forEach(el => {
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden' || !el.getClientRects().length) return;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const text = (el.textContent || '').trim();
+    if (!text) return;
+    if ([...el.children].some(c => (c.textContent || '').trim())) return; // leaves only
+    const scrollable = cs.overflowX === 'auto' || cs.overflowX === 'scroll';
+    const clipped = cs.textOverflow === 'ellipsis';   // deliberate truncation, not a defect
+    const overflowsSelf = el.scrollWidth - el.clientWidth > 1 && !scrollable && !clipped;
+    const offRight = r.right > vw + 1, offLeft = r.left < -1;
+    if (!overflowsSelf && !offRight && !offLeft) return;
+    const label = text.slice(0, 64).replace(/\s+/g, ' ');
+    const key = label + '|' + Math.round(r.top);
+    if (seen.has(key)) return; seen.add(key);
+    out.push({ text: label, tag: el.tagName.toLowerCase(),
+      kind: overflowsSelf ? 'content wider than its box' : (offRight ? 'off the right edge' : 'off the left edge'),
+      overBy: overflowsSelf ? el.scrollWidth - el.clientWidth : Math.round(offRight ? r.right - vw : -r.left),
+      box: Math.round(r.width) + 'x' + Math.round(r.height), ws: cs.whiteSpace });
+  });
+  return out;
+};
+
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
+let problems = 0, unreachable = 0;
+const report = [];
+
+for (const dev of DEVICES) {
+  const server = http.createServer((rq, rs) => {
+    if (rq.url.startsWith('/index.html')) { rs.writeHead(200, {'Content-Type':'text/html'}); rs.end(rawHtml); return; }
+    // 204, not 404. A 404 makes the browser log "Failed to load resource" for every favicon and
+    // manifest probe, which would drown the console gate below in noise the app is not responsible
+    // for -- and a gate nobody can read is a gate nobody keeps.
+    rs.writeHead(204); rs.end();
+  }).listen(0, '127.0.0.1');
+  await new Promise(r => server.once('listening', r));
+  const PORT = server.address().port;
+  const ctx = await browser.newContext({
+    viewport: { width: dev.w, height: dev.h }, deviceScaleFactor: 3,
+    isMobile: true, hasTouch: true, serviceWorkers: 'block'
+  });
+  // Nothing leaves the machine. The Capacitor plugin scripts are CDN <script> tags that would
+  // otherwise be fetched; they are stubbed to nothing, and anything else asking for the network is
+  // recorded and aborted so a silent external dependency shows up as a finding rather than a hang.
+  await ctx.route('**/*', route => {
+    const u = route.request().url();
+    if (u.startsWith('http://127.0.0.1:' + PORT)) return route.continue();
+    if (u.includes('cdn.jsdelivr.net')) return route.fulfill({ status: 200, contentType: 'application/javascript', body: '/* stubbed for the render scan */' });
+    if (u.startsWith('https://fonts.')) return route.abort();
+    escaped.push(u); return route.abort();
+  });
+  const page = await ctx.newPage();
+  page.on('pageerror', e => errs.push(String(e)));
+  // THE CONSOLE IS PART OF THE GATE, not colour commentary. This scan's first run printed
+  // "Medication configuration could not be loaded: ReferenceError: Cannot access
+  // 'TREATMENT_DAYS_MAX' before initialization" -- a const in the temporal dead zone during module
+  // init, caught by a try/catch that returned the empty fallback, which silently wiped every saved
+  // medication from the app. It reached the console and nowhere else: no crash, no visible error,
+  // and all four unit suites green because they lift functions into a VM and never run module init.
+  // I saw it only because I happened to be printing warnings while debugging something else. That
+  // is not a gate, so it is one now.
+  page.on('console', m => {
+    if (m.type() !== 'warning' && m.type() !== 'error') return;
+    const t = m.text();
+    if (t.includes('Service Worker registration blocked by Playwright')) return; // ours, expected
+    warns.push(t.slice(0, 300));
+  });
+  // Seeded BEFORE the module runs — the app reads localStorage on first render, so seeding after
+  // load would scan a first-run setup screen and call it Home.
+  await page.addInitScript(([p, entries, meds, prefs]) => {
+    localStorage.setItem(p + 'entries-v1', JSON.stringify(entries));
+    localStorage.setItem(p + 'med-v1', JSON.stringify(meds));
+    localStorage.setItem(p + 'prefs-v1', JSON.stringify(prefs));
+  }, [P, SEED_ENTRIES, SEED_MEDS, SEED_PREFS]);
+  await page.goto('http://127.0.0.1:' + PORT + '/index.html', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1500);
+
+  // Proof the fixture took. Without this the scan happily measures a first-run setup screen at all
+  // eight widths and reports it clean — the empty-Home trap, one layer down.
+  // Two things must be true, and the second is the one that bites: the app is past first-run setup,
+  // AND the seeded medication actually reached the screen. Checking only the first would have called
+  // a run clean while every medication had been silently dropped on load.
+  const seeded = await page.evaluate(seedName => {
+    if (!document.querySelector('[data-tour="nav-home"]')) return 'setup';
+    const meds = document.querySelector('[data-tour="nav-meds"]');
+    if (!meds) return 'setup';
+    meds.click();
+    return 'ok';
+  }, SEED_MEDS.meds[0].name);
+  if (seeded !== 'ok') {
+    console.log('  FIXTURE DID NOT TAKE at ' + dev.w + 'px — the app is not past first-run setup, nothing scanned');
+    unreachable += SCREENS.length;
+    await ctx.close(); server.close();
+    continue;
+  }
+
+  // The med editor is a screen too, and it is where the treatment window gets typed — the exact
+  // thing app-v68 changed. Walking only the five tabs would have passed a render gate that never
+  // rendered the page under change.
+  const EXTRA = [{ name: 'med-editor', open: async page => {
+    const onMeds = await page.evaluate(() => {
+      const b = document.querySelector('[data-tour="nav-meds"]');
+      if (!b) return false; b.click(); return true;
+    });
+    if (!onMeds) return false;
+    await page.waitForTimeout(900);
+    const opened = await page.evaluate(() => {
+      // Edit controls are icon buttons labelled by aria-label ("Edit <name>"), not by text --
+      // matching innerText finds nothing and the editor never opens. Falling back to Add keeps this
+      // screen reachable even when the medication fixture is empty, because an editor that is only
+      // scanned when a med happens to exist is an editor that quietly stops being scanned.
+      const btns = [...document.querySelectorAll('button')];
+      const edit = btns.find(x => /^edit /i.test((x.getAttribute('aria-label') || '').trim()));
+      if (edit) { edit.click(); return true; }
+      const add = document.querySelector('[data-tour="meds-add"]');
+      if (add) { add.click(); return true; }
+      return false;
+    });
+    if (!opened) return false;
+    await page.waitForTimeout(700);
+    // The treatment-window fields are behind the mode picker, and they are precisely what app-v68
+    // changed. Scanning the editor without opening that panel scans everything except the change.
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')]
+        .find(x => /only around|treatment day/i.test((x.innerText || '').trim()));
+      if (b) b.click();
+    });
+    return true;
+  } }];
+
+  for (const screen of SCREENS) {
+    const navigated = await page.evaluate(key => {
+      const btn = document.querySelector('[data-tour="nav-' + key + '"]');
+      if (!btn) return false;
+      btn.click();
+      return true;
+    }, screen);
+    if (!navigated) {
+      console.log('  COULD NOT REACH ' + screen.toUpperCase() + ' at ' + dev.w + 'px — not scanned');
+      unreachable++;
+      continue;
+    }
+    await page.waitForTimeout(900);
+    // THE WHOLE-PAGE WIDTH, checked before the per-element scan — because under mobile emulation the
+    // per-element scan CANNOT see this class. If content refuses to fit, Chromium widens the layout
+    // viewport instead of overflowing, every element then "fits" its now-wider page, and the scan
+    // reports clean while the real phone side-scrolls. That is precisely what happened: a <select>
+    // sized to its longest option forced a 379px minimum, and eight widths came back clean.
+    const layout = await page.evaluate(() => ({ inner: window.innerWidth, doc: document.documentElement.scrollWidth }));
+    if (layout.inner > dev.w + 1 || layout.doc > layout.inner + 1) {
+      problems++;
+      report.push({ dev: dev.name, os: dev.os, w: dev.w, screen, found: [{
+        text: 'THE PAGE ITSELF IS WIDER THAN THE PHONE', tag: 'document',
+        kind: 'app needs ' + Math.max(layout.inner, layout.doc) + 'px on a ' + dev.w + 'px screen — it will scroll sideways',
+        overBy: Math.max(layout.inner, layout.doc) - dev.w, box: layout.doc + 'x-', ws: 'n/a' }] });
+    }
+    const found = await page.evaluate(scanFn, Math.max(dev.w, layout.inner));
+    if (SHOTS) {
+      fs.mkdirSync(SHOTS, { recursive: true });
+      await page.screenshot({ path: path.join(SHOTS, dev.w + '-' + screen + '.png'), fullPage: true });
+    }
+    if (found.length) { problems += found.length; report.push({ dev: dev.name, os: dev.os, w: dev.w, screen, found }); }
+  }
+
+  for (const extra of EXTRA) {
+    const opened = await extra.open(page);
+    if (!opened) {
+      console.log('  COULD NOT OPEN ' + extra.name + ' at ' + dev.w + 'px — not scanned');
+      unreachable++;
+      continue;
+    }
+    await page.waitForTimeout(800);
+    const layoutX = await page.evaluate(() => ({ inner: window.innerWidth, doc: document.documentElement.scrollWidth }));
+    if (layoutX.inner > dev.w + 1 || layoutX.doc > layoutX.inner + 1) {
+      problems++;
+      report.push({ dev: dev.name, os: dev.os, w: dev.w, screen: extra.name, found: [{
+        text: 'THE PAGE ITSELF IS WIDER THAN THE PHONE', tag: 'document',
+        kind: 'app needs ' + Math.max(layoutX.inner, layoutX.doc) + 'px on a ' + dev.w + 'px screen — it will scroll sideways',
+        overBy: Math.max(layoutX.inner, layoutX.doc) - dev.w, box: layoutX.doc + 'x-', ws: 'n/a' }] });
+    }
+    const found = await page.evaluate(scanFn, Math.max(dev.w, layoutX.inner));
+    if (SHOTS) {
+      fs.mkdirSync(SHOTS, { recursive: true });
+      await page.screenshot({ path: path.join(SHOTS, dev.w + '-' + extra.name + '.png') });
+    }
+    if (found.length) { problems += found.length; report.push({ dev: dev.name, os: dev.os, w: dev.w, screen: extra.name, found }); }
+  }
+
+  await ctx.close();
+  server.close();
+}
+await browser.close();
+
+if (report.length) {
+  report.forEach(r => {
+    console.log('\n  ' + r.os + '  ' + r.dev + ' (' + r.w + 'px) — ' + r.screen.toUpperCase() + ' — ' + r.found.length + ' problem(s)');
+    r.found.slice(0, 10).forEach(f => {
+      console.log('      "' + f.text + '"');
+      console.log('        <' + f.tag + '> ' + f.kind + ' by ' + f.overBy + 'px · box ' + f.box + ' · white-space:' + f.ws);
+    });
+    if (r.found.length > 10) console.log('      ... and ' + (r.found.length - 10) + ' more');
+  });
+} else {
+  console.log('  every screen clean at all ' + DEVICES.length + ' device widths (iOS and Android)');
+}
+if (errs.length) console.log('\n  PAGE ERRORS: ' + errs.length + '\n    ' + errs.slice(0,3).join('\n    '));
+if (warns.length) console.log('\n  CONSOLE WARNINGS/ERRORS: ' + warns.length + '\n    ' + [...new Set(warns)].slice(0,5).join('\n    '));
+if (escaped.length) console.log('\n  BLOCKED OUTBOUND REQUESTS: ' + escaped.length + '\n    ' + [...new Set(escaped)].slice(0,5).join('\n    '));
+console.log('\n' + (DEVICES.length * (SCREENS.length + 1)) + ' screen/width combinations, ' + problems + ' overflowing element(s).');
+if (errs.length || warns.length) {
+  console.log('NOT CLEAN — the app logged ' + errs.length + ' page error(s) and ' + warns.length +
+    ' console warning(s)/error(s). A caught-and-logged failure is still a failure: this is the exact');
+  console.log('  signal that caught a silent wipe of every saved medication while all unit suites were green.');
+  process.exit(1);
+}
+if (unreachable) {
+  // A screen the scan could not reach is NOT a clean screen. Reporting it as one is how a render
+  // gate ends up blessing a page nobody ever rendered.
+  console.log(unreachable + ' screen/width combination(s) COULD NOT BE REACHED and were not scanned.');
+  console.log('NOT CLEAN — an unreachable screen is an unchecked screen.');
+  process.exit(1);
+}
+console.log(problems ? 'NOT CLEAN' : 'CLEAN — Android rows are high fidelity (Chromium is Android\'s engine); iOS rows are Chromium at Apple viewport sizes, not Safari.');
+process.exit(problems ? 1 : 0);

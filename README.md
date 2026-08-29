@@ -69,3 +69,28 @@ This is the native-app codebase (APP-BETA in the 4-target system). It was seeded
 | app-v3 | 2026-07-23 | True from-scratch start: fresh installs get an EMPTY medication list (the original patient's defaults removed; no auto-seeding). New interactive first-run walkthrough: 10-step coach-mark guide that highlights real UI elements and waits for the user's own taps — Meds tab → Add → fill out the form → save first med → back Home → tour of dose logging, Reports, In-Patient, Symptoms. Skippable, never re-nags after skip/finish (prefs.tourDone), relaunchable via new ? button in header. QA: 27/27 harness checks. |
 | app-v2 | 2026-07-23 | Fresh-install fix: missed-dose tracking now starts at `installedAt` (stamped into prefs on first run) instead of a hardcoded past date — a new install no longer shows dozens of phantom "missed doses from previous days". |
 | app-v1 | 2026-07-23 | Seeded from chemowell-beta v71. Firebase/Firestore/FCM fully removed → on-device storage layer (entries + prefs in localStorage, same function names: subscribeEntries/addEntryDB/removeEntryDB/subscribePrefs/setPrefsDB). First-run welcome screen asks patient name (stored in prefs; no hardcoded name). "Live sync" indicator → "On device". APP BETA badge/banner. SW cache chemowell-app-v1. Storage layer QA: 10/10 Node harness checks. |
+
+### app-v68 — the render scan, and the two things it found on its first run
+
+`test/overflow-scan.mjs` walks every screen at eight phone widths (four iPhone, four Android),
+opens the medication editor, and fails the run if anything spills its box, if a screen cannot be
+reached, or if the app logs a single console error. It is the first check in this app that looks
+at the screen rather than at data. It found two real defects immediately:
+
+- **Every saved medication silently disappeared on load.** A `const` used by the treatment-window
+  clamp sat in the temporal dead zone during module start-up, where `loadMedicationConfig()` runs.
+  It threw, the surrounding `try/catch` swallowed it, and the app fell back to an empty medication
+  list — no crash, no message, nothing on screen to explain it. All four unit suites stayed green,
+  because they lift functions into a sandbox and never run module start-up. Fixed by making the
+  bound a hoisted function.
+- **The app did not fit a 320px or 360px phone.** The "Days taken" picker sizes itself to its
+  longest option ("Every few days (for example, every other day)"), and `min-width: auto` means a
+  `<select>` will not shrink below that. It forced the whole document to a 379px minimum, so on an
+  iPhone SE/mini and on 360px — the most common Android width in the world — the entire app scrolled
+  sideways and text ran past the edge of the screen. This is the bug Aaron reported. Fixed with
+  `max-width:100%; min-width:0` on every `<select>`, plus a smaller nav label under 360px.
+
+The scan's own blind spot is worth recording: under mobile emulation a browser WIDENS the layout
+viewport when content refuses to fit, so every element then "fits" the now-wider page and a
+per-element scan reports clean. The first version did exactly that. It now measures the page itself
+against the device width before measuring anything inside it.

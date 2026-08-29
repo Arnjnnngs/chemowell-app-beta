@@ -50,7 +50,18 @@ input:focus{outline:2px solid #BF4C1A;outline-offset:0;border-color:#BF4C1A;}
    corners / light background / custom arrow (replacing the dark, square native one) are applied
    per-select via SELECT_ARROW_STYLE (see selectStyleFix helper) since those also need per-instance
    sizing, but the font fix belongs globally so no dropdown can be missed. */
-select{font-family:inherit;-webkit-tap-highlight-color:transparent;}
+/* app-v68 (render scan): a <select> sizes itself to its LONGEST OPTION, and min-width:auto means
+   it refuses to shrink below that. The 'Days taken' picker's longest option is 'Every few days (for
+   example, every other day)', which made the control 346px wide and forced the whole document to a
+   379px minimum -- so on a 320px iPhone SE/mini and on 360px (the most common Android width in the
+   world) the ENTIRE app scrolled sideways and text ran past the screen edge. That is the bug Aaron
+   reported. Applied to every select in the app rather than the one that was caught, because the
+   next long option added anywhere would reintroduce it. */
+select{font-family:inherit;-webkit-tap-highlight-color:transparent;max-width:100%;min-width:0;}
+/* The bottom-nav labels sit in five equal grid cells. At 320px a cell is ~58px and 'Symptoms'
+   needs 61px, so the longest label spilled its box. Ported from care-tracker, which hit this first. */
+.navlabel{max-width:100%;}
+@media (max-width:360px){.navlabel{font-size:9.5px;letter-spacing:-0.03em;}}
 select:focus{outline:2px solid #BF4C1A;outline-offset:0;border-color:#BF4C1A;}
 button:focus-visible, [role="button"]:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #BF4C1A; outline-offset: 2px; }
 ::placeholder{color:#7A6E76 !important;opacity:1;}
@@ -1527,12 +1538,22 @@ function hasTreatmentDate() { return nextChemoTs() !== null; }
 // Blank/whitespace is checked BEFORE Number(), because Number('') and Number('   ') are both 0 and
 // 0 is a legitimate value ("treatment day itself only") -- so a cleared field must fall back to 1
 // rather than read as a deliberate 0 (audit v16 finding #1).
-const TREATMENT_DAYS_MAX = 14;
+// A hoisted FUNCTION, not a const, and that is not a style choice. As `const TREATMENT_DAYS_MAX = 14`
+// declared here, this sat in the temporal dead zone during module initialisation -- and
+// loadMedicationConfig() runs at init, roughly 300 lines EARLIER, to build the starting state. It
+// threw "Cannot access 'TREATMENT_DAYS_MAX' before initialization", the try/catch around it caught
+// the error, logged a console warning nobody sees on a phone, and returned the empty fallback: every
+// saved medication silently gone from the app, exactly the "a saved medication vanished with no
+// message and no way to get it back" failure this file already carries scar tissue for.
+// Every unit suite stayed green -- they lift functions into a VM and never run module init. The
+// render scan caught it in the first second of the first page load. Function declarations hoist
+// completely, so this is reachable from anywhere in the module regardless of order.
+function treatmentDaysMax() { return 14; }
 function clampTreatmentDays(value) {
   if (value === '' || value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return 1;
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n < 0) return 1;
-  return Math.min(TREATMENT_DAYS_MAX, n);
+  return Math.min(treatmentDaysMax(), n);
 }
 function treatmentActiveOn(med, dayTs) {
   // ANY TREATMENT, not the nearest one. This asked chemoOffsetFor() -- distance to the CLOSEST
@@ -3344,7 +3365,7 @@ function renderBottomNav() {
         // in both states (transparent when inactive) so the item's height never shifts.
         return h('button', { onClick: () => navigateTo(item.key), 'data-tour': 'nav-' + item.key, 'aria-label': item.label, ...(active ? { 'aria-current': 'page' } : {}), style: { minHeight: '56px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', borderRadius: '14px', color: active ? '#0A6B4A' : '#6D5247', background: active ? 'rgba(46,125,79,0.12)' : 'transparent', fontSize: '11px', fontWeight: '700', transition: 'background .18s ease, color .18s ease' } },
           appIcon(item.icon, 21),
-          h('span', null, item.label),
+          h('span', { className: 'navlabel' }, item.label),
           h('span', { style: { width: '4px', height: '4px', borderRadius: '50%', background: active ? '#0A6B4A' : 'transparent' } })
         );
       })

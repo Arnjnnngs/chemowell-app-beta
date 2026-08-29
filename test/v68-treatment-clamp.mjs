@@ -33,12 +33,13 @@ const DAY = 86400000;
 const ctx = { state: { entries: [], meds: [], chemoDates: [], dismissedMisses: [] }, console };
 vm.createContext(ctx);
 vm.runInContext([
-  decl(/^const TREATMENT_DAYS_MAX = \d+;$/m),
+  fn('treatmentDaysMax'),
   fn('clampTreatmentDays'), fn('dayStart'), fn('nextDay'), fn('entriesFor'),
   fn('nextChemoTs'), fn('chemoDayList'), fn('chemoOffsetFor'), fn('treatmentActiveOn'),
-  'globalThis.__api = { clampTreatmentDays, treatmentActiveOn, dayStart, TREATMENT_DAYS_MAX };'
+  'globalThis.__api = { clampTreatmentDays, treatmentActiveOn, dayStart, treatmentDaysMax };'
 ].join('\n'), ctx);
-const { clampTreatmentDays, treatmentActiveOn, dayStart, TREATMENT_DAYS_MAX } = ctx.__api;
+const { clampTreatmentDays, treatmentActiveOn, dayStart, treatmentDaysMax } = ctx.__api;
+const TREATMENT_DAYS_MAX = treatmentDaysMax();
 
 let pass = 0, fail = 0;
 function is(label, got, want) {
