@@ -61,7 +61,12 @@ select{font-family:inherit;-webkit-tap-highlight-color:transparent;max-width:100
 /* The bottom-nav labels sit in five equal grid cells. At 320px a cell is ~58px and 'Symptoms'
    needs 61px, so the longest label spilled its box. Ported from care-tracker, which hit this first. */
 .navlabel{max-width:100%;}
-@media (max-width:360px){.navlabel{font-size:9.5px;letter-spacing:-0.03em;}}
+/* Two steps, not one, on the auditor's measurement: at 360px 'Symptoms' fits at 11px with about
+   0.3px to spare, so dropping to 9.5px there costs legibility for nothing. It genuinely does not fit
+   at 320px (it needs ~65px in a ~58px cell). Tightening alone buys the 360px margin; the size drop
+   is reserved for the width that actually needs it. */
+@media (max-width:360px){.navlabel{letter-spacing:-0.03em;}}
+@media (max-width:320px){.navlabel{font-size:9.5px;}}
 select:focus{outline:2px solid #BF4C1A;outline-offset:0;border-color:#BF4C1A;}
 button:focus-visible, [role="button"]:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #BF4C1A; outline-offset: 2px; }
 ::placeholder{color:#7A6E76 !important;opacity:1;}

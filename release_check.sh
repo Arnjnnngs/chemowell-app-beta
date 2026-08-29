@@ -173,8 +173,16 @@ INDEX_CHANGED=$(git diff --name-only "$BASE" -- index.html)
 #
 # APP_CLAUDE.md rule 5 names index.html, sw.js, .github/workflows/, sync-backend/, package.json,
 # package-lock.json and capacitor.config.ts. All of them count.
-RULE5_CHANGED=$(git diff --name-only "$BASE" -- \
-  index.html sw.js .github/workflows sync-backend package.json package-lock.json capacitor.config.ts 2>/dev/null || true)
+# TRACKED CHANGES PLUS UNTRACKED FILES. `git diff` compares tracked paths only, so a release made
+# entirely of NEW files -- a new .github/workflows/*.yml, a new file under sync-backend/ -- was
+# invisible here and skipped the quality chain completely. Demonstrated by the Zero Day Auditor, who
+# dropped two new files into a scratch clone and watched this gate report the tree current and clean.
+RULE5_PATHS="index.html sw.js .github/workflows sync-backend package.json package-lock.json capacitor.config.ts"
+RULE5_CHANGED=$(git diff --name-only "$BASE" -- $RULE5_PATHS 2>/dev/null || true)
+RULE5_UNTRACKED=$(git ls-files --others --exclude-standard -- $RULE5_PATHS 2>/dev/null || true)
+if [ -n "$RULE5_UNTRACKED" ]; then
+  RULE5_CHANGED=$(printf '%s\n%s' "$RULE5_CHANGED" "$RULE5_UNTRACKED" | grep -v '^$' || true)
+fi
 # A readable name for $BASE in messages -- a bare 40-char SHA tells the reader nothing about which
 # build they are being compared against.
 BASE_LABEL="$BASE"
@@ -363,11 +371,16 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # An unmatched glob expands to the literal pattern, which `[ -e ]` simply reports as absent.
   AUDIT_REPORT=""
   PM_REPORT=""
+  # EVERY matching report, not the first one the glob happens to sort to. Reading only the first made
+  # which report was trusted a function of filename sort order -- so an older, cleaner report sitting
+  # beside a current one decided the release. Each one found must now declare a commit and be current.
+  AUDIT_ALL=""
+  PM_ALL=""
   for _f in outputs/AUDIT*"$GATE_VERSION"*; do
-    if [ -e "$_f" ]; then AUDIT_REPORT="$_f"; break; fi
+    if [ -e "$_f" ]; then AUDIT_ALL="$AUDIT_ALL $_f"; [ -z "$AUDIT_REPORT" ] && AUDIT_REPORT="$_f"; fi
   done
   for _f in outputs/PM*"$GATE_VERSION"*; do
-    if [ -e "$_f" ]; then PM_REPORT="$_f"; break; fi
+    if [ -e "$_f" ]; then PM_ALL="$PM_ALL $_f"; [ -z "$PM_REPORT" ] && PM_REPORT="$_f"; fi
   done
   if [ -z "$AUDIT_REPORT" ] || [ -z "$PM_REPORT" ]; then
     echo "❌ RELEASE CHECK FAILED: the quality chain has not run for $GATE_VERSION."
@@ -384,31 +397,55 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # rewritten treatmentActiveOn, that no auditor had ever seen. The gate passed, because the report
   # was NAMED for v68 and the gate only ever checked its name. Every report must now declare the
   # commit it actually examined, and that commit must still describe the tree being shipped.
-  for _r in "$AUDIT_REPORT" "$PM_REPORT"; do
-    _sha=$(grep -m1 -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}' "$_r" 2>/dev/null | grep -oE '[0-9a-f]{7,40}$' || echo "")
-    if [ -z "$_sha" ]; then
-      echo "❌ RELEASE CHECK FAILED: $_r does not declare which commit it examined."
-      echo "   Add a line 'AUDITED-COMMIT: <sha>' naming the commit the report was written against."
-      echo "   Without it this gate can only confirm a file exists with the right name in it, which"
-      echo "   is what let an audit of an older commit clear a head it had never read."
-      exit 1
-    fi
-    if ! git rev-parse --verify --quiet "$_sha^{commit}" >/dev/null; then
-      echo "❌ RELEASE CHECK FAILED: $_r names commit $_sha, which does not exist in this repo."
-      exit 1
-    fi
+  # AT LEAST ONE CURRENT REPORT PER STAGE. Not "the first one the glob found", which made filename
+  # sort order decide the release; and not "every report must be current", which would make the
+  # outputs/ archive of past audits block every future release forever. A superseded report is
+  # history and is allowed to be stale -- it just cannot be the one clearing the gate.
+  check_report_current() {   # $1 = path. echoes "" if current, else the drift.
+    _sha=$(grep -m1 -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}' "$1" 2>/dev/null | grep -oE '[0-9a-f]{7,40}$' || echo "")
+    if [ -z "$_sha" ]; then echo "no AUDITED-COMMIT line"; return; fi
+    if ! git rev-parse --verify --quiet "$_sha^{commit}" >/dev/null; then echo "names commit $_sha, which does not exist here"; return; fi
     # Working tree vs the audited commit, not HEAD vs it -- the working tree is what ships.
-    _drift=$(git diff --name-only "$_sha" -- \
-      index.html sw.js .github/workflows sync-backend package.json package-lock.json capacitor.config.ts 2>/dev/null || true)
-    if [ -n "$_drift" ]; then
-      echo "❌ RELEASE CHECK FAILED: $_r is STALE."
-      echo "   It examined ${_sha:0:7}. Since then these have changed and no one has looked at them:"
-      echo "$_drift" | sed 's/^/     /'
-      echo "   Re-run that stage against the current tree, or drop the unaudited work to a later"
-      echo "   version. Code that ships must be code someone read."
-      exit 1
-    fi
+    _d=$(git diff --name-only "$_sha" -- $RULE5_PATHS 2>/dev/null || true)
+    # Same blind spot as RULE5_CHANGED: a file that did not exist when the report was written is
+    # drift the report cannot have covered, and `git diff` never mentions it.
+    _n=$(git ls-files --others --exclude-standard -- $RULE5_PATHS 2>/dev/null || true)
+    if [ -n "$_n" ]; then _d=$(printf '%s\n%s' "$_d" "$_n" | grep -v '^$' || true); fi
+    if [ -n "$_d" ]; then echo "examined ${_sha:0:7}; changed since: $(echo $_d | tr '\n' ' ')"; fi
+  }
+  CURRENT_AUDIT=""
+  CURRENT_PM=""
+  STALE_NOTES=""
+  for _r in $AUDIT_ALL; do
+    _why=$(check_report_current "$_r")
+    if [ -z "$_why" ]; then [ -z "$CURRENT_AUDIT" ] && CURRENT_AUDIT="$_r"; else STALE_NOTES="$STALE_NOTES
+     $_r — $_why"; fi
   done
+  for _r in $PM_ALL; do
+    _why=$(check_report_current "$_r")
+    if [ -z "$_why" ]; then [ -z "$CURRENT_PM" ] && CURRENT_PM="$_r"; else STALE_NOTES="$STALE_NOTES
+     $_r — $_why"; fi
+  done
+  if [ -z "$CURRENT_AUDIT" ] || [ -z "$CURRENT_PM" ]; then
+    echo "❌ RELEASE CHECK FAILED: no CURRENT chain report for $GATE_VERSION."
+    echo "   Finding a filename is not reading a report. app-v68 was gated by an audit of 51ba75f"
+    echo "   while the head being shipped was 68d3dd6 — 67 further lines of index.html, a rewritten"
+    echo "   treatmentActiveOn among them, that no auditor had ever seen. The report was NAMED for"
+    echo "   v68, and the name was all this gate checked."
+    [ -z "$CURRENT_AUDIT" ] && echo "   missing: a CURRENT outputs/AUDIT*${GATE_VERSION}* report"
+    [ -z "$CURRENT_PM" ]    && echo "   missing: a CURRENT outputs/PM*${GATE_VERSION}* sign-off"
+    if [ -n "$STALE_NOTES" ]; then
+      echo "   Reports found, and why each is not current:$STALE_NOTES"
+    fi
+    echo "   Re-run that stage against the current tree, or drop the unaudited work to a later"
+    echo "   version. Code that ships must be code someone read."
+    exit 1
+  fi
+  AUDIT_REPORT="$CURRENT_AUDIT"
+  PM_REPORT="$CURRENT_PM"
+  if [ -n "$STALE_NOTES" ]; then
+    echo "ℹ️  Superseded reports present (history, not blocking):$STALE_NOTES"
+  fi
   echo "ℹ️  Chain artifacts present for $GATE_VERSION, and current against the working tree:"
   echo "     $AUDIT_REPORT"
   echo "     $PM_REPORT"

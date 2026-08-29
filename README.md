@@ -94,3 +94,22 @@ The scan's own blind spot is worth recording: under mobile emulation a browser W
 viewport when content refuses to fit, so every element then "fits" the now-wider page and a
 per-element scan reports clean. The first version did exactly that. It now measures the page itself
 against the device width before measuring anything inside it.
+
+#### Correction to the app-v68 notes above
+
+Two claims in the app-v68 entry were overstated, and the Zero Day Auditor caught both. They are
+corrected here rather than quietly edited out, because this same entry already carries two earlier
+corrections and the pattern is the point.
+
+- **"A window typed as text silently collapsed back to 1/1" did not happen in any shipped build.**
+  `saveMedicationEditor` has clamped that field to a real number since app-v16, the release that
+  introduced the feature (`git log -S` confirms it). Nothing the medication editor saves has ever
+  been a string. The `normalizeMedication` fix is still right — it is the one place every saved
+  medication passes through, and a restored backup or an imported file can hand it a string — but it
+  closed a hole, it did not fix a bug users were hitting.
+- **The "badge says −300/+300 while the app obeys 14" divergence never reached a released build
+  either.** It was created and removed inside this same delta. Before it, there was no upper bound
+  anywhere at all.
+
+The unbounded window itself was real: a mistyped 30 would have made a medication treatment-adjacent
+for two months either side, and nothing stopped it.

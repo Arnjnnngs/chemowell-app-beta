@@ -92,26 +92,82 @@ const SCREENS = ['home', 'meds', 'reports', 'inpatient', 'symptoms'];
 // ONE scanner body, shared by the tab loop and the overlay loop. In the original these were two
 // copies and they drifted within minutes — the overlay copy silently scanned nothing.
 const scanFn = function (vw) {
+  // WHAT "SPILLS ITS BOX" ACTUALLY MEANS, rewritten after the Zero Day Auditor deleted the nav-label
+  // fix and this scan still said CLEAN. The old test was scrollWidth > clientWidth, which is ALWAYS 0
+  // for an inline element -- i.e. for nearly every piece of text in this app -- plus "is it off the
+  // viewport", which text overflowing a grid cell in the middle of the screen never is. It also
+  // skipped every <select>, because a select has child <option>s and the "leaves only" filter threw
+  // it out. It was blind to both defects it had been written to catch.
+  //
+  // The real question is whether an element sticks out of THE BOX IT IS IN. So: measure each element
+  // against its parent's padding box. That catches a 65px label in a 58px grid cell, a select wider
+  // than its column, and anything pushed past the edge of the screen, all with one rule.
   const out = [], seen = new Set();
-  document.querySelectorAll('*').forEach(el => {
+  const isScrollable = cs => cs.overflowX === 'auto' || cs.overflowX === 'scroll';
+  const consider = el => {
     const cs = getComputedStyle(el);
-    if (cs.display === 'none' || cs.visibility === 'hidden' || !el.getClientRects().length) return;
+    if (cs.display === 'none' || cs.visibility === 'hidden' || !el.getClientRects().length) return null;
     const r = el.getBoundingClientRect();
-    if (!r.width || !r.height) return;
+    if (!r.width || !r.height) return null;
     const text = (el.textContent || '').trim();
-    if (!text) return;
-    if ([...el.children].some(c => (c.textContent || '').trim())) return; // leaves only
-    const scrollable = cs.overflowX === 'auto' || cs.overflowX === 'scroll';
+    if (!text) return null;
+    // Leaves, plus <select> — a select's options are children with text, which is exactly how the
+    // previous version excused itself from looking at the control that broke the layout.
+    const tag = el.tagName.toLowerCase();
+    if (tag !== 'select' && [...el.children].some(c => (c.textContent || '').trim())) return null;
+    return { cs, r, text, tag };
+  };
+  document.querySelectorAll('*').forEach(el => {
+    const info = consider(el);
+    if (!info) return;
+    const { cs, r, text, tag } = info;
     const clipped = cs.textOverflow === 'ellipsis';   // deliberate truncation, not a defect
-    const overflowsSelf = el.scrollWidth - el.clientWidth > 1 && !scrollable && !clipped;
-    const offRight = r.right > vw + 1, offLeft = r.left < -1;
-    if (!overflowsSelf && !offRight && !offLeft) return;
+    let kind = null, overBy = 0;
+
+    // A. THE TEXT is wider than the box it has to live in. Aaron's words are "some wording spills
+    // outside the text box", so measure the wording, not the element. Comparing the element's RECT to
+    // its parent flagged every oversized tap target in the app -- a 44x44 close button overhanging a
+    // 39px header slot is deliberate iOS touch sizing, not a defect, and a gate that cries about those
+    // is a gate nobody keeps. So: measure the rendered text with a Range and ask whether THAT fits.
+    const parent = el.parentElement;
+    if (parent && parent !== document.body && parent !== document.documentElement && !clipped) {
+      const pcs = getComputedStyle(parent);
+      const parentClips = isScrollable(pcs) || pcs.overflow === 'auto' || pcs.overflow === 'scroll';
+      if (!parentClips && cs.whiteSpace !== 'normal' || !parentClips) {
+        const pr = parent.getBoundingClientRect();
+        const padL = parseFloat(pcs.paddingLeft) || 0, padR = parseFloat(pcs.paddingRight) || 0;
+        const innerW = (pr.width - padL - padR);
+        let textW = 0;
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const rects = [...range.getClientRects()];
+          textW = rects.length ? Math.max(...rects.map(q => q.width)) : 0;
+        } catch (e) { textW = 0; }
+        // Also account for the element's own horizontal padding/border: the text has to fit inside
+        // the parent along with them.
+        const own = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+        const need = textW + own;
+        // 1.5px, not 1: sub-pixel layout rounding produces sub-pixel "overflow" that is not real.
+        if (textW > 0 && innerW > 0 && need - innerW > 1.5) {
+          kind = 'the wording is wider than the box it sits in';
+          overBy = Math.round(need - innerW);
+        }
+      }
+    }
+    // B. Its own content does not fit (block elements, scrollable content).
+    if (!kind && !isScrollable(cs) && !clipped && el.scrollWidth - el.clientWidth > 1) {
+      kind = 'content wider than its box'; overBy = el.scrollWidth - el.clientWidth;
+    }
+    // C. Past the edge of the screen.
+    if (!kind && r.right > vw + 1) { kind = 'off the right edge'; overBy = Math.round(r.right - vw); }
+    if (!kind && r.left < -1) { kind = 'off the left edge'; overBy = Math.round(-r.left); }
+    if (!kind) return;
+
     const label = text.slice(0, 64).replace(/\s+/g, ' ');
-    const key = label + '|' + Math.round(r.top);
+    const key = label + '|' + Math.round(r.top) + '|' + kind;
     if (seen.has(key)) return; seen.add(key);
-    out.push({ text: label, tag: el.tagName.toLowerCase(),
-      kind: overflowsSelf ? 'content wider than its box' : (offRight ? 'off the right edge' : 'off the left edge'),
-      overBy: overflowsSelf ? el.scrollWidth - el.clientWidth : Math.round(offRight ? r.right - vw : -r.left),
+    out.push({ text: label, tag, kind, overBy,
       box: Math.round(r.width) + 'x' + Math.round(r.height), ws: cs.whiteSpace });
   });
   return out;
@@ -176,15 +232,24 @@ for (const dev of DEVICES) {
   // Two things must be true, and the second is the one that bites: the app is past first-run setup,
   // AND the seeded medication actually reached the screen. Checking only the first would have called
   // a run clean while every medication had been silently dropped on load.
-  const seeded = await page.evaluate(seedName => {
+  const seeded = await page.evaluate(async seedName => {
     if (!document.querySelector('[data-tour="nav-home"]')) return 'setup';
     const meds = document.querySelector('[data-tour="nav-meds"]');
     if (!meds) return 'setup';
     meds.click();
-    return 'ok';
+    await new Promise(r => setTimeout(r, 700));
+    // READ THE FIXTURE. The previous version took seedName as a parameter and never looked at it,
+    // while its comment claimed it proved the medication had reached the screen. The Zero Day Auditor
+    // made the app throw away every saved medication on load -- the exact end-state of the start-up
+    // bug this scan was built to catch -- and it reported "every screen clean at all 8 device widths"
+    // and exited 0. A fixture check that does not read the fixture is decoration.
+    return document.body.innerText.includes(seedName) ? 'ok' : 'nomeds';
   }, SEED_MEDS.meds[0].name);
   if (seeded !== 'ok') {
-    console.log('  FIXTURE DID NOT TAKE at ' + dev.w + 'px — the app is not past first-run setup, nothing scanned');
+    console.log('  FIXTURE DID NOT TAKE at ' + dev.w + 'px — ' +
+      (seeded === 'setup' ? 'the app is not past first-run setup' :
+       'the seeded medication "' + SEED_MEDS.meds[0].name + '" never reached the screen') +
+      ', nothing scanned');
     unreachable += SCREENS.length;
     await ctx.close(); server.close();
     continue;
@@ -214,6 +279,9 @@ for (const dev of DEVICES) {
     });
     if (!opened) return false;
     await page.waitForTimeout(700);
+    // Same rule as the tabs: a click is not a screen. The editor renders with data-tour="med-editor".
+    const reallyOpen = await page.evaluate(() => !!document.querySelector('[data-tour="med-editor"]'));
+    if (!reallyOpen) return false;
     // The treatment-window fields are behind the mode picker, and they are precisely what app-v68
     // changed. Scanning the editor without opening that panel scans everything except the change.
     await page.evaluate(() => {
@@ -225,11 +293,18 @@ for (const dev of DEVICES) {
   } }];
 
   for (const screen of SCREENS) {
-    const navigated = await page.evaluate(key => {
+    // PROVE THE VIEW CHANGED, do not just prove a button exists. The previous version clicked and
+    // returned true unconditionally; the Zero Day Auditor made three of the five tabs completely
+    // dead -- tapping them did nothing at all -- and this reported "48 combinations, 0 problems,
+    // CLEAN". That is the same false-clean trap this file's own header describes, moved one level
+    // down. The app marks the live tab with aria-current="page", so that is the receipt to demand.
+    const navigated = await page.evaluate(async key => {
       const btn = document.querySelector('[data-tour="nav-' + key + '"]');
       if (!btn) return false;
       btn.click();
-      return true;
+      await new Promise(r => setTimeout(r, 600));
+      const live = document.querySelector('[data-tour="nav-' + key + '"]');
+      return !!(live && live.getAttribute('aria-current') === 'page');
     }, screen);
     if (!navigated) {
       console.log('  COULD NOT REACH ' + screen.toUpperCase() + ' at ' + dev.w + 'px — not scanned');
