@@ -106,7 +106,11 @@ elif [ -n "$PUB_COMMIT" ] && git rev-parse --verify --quiet "$PUB_COMMIT^{commit
   # Integrity check. A record that disagrees with the commit it names is worse than no record --
   # it is a baseline someone could hand-edit to make this gate pass. Refuse it outright rather
   # than quietly falling back, so the tampering surfaces instead of being routed around.
-  REC_CACHE=$(git show "$PUB_COMMIT":sw.js 2>/dev/null | read_cache)
+  # GUARDED. The sixth and last of this class (found by the PM after five were fixed): a baseline
+  # commit with no sw.js makes `git show` fail, the pipeline fails under `set -euo pipefail`, the
+  # ASSIGNMENT fails, and the whole script dies at exit 128 with ZERO output -- the gate vanishing
+  # in exactly the case it exists to catch. "none" is a value the comparison below handles.
+  REC_CACHE=$(git show "$PUB_COMMIT":sw.js 2>/dev/null | read_cache || echo "none")
   if [ "$REC_CACHE" != "$PUB_CACHE" ]; then
     echo "❌ RELEASE CHECK FAILED: PUBLISHED.json is not self-consistent."
     echo "   It records cache '$PUB_CACHE' for commit ${PUB_COMMIT:0:7}, but that commit's sw.js"
@@ -159,6 +163,26 @@ else
 fi
 
 INDEX_CHANGED=$(git diff --name-only "$BASE" -- index.html)
+# EVERY FILE RULE 5 COVERS, not just index.html.
+#
+# The chain gate below used to run only when index.html changed, because that is the only thing
+# NEW_VERSION was computed for. The Zero Day Auditor reproduced the consequence twice: with
+# index.html untouched the script printed "✅ Release check passed", exit 0, WITH NO AUDIT OR PM
+# REPORT PRESENT AT ALL -- including for a change to sw.js alone, which is a real release that
+# reaches every installed phone. A gate that only guards one file is a gate with a door beside it.
+#
+# APP_CLAUDE.md rule 5 names index.html, sw.js, .github/workflows/, sync-backend/, package.json,
+# package-lock.json and capacitor.config.ts. All of them count.
+# TRACKED CHANGES PLUS UNTRACKED FILES. `git diff` compares tracked paths only, so a release made
+# entirely of NEW files -- a new .github/workflows/*.yml, a new file under sync-backend/ -- was
+# invisible here and skipped the quality chain completely. Demonstrated by the Zero Day Auditor, who
+# dropped two new files into a scratch clone and watched this gate report the tree current and clean.
+RULE5_PATHS="index.html sw.js .github/workflows sync-backend package.json package-lock.json capacitor.config.ts"
+RULE5_CHANGED=$(git diff --name-only "$BASE" -- $RULE5_PATHS 2>/dev/null || true)
+RULE5_UNTRACKED=$(git ls-files --others --exclude-standard -- $RULE5_PATHS 2>/dev/null || true)
+if [ -n "$RULE5_UNTRACKED" ]; then
+  RULE5_CHANGED=$(printf '%s\n%s' "$RULE5_CHANGED" "$RULE5_UNTRACKED" | grep -v '^$' || true)
+fi
 # A readable name for $BASE in messages -- a bare 40-char SHA tells the reader nothing about which
 # build they are being compared against.
 BASE_LABEL="$BASE"
@@ -180,7 +204,15 @@ fi
 # V53-4 (Auditor): comparing the whole sw.js diff let a cosmetic sw.js edit satisfy the check while
 # CACHE stayed put -- the script then printed "sw.js's CACHE constant changed with it", which was
 # untrue and is the exact stranding it exists to block. Compare the CACHE constant itself.
-CACHE_OLD=$(git show "$BASE":sw.js 2>/dev/null | read_cache)
+# GUARDED. Unguarded, a baseline commit with no sw.js makes `git show` fail, the pipeline fails
+# under `set -euo pipefail`, the ASSIGNMENT fails and the script dies at exit 128 with ZERO
+# output. Its sibling on the next line was already guarded, which also made the CACHE_OLD="none"
+# branch below unreachable. Found by the Zero Day Auditor after I fixed two of this class and
+# wrote that both were done.
+CACHE_OLD=""
+if git show "$BASE":sw.js >/dev/null 2>&1; then
+  CACHE_OLD=$(git show "$BASE":sw.js 2>/dev/null | read_cache)
+fi
 CACHE_NEW=$(read_cache < sw.js 2>/dev/null || echo "none")
 [ -z "$CACHE_OLD" ] && CACHE_OLD="none"
 [ -z "$CACHE_NEW" ] && CACHE_NEW="none"
@@ -262,7 +294,12 @@ fi
 if [ -n "$INDEX_CHANGED" ]; then
   # The bare value, not the whole grep match -- this used to print the tautology
   # "APP_VERSION (APP_VERSION = 'app-v55')".
-  OLD_VERSION=$(git show "$BASE":index.html | grep -o "APP_VERSION = '[^']*'" | head -1 | sed "s/.*'\(.*\)'/\1/")
+  # Same class: a baseline with no index.html, or with no APP_VERSION line, killed this
+  # assignment and took the README check and the chain gate down with it, masked behind exit 1.
+  OLD_VERSION=""
+  if git show "$BASE":index.html 2>/dev/null | grep -q "APP_VERSION = '"; then
+    OLD_VERSION=$(git show "$BASE":index.html 2>/dev/null | grep -o "APP_VERSION = '[^']*'" | head -1 | sed "s/.*'\(.*\)'/\1/")
+  fi
   NEW_VERSION=$(grep -o "APP_VERSION = '[^']*'" index.html | head -1 | sed "s/.*'\(.*\)'/\1/")
   if [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
     echo "⚠️  WARNING: index.html changed but APP_VERSION is still $NEW_VERSION."
@@ -294,7 +331,13 @@ if [ -n "$INDEX_CHANGED" ] && [ -f README.md ]; then
     if ! sed -n "${ROW}p" README.md | grep -qF "$CACHE_NEW"; then
       echo "❌ RELEASE CHECK FAILED: README.md's $NEW_VER row does not mention the cache key that"
       echo "   is actually about to ship ($CACHE_NEW). It says:"
-      sed -n "${ROW}p" README.md | grep -o "chemowell-app-v[0-9]*-[0-9]*" | sort -u | sed 's/^/     /'
+      # Guarded too: with no cache key in the row at all this grep failed and cut off the
+      # "Fix the row" explanation immediately below it -- the script truncating its own advice.
+      if sed -n "${ROW}p" README.md | grep -q "chemowell-app-v[0-9]*-[0-9]*"; then
+        sed -n "${ROW}p" README.md | grep -o "chemowell-app-v[0-9]*-[0-9]*" | sort -u | sed 's/^/     /'
+      else
+        echo "     (the row names no cache key at all)"
+      fi
       echo "   Fix the row. A version-history entry wrong about the one fact it exists to record is"
       echo "   worse than no entry, because it will be believed."
       FAIL=1
@@ -312,7 +355,13 @@ fi
 # Rule 5 says "zero exceptions and zero Lead-Developer discretion to waive it", and a rule enforced
 # only by the person it constrains is the one that gets skipped at the end of a long day. So it is
 # a script now. Reports live in outputs/ and are named for the version they cleared.
-if [ -n "${NEW_VERSION:-}" ]; then
+# Read independently of INDEX_CHANGED: the gate needs the version being released even when the
+# release does not touch index.html.
+GATE_VERSION="${NEW_VERSION:-}"
+if [ -z "$GATE_VERSION" ] && [ -f index.html ] && grep -q "APP_VERSION = '" index.html; then
+  GATE_VERSION=$(grep -o "APP_VERSION = '[^']*'" index.html | head -1 | sed "s/.*'\(.*\)'/\1/")
+fi
+if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # Globs, not `ls`. The first version of this gate used
   #   AUDIT_REPORT=$(ls outputs/AUDIT*"$NEW_VERSION"* 2>/dev/null | head -1)
   # and under `set -euo pipefail` a non-matching `ls` fails the pipeline, kills the ASSIGNMENT, and
@@ -322,22 +371,227 @@ if [ -n "${NEW_VERSION:-}" ]; then
   # An unmatched glob expands to the literal pattern, which `[ -e ]` simply reports as absent.
   AUDIT_REPORT=""
   PM_REPORT=""
-  for _f in outputs/AUDIT*"$NEW_VERSION"*; do
-    if [ -e "$_f" ]; then AUDIT_REPORT="$_f"; break; fi
+  # EVERY matching report, not the first one the glob happens to sort to. Reading only the first made
+  # which report was trusted a function of filename sort order -- so an older, cleaner report sitting
+  # beside a current one decided the release. Each one found must now declare a commit and be current.
+  AUDIT_ALL=""
+  PM_ALL=""
+  for _f in outputs/AUDIT*"$GATE_VERSION"*; do
+    if [ -e "$_f" ]; then AUDIT_ALL="$AUDIT_ALL $_f"; [ -z "$AUDIT_REPORT" ] && AUDIT_REPORT="$_f"; fi
   done
-  for _f in outputs/PM*"$NEW_VERSION"*; do
-    if [ -e "$_f" ]; then PM_REPORT="$_f"; break; fi
+  for _f in outputs/PM*"$GATE_VERSION"*; do
+    if [ -e "$_f" ]; then PM_ALL="$PM_ALL $_f"; [ -z "$PM_REPORT" ] && PM_REPORT="$_f"; fi
   done
   if [ -z "$AUDIT_REPORT" ] || [ -z "$PM_REPORT" ]; then
-    echo "❌ RELEASE CHECK FAILED: the quality chain has not run for $NEW_VERSION."
-    [ -z "$AUDIT_REPORT" ] && echo "   missing: an outputs/AUDIT*${NEW_VERSION}*.md report"
-    [ -z "$PM_REPORT" ]    && echo "   missing: an outputs/PM*${NEW_VERSION}*.md sign-off"
+    echo "❌ RELEASE CHECK FAILED: the quality chain has not run for $GATE_VERSION."
+    echo "   Changed under rule 5: $(echo $RULE5_CHANGED | tr '\n' ' ')"
+    [ -z "$AUDIT_REPORT" ] && echo "   missing: an outputs/AUDIT*${GATE_VERSION}*.md report"
+    [ -z "$PM_REPORT" ]    && echo "   missing: an outputs/PM*${GATE_VERSION}*.md sign-off"
     echo "   Every suite passing is SELF-verification. APP_CLAUDE.md rule 5 requires an independent"
     echo "   Auditor pass and PM sign-off before this ships, with no size exception. Permission to"
     echo "   push is not that gate."
     exit 1
   fi
-  echo "ℹ️  Chain artifacts present for $NEW_VERSION:"
+  # STALENESS. Finding a filename is not reading a report. app-v68 was gated by an audit of commit
+  # 51ba75f while the head being shipped was 68d3dd6 -- 67 further lines of index.html, including a
+  # rewritten treatmentActiveOn, that no auditor had ever seen. The gate passed, because the report
+  # was NAMED for v68 and the gate only ever checked its name. Every report must now declare the
+  # commit it actually examined, and that commit must still describe the tree being shipped.
+  # AT LEAST ONE CURRENT REPORT PER STAGE. Not "the first one the glob found", which made filename
+  # sort order decide the release; and not "every report must be current", which would make the
+  # outputs/ archive of past audits block every future release forever. A superseded report is
+  # history and is allowed to be stale -- it just cannot be the one clearing the gate.
+  # A report is read from its FIRST 12 LINES only. The header used to be findable anywhere in the
+  # file, so a report quoting another report's header, or burying its own at line 900, passed.
+  report_head() { head -12 "$1" 2>/dev/null || true; }
+  # RESOLVED TO A FULL SHA, always. Comparing the raw strings made "23aedd6" and its own 40-character
+  # form look like two different commits, so a forged SHIP declaring the full sha "superseded" a real
+  # DO NOT SHIP declaring the short one — the same commit overruling itself. That is how a padded fake
+  # cleared this gate while four real refusals were printed above it.
+  # ONE HEADER BLOCK, READ AS A UNIT. report_sha and report_verdict used to scan independently, so a
+  # report's commit and its verdict could come from unrelated lines: a report stating DO NOT SHIP was
+  # read as SHIP because it QUOTED another report's `VERDICT: SHIP` higher in its first 12 lines. The
+  # verdict must be the line immediately after AUDITED-COMMIT, so a quotation cannot be mistaken for
+  # this report's own finding.
+  # THE HEADER IS THE TOP OF THE FILE, not "somewhere in the first twelve lines". Requiring the two
+  # lines to be ADJACENT closed the attack that was demonstrated; it did not close the CLASS. Quote
+  # two lines of someone else's report instead of one — their AUDITED-COMMIT and their VERDICT,
+  # together — and the pair rule matched the quotation rather than this report's own finding, so a
+  # report saying DO NOT SHIP was read as SHIP again. There is nowhere left to hide a quotation if
+  # the header must be the FIRST two non-blank lines of the file: anything a report quotes is
+  # necessarily below its own header.
+  # A MARKDOWN TITLE IS ALLOWED ABOVE THE HEADER, AND NOTHING ELSE IS.
+  # Requiring the header to be the very first two non-blank lines closed the quoting attack and then
+  # did something nobody chose: every report that opens the way a normal markdown document opens --
+  # "# Title", blank line, header -- stopped being readable. Two standing DO NOT SHIP reports,
+  # including the PM's only sign-off for this release, silently vanished from the gate's output. The
+  # rule failed SHUT on approvals (safe) and OPEN on refusals (not safe), and nothing noticed the
+  # asymmetry. Nothing escaped only because five other refusals still held the gate -- luck, not design.
+  # Leading '#' heading lines and blanks are skipped; the header must be the first two lines after
+  # them. A quotation cannot reach that position without displacing the report's own header, and an
+  # unreadable report is now blocked loudly rather than skipped in silence (see UNREADABLE below).
+  # EXACTLY ONE UNINDENTED HEADER IN THE FILE, and the verdict is the next line after it.
+  #
+  # Three rules have now failed here, each defeated by the shape of the next one:
+  #   "first 12 lines"            -> a quotation higher up won.
+  #   "adjacent lines"            -> quote BOTH lines and it won again.
+  #   "first two non-blank lines" -> broke every report with a markdown title, and two live
+  #                                  refusals silently stopped being read.
+  #   "skip leading '#' lines"    -> a heading can introduce the quotation, so it won a third time.
+  # Every one of those tried to describe WHERE the header sits. This describes what a header IS:
+  # a report has exactly one, written flush left. A report that quotes another's header indents it
+  # or fences it -- which any markdown quotation already does -- and an unindented second one means
+  # the file is ambiguous, so it is refused by name rather than guessed at.
+  report_headline() { grep -n '^AUDITED-COMMIT:' "$1" 2>/dev/null | head -1 | cut -d: -f1 || echo ""; }
+  report_headcount() { grep -c '^AUDITED-COMMIT:' "$1" 2>/dev/null || echo 0; }
+  report_pair() {
+    _n=$(report_headline "$1")
+    [ -z "$_n" ] && { echo ""; return; }
+    [ "$(report_headcount "$1")" != "1" ] && { echo ""; return; }
+    sed -n "${_n},$((_n + 1))p" "$1" 2>/dev/null || true
+  }
+  report_sha() {
+    _raw=$(report_pair "$1" | head -1 | grep -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}[[:space:]]*$' | grep -oE '[0-9a-f]{7,40}' | tail -1 || echo "")
+    [ -z "$_raw" ] && { echo ""; return; }
+    git rev-parse --verify --quiet "$_raw^{commit}" 2>/dev/null || echo "$_raw"
+  }
+  # ANCHORED TO END OF LINE. `VERDICT: SHIPPING SOON` used to read as SHIP -- the pattern matched the
+  # first four letters and stopped. Trailing whitespace/CR is allowed; trailing words are not.
+  report_verdict() { report_pair "$1" | tail -1 | grep -m1 -oiE '^VERDICT:[[:space:]]*(DO NOT SHIP|SHIP)[[:space:]]*$' | sed 's/^[^:]*:[[:space:]]*//' | tr -d '[:space:]' || echo ""; }
+
+  check_report_current() {   # $1 = path. echoes "" if current AND clearing, else the reason.
+    _sha=$(report_sha "$1")
+    if [ -z "$_sha" ]; then echo "no AUDITED-COMMIT line in its first 12 lines"; return; fi
+    if ! git rev-parse --verify --quiet "$_sha^{commit}" >/dev/null; then echo "names commit $_sha, which does not exist here"; return; fi
+    # THE COMMIT MUST BE IN THIS BRANCH'S HISTORY. Without this a report could declare any commit
+    # that exists anywhere in the repo -- a stale side branch, an abandoned experiment -- and
+    # "no drift since it" would mean nothing.
+    if ! git merge-base --is-ancestor "$_sha" HEAD 2>/dev/null; then
+      echo "names commit ${_sha:0:7}, which is not in this branch's history"; return
+    fi
+    _verdict=$(report_verdict "$1")
+    if [ -z "$_verdict" ]; then
+      echo "states no verdict — needs a line 'VERDICT: SHIP' or 'VERDICT: DO NOT SHIP' and nothing else on it"; return
+    fi
+    case "$_verdict" in
+      [Dd][Oo]*) echo "says DO NOT SHIP"; return ;;
+    esac
+    # SUBSTANCE. Two files of two lines each cleared this entire gate. A gate cannot tell a forged
+    # report from a real one and should not pretend to -- but it CAN refuse a file that could not
+    # possibly be the record of anyone having examined anything. This defends against the failure
+    # that has actually happened here three times: a placeholder standing in for a stage nobody ran.
+    _bytes=$(wc -c < "$1" 2>/dev/null || echo 0)
+    _lines=$(wc -l < "$1" 2>/dev/null || echo 0)
+    if [ "$_bytes" -lt 2000 ] || [ "$_lines" -lt 25 ]; then
+      echo "is too thin to be a report ($_lines lines, $_bytes bytes) — a stage that ran leaves more than a header"; return
+    fi
+    _drift=$(git diff --name-only "$_sha" -- $RULE5_PATHS 2>/dev/null || true)
+    _n=$(git ls-files --others --exclude-standard -- $RULE5_PATHS 2>/dev/null || true)
+    if [ -n "$_n" ]; then _drift=$(printf '%s\n%s' "$_drift" "$_n" | grep -v '^$' || true); fi
+    if [ -n "$_drift" ]; then echo "examined ${_sha:0:7}; changed since: $(echo $_drift | tr '\n' ' ')"; fi
+  }
+
+  # A LIVE "DO NOT SHIP" IS A STOP, NOT A SHRUG. The gate used to treat a do-not-ship verdict merely
+  # as "not the report that clears this", so two fake files could clear the release while the gate
+  # printed four real reports all saying DO NOT SHIP directly above the word "passed". A refusal is
+  # only superseded by a report examining a LATER commit -- someone must have looked again after the
+  # thing that was objected to.
+  # AN UNREADABLE REPORT IS NOT AN ABSENT OBJECTION. This loop used to `continue` past any report
+  # whose verdict it could not parse, so "the gate cannot read this file" silently meant "this file
+  # raises no objection" -- which is exactly how two live refusals disappeared. A chain report that
+  # exists but cannot be read now blocks the release and is named, because the safe reading of "I
+  # don't know what this says" is never "it says ship".
+  UNREADABLE=""
+  for _r in $AUDIT_ALL $PM_ALL; do
+    if [ "$(report_verdict "$_r")" = "" ] || [ "$(report_sha "$_r")" = "" ]; then
+      UNREADABLE="$UNREADABLE
+     $_r"
+    fi
+  done
+  if [ -n "$UNREADABLE" ]; then
+    echo "❌ RELEASE CHECK FAILED: a chain report exists that this gate cannot read."
+    echo "   Unreadable:$UNREADABLE"
+    echo "   Each must open with (optional blank/'# Title' lines, then) exactly these two lines:"
+    echo "       AUDITED-COMMIT: <sha>"
+    echo "       VERDICT: SHIP        (or: VERDICT: DO NOT SHIP)"
+    echo "   A report the gate cannot read is not a report that raises no objection. Two live"
+    echo "   refusals once vanished from this output that way."
+    exit 1
+  fi
+
+  BLOCKING=""
+  for _r in $AUDIT_ALL $PM_ALL; do
+    [ "$(report_verdict "$_r")" = "" ] && continue
+    case "$(report_verdict "$_r")" in [Dd][Oo]*) ;; *) continue ;; esac
+    _rs=$(report_sha "$_r")
+    [ -z "$_rs" ] && continue
+    git rev-parse --verify --quiet "$_rs^{commit}" >/dev/null || continue
+    git merge-base --is-ancestor "$_rs" HEAD 2>/dev/null || continue
+    # SAME STAGE, and the approval must itself be a valid report. Neither held: a two-line file naming
+    # a commit on an ABANDONED SIDE BRANCH — not in this history at all — cancelled every standing
+    # refusal and erased them from the output, because this loop applied neither the in-this-history
+    # test nor the thinness floor that the clearing path applies. And a PM sign-off could overrule an
+    # Auditor's refusal, because nothing checked which stage either came from. An Auditor's refusal is
+    # answered by the Auditor looking again, not by a different desk signing instead.
+    case "$_r" in outputs/AUDIT*) _stage="$AUDIT_ALL" ;; *) _stage="$PM_ALL" ;; esac
+    _superseded=""
+    for _q in $_stage; do
+      case "$(report_verdict "$_q")" in [Ss][Hh][Ii][Pp]) ;; *) continue ;; esac
+      _qbytes=$(wc -c < "$_q" 2>/dev/null || echo 0); _qlines=$(wc -l < "$_q" 2>/dev/null || echo 0)
+      [ "$_qbytes" -lt 2000 ] && continue
+      [ "$_qlines" -lt 25 ] && continue
+      _qs=$(report_sha "$_q")
+      [ -z "$_qs" ] && continue
+      git rev-parse --verify --quiet "$_qs^{commit}" >/dev/null || continue
+      git merge-base --is-ancestor "$_qs" HEAD 2>/dev/null || continue
+      # strictly later: the refusal's commit is an ancestor of the approval's, and they differ
+      if [ "$_qs" != "$_rs" ] && git merge-base --is-ancestor "$_rs" "$_qs" 2>/dev/null; then _superseded="$_q"; fi
+    done
+    if [ -z "$_superseded" ]; then BLOCKING="$BLOCKING
+     $_r — examined ${_rs:0:7}"; fi
+  done
+  if [ -n "$BLOCKING" ]; then
+    echo "❌ RELEASE CHECK FAILED: a chain report refuses this release, and nothing supersedes it."
+    echo "   These say DO NOT SHIP:$BLOCKING"
+    echo "   A refusal is cleared by re-running that stage against a LATER commit and it saying"
+    echo "   SHIP — not by adding another file beside it."
+    exit 1
+  fi
+
+  CURRENT_AUDIT=""
+  CURRENT_PM=""
+  STALE_NOTES=""
+  for _r in $AUDIT_ALL; do
+    _why=$(check_report_current "$_r")
+    if [ -z "$_why" ]; then [ -z "$CURRENT_AUDIT" ] && CURRENT_AUDIT="$_r"; else STALE_NOTES="$STALE_NOTES
+     $_r — $_why"; fi
+  done
+  for _r in $PM_ALL; do
+    _why=$(check_report_current "$_r")
+    if [ -z "$_why" ]; then [ -z "$CURRENT_PM" ] && CURRENT_PM="$_r"; else STALE_NOTES="$STALE_NOTES
+     $_r — $_why"; fi
+  done
+  if [ -z "$CURRENT_AUDIT" ] || [ -z "$CURRENT_PM" ]; then
+    echo "❌ RELEASE CHECK FAILED: no CURRENT chain report for $GATE_VERSION."
+    echo "   Finding a filename is not reading a report. app-v68 was gated by an audit of 51ba75f"
+    echo "   while the head being shipped was 68d3dd6 — 67 further lines of index.html, a rewritten"
+    echo "   treatmentActiveOn among them, that no auditor had ever seen. The report was NAMED for"
+    echo "   v68, and the name was all this gate checked."
+    [ -z "$CURRENT_AUDIT" ] && echo "   missing: a CURRENT outputs/AUDIT*${GATE_VERSION}* report saying VERDICT: SHIP"
+    [ -z "$CURRENT_PM" ]    && echo "   missing: a CURRENT outputs/PM*${GATE_VERSION}* sign-off saying VERDICT: SHIP"
+    if [ -n "$STALE_NOTES" ]; then
+      echo "   Reports found, and why each is not current:$STALE_NOTES"
+    fi
+    echo "   Re-run that stage against the current tree, or drop the unaudited work to a later"
+    echo "   version. Code that ships must be code someone read."
+    exit 1
+  fi
+  AUDIT_REPORT="$CURRENT_AUDIT"
+  PM_REPORT="$CURRENT_PM"
+  if [ -n "$STALE_NOTES" ]; then
+    echo "ℹ️  Other reports present and not clearing this release:$STALE_NOTES"
+  fi
+  echo "ℹ️  Chain artifacts present for $GATE_VERSION, and current against the working tree:"
   echo "     $AUDIT_REPORT"
   echo "     $PM_REPORT"
 fi
