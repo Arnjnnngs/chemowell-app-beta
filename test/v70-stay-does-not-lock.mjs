@@ -111,7 +111,7 @@ for (const name of ['logMed', 'confirmTimeAndLog', 'status']) {
 // sentence outside the scope is a sentence nobody is ever asked to review.
 const SCOPE = /in-?patient|hospital|admit|admission|\bward\b|discharge|\b(?:a|the|this|each|every|past|active|open|one) stays?\b|\bstays? (?:is|was|begins|ends|are|active|running)\b/i;
 const NARROW = /\blog|\bdose|\bmedication|\bmeds?\b|button|card|track|miss|restrict|lock|pause|block|available/i;
-const CODEY = /[{}]|=>|function |style|onClick|medId:|VALID_VIEWS|await |const |h\('/;
+
 const BOUND = /[.?!";\n]|\\u2014|—/;
 
 function sentenceAt(text, at) {
@@ -127,7 +127,8 @@ function sentenceAt(text, at) {
 // Generated from the reviewed file and then read by a person. If you are adding to this list,
 // the question to answer is not "does it compile" but "is this sentence TRUE of what the code does".
 const ALLOWED = new Set([
-  "', a: 'Tap Log In-Patient Start when a hospital stay begins",
+  "How does In-Patient tracking work",
+  "Tap Log In-Patient Start when a hospital stay begins",
   "Everything stays loggable while a stay is active",
   "What changes is missed-dose tracking: any dose window that opened while the stay was running is treated as the hospital\u2019s, not a miss of yours",
   "Tap Log In-Patient End when discharged",
@@ -144,34 +145,70 @@ const ALLOWED = new Set([
   "Tap **Log In-Patient End**",
   "There's a separate control for logging a past stay with both dates",
   "Find the option to log a past stay (Start + End)",
-  "Logging was never blocked by the stay",
+  "Logging is not blocked by a stay",
   "what changes is that dose windows opening during it stop being counted as the hospital's",
   "Each row is one logged entry: a dose, a temperature, a weight, a blood pressure, a symptom, a period marker, a hospital start or end",
   "Home, Meds, Reports, In-Patient, Symptoms",
-  "hospital doses will not be flagged missed')",
+  "hospital doses will not be flagged missed",
+  "Track hospital stays here",
   "You can still log everything during a stay",
   "doses the hospital gave just aren\u2019t counted as missed",
   "add the End later from the card once this stay is over",
-  "') : '') + 'doses given by hospital staff are not counted as missed",
-  "helpIcon('In-Patient tracking', 'Use this when a hospital stay begins",
+  "doses given by hospital staff are not counted as missed",
+  "Log In-Patient End",
+  "In-Patient tracking",
   "tap Log In-Patient Start",
   "Logging carries on as normal while a stay is active",
   "what changes is that dose windows opening during the stay are counted as the hospital\u2019s rather than as misses of yours",
   "\\n\\nTap Log In-Patient End when discharged",
   "\\n\\nUse the \u201c+\u201d button to log a past stay you forgot to record at the time (both a start and an end date)",
   "Dose windows that open while the stay is running are counted as the hospital\\u2019s, not as misses of yours",
+  "Log a past stay (Start + End)",
+  "Log a past hospital stay",
+  "Log In-Patient Start",
+  "No in-patient stays logged yet",
 ]);
 
+// EXTRACT THE PROSE FIRST, THEN SCOPE INSIDE IT. The previous version scanned the raw source and
+// then threw away any fragment that looked code-shaped -- a brace, an arrow, `style`, `h('`. That
+// exclusion existed so a colour change could not churn the allow-list, and it silently discarded
+// SEVENTEEN sentences that nobody ever reviewed. One of them was false and had survived four audit
+// passes:
+//
+//     { id: 'inpatient', label: 'Hospital stays', icon: 'hospital',
+//       blurb: 'Starting and ending a stay, and what pauses meanwhile' }
+//
+// That is the Help-centre category subtitle -- the line a caregiver reads under "Hospital stays"
+// before opening anything, i.e. the first sentence shown to someone who came to Help specifically
+// to find out what a stay does. It was skipped because its fragment carried the surrounding braces.
+// A filter that decides what to look at by guessing at code shape will always throw away prose that
+// happens to sit next to a brace, and what it throws away is exactly what nobody checks.
+//
+// So the strings are pulled out of the source properly first -- respecting escapes, which the old
+// fragment approach did not -- and only their CONTENTS are scoped. A style value or a colour is not
+// prose and is filtered by NARROW as before; a brace can no longer hide a sentence.
+function stringLiterals(text) {
+  const out = [];
+  const re = /'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const v = m[1] !== undefined ? m[1] : m[2];
+    if (v && v.length >= 4) out.push(v);
+  }
+  return out;
+}
 const unknown = [];
 const seen = new Set();
-const scan = new RegExp(SCOPE.source, 'gi');
-let m;
-while ((m = scan.exec(code)) !== null) {
-  const s = sentenceAt(code, m.index);
-  if (!s || !NARROW.test(s) || CODEY.test(s)) continue;
-  if (seen.has(s)) continue;
-  seen.add(s);
-  if (!ALLOWED.has(s)) unknown.push(s);
+for (const lit of stringLiterals(code)) {
+  const scan = new RegExp(SCOPE.source, 'gi');
+  let m;
+  while ((m = scan.exec(lit)) !== null) {
+    const sentence = sentenceAt(lit, m.index);
+    if (!sentence || !NARROW.test(sentence)) continue;
+    if (seen.has(sentence)) continue;
+    seen.add(sentence);
+    if (!ALLOWED.has(sentence)) unknown.push(sentence);
+  }
 }
 t('the scanner still finds the sentences about hospital stays (it has not gone blind)',
   seen.size >= 20, seen.size + ' found');
@@ -209,17 +246,31 @@ const SEED_ENTRIES = [
   // AN OPEN STAY: a start with no matching end is what "she is in hospital right now" looks like.
   { id: 'ip1', medId: 'inpatient_start', dose: 'In-patient start', mg: 0, ts: NOON - 86400000 }
 ];
-// An as-needed medication with no gap and no day restriction, so the ONLY thing that could stop it
-// being logged is a hospital-stay rule. If this suite ever goes red for another reason, the fixture
-// is wrong, not the app.
+// THREE medications, and the shapes are checked against normalizeMedication() rather than assumed.
+//
+// WHY THREE. One quickLog medication reaches exactly one route: a standalone card. That left three
+// ways to lose a dose unwatched, all three of which the auditor then used and none of which any
+// suite in this repo caught. So: one standalone card AND a two-medication Evening group, which is
+// the everyday shape for anyone with morning/evening medications and which renders `Take all` --
+// a SEPARATE branch of confirmTimeAndLog(), and a control that index.html:3535 records as having
+// been hidden for a whole stay as a v67 leftover ("both web builds removed it correctly; this one
+// did not").
+//
+// SHAPES VERIFIED, NOT ASSUMED. The first fixture used `type: 'prn'` and `doses: ['1 tablet']`.
+// Neither is real. The normaliser is `type = original.type === 'win' ? 'win' : 'gap'`, so 'prn'
+// silently became a gap-timer medication; and `doses.filter(d => d && d.label)` drops bare strings,
+// so it had no dose options at all. The suite passed anyway -- its central claim, "nothing but a
+// stay could block this", was asserted and never checked. These are explicit gap medications with
+// gapHours 0 (no cooldown), no scheduleDays (every day), no treatment window, not paused, and real
+// dose objects.
 const SEED_MEDS = { version: 1, archivedMeds: [], meds: [
-  { id: 'testmed', name: 'Test Medication', type: 'prn', quickLog: true, gapHours: 0,
-    doses: ['1 tablet'] }
+  { id: 'testmed', name: 'Test Medication', type: 'gap', quickLog: true, gapHours: 0,
+    doses: [{ label: '1 tablet', mg: 0 }] },
+  { id: 'grp1', name: 'Group One', type: 'gap', quickLog: false, groupedEvening: true, gapHours: 0,
+    doses: [{ label: '1 capsule', mg: 0 }] },
+  { id: 'grp2', name: 'Group Two', type: 'gap', quickLog: false, groupedEvening: true, gapHours: 0,
+    doses: [{ label: '2 capsules', mg: 0 }] }
 ]};
-// tourDone AND browserNoticeSeen both matter. Without tourDone the 10-step welcome guide covers
-// every screen; without browserNoticeSeen the web-preview notice sits over Home, and the first run
-// of this suite clicked a button underneath it and reported that logging was blocked. The app was
-// fine; the fixture was measuring a notice.
 const SEED_PREFS = { patientName: 'Test Patient', sex: 'female', treatmentType: 'chemo',
   tourDone: true, browserNoticeSeen: true, ceilingMg: 2500, tempUnit: 'Fahrenheit', weightUnit: 'lbs' };
 
@@ -256,37 +307,84 @@ const ready = await page.evaluate(seedName => {
 t('a hospital stay is open and the seeded medication is on Home', ready === true,
   ready === true ? '' : String(ready));
 
+// Helpers used by every route below. Every one of these exists because of a fault found on this
+// file: press by EXACT text (an ancestor walk once clicked "Log In-Patient End" and ended the stay
+// the whole check depends on), and always drive through Confirm (logMed() does not write -- it
+// opens the time modal, and confirmTimeAndLog() writes; stopping at the first tap failed for the
+// wrong reason on an app that was fine).
+const pressExact = (label) => page.evaluate(want => {
+  const b = [...document.querySelectorAll('main button')].find(x => (x.innerText || '').trim() === want);
+  if (!b) return false; b.click(); return true;
+}, label);
+const pressConfirm = () => page.evaluate(() => {
+  const b = [...document.querySelectorAll('button')].find(x => (x.innerText || '').trim() === 'Confirm');
+  if (!b) return false; b.click(); return true;
+});
+const rows = (medId) => page.evaluate(([p, id]) =>
+  JSON.parse(localStorage.getItem(p + 'entries-v1') || '[]').filter(e => e.medId === id), [P, medId]);
+// A dose is only recorded if it is recorded FOR TODAY. See the timestamp check below.
+const daysOff = (ts) => {
+  const a = new Date(ts); a.setHours(0, 0, 0, 0);
+  const b = new Date(); b.setHours(0, 0, 0, 0);
+  return Math.round((a.getTime() - b.getTime()) / 86400000);
+};
+
 if (ready === true) {
-  const before = await page.evaluate(p => JSON.parse(localStorage.getItem(p + 'entries-v1') || '[]').filter(e => e.medId === 'testmed').length, P);
-  // EXACT TEXT, not "a Log button", and not "a Log button somewhere inside an element that mentions
-  // the medication". The first version walked up six ancestors looking for the med name and found
-  // "Log In-Patient End" instead -- which ENDED THE STAY the whole check depends on, so the suite
-  // was quietly testing normal logging. The Quick Log control reads "Log <medication name>".
-  const clicked = await page.evaluate(name => {
-    const want = 'Log ' + name;
-    const b = [...document.querySelectorAll('main button')].find(x => (x.innerText || '').trim() === want);
-    if (!b) return false; b.click(); return true;
-  }, SEED_MEDS.meds[0].name);
-  // A lock in status() takes the Log button away entirely and shows a "Restricted" chip instead.
-  t('the Log button is still there while a stay is open', clicked,
-    clicked ? '' : 'no Log button on Home — a stay is locking the card, which is the pre-v67 defect');
-  await page.waitForTimeout(900);
-  // LOG OPENS THE TIME MODAL; CONFIRM IS WHAT WRITES. logMed() only calls setState({ timeModal }) --
-  // the dose is written by confirmTimeAndLog(). The first version of this check stopped after the
-  // first tap and reported that logging was blocked during a stay, on an app that was fine. Half a
-  // user journey is not a user journey, and a check that stops early fails for the wrong reason.
-  const confirmed = await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find(x => (x.innerText || '').trim() === 'Confirm');
-    if (!b) return false; b.click(); return true;
-  });
-  t('the time modal opened and offered Confirm', confirmed,
-    confirmed ? '' : 'no Confirm button — the log flow did not open');
-  await page.waitForTimeout(1200);
-  const after = await page.evaluate(p => JSON.parse(localStorage.getItem(p + 'entries-v1') || '[]').filter(e => e.medId === 'testmed').length, P);
-  // A lock inside logMed() leaves the button and writes nothing.
-  t('tapping Log during a hospital stay actually records the dose', after === before + 1,
-    before + ' dose(s) before, ' + after + ' after');
-  t('the app logged no errors while doing it', pageErrors.length === 0, pageErrors.join(' / '));
+  // ---- ROUTE 1: a standalone Quick Log card, twice ----------------------------------------------
+  // TWICE, because a lock that lets the FIRST dose through and refuses every one after it passed a
+  // single-dose check with all green. One dose is not a day of medication.
+  for (const attempt of [1, 2]) {
+    const before = (await rows('testmed')).length;
+    const tapped = await pressExact('1 tablet');
+    t('dose ' + attempt + ': the dose button is there during a stay', tapped,
+      tapped ? '' : 'no "1 tablet" button on Home — a stay is locking the card, which is the pre-v67 defect');
+    await page.waitForTimeout(900);
+    const conf = await pressConfirm();
+    t('dose ' + attempt + ': the log flow opened and offered Confirm', conf,
+      conf ? '' : 'no Confirm button — the log flow did not open');
+    await page.waitForTimeout(1200);
+    const after = await rows('testmed');
+    t('dose ' + attempt + ': tapping through actually records the dose', after.length === before + 1,
+      before + ' before, ' + after.length + ' after');
+    // COUNTING ROWS IS NOT RECORDING A DOSE. A sabotage that wrote the entry with a timestamp a
+    // month in the past passed a count check with all green: the dose never appears in Today's
+    // journal, never covers the window it was given for, and the dose that WAS given still flags as
+    // missed. The row existed; the dose was lost.
+    const newest = after[after.length - 1];
+    t('dose ' + attempt + ': it is recorded for TODAY, not filed somewhere else',
+      !!newest && daysOff(newest.ts) === 0,
+      newest ? (daysOff(newest.ts) + ' day(s) off today · ts ' + new Date(newest.ts).toString().slice(0, 24)) : 'no entry');
+  }
+
+  // ---- ROUTE 2: the grouped card and Take all ---------------------------------------------------
+  // A separate branch of confirmTimeAndLog(), and a control this app has ALREADY had removed for the
+  // duration of a stay once (index.html:3535, a v67 leftover both web builds fixed and this one did
+  // not). A fixture with one quickLog medication never renders a group card, so none of this was
+  // watched by anything.
+  const g1Before = (await rows('grp1')).length;
+  const g2Before = (await rows('grp2')).length;
+  const takeAll = await pressExact('Take all (2)');
+  t('Take all is still offered during a hospital stay', takeAll,
+    takeAll ? '' : 'no Take all on the group card — it has been hidden for the stay, which is the v67 leftover');
+  if (takeAll) {
+    await page.waitForTimeout(900);
+    const conf = await pressConfirm();
+    t('Take all opened the log flow and offered Confirm', conf, conf ? '' : 'no Confirm button');
+    await page.waitForTimeout(1400);
+    // PER MEDICATION, never a total. A total of two is satisfied by one medication logged twice,
+    // and a partial write that saves some and drops the rest is a defect this project already has
+    // on record in care-tracker's own Take all.
+    const g1 = await rows('grp1'), g2 = await rows('grp2');
+    t('Take all recorded the first medication in the group', g1.length === g1Before + 1,
+      g1Before + ' before, ' + g1.length + ' after');
+    t('Take all recorded the second medication in the group', g2.length === g2Before + 1,
+      g2Before + ' before, ' + g2.length + ' after');
+    t('both grouped doses are recorded for today',
+      g1.length > g1Before && g2.length > g2Before &&
+      daysOff(g1[g1.length - 1].ts) === 0 && daysOff(g2[g2.length - 1].ts) === 0, '');
+  }
+
+  t('the app logged no errors while doing any of it', pageErrors.length === 0, pageErrors.join(' / '));
 }
 
 await browser.close();
