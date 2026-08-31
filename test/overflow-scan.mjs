@@ -91,6 +91,14 @@ const SEED_ENTRIES = [
   // being offered — the suite then failed at all ten widths with "the seeded medication is missing"
   // and nothing wrong with the app. Noon is the furthest point from both edges of a local day.
   { id: 's6', medId: 'chemo_date', dose: 'Treatment scheduled', mg: 0, ts: NOON_3D_AGO, loggedAt: NOON_3D_AGO },
+  // A SECOND TREATMENT DATE, so the Treatment schedule card shows its per-date list. That list only
+  // renders when two or more dates are on record, so with a single seeded date the scan walked the
+  // card ten times without ever seeing the rows it now has to fit -- the same "a screen with states
+  // is more than one screen" miss that let the hospital-stay banner overflow for ten clean runs.
+  // Deliberately OLD and logged EARLIER than s6: nextChemoTs() returns the most recently logged
+  // entry, so the headline date and every treatment-window decision stay exactly as they were and
+  // this fixture change adds a state instead of moving the existing one.
+  { id: 's6b', medId: 'chemo_date', dose: 'Treatment scheduled', mg: 0, ts: NOON - 24 * 86400000, loggedAt: NOON_3D_AGO - 86400000 },
   { id: 's7', medId: 'symptom_nausea', dose: 'Sharp rib pain after the second dose, worse lying down', mg: 0, ts: NOON - 12600000 },
   // AN OPEN HOSPITAL STAY. Home renders an extra banner while one is active, and nothing here ever
   // seeded one -- so the PM found a 4px overflow on that banner at 320px by hand, on a screen this
@@ -460,6 +468,78 @@ const EXTRA = [...DRAWER.map(drawerPass), helpSearchPass, { name: 'med-editor', 
       .find(s => [...s.options].some(o => o.value === 'win'));
     return !!(sel && sel.value === 'win');
   });
+} },
+// ---------------------------------------------------------------------------------------------
+// THE STATES THE FIXTURE TURNED OFF. These three passes MUST STAY LAST: each one changes the app's
+// data on purpose and does not put it back, so anything after them would be scanned in a state it
+// did not ask for.
+//
+// Why they exist: seeding an open hospital stay and a second treatment date fixed two real blind
+// spots and opened two new ones in the same move -- with the fixture always in hospital and always
+// holding several dates, the In-Patient screen with NO stay, its empty state, Home without the
+// stay banner, and the Treatment schedule card with no date at all stopped being scanned anywhere.
+// A fixture that swaps coverage rather than adding it trades one blind spot for another and reads
+// as an improvement either way. Found by the Zero Day Auditor, not by this file.
+{ name: 'no-stay:inpatient', open: async page => {
+  const onIp = await page.evaluate(() => {
+    const b = document.querySelector('[data-tour="nav-inpatient"]');
+    if (!b) return false; b.click(); return true;
+  });
+  if (!onIp) return false;
+  await page.waitForTimeout(800);
+  const ended = await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')]
+      .find(x => (x.innerText || '').trim() === 'Log In-Patient End');
+    if (!b) return false; b.click(); return true;
+  });
+  if (!ended) return 'no open stay to end — the fixture did not seed one';
+  await page.waitForTimeout(900);
+  // Read the state back off the screen rather than trusting the click: the button is the same slot
+  // in both states, so "Start" showing is the receipt that the stay actually closed.
+  return page.evaluate(() => [...document.querySelectorAll('button')]
+    .some(x => (x.innerText || '').trim() === 'Log In-Patient Start')
+      ? true : 'the stay did not close — the End button did nothing');
+} },
+{ name: 'no-stay:home', open: async page => {
+  const onHome = await page.evaluate(() => {
+    const b = document.querySelector('[data-tour="nav-home"]');
+    if (!b) return false; b.click(); return true;
+  });
+  if (!onHome) return false;
+  await page.waitForTimeout(900);
+  return page.evaluate(() => {
+    const main = document.querySelector('main');
+    if (!main) return 'no <main> element rendered';
+    // The banner names the day of the stay; with no stay open it must be gone. If it is still
+    // there, the previous pass did not really end the stay and this pass is measuring the state it
+    // was written to replace.
+    if (/Day \d+ of (this |the )?(hospital )?stay/i.test(main.innerText)) return 'the stay banner is still on Home';
+    return true;
+  });
+} },
+{ name: 'no-dates:home', open: async page => {
+  // Clear every treatment date, so the card is scanned in the state a brand-new install is in --
+  // "No treatment date set", no per-date list, and every treatment-only medication back on show
+  // with its amber No date set label. The fixture's two dates hid all of that.
+  const cleared = await page.evaluate(async () => {
+    const clear = [...document.querySelectorAll('button')].find(x => (x.innerText || '').trim() === 'Clear');
+    if (!clear) return 'no Clear button on the Treatment schedule card';
+    clear.click();
+    await new Promise(r => setTimeout(r, 500));
+    const confirm = [...document.querySelectorAll('button')].find(x => (x.innerText || '').trim() === 'Confirm clear');
+    if (!confirm) return 'the confirm step never appeared';
+    confirm.click();
+    return true;
+  });
+  if (cleared !== true) return cleared;
+  await page.waitForTimeout(1000);
+  return page.evaluate(() => {
+    const main = document.querySelector('main');
+    if (!main) return 'no <main> element rendered';
+    if (document.querySelector('[data-chemo-list]')) return 'the per-date list is still showing with no dates set';
+    return main.innerText.includes('No treatment date set') ? true
+      : 'the card does not say "No treatment date set" after clearing';
+  });
 } }];
 
 let problems = 0, unreachable = 0, scanned = 0;
@@ -597,7 +677,11 @@ for (const dev of DEVICES) {
       // needle below is text that appears only BELOW the heading, so a screen stripped to its title
       // cannot satisfy it.
       const must = {
-        home:      [seedName],
+        // 'treatment dates set' is the per-date schedule list, which only renders with two or more
+        // dates on record. Naming it here means the fixture and the feature are checked together:
+        // if either the seeding or the list itself goes away, Home reports UNREACHABLE instead of
+        // quietly going back to scanning a card that no longer has the rows in it.
+        home:      [seedName, 'treatment dates set'],
         meds:      [seedName],
         // The Reports menu is a fixed set of tiles; two of them prove the list rendered.
         reports:   ['Report', 'History'],

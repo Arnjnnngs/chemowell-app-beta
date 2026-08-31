@@ -84,10 +84,51 @@ t('it does NOT claim a new date replaces the old one',
   !/replaces the old one/i.test(topic), /replaces the old one/i.test(topic) ? 'still claims replacement' : 'claim gone');
 t('it says a date is ADDED to the schedule',
   /\bADDED\b/.test(topic), '');
-t('it warns that a mistyped date keeps driving the rules',
-  /mistyped date keeps working|both stay/i.test(topic), '');
-t('it names Clear as removing EVERY date, not just the wrong one',
-  /removes \*\*every\*\* date/i.test(topic), '');
+// SEARCHED INSIDE THE STEPS, NOT THE WHOLE TOPIC. The first version of this check read
+// /mistyped date keeps working|both stay/ across the entire topic, and the Zero Day Auditor deleted
+// the warning STEP outright while it stayed green at 9/9 -- the `both stay` alternative matched the
+// answer paragraph above the steps, so the check was really asserting that a different sentence
+// existed. An alternation is a check with two ways to pass and only one of them meant.
+const steps = (() => {
+  const i = topic.indexOf('steps: [');
+  if (i < 0) return '';
+  return topic.slice(i, topic.indexOf('],', i) + 1);
+})();
+t('the topic has a steps list to check', steps.length > 100, steps.length + ' chars');
+t('one of the STEPS warns that a mistyped date keeps driving the rules',
+  /mistyped date (is gone it |)keeps working/i.test(steps), '');
+t('it names Clear as clearing EVERY date, not just the wrong one',
+  /\*\*every\*\* date/i.test(steps), '');
+t('it tells you how to remove ONE date without losing the rest',
+  /Tap \*\*Remove\*\* beside/i.test(steps), '');
+
+// THE BUTTON NAMES IN HELP MUST BE THE BUTTON NAMES ON THE CARD. This is the defect the v69 commit
+// was itself written to fix and then reintroduced: the topic told the reader to tap **Update**, but
+// its own step 3 sends them through Clear first, after which that button reads **Set date**. Nine
+// checks passed on a topic that misnamed the button its own instructions land on, because not one
+// of them compared Help against the code. Same class as the app-v68 fifth audit.
+// The card's source, not the whole file: 'Remove' and 'Update' are common words elsewhere.
+const card = (() => {
+  const i = html.indexOf("'Treatment schedule'");
+  return i < 0 ? '' : html.slice(i, i + 6000);
+})();
+t('the Treatment schedule card source was located', card.length > 1000, card.length + ' chars');
+// DRIVEN OFF WHAT HELP ACTUALLY SAYS, not off a list of names written here. The first version
+// walked a fixed list ['Set date','Update','Clear','Confirm clear','Remove'] and checked each one
+// only IF Help mentioned it -- so changing Help to name a button that does not exist ("Save date")
+// made the check for that name simply STOP RUNNING, and the suite reported 17 of 17 passed. A check
+// that can quietly delete itself is worse than no check, because the total still looks healthy.
+// Now every "tap **X**" in the steps has to be a real button label on the card, whatever X is.
+const namedButtons = [...steps.matchAll(/[Tt]ap \*\*([^*]+)\*\*/g)].map(m => m[1]);
+t('Help names buttons to tap at all (the extractor still works)', namedButtons.length >= 4,
+  namedButtons.join(', ') || 'none found');
+for (const label of namedButtons) {
+  t('Help says tap **' + label + '** and the card really renders a button called that',
+    card.includes("'" + label + "'"), '');
+}
+// And the wording that was wrong: Clear does NOT confirm by tapping itself again.
+t('Help no longer says Clear confirms by tapping it again',
+  !/tap it again to confirm/i.test(steps), '');
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
 process.exit(fail ? 1 : 0);

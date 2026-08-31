@@ -1997,6 +1997,52 @@ async function logTemp() {
   setState({ timeModal: { type: 'temp', tempValue: v, timeValue: nowLocalISO() } });
 }
 
+// REMOVING ONE TREATMENT DATE, WITHOUT INVENTING A NEW KIND OF ENTRY.
+//
+// Aaron could correct a mistyped date only by clearing the whole schedule and typing it all again,
+// because Clear is all-or-nothing. Help was made honest about that in v69; this is the actual fix.
+//
+// The obvious approach -- a "remove this one day" entry, say a negative ts -- was rejected on
+// purpose. The store is append-only and a backup can be restored into an OLDER build, and an older
+// build reading an entry shape it has never heard of would treat a negative ts as a date to ADD:
+// dayStart(-X) lands in 1970, which is precisely the "Zofran blocked until 1 Jan 1970" bug this
+// project already shipped once. A new entry shape is a migration problem wearing a small hat.
+//
+// So this uses only the two forms that already exist and that every build already understands:
+// append the tombstone that clears everything, then re-append the dates that survive. The result is
+// read correctly by any version of the app, past or future, and chemoDayList() -- the function that
+// has caused a live bug once already -- is not touched at all.
+//
+// loggedAt is assigned explicitly and increasing. Entries are ordered by loggedAt, and several
+// appends inside the same millisecond would otherwise tie, leaving the tombstone's position among
+// the re-adds undefined -- which would clear the very dates it was meant to keep.
+async function removeChemoDate(dayTs) {
+  const target = dayStart(dayTs);
+  const keep = chemoDayList().filter(d => d !== target);
+  // STRICTLY AFTER EVERYTHING ALREADY STORED, not merely "now". Date.now() alone was not enough and
+  // the suite caught it: two removals inside the same millisecond produced a second tombstone with
+  // the SAME loggedAt as the first batch's re-adds, so their order was undefined and the tombstone
+  // could land after the dates it was meant to keep -- wiping them. The comment below already warned
+  // about ties within one call; the gap was ties BETWEEN calls, which is the case a person actually
+  // hits by tapping remove twice.
+  const latest = (state.chemoDates || []).reduce((m, e) => Math.max(m, e.loggedAt || 0), 0);
+  const base = Math.max(Date.now(), latest + 1);
+  await addEntryDB({ medId: 'chemo_date', dose: 'Treatment date removed', mg: 0, ts: 0, loggedAt: base });
+  // All the re-adds share one loggedAt, deliberately. Giving them increasing ones looked tidier and
+  // was inert: they are all ADDS, and chemoDayList() dedupes and sorts the result, so their order
+  // among themselves cannot change the schedule. Falsifying it proved that -- collapsing them to a
+  // single value left the suite at 12/12. A change nobody can falsify is a change nobody can safely
+  // remove later, so it is gone. What DOES matter is that they all land after the tombstone, and
+  // that is what `base` guarantees.
+  for (const day of keep) {
+    await addEntryDB({ medId: 'chemo_date', dose: 'Treatment scheduled', mg: 0, ts: day, loggedAt: base + 1 });
+  }
+  setToast(keep.length
+    ? 'Removed ' + new Date(target).toLocaleDateString([], { month: 'short', day: 'numeric' }) +
+      ' \u2014 ' + keep.length + ' treatment date' + (keep.length === 1 ? '' : 's') + ' left'
+    : 'Removed the only treatment date');
+}
+
 async function setChemoDate() {
   const raw = (state.chemoInput || '').trim();
   if (!raw) { setToast('Pick a date first'); return; }
@@ -2785,7 +2831,7 @@ const FAQ_ITEMS = [
   { id: 'daily-limit', q: 'How does Daily limit work?', a: 'It blocks logging more of a medication once the number you set is reached for the day, in whichever unit you choose under Limit unit (total mg, number of pills, or number of applications). It only works if at least one Dosage option actually carries that unit — the editor warns you right under Dosage options if it doesn’t. You can always log over the limit anyway by tapping the button that appears once it’s reached and confirming.' },
   { id: 'gap-timer', q: 'What’s “Hours between doses” / minimum gap?', a: 'It’s the minimum time ChemoWell requires since the last dose before the card unlocks again — used for “as needed” medications (e.g. every 4 hours) and, optionally, layered on top of a scheduled medication’s reminder times too. Like other locks, you can override it early if there’s a real reason to.' },
   { id: 'reset', q: 'Can I start over / erase everything?', a: 'Yes — open Account (in the menu), and scroll to Start over at the bottom. It erases the patient name, medication list, and all logged history from this device. This can’t be undone, so use it only if you really mean to wipe the slate clean.' },
-  { id: 'in-patient', q: 'How does In-Patient tracking work?', a: 'Tap Log In-Patient Start when a hospital stay begins. While it’s active, Home medication logging pauses (the hospital is administering meds, not you), and the In-Patient tab shows how many days into the stay you are. Tap Log In-Patient End when discharged — every past stay is kept in the In-Patient History list below.' }
+  { id: 'in-patient', q: 'How does In-Patient tracking work?', a: 'Tap Log In-Patient Start when a hospital stay begins. Everything stays loggable while a stay is active — nothing is locked. What changes is missed-dose tracking: any dose window that opened while the stay was running is treated as the hospital’s, not a miss of yours. The In-Patient tab shows how many days into the stay you are. Tap Log In-Patient End when discharged — every past stay is kept in the In-Patient History list below.' }
 ];
 
 // ---------- Help centre (app-v55, Owner-requested) ----------
@@ -2890,7 +2936,7 @@ const HELP_TOPICS = [
   { id: "miss-false-missed", cat: "missed", q: "It says I missed doses that I didn't", a: "A few situations cause that, and most of them have a setting behind them.", steps: ["Was the person in hospital those days? Log the stay on the **In-Patient** tab — days inside a hospital stay are never flagged as missed.", "Was the medication paused then? Pausing only stops flags from the moment you pause. It doesn't rewrite the past.", "Is the medication actually taken every day? Check **Days taken** in the medication editor — if it's only certain days, set that, and the other days stop being flagged.", "Was it logged, just at a different time? Check **Reports** → **History** for that day.", "If none of these fit, use **Clear** on each row to dismiss the flag without recording anything."], keywords: ["false", "wrong", "didn't miss", "incorrect", "hospital", "paused"], related: ["ip-start-end", "med-days-taken", "med-pause-resume"] },
   { id: "miss-real-missed", cat: "missed", q: "A dose was genuinely missed — what should I do?", a: "**Contact the care team.** Whether to take a missed dose late, skip it, or double up is a medical decision, and it depends on the specific medication. ChemoWell cannot answer that, and it will never suggest an answer.", steps: ["Call the care team, the on-call number, or the pharmacist. If it's a chemotherapy or other treatment medication, do that now rather than waiting for the next appointment.", "Once you know what they want you to do, come back to the app to record what actually happened.", "If the dose was given late: **Reports** → **History** → missed-dose view → **Took later**.", "If it was deliberately skipped: same place, tap **Skipped**.", "Add a note if there's anything worth remembering — menu → **Notes**."], note: "ChemoWell records what you tell it. It does not give dosing guidance of any kind.", keywords: ["missed", "what do i do", "skip", "double", "catch up", "chemo"], related: ["miss-resolve", "note-add"], medical: true, careLead: true },
   { id: "treat-set-date", cat: "treatment", q: "How do I set a treatment date?", a: "On Home, in the Treatment schedule card.", steps: ["Go to **Home** and find the card headed **Treatment schedule**.", "Tap the row underneath it that says **Pick a date**.", "A small calendar opens. Tap the day.", "Tap **Set date** (or **Update** if there was already one).", "The card now shows the date and a countdown."], note: "After you set it, the row underneath may still read \"Pick a date\". That's a known display quirk — the date at the top of the card is the one that counts.", keywords: ["treatment date", "chemo date", "set", "pick", "calendar"], related: ["treat-clear", "med-treatment-availability"] },
-  { id: "treat-clear", cat: "treatment", q: "I need to change or remove the treatment date", a: "Each date you set is ADDED to your schedule, not swapped for the last one \u2014 a course usually has several treatments, and every one of them counts. So a date typed wrongly is not undone by setting the right one: both stay, and both go on driving your medication rules.", steps: ["On **Home**, find the **Treatment schedule** card.", "To add a treatment date: tap the date row, pick the day, tap **Update**.", "To correct a date you typed wrongly: tap **Clear** in the top right, tap it again to confirm \u2014 this removes **every** date, not just the wrong one \u2014 then set the right dates again.", "Until you do, a mistyped date keeps working: a medication set to appear near treatment will appear near the wrong day too, and one set to be withheld will still be withheld.", "With no dates at all, anything set to only appear near your treatment day goes back to showing every day, with an amber **No date set** label."], keywords: ["change", "clear", "remove", "wrong date", "reschedule"], related: ["treat-set-date"] },
+  { id: "treat-clear", cat: "treatment", q: "I need to change or remove the treatment date", a: "Each date you set is ADDED to your schedule, not swapped for the last one \u2014 a course usually has several treatments, and every one of them counts. So a date typed wrongly is not undone by setting the right one: both stay, and both go on driving your medication rules.", steps: ["On **Home**, find the **Treatment schedule** card.", "To add a treatment date: tap the date row, pick the day, then tap **Set date** \u2014 or tap **Update**, which is what the same button says once a date is already set.", "To remove ONE wrong date, when you have two or more: the card lists every date it is holding. Tap **Remove** beside the wrong one. The others are left alone.", "To remove the only date you have: tap **Clear** in the top right, then tap **Confirm clear** when it appears. That clears **every** date. (The confirm step disappears again after a few seconds if you don\u2019t tap it.)", "Until a mistyped date is gone it keeps working: a medication set to appear near treatment will appear near the wrong day too, and one set to be withheld will still be withheld.", "With no dates at all, anything set to only appear near your treatment day goes back to showing every day, with an amber **No date set** label."], keywords: ["change", "clear", "remove", "wrong date", "reschedule", "delete"], related: ["treat-set-date"] },
   { id: "treat-no-card", cat: "treatment", q: "I can't find the Treatment schedule card", a: "It's a card you can switch off, and on radiation-only profiles it starts off.", steps: ["Tap the three lines in the top left, then **Settings**.", "Find **Home screen**.", "Switch on **Treatment schedule card**.", "Go back to **Home** — the card is there now."], keywords: ["missing", "no card", "treatment schedule", "radiation", "hidden"], related: ["set-card-missing"] },
   { id: "treat-other-profile", cat: "treatment", q: "I picked 'Other' as the treatment type and the wording is different", a: "That's deliberate. An \"Other\" profile talks about *your date* instead of *treatment day*, and the treatment-day availability setting isn't offered at all.", steps: ["You can still use the **Treatment schedule** card on Home for an appointment or any date worth counting down to.", "In the medication editor, there's no treatment-day availability section for an \"Other\" profile — that's on purpose, since there's no treatment day in the sense that setting means.", "If a medication you set up before shows leftover *Days before* / *Days after* boxes, they're being ignored. They're a leftover from an earlier version."], note: "There's currently no way to change a profile's treatment type after setup. If you picked the wrong one, the only route today is to create a new profile — which means starting that person's history again. That's a known gap.", keywords: ["other", "treatment type", "wording", "your date", "not chemo"], related: ["pro-wrong-treatment-type"] },
   { id: "treat-radiation", cat: "treatment", q: "How do I track radiation sessions?", a: "The Radiation sessions card on Home, with a one-tap log.", steps: ["Go to **Home** and find the **Radiation sessions** card. It only appears for profiles that include radiation.", "Tap the button to log today's session.", "To record how many sessions are planned in total, enter the planned total on that card (1 to 99). The counter then shows something like *3 / 20 sessions completed*.", "To add a session you forgot, tap the **+** on that card and set the date.", "The full list is under **Reports** → **Radiation**."], branches: [{ when: "The card isn't there", steps: ["Menu → **Settings** → **Home screen** → switch on **Radiation sessions card**."] }], keywords: ["radiation", "sessions", "counter", "planned", "total"], related: ["set-card-missing"] },
@@ -3809,7 +3855,7 @@ const TOUR_STEPS = [
   // "wandering off the guided path" risk to guard against.
   { target: 'quick-log', title: 'Logging doses', text: 'Every medication gets a card here. When a dose is given, tap its button to log it — ChemoWell tracks timing, gaps between doses, and daily limits, and flags anything missed.', next: 'Next', navTarget: 'home' },
   { target: 'nav-reports', title: 'Reports', text: 'The full history lives here — every dose, weight, temperature, and symptom, organized day by day.', next: 'Next', navTarget: 'reports' },
-  { target: 'nav-inpatient', title: 'In-Patient stays', text: 'Track hospital stays here. While a stay is active, home medication logging pauses, since the hospital handles meds.', next: 'Next', navTarget: 'inpatient' },
+  { target: 'nav-inpatient', title: 'In-Patient stays', text: 'Track hospital stays here. You can still log everything during a stay — doses the hospital gave just aren’t counted as missed.', next: 'Next', navTarget: 'inpatient' },
   { target: 'nav-symptoms', title: 'Symptoms', text: 'Log symptoms like nausea, pain, or fever so you have a clear record to share with the care team.', next: 'Next', navTarget: 'symptoms' },
   { target: null, title: 'You\u2019re ready!', text: 'That\u2019s the basics. You can re-run this guide any time from the menu (the three lines, top left) \u2192 Settings \u2192 Replay the walkthrough.', next: 'Finish' }
 ];
@@ -4823,7 +4869,31 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' } },
       h('div', null,
         h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Treatment schedule'),
-        h('div', { style: { ...TYPE.bodyBold, marginTop: '3px', color: (daysUntil !== null && daysUntil >= 0 && daysUntil <= 1) ? '#C0453B' : '#2A2127' } }, chemoDateText)
+        h('div', { style: { ...TYPE.bodyBold, marginTop: '3px', color: (daysUntil !== null && daysUntil >= 0 && daysUntil <= 1) ? '#C0453B' : '#2A2127' } }, chemoDateText),
+        // THE WHOLE SCHEDULE, NOT JUST THE NEXT ONE. This card has always shown a single date while
+        // the app holds several and obeys all of them -- which is why a mistyped date could sit there
+        // driving medication rules with nothing on screen admitting it existed. Every date is listed
+        // now, each with its own remove, so correcting one no longer means clearing the lot.
+        // Only shown when there is more than one: a single date is already named above this line, and
+        // repeating it would be noise on the screen someone reads every morning.
+        (function () {
+          const all = chemoDayList();
+          if (all.length < 2) return null;
+          return h('div', { 'data-chemo-list': 'true', style: { marginTop: '9px', display: 'flex', flexDirection: 'column', gap: '5px' } },
+            h('div', { style: { ...TYPE.caption, color: '#7A6E76', fontWeight: '700' } },
+              all.length + ' treatment dates set \u2014 every one of them counts'),
+            ...all.map(d => h('div', { key: String(d), style: { display: 'flex', alignItems: 'center', gap: '8px', minWidth: '0' } },
+              h('span', { style: { ...TYPE.caption, color: '#554A52', flex: '1', minWidth: '0', overflowWrap: 'anywhere' } },
+                new Date(d).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })),
+              h('button', {
+                'data-chemo-remove': String(d),
+                'aria-label': 'Remove treatment date ' + new Date(d).toLocaleDateString([], { month: 'long', day: 'numeric' }),
+                onClick: () => removeChemoDate(d),
+                style: { flexShrink: '0', minHeight: '44px', minWidth: '44px', padding: '0 12px', borderRadius: '10px', background: 'rgba(192,69,59,0.10)', border: '1px solid rgba(192,69,59,0.30)', color: '#A13830', fontSize: '12.5px', fontWeight: '700' }
+              }, 'Remove')
+            ))
+          );
+        })()
       ),
       chemoTs ? (state.confirmClearChemo ? h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center', flexShrink: '0' } },
         h('button', { onClick: async () => { setState({ confirmClearChemo: false }); await addEntryDB({ medId: 'chemo_date', dose: 'Treatment date cleared', mg: 0, ts: 0, loggedAt: Date.now() }); setToast('Treatment date cleared'); }, style: { color: '#fff', background: '#C0453B', fontSize: '12.5px', fontWeight: '700', padding: '8px 12px', borderRadius: '9px' } }, 'Confirm clear'),
@@ -6530,7 +6600,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v68';
+const APP_VERSION = 'app-v70';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -8620,7 +8690,7 @@ function renderInPatient(now) {
           // Same "?" helpIcon pattern already used in the medication editor.
           h('div', { style: { display: 'flex', alignItems: 'center', gap: '2px' } },
             h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'In-Patient Status'),
-            helpIcon('In-Patient tracking', 'Use this when a hospital stay begins — tap Log In-Patient Start. While a stay is active, Home medication logging pauses, since the hospital is administering doses, not you, and this screen shows how many days into the stay it’s been.\n\nTap Log In-Patient End when discharged. Every past stay is kept below in In-Patient History, with a running total of stays, total days, longest stay, and stays this year.\n\nUse the “+” button to log a past stay you forgot to record at the time (both a start and an end date).')
+            helpIcon('In-Patient tracking', 'Use this when a hospital stay begins — tap Log In-Patient Start. Logging carries on as normal while a stay is active; what changes is that dose windows opening during the stay are counted as the hospital’s rather than as misses of yours. This screen shows how many days into the stay it’s been.\n\nTap Log In-Patient End when discharged. Every past stay is kept below in In-Patient History, with a running total of stays, total days, longest stay, and stays this year.\n\nUse the “+” button to log a past stay you forgot to record at the time (both a start and an end date).')
           ),
           activeNow
             ? h('div', { style: { fontSize: '28px', fontWeight: '800', color: '#8B5715', lineHeight: '1.1', marginTop: '2px' } }, ipDayN !== null ? ('Day ' + ipDayN) : 'Active')

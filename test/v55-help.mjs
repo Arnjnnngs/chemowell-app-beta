@@ -389,7 +389,12 @@ for (const vp of [{ name: '360px', width: 360, height: 800 }, { name: '390px', w
     { q: 'The temperature is high', find: 'temperature is high', calm: false },
     { q: 'weight has changed a lot', find: 'weight changed a lot', calm: false },
     { q: 'symptom is severe', find: 'symptom severe frightening', calm: false },
-    { q: 'medications say .Restricted', find: 'restricted log them', calm: true }
+    // WAS { q: 'medications say .Restricted', find: 'restricted log them' } -- the title of a topic
+    // that app-v67 deliberately rewrote when a hospital stay stopped locking logging. The topic is
+    // still there, still medical: true, and now asks the question a caregiver actually has; this
+    // entry had simply never been updated, so this suite has been red since v67 shipped and nobody
+    // ran it. Kept pointed at the same topic, by its current name.
+    { q: 'still log medications during a hospital stay', find: 'restricted hospital log', calm: true }
   ];
   for (const m of MEDICAL) {
     await setQuery(page, m.find);
