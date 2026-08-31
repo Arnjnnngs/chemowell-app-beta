@@ -71,13 +71,19 @@ const DEVICES = [
 // three things that actually stress these layouts — an empty app looks fine at every width.
 const P = 'chemowell-app-p-p1-';
 const now = Date.now();
+const NOON_3D_AGO = (() => { const d = new Date(now - 3 * 86400000); d.setHours(12, 0, 0, 0); return d.getTime(); })();
 const SEED_ENTRIES = [
   { id: 's1', medId: 'childrens-liquid-tylenol', dose: '2 tsp (650 mg)', mg: 650, ts: now - 3600000 },
   { id: 's2', medId: 'dexamethasone', dose: '2 tablets', mg: 8, ts: now - 7200000 },
   { id: 's3', medId: 'compazine', dose: '10 mg', mg: 10, ts: now - 14400000 },
   { id: 's4', medId: 'temp', dose: '100.9 F', mg: 0, ts: now - 5400000, temp: 100.9 },
   { id: 's5', medId: 'weight', dose: '182 lbs', mg: 0, ts: now - 9000000, weight: 182 },
-  { id: 's6', medId: 'chemo_date', dose: 'Treatment scheduled', mg: 0, ts: now - 259200000, loggedAt: now - 259200000 },
+  // ANCHORED TO LOCAL NOON, not to "now minus N days". Seeded at an exact multiple of 24h from the
+  // moment the suite starts, the treatment date sat on a day boundary: a run that crossed midnight,
+  // or a daylight-saving shift, moved it into the previous day and the seeded medication stopped
+  // being offered — the suite then failed at all ten widths with "the seeded medication is missing"
+  // and nothing wrong with the app. Noon is the furthest point from both edges of a local day.
+  { id: 's6', medId: 'chemo_date', dose: 'Treatment scheduled', mg: 0, ts: NOON_3D_AGO, loggedAt: NOON_3D_AGO },
   { id: 's7', medId: 'symptom_nausea', dose: 'Sharp rib pain after the second dose, worse lying down', mg: 0, ts: now - 12600000 }
 ];
 // A medication carrying the app-v68 treatment-window fields, because the med editor and the med
@@ -247,7 +253,9 @@ const scanFn = function (vw) {
 };
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
-let problems = 0, unreachable = 0;
+let problems = 0, unreachable = 0, scanned = 0;
+// Set from the EXTRA list below, so the totals line cannot drift from the passes that exist.
+let EXTRA_COUNT = 0;
 const report = [];
 
 for (const dev of DEVICES) {
@@ -331,7 +339,80 @@ for (const dev of DEVICES) {
   // The med editor is a screen too, and it is where the treatment window gets typed — the exact
   // thing app-v68 changed. Walking only the five tabs would have passed a render gate that never
   // rendered the page under change.
-  const EXTRA = [{ name: 'med-editor', open: async page => {
+  // THE OTHER SIX SCREENS. This scan walked five of the app's eleven, so the one measured, open
+  // layout defect on record — the Help search screen at 320px, sitting in BACKLOG.md — is on a
+  // screen it never opened. Six more live behind the menu drawer: Account, Calendar, Notes,
+  // Help & FAQ, Report a problem, Settings. A render gate that skips half the app is half a gate.
+  const DRAWER = ['Account', 'Calendar', 'Notes', 'Help & FAQ', 'Report a problem', 'Settings'];
+  const drawerPass = label => ({
+    name: 'drawer:' + label.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, ''),
+    open: async page => {
+      // Back to Home first: the drawer button lives in the header, and a screen left open from the
+      // previous pass can sit over it.
+      await page.evaluate(() => { const b = document.querySelector('[data-tour="nav-home"]'); if (b) b.click(); });
+      await page.waitForTimeout(500);
+      const opened = await page.evaluate(() => {
+        const b = document.querySelector('[data-tour="menu-btn"]');
+        if (!b) return false; b.click(); return true;
+      });
+      if (!opened) return false;
+      await page.waitForTimeout(600);
+      const picked = await page.evaluate(want => {
+        const row = [...document.querySelectorAll('#app-drawer button')]
+          .find(x => (x.innerText || '').trim().split('\n')[0].trim() === want);
+        if (!row) return false; row.click(); return true;
+      }, label);
+      if (!picked) return false;
+      await page.waitForTimeout(900);
+      // Prove the drawer closed AND something rendered — a click that opened nothing must not count
+      // as a scanned screen, which is the trap this file has fallen into twice.
+      return page.evaluate(() => {
+        if (document.querySelector('#app-drawer')) return false;
+        const m = document.querySelector('main');
+        return !!(m && m.innerText.trim().length > 60);
+      });
+    }
+  });
+  // HELP SEARCH IS ITS OWN SCREEN. Opening Help lands on the category menu; typing lands on the
+  // results list, which is a different layout entirely. Same lesson as the schedule-mode dropdown:
+  // a screen with states is more than one screen, and the states nobody types into never get looked at.
+  //
+  // WHAT THIS STILL DOES NOT CATCH, stated plainly rather than implied: BACKLOG.md records a
+  // measured defect on exactly this screen — a 235px header strip at 320px leaving the first result
+  // 21px visible above the bottom nav. That is a VERTICAL space problem. Every rule in this file
+  // measures HORIZONTAL overflow, so a clean run here is not evidence that defect is gone. It is
+  // still open, and it needs a check that measures what is reachable above the fold.
+  const helpSearchPass = {
+    name: 'help-search',
+    open: async page => {
+      await page.evaluate(() => { const b = document.querySelector('[data-tour="nav-home"]'); if (b) b.click(); });
+      await page.waitForTimeout(400);
+      const opened = await page.evaluate(() => {
+        const b = document.querySelector('[data-tour="menu-btn"]');
+        if (!b) return false; b.click(); return true;
+      });
+      if (!opened) return false;
+      await page.waitForTimeout(500);
+      const picked = await page.evaluate(() => {
+        const row = [...document.querySelectorAll('#app-drawer button')]
+          .find(x => (x.innerText || '').trim().split('\n')[0].trim() === 'Help & FAQ');
+        if (!row) return false; row.click(); return true;
+      });
+      if (!picked) return false;
+      await page.waitForTimeout(700);
+      const box = await page.$('main input[type="search"], main input[type="text"], main input:not([type])');
+      if (!box) return false;
+      // A word that matches several topics, so the results list is long enough to lay out badly.
+      await box.fill('dose');
+      await page.waitForTimeout(900);
+      // Prove results actually rendered, not just that a box was typed into.
+      return page.evaluate(() => {
+        const m = document.querySelector('main');
+        return !!(m && m.innerText.trim().length > 60 && /result|answer|dose/i.test(m.innerText));
+      });
+    }
+  };
+  const EXTRA = [...DRAWER.map(drawerPass), helpSearchPass, { name: 'med-editor', open: async page => {
     const onMeds = await page.evaluate(() => {
       const b = document.querySelector('[data-tour="nav-meds"]');
       if (!b) return false; b.click(); return true;
@@ -417,11 +498,11 @@ for (const dev of DEVICES) {
     // down. The app marks the live tab with aria-current="page", so that is the receipt to demand.
     const navigated = await page.evaluate(async ([key, seedName]) => {
       const btn = document.querySelector('[data-tour="nav-' + key + '"]');
-      if (!btn) return false;
+      if (!btn) return 'no nav button for this tab';
       btn.click();
       await new Promise(r => setTimeout(r, 600));
       const live = document.querySelector('[data-tour="nav-' + key + '"]');
-      if (!(live && live.getAttribute('aria-current') === 'page')) return false;
+      if (!(live && live.getAttribute('aria-current') === 'page')) return 'the tab never became active';
       // AND THE SCREEN MUST HAVE SOMETHING ON IT. A view that renders completely blank still set
       // aria-current and still counted as scanned and clean — 48 combinations, 0 problems, exit 0.
       // "I navigated there" and "there was anything there" are two different claims.
@@ -430,7 +511,7 @@ for (const dev of DEVICES) {
       // furniture and the effective bar was about 74. Two of five screens were unguarded.
       // <main> is the content region; header and nav are outside it.
       const main = document.querySelector('main');
-      if (!main) return false;
+      if (!main) return 'no <main> element rendered';
       const content = main.innerText.trim().length;
       // 60, and deliberately LOW, because a character count cannot do the job people want from it.
       // Measured on this app: the thinnest HONEST screen is 118 characters, and the Meds screen with
@@ -438,18 +519,37 @@ for (const dev of DEVICES) {
       // title is also about 154. Those two are genuinely indistinguishable by length, so no bar can
       // separate them and a higher one only buys false confidence. This catches what it can honestly
       // catch: a blank or near-blank render. The real check for "the content vanished" is below.
-      if (content <= 60) return false;
+      if (content <= 60) return 'the screen is blank (' + content + ' characters of content)';
       // THE FIXTURE MUST STILL BE ON SCREEN. This is the check that actually catches a screen which
       // lost its content while keeping its heading — the case a length bar cannot see. The scan
       // seeds a medication precisely so there is something specific to look for, and Home and Meds
       // are the two screens that must show it.
-      if (key === 'home' || key === 'meds') {
-        if (main.innerText.indexOf(seedName) < 0) return false;
+      // EVERY SCREEN NEEDS SOMETHING SPECIFIC TO LOOK FOR, not just the two that were easy. I deleted
+      // all eight report tiles and every symptom row and this suite said "every screen clean, CLEAN,
+      // exit 0" — because only Home and Meds were checked, while the comment implied otherwise.
+      // Each screen names a string that exists only when that screen has really rendered its content.
+      const must = {
+        home:      [seedName],
+        meds:      [seedName],
+        // The Reports menu is a fixed set of tiles; two of them prove the list rendered, not just
+        // the heading above it.
+        reports:   ['Report', 'History'],
+        // These two have no seeded rows in the fixture, so assert the controls that define the
+        // screen — a heading alone is what a broken screen also shows.
+        inpatient: ['In-Patient'],
+        symptoms:  ['Symptom']
+      }[key] || [];
+      for (const needle of must) {
+        // Name the thing that was missing. "blank, or the seeded medication is missing" was printed
+        // for a Reports screen stripped of its tiles, which is neither — a gate that misreports why
+        // it failed sends the next person looking in the wrong place.
+        if (main.innerText.indexOf(needle) < 0) return 'missing: "' + needle + '"';
       }
       return true;
     }, [screen, SEED_MEDS.meds[0].name]);
-    if (!navigated) {
-      console.log('  COULD NOT REACH ' + screen.toUpperCase() + ' at ' + dev.w + 'px — not scanned (blank, or the seeded medication is missing)');
+    if (navigated !== true) {
+      console.log('  COULD NOT REACH ' + screen.toUpperCase() + ' at ' + dev.w + 'px — not scanned (' +
+        (typeof navigated === 'string' ? navigated : 'unknown reason') + ')');
       unreachable++;
       continue;
     }
@@ -467,6 +567,7 @@ for (const dev of DEVICES) {
         kind: 'app needs ' + Math.max(layout.inner, layout.doc) + 'px on a ' + dev.w + 'px screen — it will scroll sideways',
         overBy: Math.max(layout.inner, layout.doc) - dev.w, box: layout.doc + 'x-', ws: 'n/a' }] });
     }
+    scanned++;
     const found = await page.evaluate(scanFn, Math.max(dev.w, layout.inner));
     if (SHOTS) {
       fs.mkdirSync(SHOTS, { recursive: true });
@@ -475,6 +576,7 @@ for (const dev of DEVICES) {
     if (found.length) { problems += found.length; report.push({ dev: dev.name, os: dev.os, w: dev.w, screen, found }); }
   }
 
+  EXTRA_COUNT = EXTRA.length;
   for (const extra of EXTRA) {
     const opened = await extra.open(page);
     if (!opened) {
@@ -491,6 +593,7 @@ for (const dev of DEVICES) {
         kind: 'app needs ' + Math.max(layoutX.inner, layoutX.doc) + 'px on a ' + dev.w + 'px screen — it will scroll sideways',
         overBy: Math.max(layoutX.inner, layoutX.doc) - dev.w, box: layoutX.doc + 'x-', ws: 'n/a' }] });
     }
+    scanned++;
     const found = await page.evaluate(scanFn, Math.max(dev.w, layoutX.inner));
     if (SHOTS) {
       fs.mkdirSync(SHOTS, { recursive: true });
@@ -519,7 +622,13 @@ if (report.length) {
 if (errs.length) console.log('\n  PAGE ERRORS: ' + errs.length + '\n    ' + errs.slice(0,3).join('\n    '));
 if (warns.length) console.log('\n  CONSOLE WARNINGS/ERRORS: ' + warns.length + '\n    ' + [...new Set(warns)].slice(0,5).join('\n    '));
 if (escaped.length) console.log('\n  BLOCKED OUTBOUND REQUESTS: ' + escaped.length + '\n    ' + [...new Set(escaped)].slice(0,5).join('\n    '));
-console.log('\n' + (DEVICES.length * (SCREENS.length + 1)) + ' screen/width combinations, ' + problems + ' overflowing element(s).');
+// COUNTED, NOT ASSUMED. This said DEVICES x (SCREENS + 1) — a hardcoded "+1" for the one overlay
+// screen. A second overlay pass was added and the counter was not, so a clean run printed
+// "60 screen/width combinations" while walking 70, and printed the IDENTICAL sentence as the
+// release where the check had been switched off entirely. A gate's own report of what it covered
+// has to come from what it actually did.
+console.log('\n' + scanned + ' of ' + (DEVICES.length * (SCREENS.length + EXTRA_COUNT)) +
+  ' screen/width combinations scanned, ' + problems + ' overflowing element(s).');
 if (errs.length || warns.length) {
   console.log('NOT CLEAN — the app logged ' + errs.length + ' page error(s) and ' + warns.length +
     ' console warning(s)/error(s). A caught-and-logged failure is still a failure: this is the exact');

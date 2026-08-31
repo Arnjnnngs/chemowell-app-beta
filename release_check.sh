@@ -413,11 +413,18 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # read as SHIP because it QUOTED another report's `VERDICT: SHIP` higher in its first 12 lines. The
   # verdict must be the line immediately after AUDITED-COMMIT, so a quotation cannot be mistaken for
   # this report's own finding.
+  # THE HEADER IS THE TOP OF THE FILE, not "somewhere in the first twelve lines". Requiring the two
+  # lines to be ADJACENT closed the attack that was demonstrated; it did not close the CLASS. Quote
+  # two lines of someone else's report instead of one — their AUDITED-COMMIT and their VERDICT,
+  # together — and the pair rule matched the quotation rather than this report's own finding, so a
+  # report saying DO NOT SHIP was read as SHIP again. There is nowhere left to hide a quotation if
+  # the header must be the FIRST two non-blank lines of the file: anything a report quotes is
+  # necessarily below its own header.
   report_pair() {
-    report_head "$1" | grep -A1 -m1 -E '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}[[:space:]]*$' 2>/dev/null || true
+    head -40 "$1" 2>/dev/null | grep -v '^[[:space:]]*$' | head -2 || true
   }
   report_sha() {
-    _raw=$(report_pair "$1" | head -1 | grep -oE '[0-9a-f]{7,40}[[:space:]]*$' | tr -d '[:space:]' || echo "")
+    _raw=$(report_pair "$1" | head -1 | grep -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}[[:space:]]*$' | grep -oE '[0-9a-f]{7,40}' | tail -1 || echo "")
     [ -z "$_raw" ] && { echo ""; return; }
     git rev-parse --verify --quiet "$_raw^{commit}" 2>/dev/null || echo "$_raw"
   }
