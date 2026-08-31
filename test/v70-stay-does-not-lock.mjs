@@ -30,6 +30,21 @@
 // Run: env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy node test/v70-stay-does-not-lock.mjs
 //      --file <path>   to point at a scratch copy during falsification
 import fs from 'node:fs';
+import http from 'node:http';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+// Same candidate list as the other browser suites here: a pinned playwright path made every browser
+// suite in these repos unrunnable the last time the environment moved, and a gate that cannot start
+// is indistinguishable from a gate that passes.
+const { chromium } = (() => {
+  const _p = require('node:path');
+  const tries = ['playwright',
+    _p.join(_p.dirname(process.execPath), '..', 'lib', 'node_modules', 'playwright'),
+    '/opt/node22/lib/node_modules/playwright',
+    '/home/claude/.npm-global/lib/node_modules/playwright'];
+  for (const c of tries) { try { return require(c); } catch (e) {} }
+  throw new Error('playwright not found; tried:\n  ' + tries.join('\n  '));
+})();
 
 const argv = process.argv.slice(2);
 const FILE = argv.indexOf('--file') >= 0 ? argv[argv.indexOf('--file') + 1]
@@ -47,16 +62,22 @@ const t = (name, cond, detail) => {
 };
 
 // ---------------------------------------------------------------------------------------------
-// 1. THE GROUND TRUTH: the dose-logging path must not consult a stay at all.
+// 1. A CHEAP SOURCE-LEVEL SMOKE CHECK -- NOT the ground truth. The ground truth is section 3, in a
+// real browser, and it is there because two source-shaped versions of this check both failed.
 //
-// The first version of this check counted occurrences of `inpatientCoversMoment(`. The auditor put
-// `if (isInpatientActiveNow()) { ...; return; }` at the top of logMed() -- genuinely blocking every
-// dose log during a stay, the exact v67 regression -- and the check stayed GREEN, because the count
-// of the OTHER function was unchanged. It was a tripwire on one name, not a statement about what a
-// stay does, and it printed a false sentence in green.
+//   Version 1 counted occurrences of `inpatientCoversMoment(`. The auditor put a real lock at the
+//   top of logMed() using a DIFFERENT helper. Green.
+//   Version 2 read the bodies of logMed() and confirmTimeAndLog() and required that neither mention
+//   any in-patient predicate. The auditor got past it twice in one sitting: once by putting the
+//   lock in `status()` -- which logMed() calls on its second line and obeys, and which is exactly
+//   where the pre-v67 "Restricted" behaviour actually lived -- and once by inlining the stay lookup
+//   inside logMed() itself using only string literals, so no call expression matched the pattern.
+//   Both times every suite in the repo stayed green, including the three v67 suites that exist
+//   BECAUSE of this behaviour.
 //
-// So: read the two functions that actually write a dose and require that neither mentions ANY
-// in-patient predicate, whatever it is called.
+// The lesson is not "widen the pattern". It is that you cannot enumerate the places a guard is
+// forbidden to live. Assert what the app DOES, not where its code is. The checks below are kept
+// only because they cost nothing and name an obvious regression early.
 function fnBody(name) {
   let i = code.indexOf('async function ' + name + '(');
   if (i < 0) i = code.indexOf('function ' + name + '(');
@@ -69,13 +90,13 @@ function fnBody(name) {
   }
   return null;
 }
-for (const name of ['logMed', 'confirmTimeAndLog']) {
+for (const name of ['logMed', 'confirmTimeAndLog', 'status']) {
   const body = fnBody(name);
-  t('the dose-logging function ' + name + '() was found', !!body, body ? body.length + ' chars' : 'MISSING');
+  t('the function ' + name + '() was found', !!body, body ? body.length + ' chars' : 'MISSING');
   if (!body) continue;
-  const refs = [...new Set([...body.matchAll(/\b(\w*[Ii]n[Pp]atient\w*)\s*\(/g)].map(m => m[1]))];
-  t(name + '() does not consult a hospital stay before writing a dose', refs.length === 0,
-    refs.join(', '));
+  const refs = [...new Set([...body.matchAll(/\w*[Ii]n[Pp]atient\w*/g)].map(m => m[0]))];
+  t(name + '() does not mention a hospital stay (smoke check only — see section 3)',
+    refs.length === 0, refs.join(', '));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -84,7 +105,11 @@ for (const name of ['logMed', 'confirmTimeAndLog']) {
 // tracking. Code-shaped fragments are excluded so an unrelated styling edit cannot churn the list.
 // Boundaries include the em-dash and the semicolon, because the auditor's worst escape was a false
 // claim joined by a dash to a clause that made it look historical.
-const SCOPE = /in-?patient|hospital|\b(?:a|the|this|each|every|past|active|open|one) stays?\b|\bstays? (?:is|was|begins|ends|are|active|running)\b/i;
+// `admit|admission|ward|discharge` are here because the auditor wrote a false claim that used none
+// of the other words: "Medication logging is paused while she is ADMITTED; the WARD gives the doses,
+// not you." A caregiver can describe a hospital stay without ever writing "stay" or "hospital", and a
+// sentence outside the scope is a sentence nobody is ever asked to review.
+const SCOPE = /in-?patient|hospital|admit|admission|\bward\b|discharge|\b(?:a|the|this|each|every|past|active|open|one) stays?\b|\bstays? (?:is|was|begins|ends|are|active|running)\b/i;
 const NARROW = /\blog|\bdose|\bmedication|\bmeds?\b|button|card|track|miss|restrict|lock|pause|block|available/i;
 const CODEY = /[{}]|=>|function |style|onClick|medId:|VALID_VIEWS|await |const |h\('/;
 const BOUND = /[.?!";\n]|\\u2014|—/;
@@ -159,6 +184,113 @@ t('every live sentence about a hospital stay is one a person has reviewed',
 // by saying nothing at all, which leaves a caregiver with no idea what a stay does.
 t('the app still explains what a stay DOES change',
   /counted as the hospital|treated as the hospital|not counted as missed|hospital'?.?s, not as misses/i.test(code), '');
+
+// ---------------------------------------------------------------------------------------------
+// 3. THE GROUND TRUTH, IN A REAL BROWSER: with a hospital stay OPEN, tapping Log must write a dose.
+//
+// This is the only check here that cannot be routed around. Two source-shaped versions of it were
+// beaten by simply moving the guard -- into status(), and into an inlined lookup with no call
+// expression -- while every suite in this repository stayed green and the pre-v67 lockout was fully
+// reinstated. You cannot enumerate the places a guard is forbidden to live. You can seed a stay,
+// press the button a caregiver presses, and require the dose to be in the store afterwards.
+//
+// It fails both ways a lock can be built: a lock in status() removes the Log button entirely (no
+// button to press), and a lock inside logMed() leaves the button but writes nothing.
+const server = http.createServer((rq, rs) => {
+  if (rq.url.startsWith('/index.html')) { rs.writeHead(200, { 'Content-Type': 'text/html' }); rs.end(src); return; }
+  rs.writeHead(204); rs.end();
+}).listen(0, '127.0.0.1');
+await new Promise(r => server.once('listening', r));
+const URL_ = 'http://127.0.0.1:' + server.address().port + '/index.html';
+
+const P = 'chemowell-app-p-p1-';
+const NOON = (() => { const d = new Date(); d.setHours(12, 0, 0, 0); return d.getTime(); })();
+const SEED_ENTRIES = [
+  // AN OPEN STAY: a start with no matching end is what "she is in hospital right now" looks like.
+  { id: 'ip1', medId: 'inpatient_start', dose: 'In-patient start', mg: 0, ts: NOON - 86400000 }
+];
+// An as-needed medication with no gap and no day restriction, so the ONLY thing that could stop it
+// being logged is a hospital-stay rule. If this suite ever goes red for another reason, the fixture
+// is wrong, not the app.
+const SEED_MEDS = { version: 1, archivedMeds: [], meds: [
+  { id: 'testmed', name: 'Test Medication', type: 'prn', quickLog: true, gapHours: 0,
+    doses: ['1 tablet'] }
+]};
+// tourDone AND browserNoticeSeen both matter. Without tourDone the 10-step welcome guide covers
+// every screen; without browserNoticeSeen the web-preview notice sits over Home, and the first run
+// of this suite clicked a button underneath it and reported that logging was blocked. The app was
+// fine; the fixture was measuring a notice.
+const SEED_PREFS = { patientName: 'Test Patient', sex: 'female', treatmentType: 'chemo',
+  tourDone: true, browserNoticeSeen: true, ceilingMg: 2500, tempUnit: 'Fahrenheit', weightUnit: 'lbs' };
+
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+await ctx.route('**/*', route => {
+  const u = route.request().url();
+  if (u.startsWith('http://127.0.0.1:' + server.address().port)) return route.continue();
+  if (u.includes('cdn.jsdelivr.net')) return route.fulfill({ status: 200, contentType: 'application/javascript', body: '/* stubbed */' });
+  return route.abort();
+});
+const page = await ctx.newPage();
+const pageErrors = [];
+page.on('pageerror', e => pageErrors.push(String(e)));
+await page.addInitScript(([p, entries, meds, prefs]) => {
+  if (localStorage.getItem(p + 'entries-v1')) return;
+  localStorage.setItem(p + 'entries-v1', JSON.stringify(entries));
+  localStorage.setItem(p + 'med-v1', JSON.stringify(meds));
+  localStorage.setItem(p + 'prefs-v1', JSON.stringify(prefs));
+}, [P, SEED_ENTRIES, SEED_MEDS, SEED_PREFS]);
+await page.goto(URL_, { waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(1800);
+
+// The fixture has to have taken, or everything below measures a first-run setup screen.
+const ready = await page.evaluate(seedName => {
+  if (!document.querySelector('[data-tour="nav-home"]')) return 'still on first-run setup';
+  const main = document.querySelector('main');
+  if (!main) return 'no <main> rendered';
+  if (main.innerText.indexOf(seedName) < 0) return 'the seeded medication is not on Home';
+  // And the stay must actually be open, or this is just a normal log and proves nothing.
+  if (main.innerText.indexOf('In-Patient active') < 0) return 'no hospital stay is active — the fixture did not take';
+  return true;
+}, SEED_MEDS.meds[0].name);
+t('a hospital stay is open and the seeded medication is on Home', ready === true,
+  ready === true ? '' : String(ready));
+
+if (ready === true) {
+  const before = await page.evaluate(p => JSON.parse(localStorage.getItem(p + 'entries-v1') || '[]').filter(e => e.medId === 'testmed').length, P);
+  // EXACT TEXT, not "a Log button", and not "a Log button somewhere inside an element that mentions
+  // the medication". The first version walked up six ancestors looking for the med name and found
+  // "Log In-Patient End" instead -- which ENDED THE STAY the whole check depends on, so the suite
+  // was quietly testing normal logging. The Quick Log control reads "Log <medication name>".
+  const clicked = await page.evaluate(name => {
+    const want = 'Log ' + name;
+    const b = [...document.querySelectorAll('main button')].find(x => (x.innerText || '').trim() === want);
+    if (!b) return false; b.click(); return true;
+  }, SEED_MEDS.meds[0].name);
+  // A lock in status() takes the Log button away entirely and shows a "Restricted" chip instead.
+  t('the Log button is still there while a stay is open', clicked,
+    clicked ? '' : 'no Log button on Home — a stay is locking the card, which is the pre-v67 defect');
+  await page.waitForTimeout(900);
+  // LOG OPENS THE TIME MODAL; CONFIRM IS WHAT WRITES. logMed() only calls setState({ timeModal }) --
+  // the dose is written by confirmTimeAndLog(). The first version of this check stopped after the
+  // first tap and reported that logging was blocked during a stay, on an app that was fine. Half a
+  // user journey is not a user journey, and a check that stops early fails for the wrong reason.
+  const confirmed = await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find(x => (x.innerText || '').trim() === 'Confirm');
+    if (!b) return false; b.click(); return true;
+  });
+  t('the time modal opened and offered Confirm', confirmed,
+    confirmed ? '' : 'no Confirm button — the log flow did not open');
+  await page.waitForTimeout(1200);
+  const after = await page.evaluate(p => JSON.parse(localStorage.getItem(p + 'entries-v1') || '[]').filter(e => e.medId === 'testmed').length, P);
+  // A lock inside logMed() leaves the button and writes nothing.
+  t('tapping Log during a hospital stay actually records the dose', after === before + 1,
+    before + ' dose(s) before, ' + after + ' after');
+  t('the app logged no errors while doing it', pageErrors.length === 0, pageErrors.join(' / '));
+}
+
+await browser.close();
+server.close();
 
 console.log('\n' + (fail ? fail + ' FAILED' : 'all checks passed'));
 process.exit(fail ? 1 : 0);

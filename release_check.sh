@@ -424,6 +424,17 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
           echo "   Fix what it found and re-run that stage against a later commit. A sign-off from a"
           echo "   different desk does not answer it."
           ;;
+        "")
+          # UNREADABLE IS NOT SILENT EITHER. report_verdict returns empty for a report this gate
+          # cannot parse -- among other things, one carrying two or more unindented AUDITED-COMMIT
+          # lines. Reporting only the parseable refusals would mean a REFUSING BUT AMBIGUOUS report
+          # goes unmentioned in exactly the branch added to stop the important reason going
+          # unmentioned. That is the third time this file has had that shape; it does not get a
+          # fourth. "I cannot read this" is never "this raises no objection".
+          echo "   AND a report on record cannot be read, so its verdict is UNKNOWN: $_f"
+          echo "   It must open with, flush left and adjacent, exactly one 'AUDITED-COMMIT: <sha>'"
+          echo "   line and then 'VERDICT: SHIP' or 'VERDICT: DO NOT SHIP'."
+          ;;
       esac
     done
     echo "   Every suite passing is SELF-verification. APP_CLAUDE.md rule 5 requires an independent"

@@ -1,188 +1,177 @@
-# Zero Day Audit — ChemoWell app-v70 (re-audit)
-
-AUDITED-COMMIT: 095b56d16495d37d41d793a2dce42d23de6da811
+AUDITED-COMMIT: 07e6d39
 VERDICT: DO NOT SHIP
 
-Supersedes the audit of the previous commit (`f0c74ca`), whose verdict was DO NOT SHIP.
-Auditor: Zero Day Auditor · Date: 2026-08-31
-Scope, as directed: concentrated on the two rewritten gates rather than re-proving the removal
-logic I already could not break.
+# Zero Day Audit — ChemoWell app-v70 (third pass)
 
-## VERDICT: DO NOT SHIP
+Supersedes the audits of `f0c74ca` and `095b56d`, both of which refused. Auditor: Zero Day Auditor ·
+2026-08-31. Scope, as directed: the rewritten allow-list gate, its ground-truth check, and
+`release_check.sh` as machinery.
 
-*(Header note, added by the Lead Developer, not the Auditor: `release_check.sh` reads the
-verdict as the line IMMEDIATELY after `AUDITED-COMMIT:`, flush left and unprefixed. This
-report stated its verdict here instead, under a `##` heading eight lines down, so the gate
-could not read it — and an unreadable report is one the gate refuses rather than one that
-raises no objection. The two required lines are now at the top, carrying this report's
-verdict unchanged. The briefing that asked only for "a clear verdict line" was wrong, and
-that is the Lead Developer's error, not the Auditor's.)*
+## The headline
 
-Blocker 2 is genuinely fixed and I could not get past it. Blocker 1's *fix* is correct — the app no
-longer says the wrong thing anywhere. But **the new gate written to keep it correct does not work.**
-I got four different false claims past it, including the verbatim sentence it was written to catch,
-and I made the app really lock dose logging during a hospital stay while it reported all green.
+**I reinstated the pre-v67 lock — the app genuinely refuses to log any dose while a hospital stay is
+active — and `v70-stay-does-not-lock.mjs` reported `all checks passed`. Twice, two different ways.
+No other suite in the repo caught it either.**
 
-You asked me to assume a third hole in the past-tense exemption. There is one. There are also three
-holes that have nothing to do with the exemption.
+The allow-list itself is a real improvement and I could not break it the way I broke the blacklist.
+The prose half of this gate is now sound. The **ground-truth half is not**, and the ground truth is
+the half that matters: prose that is true today stays true only because the code stays true.
 
 ---
 
-## BLOCKER A — `test/v70-stay-does-not-lock.mjs` does not do the job it is named for
+## BLOCKER — the ground-truth check reads two functions, and the lock does not have to live in them
 
-The prose fixes are all correct and verified against the code, not against other prose:
-`index.html:8717` now says logging is not locked, `ip-undo` no longer implies logging was abnormal,
-and `miss-false-missed` now describes the per-window rule instead of the whole-day model. Good.
+You asked me to find a dose-writing path that is neither `logMed()` nor `confirmTimeAndLog()`, or a
+way to block logging without a call expression matching the pattern. Both exist. Each is a single
+insertion, each was verified applied by grep before I drew any conclusion, and each was run against
+the committed suite from a scratch copy outside the repo.
 
-The gate meant to hold that in place is the problem. Five sabotages, all on scratch copies outside
-the repo, each verified applied by grep before running. **One goes red. Four do not.**
+### B1 — put the lock back where it actually used to live: `status()`
 
-| # | The sentence I put on the In-Patient screen (present tense, false, live) | Gate |
+    function status(med) {
+      const now = state.now;
+      if (isInpatientActiveNow()) return { locked: true, inpatient: true };
+
+`logMed()` calls `status(med)` on its second line and obeys it:
+`if ((st.locked || offDay) && !opts.force) { setState({ override: ... }); return; }`. So every Quick
+Log button is locked out for the duration of a stay, and the card renderers show it as locked. This
+is not a hypothetical regression — **`status()` is where the "Restricted" behaviour lived before
+v67**, so it is the single most likely place for it to come back.
+
+    Result: all checks passed
+      PASS  logMed() does not consult a hospital stay before writing a dose
+      PASS  confirmTimeAndLog() does not consult a hospital stay before writing a dose
+
+Both green sentences are true as written and both are irrelevant. The lock is one frame up.
+
+### B2 — block inside `logMed()` itself, with no call expression matching the pattern
+
+    const ipRows = state.entries.filter(e => e.medId === 'inpatient_start' || e.medId === 'inpatient_end').sort((a, b) => a.ts - b.ts);
+    const lastIp = ipRows[ipRows.length - 1];
+    if (lastIp && lastIp.medId === 'inpatient_start') { setToast('Not available right now'); return; }
+
+This is inside the very function the check reads, and it blocks every dose log during an open stay.
+`/\w*[Ii]n[Pp]atient\w*\(/` requires a `(` after the word; here the word only ever appears inside
+string literals.
+
+    Result: all checks passed
+
+Widening the pattern to catch identifiers as well as calls would stop B2 and would not touch B1.
+
+### Nothing else in the harness catches either one
+
+I ran both sabotages against every suite that plausibly covers this behaviour — including the v67
+suites that exist *because* of this exact behaviour change:
+
+| Suite | B1 | B2 |
 |---|---|---|
-| S5 | *"Home medication logging is paused while a stay is active — the hospital is administering doses, not you."* (the exact pre-fix wording) | **1 FAILED** ✓ |
-| S1 | *"Home medication logging is **suspended** while a stay is active…"* | **all checks passed** ✗ |
-| S2 | *"You **can't log** medications while a stay is active…"* | **all checks passed** ✗ |
-| S3 | *"Home medication logging is paused while a stay is active — that **was** decided when in-patient tracking **was** added."* | **all checks passed** ✗ |
-| S4 | *"Every **dose button is locked** while a stay is active…"* | **all checks passed** ✗ |
+| `v67-inpatient-window.mjs` | 10/10 | 10/10 |
+| `v67-medflag-backfill.mjs` | 4/4 | 4/4 |
+| `v67-chemo-offset.mjs` | 26/26 | 26/26 |
+| `v68-treatment-clamp.mjs` | PASS 28 FAIL 0 | PASS 28 FAIL 0 |
+| `v70-stay-does-not-lock.mjs` | all green | all green |
 
-**S3 is the one you asked me to hunt, and it is the worst.** The claim is byte-identical to S5 —
-the CLAIMS family *does* match it. The exemption then releases it, because `sentenceAround()` splits
-on `.` `?` `!` and `"` **but not on the em-dash or the semicolon**, and this codebase writes in
-em-dashes on almost every line. So any present-tense claim joined by a dash to any clause containing
-`was` or `were` — two of the commonest words in English — inherits that clause's exemption. The
-hatch has now been holed three times in three different ways (±220 chars, the leading question, and
-now the intra-sentence dash), which is the signal that the shape is wrong rather than the radius.
+A full reinstatement of the defect this release exists to prevent ships silently, with every gate
+green.
 
-**S1, S2 and S4 are a separate and larger problem, and they are the same mistake this release was
-opened to fix.** The commit's own transferable lesson is: *"a grep for the sentence you have already
-fixed always comes back clean."* The CLAIMS family is a family of **phrasings of the sentences
-already fixed**, not a family of **meanings**:
+**What would work.** Stop enumerating the functions that must be innocent and assert the behaviour
+instead: in a browser, seed an open stay, click a Quick Log button, and require the entry to land in
+`localStorage`. That is one check, it cannot be routed around by moving the guard, and it is the
+same shape as the browser suite that already catches a dead Remove button.
 
-- `logging (pauses|stops|is blocked|is locked|is disabled)` — misses *suspended*, *halted*, *off*,
-  *unavailable*, *on hold*.
-- The "cannot log" rule requires the passive *"cannot **be** logged"*. The active *"you can't log"*
-  — how a person would actually write it — walks straight through.
-- Every rule that mentions locking requires the literal word **logging** next to it. *"Every dose
-  button is locked"*, *"the medication cards are disabled"*, *"Log buttons are greyed out"* all
-  walk through, and none of them mention logging by name.
+## FINDING — a false claim can sit outside the scanner's reach
 
-**BLOCKER A2 — the ground-truth check does not check the ground truth.** The file's stated promise
-is that *"if the app ever really does start locking logging, the gate fails rather than the prose
-going quietly wrong."* I tested that literally. One line at the top of `logMed()`:
+You asked for a claim that lands outside SCOPE, NARROW and CODEY. SCOPE requires the words
+`in-patient`, `hospital`, or `stay` in a recognised construction. A caregiver-facing sentence can
+describe a hospital stay without using any of them:
 
-    if (isInpatientActiveNow()) { setToast('Not available right now'); return; }
+    '. Medication logging is paused while she is admitted; the ward gives the doses, not you.'
 
-`logMed()` is the real dose path — three Quick Log call sites (`index.html:3610`, `3614`, `5121`).
-Every dose log in the app is now blocked during a hospital stay, which is precisely the v67
-regression, and the prose is now the thing that is wrong (it promises nothing is locked).
+    Result: all checks passed
 
-    Result: all checks passed — including
-      PASS  inpatientCoversMoment is defined once and called once — a stay still touches exactly one rule
+*Admitted*, *admission*, *on the ward*, *while she is in* — all invisible. This is a narrower hole
+than the blacklist's, because the allow-list still forces review of every sentence that does use the
+scope vocabulary, and a writer reintroducing this claim would most likely say "stay". It is a
+finding, not the blocker. Adding `admit|admission|ward|discharge` to SCOPE closes it.
 
-That check counts occurrences of `inpatientCoversMoment(`. My lock uses `isInpatientActiveNow()`, so
-the count is still 2 and the check is still green. It is a tripwire on one function name, not a
-statement about what a stay does. Its green sentence is false, which is the failure mode this
-release already declared unacceptable: *a check that prints a false sentence in green is worse than
-no check.*
+**Credit where it is due — the attack I expected to work did not.** I predicted the `CODEY`
+exclusion would swallow a claim written without a closing full stop, so that its sentence fragment
+ran on into the surrounding `}` and got dropped as code:
 
-**What would actually work.** Invert it. Instead of enumerating bad phrasings, enumerate the small
-set of live strings that mention a stay at all and require each to be on an allow-list, so a NEW
-sentence about stays fails until somebody looks at it. And for the ground truth, assert on the
-*call sites that gate logging* — that `logMed()` and `confirmTimeAndLog()` contain no reference to
-any in-patient predicate — rather than counting one helper's name.
+    '. Home medication logging is paused while a stay is active, so the hospital can give the doses'
 
-## BLOCKER B — FIXED. I could not break it.
+    Result: 1 FAILED — every live sentence about a hospital stay is one a person has reviewed
+      NEW OR CHANGED: "Home medication logging is paused while a stay is active, so the hospital can give the doses..."
 
-The rewritten button-name check in `test/v69-treatment-date-help.mjs` is sound. The extractor is
-real: it reports the card's actual labels — `Remove | Confirm clear | Keep | Clear | ▲ | ▼ | Update
-| Set date` — parsed from the `h('button', …)` calls inside a paren-bounded card, and it self-tests
-with `Paracentesis` as the name that must be absent. Both of my earlier escapes are dead, and so are
-two more I tried:
+The boundary set catches it. The prose half of this gate is genuinely solid.
 
-| # | Sabotage | Baseline | Result |
-|---|---|---|---|
-| V3 | escape A — `press **Save schedule**` (invented name, different verb) | 26/26 | **24/26, 2 FAILED** ✓ |
-| V4 | escape B — `tap **Paracentesis**` | 26/26 | **24/26, 2 FAILED** ✓ |
-| V2 | invented capitalised control with **no verb** — `use the **Save Schedule** control` | 26/26 | **24/25, 1 FAILED** ✓ |
-| V5 | rename the real button on the card (`Set date` → `Save date`), Help unchanged | 26/26 | **24/26, 2 FAILED** ✓ |
+## The allow-list is truthful, as far as I can check it
 
-One residual gap, recorded as a finding rather than a blocker: the check reads only the topic's
-`steps`. I put *"Fix a wrong date with the **Save schedule** button on the card"* into the topic's
-**answer** paragraph (`a:`) — an instruction naming a control that does not exist — and the suite
-reported **26/26, exit 0**. The answer field is prose rather than step-by-step instructions, which
-is why I am not calling it a blocker, but it is the same defect class and the fix is one line:
-run `boldNames` over the whole topic, not just the steps.
+I read all 33 entries against the code rather than against each other. I found nothing untrue. The
+historical entry — *"Medications showed as 'Restricted' and could not be logged at all while a stay
+was active…"* — is correctly framed in the past and describes real prior behaviour, which is exactly
+the sentence the old past-tense exemption existed to protect and now needs no exemption at all.
 
-The lowercase-bold allowance you flagged as a judgement call is fine. Every real button label in the
-app is capitalised, and a lowercase invented control name would not read as a button to anyone. The
-only thing it lets through is a lowercase invented control named with no verb, which is not a
-plausible way for this defect to recur.
+One completeness note, not a falsehood: several allow-listed sentences say a dose window is treated
+as the hospital's when it *opened* during the stay. `inpatientCoversMoment()` also suppresses a
+**whole calendar day** for the legacy `inpatient` day-marker entry. No live sentence is wrong
+because of it; there is simply no sentence describing it.
 
-## FINDING 6 — closed, and the check is real
+## `release_check.sh` — the machinery
 
-Reverting `e.loggedAt || e.ts || 0` back to `e.loggedAt || 0` turns the unit suite red on exactly
-the reasoning I gave: **14/16**, failing *"the date with no loggedAt can still be removed"* with
-`20,25` — the date survived its own removal — and *"and removing the other one leaves nothing
-behind"*. Right check, right reason, right failure message. This one is done properly.
-
-## FINDING 4 / FINDING 5 — accepted
-
-The unreachable toast branch is annotated rather than deleted, with an accurate note. Finding 5
-(the headline jumping to the furthest treatment after a removal, via `nextChemoTs()`'s tie-break) is
-logged for its own release, which is the right call — it is pre-existing shape and not a safety
-issue.
+- **Helper ordering is correct.** `report_headline`/`report_headcount`/`report_pair`/`report_sha`/
+  `report_verdict` are defined at lines 376–391; the earliest use is line 420, and every other use
+  (480, 489, 523, 541–543, 556, 560) is below that. Nothing calls them before they exist.
+- **No variable clobbering.** The new loop uses `_f`/`_fs`; `report_pair` sets `_n` and `report_sha`
+  sets `_raw`. The earlier loop that builds `AUDIT_ALL`/`PM_ALL` also uses `_f`, but it completes
+  before the new loop starts, so the reuse is safe.
+- **The new loop has one blind spot, and it is the same shape as the scar it was written for.** It
+  reports a refusal only when `report_verdict` returns a value, and `report_pair` returns empty for
+  any report with two or more unindented `AUDITED-COMMIT:` lines. So in this branch — a report
+  missing — a *refusing but ambiguous* report is silently not named, which is once again the most
+  important reason going unmentioned. One extra `case` arm printing "…and one report on record is
+  unreadable, so its verdict is unknown" would close it.
+- The end-anchored verdict pattern is right: `VERDICT: SHIPPING SOON` cannot read as SHIP.
 
 ## Suite runs — real numbers from this tree, this session
 
-Every figure below is from a run I executed against the committed tree. I did not take any number
-on trust.
-
-- `test/v70-stay-does-not-lock.mjs` — 3 checks, all green, exit 0. **The total is meaningless; see
-  Blocker A.**
-- `test/v69-treatment-date-help.mjs` — **26/26**, exit 0. Trustworthy this time.
-- `test/v70-remove-one-date.mjs` — **16/16**, exit 0.
-- `test/v70-remove-one-date-browser.mjs` — **15/15**, exit 0.
-- `test/overflow-scan.mjs` — **170 of 170 scanned, 0 overflowing, CLEAN, exit 0.**
-
-## FINDING 3 — fixed, and I re-ran my own sabotage to prove it
-
-The needle is now `'In-Patient active'`, the string actually on screen, where `"Day N of … stay"`
-never was. I rebuilt the sabotage that defeated the old one — `if (inpatientActiveNow)` → `if
-(true)`, so the banner renders permanently, verified applied — and re-ran the full scan:
-
-    committed tree : 170 of 170 scanned, 0 overflowing — CLEAN,     exit 0
-    banner forced  : 160 of 170 scanned, 10 COULD NOT BE REACHED — NOT CLEAN, exit 1
-                     COULD NOT OPEN no-stay:home at 320px … 428px (the stay banner is still on Home)
-
-Last time these two runs produced byte-identical CLEAN logs. Now the pass reports itself unreachable
-at all ten widths and the scan fails. That is what an honest receipt looks like.
+- `test/v70-stay-does-not-lock.mjs` — 7 checks, all green, exit 0. **The green is not load-bearing;
+  see the blocker.**
+- `test/v69-treatment-date-help.mjs` — **27/27**, exit 0. My residual finding is closed: the answer
+  paragraph is read now.
+- `test/v70-remove-one-date.mjs` — **16/16**. `test/v70-remove-one-date-browser.mjs` — **15/15**.
+- `test/overflow-scan.mjs` — **170 of 170 scanned, 0 overflowing elements, CLEAN, exit 0.**
+- Both sabotaged builds are live working apps, not crashed ones: `v70-remove-one-date-browser.mjs`
+  reports **15/15, all checks passed** against B1 and against B2, including *"the app logged no
+  errors while doing any of this"*. So the stay gate's green came from a functioning app with the
+  lock in place, not from a build that failed to load.
+- `bash release_check.sh` reads this report correctly: *"a report on record REFUSES this release:
+  outputs/AUDIT_app-v70.md (examined 07e6d39) says DO NOT SHIP"*. Both of your `release_check.sh`
+  fixes — the header/verdict pair format and the new refusal loop in the missing-report branch —
+  work as described.
 
 ## What has to happen before this can ship
 
-1. Rewrite `v70-stay-does-not-lock.mjs` so S1, S2, S3 and S4 all go red. The exemption needs to stop
-   being a tense heuristic over a hand-rolled sentence splitter; an allow-list of the known-good
-   sentences is both simpler and unfoolable.
-2. Make the ground-truth check assert on the logging path itself, so S6 goes red.
-3. Re-run all six of my sabotages and show them red. They are reproducible from the descriptions
-   above; each is a single string replacement in `index.html`.
-4. Optional, one line: extend the v69 bold-name check from `steps` to the whole topic so V1 goes red.
+1. Replace the two-function ground truth with a behavioural check: open stay seeded, Quick Log
+   clicked, entry required in the store. B1 and B2 must both go red against it.
+2. Widen SCOPE with `admit|admission|ward|discharge` so the "while she is admitted" claim is scoped
+   in for review.
+3. Add the unreadable-report arm to the new `release_check.sh` loop.
+4. Re-run B1, B2 and A1 and show them red.
 
-Nothing else in this release is blocking. The append-only removal, the version bumps, the browser
-suite and the v69 gate are all in good shape.
+Everything else in this release is in good shape: the allow-list, the v69 button-name check, the
+overflow needle, the removal logic and the version bumps.
 
 ## Audit hygiene
 
-Every sabotage lived under the session scratchpad, outside the repository, and each suite was
-pointed at it with `--file`. Each was verified applied by grep before any conclusion was drawn from
-a green — no result above rests on a sabotage that did not take. Nothing was committed or pushed;
-`/home/user/care-tracker` was not touched. The working tree was verified free of sabotage strings at
-close.
+All sabotage lived under the session scratchpad, outside the repository, applied with `--file`. Each
+was verified applied by grep before any conclusion was drawn from a green. Nothing was committed or
+pushed and `/home/user/care-tracker` was not touched.
 
-## Note on the working tree at the end of this re-audit
+## Note on the working tree at the end of this pass
 
-As happened last time, uncommitted edits appeared in the repo from another worker while I was
-writing up — `test/v70-stay-does-not-lock.mjs` is being rewritten from a blacklist of phrasings to
-an allow-list of known-good sentences, which is the right direction and matches recommendation 1
-above. **None of that is audited here.** This verdict is against the commit named at the top of this
-file. A further re-audit is required against whatever is committed next, and it must show all six of
-my sabotages (S1, S2, S3, S4, S6, and optionally V1) going red on that tree.
+As in both previous passes, uncommitted edits from another worker appeared in the repo while I was
+writing up — `release_check.sh` and `test/v70-stay-does-not-lock.mjs`. **None of that is audited
+here.** This verdict is against the commit named in the header. The next pass must show B1, B2 and
+A1 going red on whatever is committed, and the descriptions above are complete enough to reproduce
+all three as single insertions into `index.html`.
