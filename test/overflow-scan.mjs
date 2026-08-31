@@ -91,7 +91,13 @@ const SEED_ENTRIES = [
   // being offered — the suite then failed at all ten widths with "the seeded medication is missing"
   // and nothing wrong with the app. Noon is the furthest point from both edges of a local day.
   { id: 's6', medId: 'chemo_date', dose: 'Treatment scheduled', mg: 0, ts: NOON_3D_AGO, loggedAt: NOON_3D_AGO },
-  { id: 's7', medId: 'symptom_nausea', dose: 'Sharp rib pain after the second dose, worse lying down', mg: 0, ts: NOON - 12600000 }
+  { id: 's7', medId: 'symptom_nausea', dose: 'Sharp rib pain after the second dose, worse lying down', mg: 0, ts: NOON - 12600000 },
+  // AN OPEN HOSPITAL STAY. Home renders an extra banner while one is active, and nothing here ever
+  // seeded one -- so the PM found a 4px overflow on that banner at 320px by hand, on a screen this
+  // scan had walked ten times and called clean. A screen that only exists in a particular state is
+  // a screen this scan does not cover until it puts the app into that state.
+  // Started yesterday and never ended, which is what "she is in hospital right now" looks like.
+  { id: 's8', medId: 'inpatient_start', dose: 'In-patient start', mg: 0, ts: NOON - 86400000 }
 ];
 // A medication carrying the app-v68 treatment-window fields, because the med editor and the med
 // list chips are exactly what that release changed.
@@ -598,7 +604,11 @@ for (const dev of DEVICES) {
         // No seeded rows for these two, so assert the controls and the empty-state sentence that
         // only the real screen renders — both survive an honest empty install, neither survives a
         // screen that lost its body.
-        inpatient: ['Log In-Patient Start', 'IN-PATIENT HISTORY'],
+        // 'Log In-Patient' matches BOTH states -- the button reads "Start" with no stay open and
+        // "End" while one is. Pinning the Start wording made this screen unreachable the moment the
+        // fixture seeded a stay, which is a needle that only held because the app was only ever
+        // tested in one of its two states.
+        inpatient: ['Log In-Patient', 'IN-PATIENT HISTORY'],
         symptoms:  ['Nausea, fatigue']
       }[key] || [];
       for (const needle of must) {

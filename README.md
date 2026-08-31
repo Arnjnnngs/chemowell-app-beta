@@ -151,3 +151,38 @@ One note on the suite itself: its first locator searched for `"treat-clear"` and
 inside **another topic's `related` list**, extracting the wrong 50 characters and reporting four
 failures against an app that was already correct. Anchored to `{ id: "treat-clear"`. The same shape
 as this project's `keywords: [` incident, where a literal in ordinary prose fooled a gate.
+
+### A hospital stay made the whole app scroll sideways
+
+The PM found "Home is 4px too wide at 320px during a hospital stay" by hand. Putting the render
+scan into that state found **two** defects, one of them on eight of the ten widths.
+
+- **The page itself was wider than the phone.** The In-Patient banner's **Log In-Patient End**
+  button sat in a non-wrapping row as a fixed-width item beside a flexible one, so it forced the
+  document to 324px on a 320px screen. The entire app scrolled sideways because one button would
+  not give way. The row wraps now.
+- **The stay statistics spilled their tiles** at every width from 320 to 390. Four tiles across a
+  320px phone leaves each one 34px of usable width; the word TOTAL alone needs 36px. They are two
+  by two now, sized from the longest label rather than from how many look tidy.
+
+**Neither was visible to a scan that had walked In-Patient ten times and called it clean**, because
+it had never once opened the app *with a stay in progress* — so that banner had never been drawn
+under test. Seeding one immediately exposed a third thing: the scan's own In-Patient needle was
+pinned to "Log In-Patient Start", which does not exist while a stay is open, so the screen went
+unreachable at every width. The needle only ever held because the app had only ever been tested in
+one of its two states.
+
+**On the falsification, because it took four attempts and the reason is worth keeping.** Reverting
+the button change alone left the scan clean. Reverting the row's `flexWrap` alone also left it
+clean. Only reverting **both together** turned it red — the two changes were each independently
+sufficient, so neither could be falsified on its own. A fix nobody can falsify is a fix nobody can
+safely remove later, so the button was returned to exactly how it was and the wrap kept as the
+single load-bearing change, which *is* provable alone.
+
+That is a distinct failure from the two already recorded this week. A sabotage that does not apply
+gives a green that proves nothing; a sabotage that fires the wrong check gives a red that proves the
+wrong thing; **two redundant fixes give a green that proves neither.** All three look like evidence.
+
+**Gate:** `test/overflow-scan.mjs` — 140 of 140 combinations, 0 overflowing, with an open hospital
+stay in the fixture. Falsified: both levers reverted → the page-width finding returns; four-across
+tiles → the label overflow returns at the same pixel counts.

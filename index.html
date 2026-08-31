@@ -4475,12 +4475,16 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   if (inpatientActiveNow) {
     const ipDayN = daysSinceInpatientStart();
     const ipTone = NOTICE_TONES.attention;
-    parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderLeft: '4px solid ' + ipTone.accent, borderRadius: '14px', padding: '14px 16px', display: 'flex', gap: '12px', alignItems: 'center', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
+    parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderLeft: '4px solid ' + ipTone.accent, borderRadius: '14px', padding: '14px 16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
       h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: ipTone.chipBg, color: ipTone.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, '+'),
       h('div', { style: { flex: '1' } },
         h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127', marginBottom: '2px' } }, 'In-Patient active'),
         h('div', { style: { ...TYPE.caption, color: '#554A52' } }, (ipDayN !== null ? ('Day ' + ipDayN + ' — ') : '') + 'doses given by hospital staff are not counted as missed. You can still log anything yourself.')
       ),
+      // Unchanged, deliberately. Making this shrink ALSO fixed the overflow -- and two sufficient
+      // fixes are worse than one, because neither can then be falsified: reverting either alone left
+      // the scan clean, and only reverting both together turned it red. The wrap on the row above is
+      // the single load-bearing change, and it is provable on its own.
       h('button', { onClick: logInpatientEnd, style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: ipTone.accent, color: '#fff', fontSize: '13px', fontWeight: '700' } }, 'Log In-Patient End')
     ));
   }
@@ -8642,14 +8646,20 @@ function renderInPatient(now) {
   const periods = inpatientPeriods();
   // New stats row -- a quick "how much of this has there been" summary a caregiver/patient can
   // scan at a glance, instead of having to read through every history row to piece it together.
-  const statTile = (label, value) => h('div', { style: { flex: '1', minWidth: '0', background: '#FFFFFF', border: '1px solid rgba(154,100,25,0.18)', borderRadius: '14px', padding: '11px 12px', textAlign: 'center' } },
+  const statTile = (label, value) => h('div', { style: { flex: '1 1 calc(50% - 4px)', minWidth: '0', background: '#FFFFFF', border: '1px solid rgba(154,100,25,0.18)', borderRadius: '14px', padding: '11px 12px', textAlign: 'center' } },
     h('div', { style: { fontSize: '19px', fontWeight: '800', color: '#2A2127' } }, value),
     h('div', { style: { fontSize: '11px', fontWeight: '700', color: '#915E48', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' } }, label)
   );
   const totalDays = periods.reduce((sum, p) => sum + inpatientStayDays(p, now), 0);
   const longest = periods.length ? Math.max(...periods.map(p => inpatientStayDays(p, now))) : 0;
   const thisYear = periods.filter(p => new Date(p.start).getFullYear() === new Date(now).getFullYear()).length;
-  const stats = periods.length ? h('div', { style: { display: 'flex', gap: '8px', marginTop: '14px' } },
+  // TWO BY TWO, on every phone. At 320px four tiles across left each one 34px of usable width
+  // while the word TOTAL alone needs 36px, so labels spilled on eight of the ten widths.
+  // A 64px basis was my first attempt and was still too mean -- it left 58px of content and
+  // LONGEST needs 61px, so it fixed eight widths and left one. Sized from the longest LABEL
+  // instead of from how many tiles look tidy: half the row, less the gap. Four statistics across
+  // the narrowest phone was never going to read anyway.
+  const stats = periods.length ? h('div', { style: { display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap' } },
     statTile(periods.length === 1 ? 'Stay' : 'Stays', periods.length),
     statTile('Total days', totalDays),
     statTile('Longest', longest + 'd'),
