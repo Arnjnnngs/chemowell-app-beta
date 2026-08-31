@@ -173,7 +173,17 @@ t('and it did NOT pick up strings that are not buttons', !cardButtons.has('Parac
 
 // Every button Help tells the reader to press must be one of those. The verb is a family, not the
 // single word "tap": switching to "press" was one of the two escapes.
-const namedButtons = [...steps.matchAll(/\b(?:tap|press|hit|choose|select|touch)\s+\*\*([^*]+)\*\*/gi)]
+// THE ANSWER PARAGRAPH COUNTS TOO. The auditor's residual finding: this read only `steps`, so a
+// control invented in the topic's `a:` answer -- which the reader sees FIRST, above the steps --
+// passed at 26/26. The reader does not know or care which field a sentence lives in.
+const prose = (() => {
+  const i = topic.indexOf('a: ');
+  const j = topic.indexOf('steps: [');
+  return (i >= 0 && j > i ? topic.slice(i, j) : '') + steps;
+})();
+t('the topic\u2019s answer paragraph was located as well as its steps', prose.length > steps.length,
+  (prose.length - steps.length) + ' chars of answer');
+const namedButtons = [...prose.matchAll(/\b(?:tap|press|hit|choose|select|touch)\s+\*\*([^*]+)\*\*/gi)]
   .map(m => m[1].trim());
 t('Help names buttons to press at all (the extractor still works)', namedButtons.length >= 4,
   namedButtons.join(', ') || 'none found');
@@ -186,14 +196,14 @@ for (const label of namedButtons) {
 // front of it, which is escape A with one more step.
 const SCREENS = new Set(['Home', 'Treatment schedule', 'In-Patient', 'Meds', 'Reports', 'Symptoms',
                          'Settings', 'Help & FAQ', 'No date set', 'Days taken']);
-const boldNames = [...new Set([...steps.matchAll(/\*\*([^*]+)\*\*/g)].map(m => m[1].trim()))]
+const boldNames = [...new Set([...prose.matchAll(/\*\*([^*]+)\*\*/g)].map(m => m[1].trim()))]
   // Bold is also used for plain emphasis -- "this removes **every** date" -- and that is good
   // writing, not a control name. Every button label in this app is capitalised, so a lowercase
   // bold word is emphasis. An invented control ("**Save schedule**") is still capitalised and
   // still caught, which is the case this check exists for.
   .filter(n => !SCREENS.has(n) && /^[A-Z]/.test(n));
 for (const label of boldNames) {
-  t('every bold control name in the steps is a real button — **' + label + '**',
+  t('every bold control name in the topic is a real button — **' + label + '**',
     cardButtons.has(label), 'card buttons: ' + [...cardButtons].join(' | '));
 }
 // And the wording that was wrong: Clear does NOT confirm by tapping itself again.

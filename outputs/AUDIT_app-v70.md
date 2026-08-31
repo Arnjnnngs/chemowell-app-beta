@@ -1,273 +1,179 @@
-# Zero Day Audit — ChemoWell app-v70
+# Zero Day Audit — ChemoWell app-v70 (re-audit)
 
-AUDITED-COMMIT: f0c74ca3436068030d2d629f86b5c288eb1b22ab
+AUDITED-COMMIT: 095b56d16495d37d41d793a2dce42d23de6da811
 
-Branch: main (local) / claude/caretracker-chemowell-updates-k80ydk
-Auditor: Zero Day Auditor
-Date: 2026-08-31
-Scope: `removeChemoDate()` + per-date list, the Help corrections, the version bumps, and the four
-changed/new harness files.
+Supersedes the audit of the previous commit (`f0c74ca`), whose verdict was DO NOT SHIP.
+Auditor: Zero Day Auditor · Date: 2026-08-31
+Scope, as directed: concentrated on the two rewritten gates rather than re-proving the removal
+logic I already could not break.
 
 ## VERDICT: DO NOT SHIP
 
-Two blockers. One is a false statement the app makes on screen to a caregiver standing in a
-hospital. The other is that the headline new gate in this release — the check that is supposed to
-stop Help from naming a button that does not exist — does not work, and I made Help wrong twice
-while it reported all green.
+Blocker 2 is genuinely fixed and I could not get past it. Blocker 1's *fix* is correct — the app no
+longer says the wrong thing anywhere. But **the new gate written to keep it correct does not work.**
+I got four different false claims past it, including the verbatim sentence it was written to catch,
+and I made the app really lock dose logging during a hospital stay while it reported all green.
 
-The *storage* design at the centre of this release is sound and I could not break it. The problem
-is the Help work and the gate that was written to protect it.
-
----
-
-## BLOCKER 1 — the app still says medication logging pauses during a hospital stay
-
-This release exists partly to delete that claim. The commit says it was in three places and all
-three are fixed. It was in **five**. Two are still there, and the worse of the two is not in Help
-at all — it is on the In-Patient screen itself.
-
-**`index.html:8705`** — rendered directly under the amber "Active" chip whenever a stay is open:
-
-> Since <date>. Home medication logging is paused while a stay is active — the hospital is
-> administering doses, not you.
-
-That is false. Verified against the code, not against other prose:
-
-- `inpatientCoversMoment(ts)` (`index.html:3087`) is the only place a stay changes anything.
-- Its only caller is `index.html:1744`, inside missed-dose detection: `if
-  (inpatientCoversMoment(win.ws)) return;` — it suppresses a **missed-dose flag** for a window that
-  *opened* during the stay. Nothing else.
-- There is no lock, no disable, no "Restricted" state on any Log button while a stay is active.
-  The Home banner (`index.html:4528`) already says the true thing, and the Help topic
-  `ip-meds-restricted` documents that this changed on 2026-08-26 after Aaron hit it on a real
-  half-day stay.
-
-So the In-Patient tab now contradicts the Home banner, the FAQ, the tour, and its own help icon —
-all on the same subject, in the same build. This is the exact defect class the release was opened
-to close, left in the most-read location for it. Nothing in the harness guards this string; I
-grepped every suite in `test/` for it and got zero hits.
-
-**`index.html:2965`** — Help topic `ip-undo`, final step: *"The entry is removed and home
-medication logging goes back to normal."* Softer, but it still tells the reader logging was not
-normal during the stay. Same fix, same commit.
-
-Secondary, lower confidence: Help topic `miss-false-missed` says *"days inside a hospital stay are
-never flagged as missed"*. The real rule is per dose window, judged at the moment the window
-opened. A stay that ends at noon leaves that afternoon's and evening's windows flagged — which is
-the whole point of the 2026-08-26 change. "Days ... are never flagged" is the old whole-day model.
-Worth tightening while the file is open.
-
-## BLOCKER 2 — the new button-name check in `test/v69-treatment-date-help.mjs` cannot do its job
-
-The check pulls every `tap **X**` out of the topic's steps and requires `X` to be a real button on
-the card. The commit is explicit that this replaced a fixed list because the fixed list let a check
-*disappear*. The replacement has the same hole plus a new one. Both proven, on scratch copies,
-against the real suite:
-
-**Escape A — stop using the word "tap".** I changed one step from
-`then tap **Set date**` to `then press **Save schedule**`. Help now sends the reader to a button
-that does not exist anywhere in the app.
-
-    Result: 18/18 checks passed, exit 0, no failure of any kind.
-
-The only defence is `namedButtons.length >= 4`. Help currently names five buttons, so one can be
-silently dropped for free. (Dropping two does trip the floor — I confirmed that too: 16/17. So the
-gate catches a careless rewrite and misses a targeted one, which is backwards.)
-
-**Escape B — name something that is merely a quoted string near the card.** I changed the same step
-to `then tap **Paracentesis**`.
-
-    Result: 19/19 checks passed, and the suite printed, in green:
-      PASS  Help says tap **Paracentesis** and the card really renders a button called that
-
-It does not. `card` is a blind 6000-character slice starting at the first `'Treatment schedule'`
-literal, and the test is `card.includes("'" + label + "'")`. That window spills into an unrelated
-card and contains, among others: `'Paracentesis'`, `'Pick a date'`, `'Treatment date cleared'` (a
-toast), `'Treatment schedule'`, `'Keep'`, `'true'`, `'center'`, `'flex'`, `'column'`, `'mono'`.
-Any of those passes as "a real button label on the card".
-
-A check that prints a specific green sentence which is false is worse than no check, because the
-count still reads healthy and the sentence reads like evidence.
-
-The fix is not more regex: extract the actual button labels from the card by parsing
-`h('button', {...}, 'Label')` within a bounded region, compare Help's names against **that set**,
-and assert the set is non-empty and contains the labels the topic must name. And match the
-instruction verb generically (`tap|press|hit|choose|select`) or, better, check every `**X**` in the
-steps that is not a screen or tab name.
+You asked me to assume a third hole in the past-tense exemption. There is one. There are also three
+holes that have nothing to do with the exemption.
 
 ---
 
-## What I could NOT break — the append-only removal itself
+## BLOCKER A — `test/v70-stay-does-not-lock.mjs` does not do the job it is named for
 
-This is the part I attacked hardest, and it held.
+The prose fixes are all correct and verified against the code, not against other prose:
+`index.html:8717` now says logging is not locked, `ip-undo` no longer implies logging was abnormal,
+and `miss-false-missed` now describes the per-window rule instead of the whole-day model. Good.
 
-- **No new entry shape.** `removeChemoDate()` writes only `ts === 0` (the existing tombstone) and
-  `ts > 0` (the existing add). Confirmed in the store by the browser suite:
-  `{"count":6,"negatives":0,"medIds":["chemo_date"]}`. An older build restoring this backup reads
-  it correctly. The rejected negative-`ts` design would indeed have landed in 1970; rejecting it
-  was right.
-- **`chemoDayList()` is untouched.** Verified by diff.
-- **The `loggedAt` tie guard is real and it is falsifiable.** I replaced
-  `Math.max(Date.now(), latest + 1)` with plain `Date.now()`. The unit suite went **11/12**, red on
-  *"removing the last date leaves nothing"* — three removals inside one millisecond, tombstone tied
-  with its own re-adds, schedule not cleared. Right failure, right reason.
-  As a bonus the same `Math.max` also survives a device clock set **backwards**: `latest + 1` wins
-  and ordering stays monotonic. That was not claimed and it holds.
-- **Rapid double-tap is safe.** I traced this rather than guessing. `addEntryDB()` is declared
-  `async` but its body is entirely synchronous — `saveJSON` then `notifyEntries()`, which rewrites
-  `state.chemoDates` immediately. Every `await` inside `removeChemoDate()` therefore resolves as a
-  microtask, and microtasks drain before the next click event (a macrotask). A second tap cannot
-  land in the window between the tombstone and its re-adds, which is the only moment the schedule
-  is transiently empty.
-- **Remove with a tombstone already in the log**, **remove then add**, **remove a date not
-  present**, **remove the last one**: all covered by the unit suite and all behave.
-- **The `h()` trap does not apply.** The new `h()` calls pass no conditional or null-valued
-  attribute; the conditional is the whole subtree (`return null` when `< 2`), and `h()` skips null
-  children. The `key: String(d)` attribute is inert — this renderer rebuilds elements every time
-  and does no reconciliation — so it lands in the DOM as a meaningless `key="..."` attribute.
-  Cosmetic only; worth removing so a future reader does not think keys mean something here.
+The gate meant to hold that in place is the problem. Five sabotages, all on scratch copies outside
+the repo, each verified applied by grep before running. **One goes red. Four do not.**
 
-## Falsification log — every changed gate, broken on a scratch copy outside the repo
+| # | The sentence I put on the In-Patient screen (present tense, false, live) | Gate |
+|---|---|---|
+| S5 | *"Home medication logging is paused while a stay is active — the hospital is administering doses, not you."* (the exact pre-fix wording) | **1 FAILED** ✓ |
+| S1 | *"Home medication logging is **suspended** while a stay is active…"* | **all checks passed** ✗ |
+| S2 | *"You **can't log** medications while a stay is active…"* | **all checks passed** ✗ |
+| S3 | *"Home medication logging is paused while a stay is active — that **was** decided when in-patient tracking **was** added."* | **all checks passed** ✗ |
+| S4 | *"Every **dose button is locked** while a stay is active…"* | **all checks passed** ✗ |
 
-All sabotage applied to copies under the session scratchpad. Each copy was diffed against the base
-and parse-checked identically to the base before being run, so no green below comes from a
-sabotage that failed to apply.
+**S3 is the one you asked me to hunt, and it is the worst.** The claim is byte-identical to S5 —
+the CLAIMS family *does* match it. The exemption then releases it, because `sentenceAround()` splits
+on `.` `?` `!` and `"` **but not on the em-dash or the semicolon**, and this codebase writes in
+em-dashes on almost every line. So any present-tense claim joined by a dash to any clause containing
+`was` or `were` — two of the commonest words in English — inherits that clause's exemption. The
+hatch has now been holed three times in three different ways (±220 chars, the leading question, and
+now the intra-sentence dash), which is the signal that the shape is wrong rather than the radius.
 
-| # | What I broke | Suite | Baseline | Sabotaged | Verdict |
-|---|---|---|---|---|---|
-| B1 | `onClick` on the per-date Remove replaced with a no-op | v70 browser | 15/15 | **4 FAILED** | catches a dead button |
-| B1 | same | v70 unit | 12/12 | 12/12 | blind, as documented |
-| B2 | tombstone logged *after* its own re-adds (`base + 2`) | v70 browser | 15/15 | **3 FAILED** | catches wrong ordering |
-| B2 | same | v70 unit | 12/12 | **7/12** | catches it too |
-| B3 | tie guard removed (`Date.now()` alone) | v70 unit | 12/12 | **11/12** | right check, right reason |
-| B3 | same | v70 browser | 15/15 | 15/15 | cannot see it (real clock gaps) — acceptable, but not the "falsified three ways" the commit implies for the browser suite |
-| A2 | Help names a button that does not exist, avoiding the word "tap" | v69 help | 19/19 | **18/18 GREEN** | **HOLE** |
-| A3 | Help says tap **Paracentesis** | v69 help | 19/19 | **19/19 GREEN** | **HOLE** |
-| A1 | two fake names at once | v69 help | 19/19 | 16/17 | only the `>= 4` floor saves it |
-| B4 | re-adds kept in memory only, never persisted | v70 browser | 15/15 | **3 FAILED** (incl. "the removal survives a reload") | catches a removal that does not stick |
-| O1 | Home in-patient banner rendered with no open stay (`if (inpatientActiveNow)` → `if (true)`) | overflow-scan | 170/170 CLEAN | **170/170 CLEAN — byte-identical log** | **HOLE** |
+**S1, S2 and S4 are a separate and larger problem, and they are the same mistake this release was
+opened to fix.** The commit's own transferable lesson is: *"a grep for the sentence you have already
+fixed always comes back clean."* The CLAIMS family is a family of **phrasings of the sentences
+already fixed**, not a family of **meanings**:
 
-## FINDING 3 — the `no-stay:home` overflow pass has a guard that cannot fire
+- `logging (pauses|stops|is blocked|is locked|is disabled)` — misses *suspended*, *halted*, *off*,
+  *unavailable*, *on hold*.
+- The "cannot log" rule requires the passive *"cannot **be** logged"*. The active *"you can't log"*
+  — how a person would actually write it — walks straight through.
+- Every rule that mentions locking requires the literal word **logging** next to it. *"Every dose
+  button is locked"*, *"the medication cards are disabled"*, *"Log buttons are greyed out"* all
+  walk through, and none of them mention logging by name.
 
-The pass carries this receipt, and it is the only thing separating it from a pass that measures the
-state it was written to replace:
+**BLOCKER A2 — the ground-truth check does not check the ground truth.** The file's stated promise
+is that *"if the app ever really does start locking logging, the gate fails rather than the prose
+going quietly wrong."* I tested that literally. One line at the top of `logMed()`:
 
-    if (/Day \d+ of (this |the )?(hospital )?stay/i.test(main.innerText))
-      return 'the stay banner is still on Home';
+    if (isInpatientActiveNow()) { setToast('Not available right now'); return; }
 
-The Home in-patient banner (`index.html:4526-4528`) renders:
+`logMed()` is the real dose path — three Quick Log call sites (`index.html:3610`, `3614`, `5121`).
+Every dose log in the app is now blocked during a hospital stay, which is precisely the v67
+regression, and the prose is now the thing that is wrong (it promises nothing is locked).
 
-    In-Patient active
-    Day 3 — doses given by hospital staff are not counted as missed. You can still log anything yourself.
+    Result: all checks passed — including
+      PASS  inpatientCoversMoment is defined once and called once — a stay still touches exactly one rule
 
-There is no "of ... stay" anywhere in it. I ran the guard's own regex against the real banner
-string: **false**.
+That check counts occurrences of `inpatientCoversMoment(`. My lock uses `isInpatientActiveNow()`, so
+the count is still 2 and the check is still green. It is a tripwire on one function name, not a
+statement about what a stay does. Its green sentence is false, which is the failure mode this
+release already declared unacceptable: *a check that prints a false sentence in green is worse than
+no check.*
 
-Then I proved it end to end rather than leaving it as reading. I changed `if (inpatientActiveNow)`
-to `if (true)` on a scratch copy, so the Home banner renders permanently — including inside
-`no-stay:home`, the one pass whose entire purpose is to scan Home *without* it. Sabotage verified
-applied (one `if (true)` at line 4521, zero remaining `if (inpatientActiveNow) {`).
+**What would actually work.** Invert it. Instead of enumerating bad phrasings, enumerate the small
+set of live strings that mention a stay at all and require each to be on an allow-list, so a NEW
+sentence about stays fails until somebody looks at it. And for the ground truth, assert on the
+*call sites that gate logging* — that `logMed()` and `confirmTimeAndLog()` contain no reference to
+any in-patient predicate — rather than counting one helper's name.
 
-    committed tree : 170 of 170 scanned, 0 overflowing — CLEAN, exit 0
-    sabotaged tree : 170 of 170 scanned, 0 overflowing — CLEAN, exit 0
+## BLOCKER B — FIXED. I could not break it.
 
-The two logs are **byte-identical**. The pass returned `true` while the banner it is written to
-detect was on screen at all ten widths. Its correctness receipt is decorative, and the release's
-"170/170" therefore includes one pass that cannot fail for the reason it exists.
+The rewritten button-name check in `test/v69-treatment-date-help.mjs` is sound. The extractor is
+real: it reports the card's actual labels — `Remove | Confirm clear | Keep | Clear | ▲ | ▼ | Update
+| Set date` — parsed from the `h('button', …)` calls inside a paren-bounded card, and it self-tests
+with `Paracentesis` as the name that must be absent. Both of my earlier escapes are dead, and so are
+two more I tried:
 
-The needle to use is already on screen and unambiguous: `'In-Patient active'`.
+| # | Sabotage | Baseline | Result |
+|---|---|---|---|
+| V3 | escape A — `press **Save schedule**` (invented name, different verb) | 26/26 | **24/26, 2 FAILED** ✓ |
+| V4 | escape B — `tap **Paracentesis**` | 26/26 | **24/26, 2 FAILED** ✓ |
+| V2 | invented capitalised control with **no verb** — `use the **Save Schedule** control` | 26/26 | **24/25, 1 FAILED** ✓ |
+| V5 | rename the real button on the card (`Set date` → `Save date`), Help unchanged | 26/26 | **24/26, 2 FAILED** ✓ |
 
-By contrast the other two new passes have receipts that actually bite: `no-stay:inpatient` reads
-the `Log In-Patient Start` button back off the screen after clicking End, and `no-dates:home`
-asserts both that `[data-chemo-list]` is gone and that the card says "No treatment date set". Those
-two are honest. The ordering claim is also honest — all three are last in `EXTRA`, they do mutate
-state, and each device gets a fresh `newContext()` inside the `DEVICES` loop, so the mutation does
-not leak into the next width.
+One residual gap, recorded as a finding rather than a blocker: the check reads only the topic's
+`steps`. I put *"Fix a wrong date with the **Save schedule** button on the card"* into the topic's
+**answer** paragraph (`a:`) — an instruction naming a control that does not exist — and the suite
+reported **26/26, exit 0**. The answer field is prose rather than step-by-step instructions, which
+is why I am not calling it a blocker, but it is the same defect class and the fix is one line:
+run `boldNames` over the whole topic, not just the steps.
 
-## FINDING 4 — the `>= 2` gate is defensible, and Help covers the stranded case
+The lowercase-bold allowance you flagged as a judgement call is fine. Every real button label in the
+app is capitalised, and a lowercase invented control name would not read as a button to anyone. The
+only thing it lets through is a lowercase invented control named with no verb, which is not a
+plausible way for this defect to recur.
 
-Hiding the list at one date is fine: the single date is already named in the headline, and the
-`Clear` → `Confirm clear` route is still there and still visible (`chemoTs ? ...`). The `treat-clear`
-topic now spells that out as its own step. I could not construct a state where a user has a date
-they cannot get rid of.
+## FINDING 6 — closed, and the check is real
 
-One consequence of the gate: the `keep.length === 0` branch of the toast — *"Removed the only
-treatment date"* — is unreachable from the UI, since the list only renders at two or more. Harmless
-dead copy; flagging it so nobody later reads it as evidence the path is supported.
+Reverting `e.loggedAt || e.ts || 0` back to `e.loggedAt || 0` turns the unit suite red on exactly
+the reasoning I gave: **14/16**, failing *"the date with no loggedAt can still be removed"* with
+`20,25` — the date survived its own removal — and *"and removing the other one leaves nothing
+behind"*. Right check, right reason, right failure message. This one is done properly.
 
-## FINDING 5 — the headline date can jump after a removal (minor, pre-existing shape)
+## FINDING 4 / FINDING 5 — accepted
 
-`nextChemoTs()` picks the entry with the greatest `loggedAt`, breaking ties toward the **last**
-element of an array that `notifyEntries()` sorted by `ts`. After a removal every surviving date
-shares one `loggedAt`, so the tie is decided by largest `ts` — the **furthest** treatment. With
-dates entered out of order (say 7 Sep, then 5 Oct, then 21 Sep), removing 7 Sep flips the card's
-headline from "21 Sep" to "5 Oct" even though 21 Sep is still on the schedule and is the next one
-due. Not introduced by this release — `nextChemoTs()` has always meant "most recently entered", not
-"next" — but the removal is a new way to trigger it, and no gate would notice. Worth a follow-up,
-not a blocker.
+The unreachable toast branch is annotated rather than deleted, with an accurate note. Finding 5
+(the headline jumping to the furthest treatment after a removal, via `nextChemoTs()`'s tie-break) is
+logged for its own release, which is the right call — it is pre-existing shape and not a safety
+issue.
 
-## FINDING 6 — watch item, not a defect today
+## Suite runs — real numbers from this tree, this session
 
-`removeChemoDate()` computes `latest` as `Math.max(m, e.loggedAt || 0)`, but `chemoDayList()` sorts
-with the fallback `(a.loggedAt || a.ts || 0)`. For any `chemo_date` row missing `loggedAt`,
-`chemoDayList()` orders it by its `ts` — a future treatment date, larger than `Date.now()` — so the
-new tombstone would sort *before* it and that date would survive its own removal. I checked every
-`chemo_date` write in this repo's history (`git log -S`, back to the `app-v1` seed): all of them set
-`loggedAt`, so no device this codebase has ever written can hold such a row. It only becomes
-reachable through a restore of a backup from an older lineage. Making `latest` use the same
-fallback as the sort is a one-line change that closes it permanently.
+Every figure below is from a run I executed against the committed tree. I did not take any number
+on trust.
 
-## Suite runs — real numbers from this session
+- `test/v70-stay-does-not-lock.mjs` — 3 checks, all green, exit 0. **The total is meaningless; see
+  Blocker A.**
+- `test/v69-treatment-date-help.mjs` — **26/26**, exit 0. Trustworthy this time.
+- `test/v70-remove-one-date.mjs` — **16/16**, exit 0.
+- `test/v70-remove-one-date-browser.mjs` — **15/15**, exit 0.
+- `test/overflow-scan.mjs` — **170 of 170 scanned, 0 overflowing, CLEAN, exit 0.**
 
-Every number below is from a run I executed against the committed tree.
+## FINDING 3 — fixed, and I re-ran my own sabotage to prove it
 
-- `test/v70-remove-one-date.mjs` — **12/12**, exit 0
-- `test/v70-remove-one-date-browser.mjs` — **15/15**, exit 0
-- `test/v69-treatment-date-help.mjs` — **19/19**, exit 0 (see Blocker 2: the total is not
-  trustworthy)
-- `test/v55-help.mjs` — **150 PASS, 0 FAIL, ALL GREEN**, exit 0. The repointing at the renamed topic
-  works; the claim that this suite is green again is true.
-- `test/overflow-scan.mjs` — **170 of 170 scanned, 0 overflowing elements, CLEAN, exit 0**. The
-  commit's 170/170 claim is reproduced exactly. But see Finding 3: the same 170/170 CLEAN comes back
-  from a build where the In-Patient banner is stuck on Home, so one of those passes is not really
-  checking anything.
+The needle is now `'In-Patient active'`, the string actually on screen, where `"Day N of … stay"`
+never was. I rebuilt the sabotage that defeated the old one — `if (inpatientActiveNow)` → `if
+(true)`, so the banner renders permanently, verified applied — and re-ran the full scan:
 
-Version bumps verified together: `APP_VERSION` `app-v68` → `app-v70` and `sw.js` CACHE
-`chemowell-app-v68-1` → `chemowell-app-v70-1`. Both moved in the same commit. Correct.
+    committed tree : 170 of 170 scanned, 0 overflowing — CLEAN,     exit 0
+    banner forced  : 160 of 170 scanned, 10 COULD NOT BE REACHED — NOT CLEAN, exit 1
+                     COULD NOT OPEN no-stay:home at 320px … 428px (the stay banner is still on Home)
+
+Last time these two runs produced byte-identical CLEAN logs. Now the pass reports itself unreachable
+at all ten widths and the scan fails. That is what an honest receipt looks like.
 
 ## What has to happen before this can ship
 
-1. Fix `index.html:8705`. Say what the code does: everything stays loggable; dose windows that
-   opened during the stay are counted as the hospital's, not as misses. Fix `index.html:2965` in the
-   same pass.
-2. Add a gate that would have caught it. A single check that no live string in `index.html` claims
-   logging pauses/stops/is locked during a stay — asserted against source strings, not against
-   `document.body.textContent`. Falsify it by reinstating the sentence.
-3. Rewrite the button-name check so escapes A and B both go red, then prove it by re-running my two
-   sabotages.
-4. Change the `no-stay:home` needle to `'In-Patient active'` and falsify it by forcing the banner to
-   render with no open stay.
-5. Re-run the full overflow scan and report the real total afterwards.
+1. Rewrite `v70-stay-does-not-lock.mjs` so S1, S2, S3 and S4 all go red. The exemption needs to stop
+   being a tense heuristic over a hand-rolled sentence splitter; an allow-list of the known-good
+   sentences is both simpler and unfoolable.
+2. Make the ground-truth check assert on the logging path itself, so S6 goes red.
+3. Re-run all six of my sabotages and show them red. They are reproducible from the descriptions
+   above; each is a single string replacement in `index.html`.
+4. Optional, one line: extend the v69 bold-name check from `steps` to the whole topic so V1 goes red.
 
-No sabotage string was left in the working tree. Every modified copy lived outside the repo and the
-tree was verified clean at the end of the audit.
+Nothing else in this release is blocking. The append-only removal, the version bumps, the browser
+suite and the v69 gate are all in good shape.
 
----
+## Audit hygiene
 
-## Note on the working tree at the end of this audit
+Every sabotage lived under the session scratchpad, outside the repository, and each suite was
+pointed at it with `--file`. Each was verified applied by grep before any conclusion was drawn from
+a green — no result above rests on a sabotage that did not take. Nothing was committed or pushed;
+`/home/user/care-tracker` was not touched. The working tree was verified free of sabotage strings at
+close.
 
-This audit is of the commit named at the top of this file. It is not an audit of the working tree.
+## Note on the working tree at the end of this re-audit
 
-While the audit was running, uncommitted edits appeared in the repo from another worker —
-`index.html`, `test/overflow-scan.mjs`, `test/v69-treatment-date-help.mjs` modified, and a new
-`test/v70-stay-does-not-lock.mjs`. On inspection they are fixes aimed at the findings above
-(the In-Patient tab sentence, `ip-undo`, `miss-false-missed`, the `loggedAt || ts` fallback, a new
-absence gate). **None of that is audited here.** The verdict stands against the commit; a re-audit
-is required against whatever is committed next, and every one of the five items in "What has to
-happen" needs its own falsification run on that tree.
-
-Confirmed at close: none of my sabotage strings are in the repo. The `'Paracentesis'` hits in
-`index.html` are the pre-existing `proc-para` Help topic, and the ones in
-`test/v69-treatment-date-help.mjs` are explanatory comments written by that other worker quoting
-this audit — not sabotage. Every sabotaged copy lived only under the session scratchpad, outside the
-repository, and each suite was pointed at it with `--file`.
+As happened last time, uncommitted edits appeared in the repo from another worker while I was
+writing up — `test/v70-stay-does-not-lock.mjs` is being rewritten from a blacklist of phrasings to
+an allow-list of known-good sentences, which is the right direction and matches recommendation 1
+above. **None of that is audited here.** This verdict is against the commit named at the top of this
+file. A further re-audit is required against whatever is committed next, and it must show all six of
+my sabotages (S1, S2, S3, S4, S6, and optionally V1) going red on that tree.
