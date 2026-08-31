@@ -107,5 +107,23 @@ t('the re-adds land strictly after the tombstone',
 // Falsifying that showed it -- collapsing them to one value left this suite green, so the code
 // no longer bothers.
 
+console.log('\n7. A restored backup from an older lineage, where a date carries no loggedAt');
+// FOUND BY THE ZERO DAY AUDITOR AS A WATCH ITEM, closed here instead of watched.
+// chemoDayList() sorts on (loggedAt || ts || 0). A chemo_date row with NO loggedAt is therefore
+// ordered by its ts -- a FUTURE treatment date, larger than Date.now() -- so a tombstone stamped
+// from Date.now() alone sorts BEFORE it, and the date survives the removal that was meant to
+// delete it. Nothing this codebase has ever written omits loggedAt, so the only way in is a backup
+// restored from an older lineage; that is exactly the direction this whole feature is built to be
+// safe in, which is why it is a check and not a note.
+seed(D(8, 20));
+ctx.state.chemoDates.push({ medId: 'chemo_date', ts: D(12, 25), dose: 'Treatment scheduled' });
+t('the fixture really has a date with no loggedAt',
+  ctx.state.chemoDates.some(e => e.loggedAt === undefined), '');
+t('both dates are on the schedule to begin with', shown() === '20,25', shown());
+await removeChemoDate(D(12, 25));
+t('the date with no loggedAt can still be removed', shown() === '20', shown());
+await removeChemoDate(D(8, 20));
+t('and removing the other one leaves nothing behind', shown() === '', shown());
+
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
 process.exit(fail ? 1 : 0);

@@ -510,10 +510,14 @@ const EXTRA = [...DRAWER.map(drawerPass), helpSearchPass, { name: 'med-editor', 
   return page.evaluate(() => {
     const main = document.querySelector('main');
     if (!main) return 'no <main> element rendered';
-    // The banner names the day of the stay; with no stay open it must be gone. If it is still
-    // there, the previous pass did not really end the stay and this pass is measuring the state it
-    // was written to replace.
-    if (/Day \d+ of (this |the )?(hospital )?stay/i.test(main.innerText)) return 'the stay banner is still on Home';
+    // WRITTEN AGAINST THE BANNER'S ACTUAL WORDS, checked by running the pattern at the real string.
+    // The first version looked for /Day \d+ of ... stay/, which the banner has never said -- it
+    // renders "In-Patient active" and "Day 3 — doses given by hospital staff are not counted as
+    // missed." So the guard returned false whether or not the banner was there, and the one thing
+    // separating this pass from a pass that measures the state it was written to replace could not
+    // fire. Found by the Zero Day Auditor, who ran the regex against the string. A receipt nobody
+    // tests is decoration.
+    if (/In-Patient active/i.test(main.innerText)) return 'the stay banner is still on Home';
     return true;
   });
 } },

@@ -107,24 +107,94 @@ t('it tells you how to remove ONE date without losing the rest',
 // its own step 3 sends them through Clear first, after which that button reads **Set date**. Nine
 // checks passed on a topic that misnamed the button its own instructions land on, because not one
 // of them compared Help against the code. Same class as the app-v68 fifth audit.
-// The card's source, not the whole file: 'Remove' and 'Update' are common words elsewhere.
+//
+// THIS IS THE THIRD ATTEMPT AT THIS CHECK, and the first two are why it now looks like this.
+//   1. A fixed list of names, each checked only IF Help mentioned it. Renaming a button in Help
+//      made its check STOP RUNNING and the suite reported 17 of 17.
+//   2. Driven off Help's own "tap **X**", compared against a blind 6000-character slice of the
+//      file with `card.includes("'" + label + "'")`. The auditor broke it two ways in one sitting:
+//      writing "press **Save schedule**" instead of "tap" skipped the extractor entirely (18/18,
+//      exit 0, Help now pointing at a button that exists nowhere), and "tap **Paracentesis**"
+//      printed, in green, "the card really renders a button called that" -- because the slice ran
+//      past the end of this card into another one, and matched a quoted string that is not a
+//      button at all. A check that prints a false sentence in green is worse than no check.
+// So: bound the card by matching its own parentheses, extract the REAL button labels out of it, and
+// compare Help against that set.
+
+// The card's source, bounded by paren matching from the push that creates it -- not a fixed-size
+// slice, which ran into the next card and matched its strings.
 const card = (() => {
-  const i = html.indexOf("'Treatment schedule'");
-  return i < 0 ? '' : html.slice(i, i + 6000);
+  const anchor = html.indexOf("homePref('showChemoSchedule')) parts.push(");
+  if (anchor < 0) return '';
+  const from = html.indexOf('(', html.indexOf('parts.push', anchor));
+  let d = 0;
+  for (let k = from; k < html.length; k++) {
+    if (html[k] === '(') d++;
+    else if (html[k] === ')') { d--; if (d === 0) return html.slice(from, k + 1); }
+  }
+  return '';
 })();
-t('the Treatment schedule card source was located', card.length > 1000, card.length + ' chars');
-// DRIVEN OFF WHAT HELP ACTUALLY SAYS, not off a list of names written here. The first version
-// walked a fixed list ['Set date','Update','Clear','Confirm clear','Remove'] and checked each one
-// only IF Help mentioned it -- so changing Help to name a button that does not exist ("Save date")
-// made the check for that name simply STOP RUNNING, and the suite reported 17 of 17 passed. A check
-// that can quietly delete itself is worse than no check, because the total still looks healthy.
-// Now every "tap **X**" in the steps has to be a real button label on the card, whatever X is.
-const namedButtons = [...steps.matchAll(/[Tt]ap \*\*([^*]+)\*\*/g)].map(m => m[1]);
-t('Help names buttons to tap at all (the extractor still works)', namedButtons.length >= 4,
+t('the Treatment schedule card source was located and bounded', card.length > 1000 && card.length < 20000,
+  card.length + ' chars');
+
+// THE ACTUAL BUTTON LABELS. For every h('button', ...) inside the card, take the call by paren
+// matching and read the strings that come AFTER its props object -- which is where h() puts the
+// visible children. That is the difference between "this string appears somewhere near the card"
+// and "this string is what a button says".
+const cardButtons = (() => {
+  const out = new Set();
+  let i = 0;
+  while ((i = card.indexOf("h('button'", i)) >= 0) {
+    const from = card.indexOf('(', i);
+    let d = 0, end = -1;
+    for (let k = from; k < card.length; k++) {
+      if (card[k] === '(') d++;
+      else if (card[k] === ')') { d--; if (d === 0) { end = k; break; } }
+    }
+    if (end < 0) break;
+    const call = card.slice(from, end + 1);
+    // Children start after the props object closes. Anything before that is styling.
+    const afterProps = call.slice(call.lastIndexOf('}') + 1);
+    for (const m of afterProps.matchAll(/'((?:[^'\\]|\\.)*)'/g)) {
+      const v = m[1].trim();
+      if (v) out.add(v);
+    }
+    i = end;
+  }
+  return out;
+})();
+// THE EXTRACTOR IS ITSELF CHECKED, with one name that must be in and one that must be out. Without
+// this, an extractor that silently returned nothing would make every comparison below vacuously
+// true -- and 'Paracentesis' is the exact string the old blind slice matched as "a button".
+t('the button extractor found the card\u2019s buttons', cardButtons.size >= 4,
+  [...cardButtons].join(' | ') || 'none found');
+t('and it did NOT pick up strings that are not buttons', !cardButtons.has('Paracentesis'),
+  [...cardButtons].join(' | '));
+
+// Every button Help tells the reader to press must be one of those. The verb is a family, not the
+// single word "tap": switching to "press" was one of the two escapes.
+const namedButtons = [...steps.matchAll(/\b(?:tap|press|hit|choose|select|touch)\s+\*\*([^*]+)\*\*/gi)]
+  .map(m => m[1].trim());
+t('Help names buttons to press at all (the extractor still works)', namedButtons.length >= 4,
   namedButtons.join(', ') || 'none found');
 for (const label of namedButtons) {
-  t('Help says tap **' + label + '** and the card really renders a button called that',
-    card.includes("'" + label + "'"), '');
+  t('Help says press **' + label + '** and the card really renders a button called that',
+    cardButtons.has(label), 'card buttons: ' + [...cardButtons].join(' | '));
+}
+// AND THE OTHER DIRECTION. Every bold name in the steps that is not a screen or a tab has to be a
+// real button too -- otherwise Help can point at an invented control simply by not using a verb in
+// front of it, which is escape A with one more step.
+const SCREENS = new Set(['Home', 'Treatment schedule', 'In-Patient', 'Meds', 'Reports', 'Symptoms',
+                         'Settings', 'Help & FAQ', 'No date set', 'Days taken']);
+const boldNames = [...new Set([...steps.matchAll(/\*\*([^*]+)\*\*/g)].map(m => m[1].trim()))]
+  // Bold is also used for plain emphasis -- "this removes **every** date" -- and that is good
+  // writing, not a control name. Every button label in this app is capitalised, so a lowercase
+  // bold word is emphasis. An invented control ("**Save schedule**") is still capitalised and
+  // still caught, which is the case this check exists for.
+  .filter(n => !SCREENS.has(n) && /^[A-Z]/.test(n));
+for (const label of boldNames) {
+  t('every bold control name in the steps is a real button — **' + label + '**',
+    cardButtons.has(label), 'card buttons: ' + [...cardButtons].join(' | '));
 }
 // And the wording that was wrong: Clear does NOT confirm by tapping itself again.
 t('Help no longer says Clear confirms by tapping it again',
