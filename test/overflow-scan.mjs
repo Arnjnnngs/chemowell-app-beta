@@ -71,20 +71,27 @@ const DEVICES = [
 // three things that actually stress these layouts — an empty app looks fine at every width.
 const P = 'chemowell-app-p-p1-';
 const now = Date.now();
-const NOON_3D_AGO = (() => { const d = new Date(now - 3 * 86400000); d.setHours(12, 0, 0, 0); return d.getTime(); })();
+// ANCHORED TO TODAY'S LOCAL NOON, and every seeded row hangs off it. Anchoring only the treatment
+// date fixed the daylight-saving case and did nothing for the one that actually bites: a run that
+// STARTS at 23:55 seeds "3.5 hours ago" into yesterday, so Home has nothing logged today and the
+// suite fails at all ten widths blaming a missing medication, with nothing wrong with the app.
+// Proven by shifting only the browser clock: 23:55 clean, 00:05 the next day red.
+// Noon is the furthest point from both edges of a local day, so no offset used here can cross one.
+const NOON = (() => { const d = new Date(now); d.setHours(12, 0, 0, 0); return d.getTime(); })();
+const NOON_3D_AGO = NOON - 3 * 86400000;
 const SEED_ENTRIES = [
-  { id: 's1', medId: 'childrens-liquid-tylenol', dose: '2 tsp (650 mg)', mg: 650, ts: now - 3600000 },
-  { id: 's2', medId: 'dexamethasone', dose: '2 tablets', mg: 8, ts: now - 7200000 },
-  { id: 's3', medId: 'compazine', dose: '10 mg', mg: 10, ts: now - 14400000 },
-  { id: 's4', medId: 'temp', dose: '100.9 F', mg: 0, ts: now - 5400000, temp: 100.9 },
-  { id: 's5', medId: 'weight', dose: '182 lbs', mg: 0, ts: now - 9000000, weight: 182 },
+  { id: 's1', medId: 'childrens-liquid-tylenol', dose: '2 tsp (650 mg)', mg: 650, ts: NOON - 3600000 },
+  { id: 's2', medId: 'dexamethasone', dose: '2 tablets', mg: 8, ts: NOON - 7200000 },
+  { id: 's3', medId: 'compazine', dose: '10 mg', mg: 10, ts: NOON - 14400000 },
+  { id: 's4', medId: 'temp', dose: '100.9 F', mg: 0, ts: NOON - 5400000, temp: 100.9 },
+  { id: 's5', medId: 'weight', dose: '182 lbs', mg: 0, ts: NOON - 9000000, weight: 182 },
   // ANCHORED TO LOCAL NOON, not to "now minus N days". Seeded at an exact multiple of 24h from the
   // moment the suite starts, the treatment date sat on a day boundary: a run that crossed midnight,
   // or a daylight-saving shift, moved it into the previous day and the seeded medication stopped
   // being offered — the suite then failed at all ten widths with "the seeded medication is missing"
   // and nothing wrong with the app. Noon is the furthest point from both edges of a local day.
   { id: 's6', medId: 'chemo_date', dose: 'Treatment scheduled', mg: 0, ts: NOON_3D_AGO, loggedAt: NOON_3D_AGO },
-  { id: 's7', medId: 'symptom_nausea', dose: 'Sharp rib pain after the second dose, worse lying down', mg: 0, ts: now - 12600000 }
+  { id: 's7', medId: 'symptom_nausea', dose: 'Sharp rib pain after the second dose, worse lying down', mg: 0, ts: NOON - 12600000 }
 ];
 // A medication carrying the app-v68 treatment-window fields, because the med editor and the med
 // list chips are exactly what that release changed.
@@ -364,13 +371,30 @@ for (const dev of DEVICES) {
       }, label);
       if (!picked) return false;
       await page.waitForTimeout(900);
-      // Prove the drawer closed AND something rendered — a click that opened nothing must not count
-      // as a scanned screen, which is the trap this file has fallen into twice.
-      return page.evaluate(() => {
-        if (document.querySelector('#app-drawer')) return false;
+      // Prove the drawer closed AND the screen rendered its own body. A 60-character floor was all
+      // these six had — the exact bar that was replaced for the five tab screens because a stripped
+      // Settings page cleared it comfortably. Each needle is text from below the heading.
+      // MEASURED, ALL SIX. Three of these were guessed first time round — "Profiles", "Help",
+      // "Report" — and the scan correctly refused to call those screens scanned, which is how the
+      // guesses were caught. Each string below was read off the running screen and sits BELOW the
+      // heading, so a page stripped to its title cannot satisfy it.
+      const NEEDLE = {
+        'Account': 'CURRENT PLAN',
+        'Calendar': 'Appointments',
+        'Notes': 'A day-by-day journal',
+        'Help & FAQ': 'Find and fix a problem',
+        'Report a problem': 'Errors and ideas',
+        'Settings': 'PROFILES'
+      }[label] || '';
+      return page.evaluate(needle => {
+        if (document.querySelector('#app-drawer')) return 'the drawer did not close';
         const m = document.querySelector('main');
-        return !!(m && m.innerText.trim().length > 60);
-      });
+        if (!m) return 'no <main> element rendered';
+        const txt = m.innerText.trim();
+        if (txt.length <= 60) return 'the screen is blank (' + txt.length + ' characters of content)';
+        if (needle && txt.indexOf(needle) < 0) return 'missing: "' + needle + '"';
+        return true;
+      }, NEEDLE);
     }
   });
   // HELP SEARCH IS ITS OWN SCREEN. Opening Help lands on the category menu; typing lands on the
@@ -406,9 +430,16 @@ for (const dev of DEVICES) {
       await box.fill('dose');
       await page.waitForTimeout(900);
       // Prove results actually rendered, not just that a box was typed into.
+      // "dose" appears in the fixed safety paragraph at the bottom of this screen, so the old guard
+      // was satisfied even when the search returned "Nothing matched that" — it proved a screen was
+      // present, never that results were. Assert the negative case is ABSENT instead.
       return page.evaluate(() => {
         const m = document.querySelector('main');
-        return !!(m && m.innerText.trim().length > 60 && /result|answer|dose/i.test(m.innerText));
+        if (!m) return 'no <main> element rendered';
+        const txt = m.innerText.trim();
+        if (txt.length <= 60) return 'the screen is blank (' + txt.length + ' characters of content)';
+        if (/nothing matched|no results|no matches/i.test(txt)) return 'the search returned no results';
+        return true;
       });
     }
   };
@@ -528,16 +559,21 @@ for (const dev of DEVICES) {
       // all eight report tiles and every symptom row and this suite said "every screen clean, CLEAN,
       // exit 0" — because only Home and Meds were checked, while the comment implied otherwise.
       // Each screen names a string that exists only when that screen has really rendered its content.
+      // NEEDLES CHOSEN BY READING THE REAL SCREENS, not by guessing at their names. "Symptom" was
+      // useless: the heading is "Symptoms & Reactions", so the needle matched a screen that had lost
+      // every row — the same break the auditor ran twice. "In-Patient" was the same mistake. Each
+      // needle below is text that appears only BELOW the heading, so a screen stripped to its title
+      // cannot satisfy it.
       const must = {
         home:      [seedName],
         meds:      [seedName],
-        // The Reports menu is a fixed set of tiles; two of them prove the list rendered, not just
-        // the heading above it.
+        // The Reports menu is a fixed set of tiles; two of them prove the list rendered.
         reports:   ['Report', 'History'],
-        // These two have no seeded rows in the fixture, so assert the controls that define the
-        // screen — a heading alone is what a broken screen also shows.
-        inpatient: ['In-Patient'],
-        symptoms:  ['Symptom']
+        // No seeded rows for these two, so assert the controls and the empty-state sentence that
+        // only the real screen renders — both survive an honest empty install, neither survives a
+        // screen that lost its body.
+        inpatient: ['Log In-Patient Start', 'IN-PATIENT HISTORY'],
+        symptoms:  ['Nausea, fatigue']
       }[key] || [];
       for (const needle of must) {
         // Name the thing that was missing. "blank, or the seeded medication is missing" was printed
@@ -579,8 +615,9 @@ for (const dev of DEVICES) {
   EXTRA_COUNT = EXTRA.length;
   for (const extra of EXTRA) {
     const opened = await extra.open(page);
-    if (!opened) {
-      console.log('  COULD NOT OPEN ' + extra.name + ' at ' + dev.w + 'px — not scanned');
+    if (opened !== true) {
+      console.log('  COULD NOT OPEN ' + extra.name + ' at ' + dev.w + 'px — not scanned (' +
+        (typeof opened === 'string' ? opened : 'the screen could not be opened') + ')');
       unreachable++;
       continue;
     }

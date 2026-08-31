@@ -420,8 +420,18 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # report saying DO NOT SHIP was read as SHIP again. There is nowhere left to hide a quotation if
   # the header must be the FIRST two non-blank lines of the file: anything a report quotes is
   # necessarily below its own header.
+  # A MARKDOWN TITLE IS ALLOWED ABOVE THE HEADER, AND NOTHING ELSE IS.
+  # Requiring the header to be the very first two non-blank lines closed the quoting attack and then
+  # did something nobody chose: every report that opens the way a normal markdown document opens --
+  # "# Title", blank line, header -- stopped being readable. Two standing DO NOT SHIP reports,
+  # including the PM's only sign-off for this release, silently vanished from the gate's output. The
+  # rule failed SHUT on approvals (safe) and OPEN on refusals (not safe), and nothing noticed the
+  # asymmetry. Nothing escaped only because five other refusals still held the gate -- luck, not design.
+  # Leading '#' heading lines and blanks are skipped; the header must be the first two lines after
+  # them. A quotation cannot reach that position without displacing the report's own header, and an
+  # unreadable report is now blocked loudly rather than skipped in silence (see UNREADABLE below).
   report_pair() {
-    head -40 "$1" 2>/dev/null | grep -v '^[[:space:]]*$' | head -2 || true
+    head -40 "$1" 2>/dev/null | grep -v '^[[:space:]]*$' | grep -v '^[[:space:]]*#' | head -2 || true
   }
   report_sha() {
     _raw=$(report_pair "$1" | head -1 | grep -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}[[:space:]]*$' | grep -oE '[0-9a-f]{7,40}' | tail -1 || echo "")
@@ -469,6 +479,29 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # printed four real reports all saying DO NOT SHIP directly above the word "passed". A refusal is
   # only superseded by a report examining a LATER commit -- someone must have looked again after the
   # thing that was objected to.
+  # AN UNREADABLE REPORT IS NOT AN ABSENT OBJECTION. This loop used to `continue` past any report
+  # whose verdict it could not parse, so "the gate cannot read this file" silently meant "this file
+  # raises no objection" -- which is exactly how two live refusals disappeared. A chain report that
+  # exists but cannot be read now blocks the release and is named, because the safe reading of "I
+  # don't know what this says" is never "it says ship".
+  UNREADABLE=""
+  for _r in $AUDIT_ALL $PM_ALL; do
+    if [ "$(report_verdict "$_r")" = "" ] || [ "$(report_sha "$_r")" = "" ]; then
+      UNREADABLE="$UNREADABLE
+     $_r"
+    fi
+  done
+  if [ -n "$UNREADABLE" ]; then
+    echo "❌ RELEASE CHECK FAILED: a chain report exists that this gate cannot read."
+    echo "   Unreadable:$UNREADABLE"
+    echo "   Each must open with (an optional '# Title' line, then) exactly these two lines:"
+    echo "       AUDITED-COMMIT: <sha>"
+    echo "       VERDICT: SHIP        (or: VERDICT: DO NOT SHIP)"
+    echo "   A report the gate cannot read is not a report that raises no objection. Two live"
+    echo "   refusals once vanished from this output that way."
+    exit 1
+  fi
+
   BLOCKING=""
   for _r in $AUDIT_ALL $PM_ALL; do
     [ "$(report_verdict "$_r")" = "" ] && continue
