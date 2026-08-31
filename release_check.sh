@@ -369,6 +369,28 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # case it exists to catch. It reintroduced, inside its own fix, the same silent-exit class being
   # fixed twenty lines above. Found by falsifying it rather than by reading it.
   # An unmatched glob expands to the literal pattern, which `[ -e ]` simply reports as absent.
+  # Every one of those tried to describe WHERE the header sits. This describes what a header IS:
+  # a report has exactly one, written flush left. A report that quotes another's header indents it
+  # or fences it -- which any markdown quotation already does -- and an unindented second one means
+  # the file is ambiguous, so it is refused by name rather than guessed at.
+  report_headline() { grep -n '^AUDITED-COMMIT:' "$1" 2>/dev/null | head -1 | cut -d: -f1 || echo ""; }
+  report_headcount() { grep -c '^AUDITED-COMMIT:' "$1" 2>/dev/null || echo 0; }
+  report_pair() {
+    _n=$(report_headline "$1")
+    [ -z "$_n" ] && { echo ""; return; }
+    [ "$(report_headcount "$1")" != "1" ] && { echo ""; return; }
+    sed -n "${_n},$((_n + 1))p" "$1" 2>/dev/null || true
+  }
+  report_sha() {
+    _raw=$(report_pair "$1" | head -1 | grep -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}[[:space:]]*$' | grep -oE '[0-9a-f]{7,40}' | tail -1 || echo "")
+    [ -z "$_raw" ] && { echo ""; return; }
+    git rev-parse --verify --quiet "$_raw^{commit}" 2>/dev/null || echo "$_raw"
+  }
+  # ANCHORED TO END OF LINE. `VERDICT: SHIPPING SOON` used to read as SHIP -- the pattern matched the
+  # first four letters and stopped. Trailing whitespace/CR is allowed; trailing words are not.
+  report_verdict() { report_pair "$1" | tail -1 | grep -m1 -oiE '^VERDICT:[[:space:]]*(DO NOT SHIP|SHIP)[[:space:]]*$' | sed 's/^[^:]*:[[:space:]]*//' | tr -d '[:space:]' || echo ""; }
+
+
   AUDIT_REPORT=""
   PM_REPORT=""
   # EVERY matching report, not the first one the glob happens to sort to. Reading only the first made
@@ -387,6 +409,23 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
     echo "   Changed under rule 5: $(echo $RULE5_CHANGED | tr '\n' ' ')"
     [ -z "$AUDIT_REPORT" ] && echo "   missing: an outputs/AUDIT*${GATE_VERSION}*.md report"
     [ -z "$PM_REPORT" ]    && echo "   missing: an outputs/PM*${GATE_VERSION}*.md sign-off"
+    # AND NAME ANY STANDING REFUSAL SITTING IN THE REPORTS THAT DO EXIST. This branch used to exit
+    # naming only the missing file, so with an Auditor refusal on record and no PM sign-off yet, the
+    # gate's entire output was "missing: a PM sign-off" -- the least important of the two reasons,
+    # with a live DO NOT SHIP unmentioned. That is the same shape as the failure this file already
+    # carries scar tissue for: two live refusals vanishing from this output. The exit code was always
+    # right; the message sent the reader at the wrong problem, and on this project a gate that
+    # misreports why it failed is how people end up looking in the wrong place.
+    for _f in $AUDIT_ALL $PM_ALL; do
+      case "$(report_verdict "$_f")" in
+        [Dd][Oo]*)
+          _fs=$(report_sha "$_f")
+          echo "   AND a report on record REFUSES this release: $_f (examined ${_fs:0:7}) says DO NOT SHIP."
+          echo "   Fix what it found and re-run that stage against a later commit. A sign-off from a"
+          echo "   different desk does not answer it."
+          ;;
+      esac
+    done
     echo "   Every suite passing is SELF-verification. APP_CLAUDE.md rule 5 requires an independent"
     echo "   Auditor pass and PM sign-off before this ships, with no size exception. Permission to"
     echo "   push is not that gate."
@@ -437,27 +476,6 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   #   "first two non-blank lines" -> broke every report with a markdown title, and two live
   #                                  refusals silently stopped being read.
   #   "skip leading '#' lines"    -> a heading can introduce the quotation, so it won a third time.
-  # Every one of those tried to describe WHERE the header sits. This describes what a header IS:
-  # a report has exactly one, written flush left. A report that quotes another's header indents it
-  # or fences it -- which any markdown quotation already does -- and an unindented second one means
-  # the file is ambiguous, so it is refused by name rather than guessed at.
-  report_headline() { grep -n '^AUDITED-COMMIT:' "$1" 2>/dev/null | head -1 | cut -d: -f1 || echo ""; }
-  report_headcount() { grep -c '^AUDITED-COMMIT:' "$1" 2>/dev/null || echo 0; }
-  report_pair() {
-    _n=$(report_headline "$1")
-    [ -z "$_n" ] && { echo ""; return; }
-    [ "$(report_headcount "$1")" != "1" ] && { echo ""; return; }
-    sed -n "${_n},$((_n + 1))p" "$1" 2>/dev/null || true
-  }
-  report_sha() {
-    _raw=$(report_pair "$1" | head -1 | grep -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}[[:space:]]*$' | grep -oE '[0-9a-f]{7,40}' | tail -1 || echo "")
-    [ -z "$_raw" ] && { echo ""; return; }
-    git rev-parse --verify --quiet "$_raw^{commit}" 2>/dev/null || echo "$_raw"
-  }
-  # ANCHORED TO END OF LINE. `VERDICT: SHIPPING SOON` used to read as SHIP -- the pattern matched the
-  # first four letters and stopped. Trailing whitespace/CR is allowed; trailing words are not.
-  report_verdict() { report_pair "$1" | tail -1 | grep -m1 -oiE '^VERDICT:[[:space:]]*(DO NOT SHIP|SHIP)[[:space:]]*$' | sed 's/^[^:]*:[[:space:]]*//' | tr -d '[:space:]' || echo ""; }
-
   check_report_current() {   # $1 = path. echoes "" if current AND clearing, else the reason.
     _sha=$(report_sha "$1")
     if [ -z "$_sha" ]; then echo "no readable header — needs exactly one unindented 'AUDITED-COMMIT:' line"; return; fi

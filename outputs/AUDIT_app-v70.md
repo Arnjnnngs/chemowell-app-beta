@@ -1,6 +1,7 @@
 # Zero Day Audit — ChemoWell app-v70 (re-audit)
 
 AUDITED-COMMIT: 095b56d16495d37d41d793a2dce42d23de6da811
+VERDICT: DO NOT SHIP
 
 Supersedes the audit of the previous commit (`f0c74ca`), whose verdict was DO NOT SHIP.
 Auditor: Zero Day Auditor · Date: 2026-08-31
@@ -8,6 +9,14 @@ Scope, as directed: concentrated on the two rewritten gates rather than re-provi
 logic I already could not break.
 
 ## VERDICT: DO NOT SHIP
+
+*(Header note, added by the Lead Developer, not the Auditor: `release_check.sh` reads the
+verdict as the line IMMEDIATELY after `AUDITED-COMMIT:`, flush left and unprefixed. This
+report stated its verdict here instead, under a `##` heading eight lines down, so the gate
+could not read it — and an unreadable report is one the gate refuses rather than one that
+raises no objection. The two required lines are now at the top, carrying this report's
+verdict unchanged. The briefing that asked only for "a clear verdict line" was wrong, and
+that is the Lead Developer's error, not the Auditor's.)*
 
 Blocker 2 is genuinely fixed and I could not get past it. Blocker 1's *fix* is correct — the app no
 longer says the wrong thing anywhere. But **the new gate written to keep it correct does not work.**
