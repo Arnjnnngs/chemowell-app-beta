@@ -403,7 +403,6 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # history and is allowed to be stale -- it just cannot be the one clearing the gate.
   # A report is read from its FIRST 12 LINES only. The header used to be findable anywhere in the
   # file, so a report quoting another report's header, or burying its own at line 900, passed.
-  report_head() { head -12 "$1" 2>/dev/null || true; }
   # RESOLVED TO A FULL SHA, always. Comparing the raw strings made "23aedd6" and its own 40-character
   # form look like two different commits, so a forged SHIP declaring the full sha "superseded" a real
   # DO NOT SHIP declaring the short one — the same commit overruling itself. That is how a padded fake
@@ -461,7 +460,7 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
 
   check_report_current() {   # $1 = path. echoes "" if current AND clearing, else the reason.
     _sha=$(report_sha "$1")
-    if [ -z "$_sha" ]; then echo "no AUDITED-COMMIT line in its first 12 lines"; return; fi
+    if [ -z "$_sha" ]; then echo "no readable header — needs exactly one unindented 'AUDITED-COMMIT:' line"; return; fi
     if ! git rev-parse --verify --quiet "$_sha^{commit}" >/dev/null; then echo "names commit $_sha, which does not exist here"; return; fi
     # THE COMMIT MUST BE IN THIS BRANCH'S HISTORY. Without this a report could declare any commit
     # that exists anywhere in the repo -- a stale side branch, an abandoned experiment -- and
