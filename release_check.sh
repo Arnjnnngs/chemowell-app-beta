@@ -430,8 +430,25 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   # Leading '#' heading lines and blanks are skipped; the header must be the first two lines after
   # them. A quotation cannot reach that position without displacing the report's own header, and an
   # unreadable report is now blocked loudly rather than skipped in silence (see UNREADABLE below).
+  # EXACTLY ONE UNINDENTED HEADER IN THE FILE, and the verdict is the next line after it.
+  #
+  # Three rules have now failed here, each defeated by the shape of the next one:
+  #   "first 12 lines"            -> a quotation higher up won.
+  #   "adjacent lines"            -> quote BOTH lines and it won again.
+  #   "first two non-blank lines" -> broke every report with a markdown title, and two live
+  #                                  refusals silently stopped being read.
+  #   "skip leading '#' lines"    -> a heading can introduce the quotation, so it won a third time.
+  # Every one of those tried to describe WHERE the header sits. This describes what a header IS:
+  # a report has exactly one, written flush left. A report that quotes another's header indents it
+  # or fences it -- which any markdown quotation already does -- and an unindented second one means
+  # the file is ambiguous, so it is refused by name rather than guessed at.
+  report_headline() { grep -n '^AUDITED-COMMIT:' "$1" 2>/dev/null | head -1 | cut -d: -f1 || echo ""; }
+  report_headcount() { grep -c '^AUDITED-COMMIT:' "$1" 2>/dev/null || echo 0; }
   report_pair() {
-    head -40 "$1" 2>/dev/null | grep -v '^[[:space:]]*$' | grep -v '^[[:space:]]*#' | head -2 || true
+    _n=$(report_headline "$1")
+    [ -z "$_n" ] && { echo ""; return; }
+    [ "$(report_headcount "$1")" != "1" ] && { echo ""; return; }
+    sed -n "${_n},$((_n + 1))p" "$1" 2>/dev/null || true
   }
   report_sha() {
     _raw=$(report_pair "$1" | head -1 | grep -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}[[:space:]]*$' | grep -oE '[0-9a-f]{7,40}' | tail -1 || echo "")
@@ -494,7 +511,7 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   if [ -n "$UNREADABLE" ]; then
     echo "❌ RELEASE CHECK FAILED: a chain report exists that this gate cannot read."
     echo "   Unreadable:$UNREADABLE"
-    echo "   Each must open with (an optional '# Title' line, then) exactly these two lines:"
+    echo "   Each must open with (optional blank/'# Title' lines, then) exactly these two lines:"
     echo "       AUDITED-COMMIT: <sha>"
     echo "       VERDICT: SHIP        (or: VERDICT: DO NOT SHIP)"
     echo "   A report the gate cannot read is not a report that raises no objection. Two live"

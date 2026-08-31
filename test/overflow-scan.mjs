@@ -260,9 +260,205 @@ const scanFn = function (vw) {
 };
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
+// THE PASS LIST LIVES AT MODULE SCOPE so the totals line can count it before the first device is
+// opened. Built inside the device loop, EXTRA_COUNT was still 0 when the fixture failed on the
+// first device, so the run reported "0 of 50" while actually skipping 140 — a gate understating
+// its own scope at exactly the moment something has gone wrong.
+
+const DRAWER = ['Account', 'Calendar', 'Notes', 'Help & FAQ', 'Report a problem', 'Settings'];
+const drawerPass = label => ({
+  name: 'drawer:' + label.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, ''),
+  open: async page => {
+    // Back to Home first: the drawer button lives in the header, and a screen left open from the
+    // previous pass can sit over it.
+    await page.evaluate(() => { const b = document.querySelector('[data-tour="nav-home"]'); if (b) b.click(); });
+    await page.waitForTimeout(500);
+    const opened = await page.evaluate(() => {
+      const b = document.querySelector('[data-tour="menu-btn"]');
+      if (!b) return false; b.click(); return true;
+    });
+    if (!opened) return false;
+    await page.waitForTimeout(600);
+    const picked = await page.evaluate(want => {
+      const row = [...document.querySelectorAll('#app-drawer button')]
+        .find(x => (x.innerText || '').trim().split('\n')[0].trim() === want);
+      if (!row) return false; row.click(); return true;
+    }, label);
+    if (!picked) return false;
+    await page.waitForTimeout(900);
+    // Prove the drawer closed AND the screen rendered its own body. A 60-character floor was all
+    // these six had — the exact bar that was replaced for the five tab screens because a stripped
+    // Settings page cleared it comfortably. Each needle is text from below the heading.
+    // MEASURED, ALL SIX. Three of these were guessed first time round — "Profiles", "Help",
+    // "Report" — and the scan correctly refused to call those screens scanned, which is how the
+    // guesses were caught. Each string below was read off the running screen and sits BELOW the
+    // heading, so a page stripped to its title cannot satisfy it.
+    const NEEDLE = {
+      'Account': 'CURRENT PLAN',
+      'Calendar': 'Appointments',
+      'Notes': 'A day-by-day journal',
+      // These two were the screens' OWN TITLES -- "Find and fix a problem" is the Help page-header
+      // subtitle and "Errors and ideas" is literally the <h1>. I measured the screens and then
+      // picked the heading off the top of what I'd measured, so a page stripped to its heading
+      // still satisfied them: Report-a-problem stripped to heading + filler scanned 140/140 CLEAN.
+      // Both replaced with a control that only the real screen renders.
+      'Help & FAQ': 'Common questions',
+      'Report a problem': 'An idea',
+      'Settings': 'PROFILES'
+    }[label] || '';
+    return page.evaluate(needle => {
+      if (document.querySelector('#app-drawer')) return 'the drawer did not close';
+      const m = document.querySelector('main');
+      if (!m) return 'no <main> element rendered';
+      const txt = m.innerText.trim();
+      if (txt.length <= 60) return 'the screen is blank (' + txt.length + ' characters of content)';
+      if (needle && txt.indexOf(needle) < 0) return 'missing: "' + needle + '"';
+      return true;
+    }, NEEDLE);
+  }
+});
+// HELP SEARCH IS ITS OWN SCREEN. Opening Help lands on the category menu; typing lands on the
+// results list, which is a different layout entirely. Same lesson as the schedule-mode dropdown:
+// a screen with states is more than one screen, and the states nobody types into never get looked at.
+//
+// WHAT THIS STILL DOES NOT CATCH, stated plainly rather than implied: BACKLOG.md records a
+// measured defect on exactly this screen — a 235px header strip at 320px leaving the first result
+// 21px visible above the bottom nav. That is a VERTICAL space problem. Every rule in this file
+// measures HORIZONTAL overflow, so a clean run here is not evidence that defect is gone. It is
+// still open, and it needs a check that measures what is reachable above the fold.
+const helpSearchPass = {
+  name: 'help-search',
+  open: async page => {
+    await page.evaluate(() => { const b = document.querySelector('[data-tour="nav-home"]'); if (b) b.click(); });
+    await page.waitForTimeout(400);
+    const opened = await page.evaluate(() => {
+      const b = document.querySelector('[data-tour="menu-btn"]');
+      if (!b) return false; b.click(); return true;
+    });
+    if (!opened) return false;
+    await page.waitForTimeout(500);
+    const picked = await page.evaluate(() => {
+      const row = [...document.querySelectorAll('#app-drawer button')]
+        .find(x => (x.innerText || '').trim().split('\n')[0].trim() === 'Help & FAQ');
+      if (!row) return false; row.click(); return true;
+    });
+    if (!picked) return false;
+    await page.waitForTimeout(700);
+    const box = await page.$('main input[type="search"], main input[type="text"], main input:not([type])');
+    if (!box) return false;
+    // A word that matches several topics, so the results list is long enough to lay out badly.
+    await box.fill('dose');
+    await page.waitForTimeout(900);
+    // Prove results actually rendered, not just that a box was typed into.
+    // "dose" appears in the fixed safety paragraph at the bottom of this screen, so the old guard
+    // was satisfied even when the search returned "Nothing matched that" — it proved a screen was
+    // present, never that results were. Assert the negative case is ABSENT instead.
+    return page.evaluate(() => {
+      const m = document.querySelector('main');
+      if (!m) return 'no <main> element rendered';
+      const txt = m.innerText.trim();
+      if (txt.length <= 60) return 'the screen is blank (' + txt.length + ' characters of content)';
+      if (/nothing matched|no results|no matches/i.test(txt)) return 'the search returned no results';
+      // AND PROVE WE LEFT THE MENU. Checking only for a no-result phrase passed on the untouched
+      // Help category menu, which is what the screen shows when search does nothing at all --
+      // disabling search at source still scanned 140/140 CLEAN. "Common questions" is the category
+      // list on the menu; it is gone once results are showing, so its absence is the receipt.
+      // PROVE THE QUERY IS IN THE BOX, rather than guessing at a phrase that means "menu".
+      // "Common questions" was the third guess and also wrong: it is the category heading on the
+      // menu AND a category label attached to individual results, so it is present either way and
+      // the guard failed on a screen that was working perfectly. Making the failure print what it
+      // actually saw is what showed that -- the snippet was plainly the results view.
+      // The input's own value cannot be satisfied by a screen that ignored the typing.
+      const box = document.getElementById('help-search');
+      if (!box) return 'the search box is not on screen';
+      if (box.value !== 'dose') return 'the query did not reach the search box (value: "' + box.value + '")';
+      // "Clear" only renders while a query is active, so it is the screen's own receipt.
+      if (txt.indexOf('Clear') < 0) return 'the results view did not render (no Clear control)';
+      return true;
+    });
+  }
+};
+const EXTRA = [...DRAWER.map(drawerPass), helpSearchPass, { name: 'med-editor', open: async page => {
+  const onMeds = await page.evaluate(() => {
+    const b = document.querySelector('[data-tour="nav-meds"]');
+    if (!b) return false; b.click(); return true;
+  });
+  if (!onMeds) return false;
+  await page.waitForTimeout(900);
+  const opened = await page.evaluate(() => {
+    // Edit controls are icon buttons labelled by aria-label ("Edit <name>"), not by text --
+    // matching innerText finds nothing and the editor never opens. Falling back to Add keeps this
+    // screen reachable even when the medication fixture is empty, because an editor that is only
+    // scanned when a med happens to exist is an editor that quietly stops being scanned.
+    const btns = [...document.querySelectorAll('button')];
+    const edit = btns.find(x => /^edit /i.test((x.getAttribute('aria-label') || '').trim()));
+    if (edit) { edit.click(); return true; }
+    const add = document.querySelector('[data-tour="meds-add"]');
+    if (add) { add.click(); return true; }
+    return false;
+  });
+  if (!opened) return false;
+  await page.waitForTimeout(700);
+  // Same rule as the tabs: a click is not a screen. The editor renders with data-tour="med-editor".
+  const reallyOpen = await page.evaluate(() => !!document.querySelector('[data-tour="med-editor"]'));
+  if (!reallyOpen) return false;
+  // The treatment-window fields are behind the mode picker, and they are precisely what app-v68
+  // changed. Scanning the editor without opening that panel scans everything except the change.
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')]
+      .find(x => /only around|treatment day/i.test((x.innerText || '').trim()));
+    if (b) b.click();
+  });
+  return true;
+} },
+// THE SAME EDITOR, IN THE OTHER SCHEDULE MODE. Some option labels CHANGE with the mode: the
+// "Days taken" dropdown reads "No set days" for an as-needed medication and something longer for
+// a scheduled one. Scanning only the default mode meant the longer text was never rendered, so
+// the scan reported CLEAN while a real truncation sat one dropdown-change away — found by the
+// Zero Day Auditor by hand, not by this scan. A screen with modes is more than one screen.
+{ name: 'med-editor-scheduled', open: async page => {
+  const onMeds = await page.evaluate(() => {
+    const b = document.querySelector('[data-tour="nav-meds"]');
+    if (!b) return false; b.click(); return true;
+  });
+  if (!onMeds) return false;
+  await page.waitForTimeout(800);
+  const opened = await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('button')];
+    const edit = btns.find(x => /^edit /i.test((x.getAttribute('aria-label') || '').trim()));
+    if (edit) { edit.click(); return true; }
+    const add = document.querySelector('[data-tour="meds-add"]');
+    if (add) { add.click(); return true; }
+    return false;
+  });
+  if (!opened) return false;
+  await page.waitForTimeout(700);
+  if (!await page.evaluate(() => !!document.querySelector('[data-tour="med-editor"]'))) return false;
+  // Switch Schedule type to "Scheduled" so the mode-dependent option labels actually render.
+  const switched = await page.evaluate(() => {
+    const sel = [...document.querySelectorAll('select')]
+      .find(s => [...s.options].some(o => o.value === 'win'));
+    if (!sel) return false;
+    sel.value = 'win';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  });
+  if (!switched) return false;
+  await page.waitForTimeout(800);
+  // Prove the mode really changed, rather than trusting the dispatch. Read it back off the control
+  // itself: an earlier version of this check asked whether the Days-taken select sat inside a
+  // <label>, which it does not, so the screen was reported unreachable at every width. The scan
+  // refusing to call it clean was the right behaviour — the check was simply wrong.
+  return page.evaluate(() => {
+    const sel = [...document.querySelectorAll('select')]
+      .find(s => [...s.options].some(o => o.value === 'win'));
+    return !!(sel && sel.value === 'win');
+  });
+} }];
+
 let problems = 0, unreachable = 0, scanned = 0;
 // Set from the EXTRA list below, so the totals line cannot drift from the passes that exist.
-let EXTRA_COUNT = 0;
+const EXTRA_COUNT = EXTRA.length;
 const report = [];
 
 for (const dev of DEVICES) {
@@ -350,176 +546,6 @@ for (const dev of DEVICES) {
   // layout defect on record — the Help search screen at 320px, sitting in BACKLOG.md — is on a
   // screen it never opened. Six more live behind the menu drawer: Account, Calendar, Notes,
   // Help & FAQ, Report a problem, Settings. A render gate that skips half the app is half a gate.
-  const DRAWER = ['Account', 'Calendar', 'Notes', 'Help & FAQ', 'Report a problem', 'Settings'];
-  const drawerPass = label => ({
-    name: 'drawer:' + label.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, ''),
-    open: async page => {
-      // Back to Home first: the drawer button lives in the header, and a screen left open from the
-      // previous pass can sit over it.
-      await page.evaluate(() => { const b = document.querySelector('[data-tour="nav-home"]'); if (b) b.click(); });
-      await page.waitForTimeout(500);
-      const opened = await page.evaluate(() => {
-        const b = document.querySelector('[data-tour="menu-btn"]');
-        if (!b) return false; b.click(); return true;
-      });
-      if (!opened) return false;
-      await page.waitForTimeout(600);
-      const picked = await page.evaluate(want => {
-        const row = [...document.querySelectorAll('#app-drawer button')]
-          .find(x => (x.innerText || '').trim().split('\n')[0].trim() === want);
-        if (!row) return false; row.click(); return true;
-      }, label);
-      if (!picked) return false;
-      await page.waitForTimeout(900);
-      // Prove the drawer closed AND the screen rendered its own body. A 60-character floor was all
-      // these six had — the exact bar that was replaced for the five tab screens because a stripped
-      // Settings page cleared it comfortably. Each needle is text from below the heading.
-      // MEASURED, ALL SIX. Three of these were guessed first time round — "Profiles", "Help",
-      // "Report" — and the scan correctly refused to call those screens scanned, which is how the
-      // guesses were caught. Each string below was read off the running screen and sits BELOW the
-      // heading, so a page stripped to its title cannot satisfy it.
-      const NEEDLE = {
-        'Account': 'CURRENT PLAN',
-        'Calendar': 'Appointments',
-        'Notes': 'A day-by-day journal',
-        'Help & FAQ': 'Find and fix a problem',
-        'Report a problem': 'Errors and ideas',
-        'Settings': 'PROFILES'
-      }[label] || '';
-      return page.evaluate(needle => {
-        if (document.querySelector('#app-drawer')) return 'the drawer did not close';
-        const m = document.querySelector('main');
-        if (!m) return 'no <main> element rendered';
-        const txt = m.innerText.trim();
-        if (txt.length <= 60) return 'the screen is blank (' + txt.length + ' characters of content)';
-        if (needle && txt.indexOf(needle) < 0) return 'missing: "' + needle + '"';
-        return true;
-      }, NEEDLE);
-    }
-  });
-  // HELP SEARCH IS ITS OWN SCREEN. Opening Help lands on the category menu; typing lands on the
-  // results list, which is a different layout entirely. Same lesson as the schedule-mode dropdown:
-  // a screen with states is more than one screen, and the states nobody types into never get looked at.
-  //
-  // WHAT THIS STILL DOES NOT CATCH, stated plainly rather than implied: BACKLOG.md records a
-  // measured defect on exactly this screen — a 235px header strip at 320px leaving the first result
-  // 21px visible above the bottom nav. That is a VERTICAL space problem. Every rule in this file
-  // measures HORIZONTAL overflow, so a clean run here is not evidence that defect is gone. It is
-  // still open, and it needs a check that measures what is reachable above the fold.
-  const helpSearchPass = {
-    name: 'help-search',
-    open: async page => {
-      await page.evaluate(() => { const b = document.querySelector('[data-tour="nav-home"]'); if (b) b.click(); });
-      await page.waitForTimeout(400);
-      const opened = await page.evaluate(() => {
-        const b = document.querySelector('[data-tour="menu-btn"]');
-        if (!b) return false; b.click(); return true;
-      });
-      if (!opened) return false;
-      await page.waitForTimeout(500);
-      const picked = await page.evaluate(() => {
-        const row = [...document.querySelectorAll('#app-drawer button')]
-          .find(x => (x.innerText || '').trim().split('\n')[0].trim() === 'Help & FAQ');
-        if (!row) return false; row.click(); return true;
-      });
-      if (!picked) return false;
-      await page.waitForTimeout(700);
-      const box = await page.$('main input[type="search"], main input[type="text"], main input:not([type])');
-      if (!box) return false;
-      // A word that matches several topics, so the results list is long enough to lay out badly.
-      await box.fill('dose');
-      await page.waitForTimeout(900);
-      // Prove results actually rendered, not just that a box was typed into.
-      // "dose" appears in the fixed safety paragraph at the bottom of this screen, so the old guard
-      // was satisfied even when the search returned "Nothing matched that" — it proved a screen was
-      // present, never that results were. Assert the negative case is ABSENT instead.
-      return page.evaluate(() => {
-        const m = document.querySelector('main');
-        if (!m) return 'no <main> element rendered';
-        const txt = m.innerText.trim();
-        if (txt.length <= 60) return 'the screen is blank (' + txt.length + ' characters of content)';
-        if (/nothing matched|no results|no matches/i.test(txt)) return 'the search returned no results';
-        return true;
-      });
-    }
-  };
-  const EXTRA = [...DRAWER.map(drawerPass), helpSearchPass, { name: 'med-editor', open: async page => {
-    const onMeds = await page.evaluate(() => {
-      const b = document.querySelector('[data-tour="nav-meds"]');
-      if (!b) return false; b.click(); return true;
-    });
-    if (!onMeds) return false;
-    await page.waitForTimeout(900);
-    const opened = await page.evaluate(() => {
-      // Edit controls are icon buttons labelled by aria-label ("Edit <name>"), not by text --
-      // matching innerText finds nothing and the editor never opens. Falling back to Add keeps this
-      // screen reachable even when the medication fixture is empty, because an editor that is only
-      // scanned when a med happens to exist is an editor that quietly stops being scanned.
-      const btns = [...document.querySelectorAll('button')];
-      const edit = btns.find(x => /^edit /i.test((x.getAttribute('aria-label') || '').trim()));
-      if (edit) { edit.click(); return true; }
-      const add = document.querySelector('[data-tour="meds-add"]');
-      if (add) { add.click(); return true; }
-      return false;
-    });
-    if (!opened) return false;
-    await page.waitForTimeout(700);
-    // Same rule as the tabs: a click is not a screen. The editor renders with data-tour="med-editor".
-    const reallyOpen = await page.evaluate(() => !!document.querySelector('[data-tour="med-editor"]'));
-    if (!reallyOpen) return false;
-    // The treatment-window fields are behind the mode picker, and they are precisely what app-v68
-    // changed. Scanning the editor without opening that panel scans everything except the change.
-    await page.evaluate(() => {
-      const b = [...document.querySelectorAll('button')]
-        .find(x => /only around|treatment day/i.test((x.innerText || '').trim()));
-      if (b) b.click();
-    });
-    return true;
-  } },
-  // THE SAME EDITOR, IN THE OTHER SCHEDULE MODE. Some option labels CHANGE with the mode: the
-  // "Days taken" dropdown reads "No set days" for an as-needed medication and something longer for
-  // a scheduled one. Scanning only the default mode meant the longer text was never rendered, so
-  // the scan reported CLEAN while a real truncation sat one dropdown-change away — found by the
-  // Zero Day Auditor by hand, not by this scan. A screen with modes is more than one screen.
-  { name: 'med-editor-scheduled', open: async page => {
-    const onMeds = await page.evaluate(() => {
-      const b = document.querySelector('[data-tour="nav-meds"]');
-      if (!b) return false; b.click(); return true;
-    });
-    if (!onMeds) return false;
-    await page.waitForTimeout(800);
-    const opened = await page.evaluate(() => {
-      const btns = [...document.querySelectorAll('button')];
-      const edit = btns.find(x => /^edit /i.test((x.getAttribute('aria-label') || '').trim()));
-      if (edit) { edit.click(); return true; }
-      const add = document.querySelector('[data-tour="meds-add"]');
-      if (add) { add.click(); return true; }
-      return false;
-    });
-    if (!opened) return false;
-    await page.waitForTimeout(700);
-    if (!await page.evaluate(() => !!document.querySelector('[data-tour="med-editor"]'))) return false;
-    // Switch Schedule type to "Scheduled" so the mode-dependent option labels actually render.
-    const switched = await page.evaluate(() => {
-      const sel = [...document.querySelectorAll('select')]
-        .find(s => [...s.options].some(o => o.value === 'win'));
-      if (!sel) return false;
-      sel.value = 'win';
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
-      return true;
-    });
-    if (!switched) return false;
-    await page.waitForTimeout(800);
-    // Prove the mode really changed, rather than trusting the dispatch. Read it back off the control
-    // itself: an earlier version of this check asked whether the Days-taken select sat inside a
-    // <label>, which it does not, so the screen was reported unreachable at every width. The scan
-    // refusing to call it clean was the right behaviour — the check was simply wrong.
-    return page.evaluate(() => {
-      const sel = [...document.querySelectorAll('select')]
-        .find(s => [...s.options].some(o => o.value === 'win'));
-      return !!(sel && sel.value === 'win');
-    });
-  } }];
 
   for (const screen of SCREENS) {
     // PROVE THE VIEW CHANGED, do not just prove a button exists. The previous version clicked and
@@ -612,7 +638,6 @@ for (const dev of DEVICES) {
     if (found.length) { problems += found.length; report.push({ dev: dev.name, os: dev.os, w: dev.w, screen, found }); }
   }
 
-  EXTRA_COUNT = EXTRA.length;
   for (const extra of EXTRA) {
     const opened = await extra.open(page);
     if (opened !== true) {
