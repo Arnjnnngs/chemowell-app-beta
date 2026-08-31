@@ -122,3 +122,32 @@ corrections and the pattern is the point.
 
 The unbounded window itself was real: a mistyped 30 would have made a medication treatment-adjacent
 for two months either side, and nothing stopped it.
+
+### The app and its instructions disagreed about treatment dates
+
+Found by the seventh Zero Day Audit and confirmed **live in published app-v67**, so it predates the
+v68 work. Help said *"Setting a new date replaces the old one."* The app **adds** it.
+
+Correct a mistyped 20 Aug to 24 Aug and both dates stay in the schedule: Zofran still blocks on the
+21st and 22nd, Dexamethasone is still expected on the 19th through the 21st. Someone following the
+printed instruction believes they have fixed a mistake that is still driving their medication rules.
+
+**The behaviour is right and was left alone.** A course has several treatments and every one of them
+should count — that is what app-v68's "ask every treatment date" change was for. The defect was the
+app describing itself wrongly, so the words were fixed, not the logic: Help now says a date is
+**added**, warns that a mistyped one keeps working until it is dealt with, and states that Clear
+removes **every** date rather than just the wrong one.
+
+**Still open, and the reason this is only half a fix:** there is no way to remove ONE date. Clearing
+is all-or-nothing, so correcting a typo means wiping the schedule and re-entering it. That is a real
+change to treatment-date handling — the logic that drives every medication rule — and it needs its
+own release rather than being folded into a wording fix.
+
+**Gate:** `test/v69-treatment-date-help.mjs` — 9/9, pinning the behaviour and the Help text
+*together*, because either drifting recreates the defect. Falsified both ways: restoring the false
+sentence → 7/9; making the app genuinely replace → 7/9 on the other two checks.
+
+One note on the suite itself: its first locator searched for `"treat-clear"` and found that string
+inside **another topic's `related` list**, extracting the wrong 50 characters and reporting four
+failures against an app that was already correct. Anchored to `{ id: "treat-clear"`. The same shape
+as this project's `keywords: [` incident, where a literal in ordinary prose fooled a gate.
