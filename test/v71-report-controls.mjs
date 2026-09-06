@@ -59,7 +59,15 @@ const SEED_ENTRIES = [
   { id: 'p1', medId: 'paracentesis', paraId: 'para_a', liters: 4.5, dose: '4.5 L', mg: 0, ts: NOON - 3 * DAY, loggedAt: NOON - 3 * DAY },
   // See note 2 above: weights are seeded ON PURPOSE so the populated path is the one under test.
   { id: 'w1', medId: 'weight', weight: 156.2, dose: '156.2 lbs', mg: 0, ts: NOON - 2 * DAY },
-  { id: 'w2', medId: 'weight', weight: 154.8, dose: '154.8 lbs', mg: 0, ts: NOON - 9 * DAY }
+  { id: 'w2', medId: 'weight', weight: 154.8, dose: '154.8 lbs', mg: 0, ts: NOON - 9 * DAY },
+  // RADIATION SESSIONS ARE SEEDED FOR THE SAME REASON THE WEIGHTS ARE, and the first version of
+  // this file forgot. With none seeded the Radiation check only ever reached the EMPTY-state
+  // return, so deleting addRow from the populated return -- `return [addRow, summary, list]` --
+  // left this suite 15/15 green. That is care-tracker v66's exact defect (a control visible only
+  // when there is nothing to show) on the very screen this release adds the control to. The
+  // Weight lesson had been learned and then not carried one screen to the right.
+  { id: 'r1', medId: 'radiation_session', dose: null, mg: 0, ts: NOON - 4 * DAY },
+  { id: 'r2', medId: 'radiation_session', dose: null, mg: 0, ts: NOON - 1 * DAY }
 ];
 // treatmentType 'both', NOT 'chemo'. The Radiation report is filtered out of reportTypes unless
 // hasRadiation() is true ('radiation' or 'both'), so a chemo-only fixture makes the Radiation check
@@ -186,10 +194,25 @@ console.log('\n4. Radiation — the screen that had no controls at all');
 {
   await back();
   await openReport('Radiation');
+  // PROVE WHICH PATH WE ARE ON, exactly as the Weight check does. Without this the check cannot
+  // tell the populated return from the empty one, and a control that appears only when there is
+  // nothing to show passes it.
+  //
+  // SCOPED TO <main>, NOT document.body. This is a single-file app: the source is inside body, so
+  // a body-text test matches the app's own code and can never go red.
+  const populated = await page.evaluate(() => {
+    const el = document.querySelector('main') || document.getElementById('root');
+    const txt = el ? (el.innerText || '') : '';
+    return txt.length > 0 && !/No radiation sessions logged yet/i.test(txt);
+  });
+  t('the Radiation report is showing its populated view', populated, populated ? '' : 'still the empty state');
   const btn = await page.$('[data-report-add-btn]');
-  t('an add control exists on the Radiation report', !!btn, btn ? '' : 'no [data-report-add-btn]');
+  t('an add control exists on the Radiation report', !!btn && populated, btn ? '' : 'no [data-report-add-btn]');
   if (btn) {
-    await btn.click();
+    // RE-QUERY IMMEDIATELY BEFORE CLICKING. A handle held across the app's 1s tick detaches from
+    // the DOM and the click throws "Element is not attached" -- which reads like a missing control
+    // rather than a stale reference.
+    await page.evaluate(() => { const b = document.querySelector('[data-report-add-btn]'); if (b) b.click(); });
     await page.waitForTimeout(600);
     t('it opens the session dialog', await modalOpen(), '');
     await clickText(/^Cancel$/);
