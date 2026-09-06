@@ -439,6 +439,32 @@ given release:
   above. This is deliberate: copy-only releases are exactly the ones most likely to skip
   Designer, so the mandatory gate has to be the one covering it, not the conditional one.
 
+### Does this number belong on the screen at all? (added 2026-09-06)
+
+Aaron, on the Paracentesis report: *"we need to remove average of 5.6 L per procedure for para.
+this isn't an avg thing. this should have been caught by someone."*
+
+**The wordsmith review above would NOT have caught it, and that is the point.** *"Averaging 5.6 L
+per procedure"* is short, clear, reads the way a person would say it, and repeats nothing. It
+passes every test in this section. It is also **meaningless and actively misleading**: a
+paracentesis drains what has accumulated, so the volume depends on how long it has been. The mean
+of those volumes describes nothing a clinician would use, and it invites the wrong reading —
+*"she's averaging 5.6, this one was 3, she's improving"* — when the **interval** carries the
+meaning, and that was already on the screen as *"Since last"*.
+
+So the review has a third question alongside "is it clear" and "is it short":
+
+> **For every figure the app computes about the patient — what would a clinician do with it, and
+> does an average of it mean anything at all?** Averages of things that *accumulate over time*
+> almost never do.
+
+**Arithmetically correct and clinically meaningless is still a false impression**, and it is the
+harder kind to catch precisely because nothing is wrong with the arithmetic or the wording.
+
+Note for whoever maintains both projects: care-tracker had **no** copy-review role at all until
+2026-09-06 (it is Rule 2.7 there now, "The Voice"). This section is the older of the two and the
+processes had drifted apart. When one project fixes a process gap, check whether the other has it.
+
 If a piece of copy is high-stakes enough that getting the tone wrong has real consequences —
 anything a caregiver reads while making a medical decision, not just a button label — whoever
 is doing that review (Designer or Auditor) should say so explicitly rather than guess, and

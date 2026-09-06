@@ -2151,10 +2151,26 @@ async function confirmTimeAndLog() {
     setToast('Temperature ' + v + ' ' + suffix + ' logged at ' + fmtTime(ts));
   } else if (m.type === 'para') {
     const v = m.paraValue;
+    // Re-validated HERE because when editing the value is typed into the modal. logParacentesis()
+    // validates its own input on the way in; that check cannot cover a value changed afterwards.
+    if (!(typeof v === 'number' && isFinite(v) && v > 0 && v <= PARA_MAX_LITERS)) {
+      setToast('Enter the liters drained (up to ' + PARA_MAX_LITERS + ')');
+      return;
+    }
+    // AN EDIT IS A NEW RECORD CARRYING THE SAME paraId, NOT A DELETE AND RE-ADD. Nothing is
+    // removed, so nothing can be lost if the write fails.
+    //
+    // loggedAt MUST BEAT THE RECORD IT REPLACES, not merely be "now": paraSupersedes() falls back
+    // to `ts` when loggedAt is absent, so a legacy or future-dated record would keep winning and
+    // the edit would silently do nothing while the toast said "updated". Found by the care-tracker
+    // v66 audit, fixed there in v67, and carried here rather than re-learned.
+    const editing = !!m.editId;
+    const prevRec = editing ? paracentesisResolved().find(x => x.paraId === m.editId) : null;
+    const prevStamp = prevRec ? (prevRec.loggedAt || prevRec.ts || 0) : 0;
     setState({ paraInput: '', timeModal: null });
-    await addEntryDB({ medId: PARA_MED_ID, paraId: paraNewId(), liters: v, dose: paraFmtLiters(v) + ' L',
-                       mg: 0, ts, loggedAt: Date.now() });
-    setToast('Paracentesis ' + paraFmtLiters(v) + ' L logged at ' + fmtTime(ts));
+    await addEntryDB({ medId: PARA_MED_ID, paraId: editing ? m.editId : paraNewId(), liters: v, dose: paraFmtLiters(v) + ' L',
+                       mg: 0, ts, loggedAt: Math.max(Date.now(), prevStamp + 1) });
+    setToast('Paracentesis ' + paraFmtLiters(v) + ' L ' + (editing ? 'updated' : 'logged') + ' at ' + fmtTime(ts));
   } else if (m.type === 'weight') {
     const v = m.weightValue;
     // Liters is optional, but if the user typed something while Paracentesis is selected, it must
@@ -2329,6 +2345,29 @@ function paracentesisResolved() {
 function paraTotalLiters(list) { return (list || []).reduce((s, p) => s + p.liters, 0); }
 function paraFmtLiters(n) { return (Math.round(n * 10) / 10).toFixed(1); }
 function paraLatest() { const l = paracentesisResolved(); return l.length ? l[0] : null; }
+function reportAddRow(opts) {
+  return h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '13px 14px' } },
+    h('div', { style: { fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#7A6E76', marginBottom: '8px' } }, opts.label),
+    opts.button
+      ? h('button', { 'data-report-add-btn': 'true', onClick: opts.onLog, style: { width: '100%', minHeight: '44px', borderRadius: '12px', background: '#A83D0F', color: '#fff', fontSize: '14px', fontWeight: '700' } }, opts.button)
+      : h('div', { style: { display: 'flex', gap: '8px' } },
+          h('input', Object.assign({
+            type: 'number', inputMode: 'decimal', step: '0.1', min: '0',
+            placeholder: opts.placeholder, value: opts.value, onInput: opts.onInput, className: 'mono',
+            // 16px is the iOS floor -- anything smaller makes Safari zoom the page on focus.
+            style: { flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #E9D8D1', borderRadius: '12px', padding: '0 13px', fontSize: '16px', background: '#FFFFFF', color: '#3A2F33' }
+          }, opts.max ? { max: String(opts.max) } : {}, opts.hook ? { [opts.hook]: 'true' } : {})),
+          h('button', { onClick: opts.onLog, style: { flexShrink: '0', minHeight: '44px', padding: '0 18px', borderRadius: '12px', background: '#A83D0F', color: '#fff', fontSize: '14px', fontWeight: '700' } }, 'Log')
+        )
+  );
+}
+
+// Opens the same time modal the Home card uses, carrying the existing paraId so the write
+// SUPERSEDES rather than duplicating. paracentesisResolved() keeps the newest loggedAt per id.
+function paraEditOpen(p) {
+  setState({ timeModal: { type: 'para', editId: p.paraId, paraValue: p.liters, timeValue: toLocalISO(p.ts) } });
+}
+
 async function logParacentesis() {
   const raw = (state.paraInput || '').trim();
   const v = parseFloat(raw);
@@ -4242,8 +4281,15 @@ function renderTimeModal() {
     title = (m.editId ? 'Edit ' : 'Log ') + (m.symptomType ? (SYMPTOM_TYPES[m.symptomType] || m.symptomType) : 'Symptom');
   } else if (m.type === 'radiation') {
     title = 'Log Past Radiation Session';
-  } else {
+  } else if (m.type === 'para') {
+    // When editing, the liters are editable below, so the heading states the action and the field
+    // states the value -- otherwise the heading shows a stale number the moment she types.
+    title = m.editId ? 'Edit Paracentesis' : ('Log Paracentesis · ' + paraFmtLiters(m.paraValue) + ' L');
+  } else if (m.type === 'weight') {
     title = 'Log Weight · ' + m.weightValue + ' ' + weightSuffix();
+  } else {
+    console.warn('[timeModal] unknown type:', m.type);
+    title = 'Log entry';
   }
 
   const medForPain = m.type === 'med' ? state.meds.find(x => x.id === m.medId) : null;
@@ -4258,6 +4304,14 @@ function renderTimeModal() {
   return h('div', { style: { position: 'fixed', inset: '0', background: 'rgba(59,25,10,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '60', padding: 'calc(20px + var(--safe-top)) 20px 20px' }, onClick: (e) => { if (e.target === e.currentTarget) setState({ timeModal: null }); } },
     h('div', { role: 'dialog', 'aria-modal': 'true', 'aria-label': title, style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '22px', padding: '24px 22px', width: '320px', maxWidth: '100%', maxHeight: '100%', overflowY: 'auto', boxShadow: '0 24px 64px rgba(136,57,24,0.18)' } },
       h('div', { style: { ...TYPE.title, color: '#2A2127', marginBottom: '22px', textAlign: 'center' } }, title),
+      (m.type === 'para' && m.editId) ? h('div', { style: { marginBottom: '16px' } },
+        h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '8px' } }, 'Liters drained'),
+        h('input', { 'data-para-edit-liters': 'true', type: 'number', inputMode: 'decimal', step: '0.1', min: '0', max: String(PARA_MAX_LITERS),
+          value: String(m.paraValue), onInput: (e) => { const n = parseFloat(e.target.value); state.timeModal.paraValue = isNaN(n) ? null : n; },
+          className: 'mono',
+          // 16px is the iOS floor -- anything smaller makes Safari zoom the page on focus.
+          style: { width: '100%', minHeight: '52px', border: '1px solid #E9D8D1', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#3A2F33' } })
+      ) : null,
       m.type === 'symptom' ? h('div', { style: { marginBottom: '16px' } },
         h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '8px' } }, 'Symptom'),
         h('select', { value: m.symptomType || '', onChange: (e) => { state.timeModal.symptomType = e.target.value; setState({ timeModal: state.timeModal }); }, className: 'mono', style: selectFix({ width: '100%', minHeight: '52px', border: '1px solid rgba(246,108,49,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' }) },
@@ -6612,7 +6666,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v70';
+const APP_VERSION = 'app-v71';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -8383,9 +8437,16 @@ function renderBloodPressureReport(now) {
 // app-v33: radiation session report — course summary + every logged session, newest first.
 // Returns an array (sibling-report convention; see renderBloodPressureReport's v18 note).
 function renderRadiationReport(now) {
+  // A session has no amount to type, so this is a button rather than a field. It opens the SAME
+  // modal the Home card's "log a past session" control already opens -- an audited path, not a new
+  // one. This screen previously had no controls at all.
+  const addRow = reportAddRow({
+    label: 'Log a radiation session', button: 'Log a session',
+    onLog: () => setState({ timeModal: { type: 'radiation', timeValue: nowLocalISO() } })
+  });
   const sessions = radiationSessionsSorted();
   const planned = radiationPlannedTotal();
-  if (!sessions.length) return [h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '22px 16px', textAlign: 'center', color: '#554A52', fontSize: '13px' } }, 'No radiation sessions logged yet. Log them from the Radiation sessions card on Home.')];
+  if (!sessions.length) return [addRow, h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '22px 16px', textAlign: 'center', color: '#554A52', fontSize: '13px' } }, 'No radiation sessions logged yet.')];
   const first = sessions[0], last = sessions[sessions.length - 1];
   const done = planned && sessions.length >= planned;
   const summary = h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '8px' } },
@@ -8408,7 +8469,7 @@ function renderRadiationReport(now) {
       removeBtn(r.e) // shared two-tap confirm pattern (v33 fix pass, Designer Major 4.1)
     ))
   );
-  return [summary, list];
+  return [addRow, summary, list];
 }
 
 function reportDescriptor(type, now) {
@@ -8815,13 +8876,19 @@ function renderSymptoms(now) {
 // The Paracentesis report. Removal appends a tombstone rather than deleting, matching care-tracker
 // v52 -- one design across both apps.
 function renderParacentesis(now) {
+  // THE ADD ROW IS PRESENT WHETHER OR NOT ANYTHING IS LOGGED. The empty state used to read "Log the
+  // liters drained from the card on Home" -- the app telling the caregiver this screen could not do
+  // its own job.
+  const addRow = reportAddRow({
+    label: 'Log a paracentesis', placeholder: 'Liters', max: PARA_MAX_LITERS, hook: 'data-para-report-add',
+    value: state.paraInput, onInput: (e) => { state.paraInput = e.target.value; }, onLog: logParacentesis
+  });
   const list = paracentesisResolved();
   if (!list.length) {
-    return [h('div', { style: { background: '#FFFFFF', border: '1px dashed #E9D8D1', borderRadius: '14px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } },
-      'No paracentesis procedures logged yet.\nLog the liters drained from the card on Home.')];
+    return [addRow, h('div', { style: { background: '#FFFFFF', border: '1px dashed #E9D8D1', borderRadius: '14px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } },
+      'No paracentesis procedures logged yet.')];
   }
   const total = paraTotalLiters(list);
-  const avg = total / list.length;
   const daysSince = Math.floor((dayStart(now) - dayStart(list[0].ts)) / 86400000);
   const sinceLabel = daysSince <= 0 ? 'Today' : daysSince === 1 ? '1 day' : (daysSince + ' days');
   const statCard = (label, value) => h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '14px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
@@ -8834,7 +8901,7 @@ function renderParacentesis(now) {
     statCard('Since last', sinceLabel)
   );
   const note = h('div', { style: { background: 'rgba(203,122,87,0.08)', border: '1px solid #E9D8D1', borderRadius: '14px', padding: '12px 14px', fontSize: '12.5px', color: '#554A52', lineHeight: '1.5' } },
-    'Averaging ' + paraFmtLiters(avg) + ' L per procedure. These are recorded separately from weight — the Weight report still shows what the scale actually said, with a marker on each drain date.');
+    'These are recorded separately from weight — the Weight report still shows what the scale actually said, with a marker on each drain date.');
   const rows = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
     ...list.map(p => h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '14px', padding: '13px 14px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
       h('div', { style: { flex: '1', minWidth: '0' } },
@@ -8846,10 +8913,16 @@ function renderParacentesis(now) {
             h('button', { onClick: () => removeParacentesis(p.paraId), style: { color: '#fff', background: '#B3261E', fontSize: '12.5px', fontWeight: '700', padding: '9px 12px', borderRadius: '10px' } }, 'Delete'),
             h('button', { onClick: () => setState({ confirmRemovePara: null }), style: { color: '#7A6E76', fontSize: '12.5px', padding: '9px 6px', fontWeight: '600' } }, 'Keep')
           )
-        : h('button', { onClick: () => setState({ confirmRemovePara: p.paraId }), style: { flexShrink: '0', color: '#A83D0F', fontSize: '12.5px', fontWeight: '700', padding: '9px 10px', borderRadius: '10px', background: 'rgba(200,83,32,0.10)' } }, 'Remove')
+        // REPLACE THE WHOLE EXPRESSION, not just its opening. Splicing a prefix onto an expression
+        // whose tail is not also rewritten wraps the button in a container nothing closes -- that
+        // exact mistake stopped care-tracker's index.html parsing during v66.
+        : h('div', { style: { display: 'flex', gap: '4px', alignItems: 'center', flexShrink: '0' } },
+            h('button', { 'data-para-edit': 'true', onClick: () => paraEditOpen(p), style: { color: '#A83D0F', fontSize: '12.5px', fontWeight: '700', padding: '9px 10px', borderRadius: '10px', minHeight: '44px', background: 'rgba(200,83,32,0.10)' } }, 'Edit'),
+            h('button', { onClick: () => setState({ confirmRemovePara: p.paraId }), style: { flexShrink: '0', color: '#A83D0F', fontSize: '12.5px', fontWeight: '700', padding: '9px 10px', borderRadius: '10px', minHeight: '44px', background: 'rgba(200,83,32,0.10)' } }, 'Remove')
+          )
     ))
   );
-  return [stats, note, rows];
+  return [addRow, stats, note, rows];
 }
 
 function renderWeightTrend(now) {
@@ -8860,6 +8933,11 @@ function renderWeightTrend(now) {
   const range = state.weightRange;
   const DAY = 86400000;
 
+  const addRow = reportAddRow({
+    label: 'Log a weight', placeholder: weightDefault() || '156.0', max: 999, hook: 'data-weight-report-add',
+    value: state.weightInput, onInput: (e) => { state.weightInput = e.target.value; }, onLog: logWeight
+  });
+
   // Range toggle
   const toggle = h('div', { style: { display: 'flex', gap: '5px', background: 'rgba(255,255,255,0.45)', borderRadius: '10px', padding: '3px', border: '1px solid #E9D8D1', alignSelf: 'flex-start' } },
     h('button', { onClick: () => setState({ weightRange: 'weeks' }), 'aria-pressed': String(range === 'weeks'), style: { minHeight: '44px', padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', background: range === 'weeks' ? '#AE5833' : 'transparent', color: range === 'weeks' ? '#fff' : '#7A6E76' } }, 'Weeks'),
@@ -8867,9 +8945,9 @@ function renderWeightTrend(now) {
   );
 
   if (weightEntries.length === 0) {
-    return [
+    return [addRow,
       toggle,
-      h('div', { style: { background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px', padding: '40px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No weight readings logged yet.\nLog your first weight on the Today tab.')
+      h('div', { style: { background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px', padding: '40px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No weight readings logged yet.')
     ];
   }
 
@@ -8880,7 +8958,7 @@ function renderWeightTrend(now) {
   const points = filtered.length > 0 ? filtered : weightEntries.slice(-2);
 
   if (points.length === 0) {
-    return [toggle, h('div', { style: { color: '#7A6E76', fontSize: '14px', textAlign: 'center', padding: '40px' } }, 'No data in this range.')];
+    return [addRow, toggle, h('div', { style: { color: '#7A6E76', fontSize: '14px', textAlign: 'center', padding: '40px' } }, 'No data in this range.')];
   }
 
   // Calculate bounds
@@ -9038,7 +9116,7 @@ function renderWeightTrend(now) {
     )
   );
 
-  return paraLine ? [toggle, chart, stats, paraLine, readings] : [toggle, chart, stats, readings];
+  return paraLine ? [addRow, toggle, chart, stats, paraLine, readings] : [addRow, toggle, chart, stats, readings];
 }
 
 

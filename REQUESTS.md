@@ -141,6 +141,14 @@ reconstruct it from history.
 
 ## Open
 
+- [x] **Report screens must be able to add and correct, not only delete** (Sep 6, 2026) — Aaron:
+  *"there isn't a way to add a para from the reports screen... we probably need to make sure the
+  same applies to chemowell where allowed."* Shipped in app-v71 for Paracentesis, Weight and
+  Radiation, plus Edit on paracentesis rows. **The Cycle is deliberately still outstanding** — see
+  the README row; its model differs and the sibling app's version of that change destroyed data.
+- [x] **Remove "Averaging N L per procedure" from the Paracentesis report** (Sep 6, 2026) — Aaron:
+  *"this isn't an avg thing."* Shipped in app-v71.
+
 - [ ] **app-v57, built and through one full gate round, NOT yet pushed — Aaron, 2026-08-13:**
   *"what's next and what's left on my tasks. I don't really care for the 'bot'. it's not doing what
   I want. but I do think all of those things can be in a FAQ under the 3 hamburger menu. can this be
