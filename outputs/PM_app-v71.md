@@ -1,36 +1,112 @@
 # Project Manager gate — ChemoWell app-v71
 
-AUDITED-COMMIT: 13e67d8ac2a2006caa0e6d12d824d103dd175b2f
-VERDICT: DO NOT SHIP
+AUDITED-COMMIT: 3c36c592c84d3a35da3e7b23397f79d7bf245ea3
+VERDICT: SHIP
 
-**In this project's plainer words: VERDICT: NO-GO — for now, and not because of the app.**
+**In this project's plainer words: VERDICT: GO.**
 (`release_check.sh` only understands `SHIP` / `DO NOT SHIP`, so that is the vocabulary the header
-above has to use. Read it as NO-GO.)
+above has to use. Read it as GO.)
 
-**Commit under test:** `13e67d8` on local `main`, also pushed to `origin/claude/app-v71-wip`.
-**`index.html` md5:** `05cad67ff2471dff4cf70fd72becc548`
-**`sw.js` md5:** `6f3ce4b129987c9abaa4e71bfa9187f1`
+**Commit under test:** `3c36c59` on local `main`. **Round 2** — this file refused `13e67d8` on the
+same day; that refusal and its reasoning are kept below in full, because a sign-off that erases what
+it objected to is not a record of anything.
+**`index.html` md5:** `05cad67ff2471dff4cf70fd72becc548` — **unchanged** from the bytes the Zero Day
+Audit measured.
+**`sw.js` md5:** `6f3ce4b129987c9abaa4e71bfa9187f1` — likewise.
 **Published baseline:** app-v70 / `chemowell-app-v70-1` at `28455fe` (`PUBLISHED.json`); `origin/main`
 is at `40c8ba6`, which carries that same v70 `index.html`.
 
 ---
 
-## Headline
+## Round 2 — the refusal is lifted
 
-**The build is sound. The paperwork around it is not, and one piece of it will make this project's
-own release gate refuse the push.** I found nothing wrong with the code, the version mechanics, or
-the reproducibility — I reproduced all three myself rather than taking them on report. Three things
-block the sign-off, all of them fixable in minutes and none of them requiring a line of app code to
-move:
+**Everything I refused this release for is fixed at `3c36c59`, and no app code moved to do it.**
+That last clause is the whole basis on which the audit's bytes still stand, so I verified it first
+and did not take it from the builder:
 
-1. **The audit report's header is not a commit sha, so `release_check.sh` will refuse the release
-   and name the audit as unreadable.** This is a hard stop, not a nit.
-2. **`BACKLOG.md` is uncommitted.** The four findings the audit recorded exist only in this
-   sandbox's working tree. On this project's history that is the same as not having recorded them.
-3. **`REQUESTS.md` ticks two items `[x]` while nothing is live**, against the rule written at the
-   top of `REQUESTS.md` itself.
+    git diff --name-only 4e5b91f 3c36c59
+      BACKLOG.md  README.md  REQUESTS.md
+      outputs/AUDIT-app-v71.md  outputs/PM_app-v71.md  test/v71-report-controls.mjs
 
-Fix those three and this is a GO. I would re-run `./release_check.sh` and expect exit 0.
+    git diff --name-only 4e5b91f -- index.html sw.js .github/workflows \
+                                    sync-backend package.json package-lock.json capacitor.config.ts
+      (empty)
+
+Docs, the test file and `outputs/` only. Both app md5s still hash to exactly what the audit
+recorded. `git status` is clean. `test/v71-report-controls.mjs` has not moved since `13e67d8`, the
+commit whose radiation fix I falsified myself — so that falsification still describes the suite
+being shipped.
+
+| condition | state at `3c36c59` |
+|---|---|
+| 1 · audit header is a real sha | **done** — `AUDITED-COMMIT: 4e5b91fb93d1…`, `VERDICT: SHIP` adjacent, exactly one unindented header in the file |
+| 2 · README's "9 of 12" corrected | **done** — now "9 red of the 13 checks that get that far", suite 16/16 on this build |
+| 3 · `REQUESTS.md` ticks | **done** — both items back to `[ ]`, with the reason written beside them |
+| 4 · `BACKLOG.md` committed, S7 and S6 added | **done** — all six findings, committed |
+| 5 · this file committed | **done** |
+
+**On the audit header edit.** The builder made it, announced it in an HTML comment placed *below*
+the VERDICT line, and said so in the commit message. I diffed the report rather than trusting that:
+the only changes are the one header line and that comment. **No finding and no verdict was
+touched.** The sha substituted is the one the report names in its own opening paragraph as the bytes
+it measured, and `git diff` over the rule-5 paths since that commit is empty — so the header is now
+true as well as parseable. That is the right way for a correction like this to happen: by the stage
+that owns the document, in the open.
+
+**On the two doc corrections.** I re-measured rather than accepting them. Against the untouched v70
+base the suite gives 4 green and 9 red and exits early — 13 checks reached of 16 — so "9 red of the
+13 checks that get that far" is true, and so is "16/16 on this build". The `REQUESTS.md` entries are
+unticked and now read "BUILT in app-v71 … unticked until live", which is that file's own rule
+applied rather than quoted.
+
+**On the two suite gaps.** S7 and S6 are in `BACKLOG.md` in terms someone can act on — S7 names the
+sabotage that proves the gap (swap the guard for a bare `Date.now()` and the suite stays green) and
+the fixture that closes it; S6 names the fix (an expected-check-count assertion). They are no longer
+findings that live only inside an agent's report.
+
+### The two things I was asked to judge fresh, not waive
+
+**Must a rollback bundle exist before this ships? No — and I am not waving it through, I checked
+why.** The reason a bundle matters on this project is that the sandbox is not durable. But app-v70
+is not in the sandbox: `origin/main` is at `40c8ba6`, on GitHub, and `git show 40c8ba6:index.html`
+hashes to `2e1c1b682524fd91de1fcfc318c7fcd9` — byte-identical to the v70 base I reproduced the patch
+against — with `APP_VERSION = 'app-v70'`, and `git show 40c8ba6:sw.js` carries
+`CACHE = 'chemowell-app-v70-1'`. Both halves of the previous release are recoverable from a remote
+that a sandbox rollback cannot touch. A `outputs/rollback-app-v70/` directory would be a second copy
+of bytes that are already safe, and a rollback needs a manual web upload either way, so it would
+save no step in the incident it exists for. The thing that was genuinely missing was not the bytes
+but **the recipe**, and that is now written down in section 5 below. Still worth adding the
+directory as a convenience; not worth holding a release for.
+
+**Are the four unfixed audit findings still acceptable now that they are recorded? Yes — my
+round-1 reasoning in section 6c stands unchanged, and being written down is what it was waiting
+on.** In short: the undeletable paracentesis is pre-existing, identical on v70, and v71 cannot
+create the condition; the 8px Back-pill clip fails safe, because the control under a stray thumb is
+*Back*, not *Remove* — the opposite of the sibling app's version of the same overlap; "Total
+drained" is Aaron's call and removing a second number he never mentioned, in a patient's app, on
+the team's own initiative is the wrong instinct; and Weight's missing edit is a design decision, not
+a patch, on the very day the sibling app destroyed a patient's record by treating that same kind of
+change as a port. **None of the four is a defect this release introduces.** Three are older than it
+and the fourth is a proposal.
+
+I would rather ship this tomorrow than ship it wrong too. This is not that case: the app is the same
+audited bytes, the mechanics are green, the patch reproduces, and the only things that were wrong
+were records — which are now right.
+
+### What still has to happen after the push
+
+`./release_check.sh` should be re-run and confirmed at exit 0 **immediately before** the upload, and
+after the upload: `./mark_published.sh`, commit `PUBLISHED.json`, `git fetch origin` and confirm
+`git diff origin/main --stat` is empty, then a live fetch with a cache-buster to confirm the
+deployed `APP_VERSION` and `sw.js` CACHE really moved. Then, and only then, tick the two
+`REQUESTS.md` lines. The unticked boxes are not an oversight to tidy up — they are the deploy's
+last step.
+
+---
+
+## Round 1 — the refusal, kept as the record
+
+Everything below is the gate as it read at `13e67d8`. It is left standing rather than rewritten.
 
 ---
 
@@ -284,7 +360,7 @@ precedent even when the edit is right. It belongs to whoever owns that report.
 
 ---
 
-## Conditions to turn this into a GO
+## Conditions to turn this into a GO — ALL MET AT `3c36c59`, see Round 2
 
 1. Correct the `AUDITED-COMMIT` line in `outputs/AUDIT-app-v71.md` to the full sha
    `4e5b91fb93d176996f2888f513cb0e1fe161e210`.
