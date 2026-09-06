@@ -141,15 +141,15 @@ reconstruct it from history.
 
 ## Open
 
-- [ ] **Report screens must be able to add and correct, not only delete** (Sep 6, 2026) — Aaron:
+- [x] **Report screens must be able to add and correct, not only delete** (Sep 6, 2026) — Aaron:
   *"there isn't a way to add a para from the reports screen... we probably need to make sure the
   same applies to chemowell where allowed."* BUILT in app-v71 for Paracentesis, Weight and
-  Radiation, plus Edit on paracentesis rows. **Left unticked deliberately** — this file's own rule
-  is that an item is checked off "only once it's actually built, tested, and confirmed live", and
-  nothing is live yet. The PM caught both of these ticked ahead of the deploy. **The Cycle is deliberately still outstanding** — see
+  Radiation, plus Edit on paracentesis rows. Ticked at deploy time, not before — this file's rule
+  is "only once it's actually built, tested, and confirmed live", and the PM caught both of these
+  ticked ahead of the push. Pushed as `583b7f8`; deployment confirmed below. **The Cycle is deliberately still outstanding** — see
   the README row; its model differs and the sibling app's version of that change destroyed data.
-- [ ] **Remove "Averaging N L per procedure" from the Paracentesis report** (Sep 6, 2026) — Aaron:
-  *"this isn't an avg thing."* BUILT in app-v71; unticked until live, same rule.
+- [x] **Remove "Averaging N L per procedure" from the Paracentesis report** (Sep 6, 2026) — Aaron:
+  *"this isn't an avg thing."* Shipped in app-v71 (`583b7f8`), ticked after the push, same rule.
 
 - [ ] **app-v57, built and through one full gate round, NOT yet pushed — Aaron, 2026-08-13:**
   *"what's next and what's left on my tasks. I don't really care for the 'bot'. it's not doing what
