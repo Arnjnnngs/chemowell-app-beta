@@ -1,5 +1,15 @@
-AUDITED-COMMIT: working-tree-app-v71
+AUDITED-COMMIT: 4e5b91fb93d176996f2888f513cb0e1fe161e210
 VERDICT: SHIP
+
+<!-- HEADER CORRECTED BY THE BUILDER, 2026-09-06, and recorded here rather than done quietly.
+     The auditor wrote 'working-tree-app-v71', which is not a sha, so release_check.sh's
+     grep -oE '^AUDITED-COMMIT:[[:space:]]*[0-9a-f]{7,40}' matched nothing and the gate fired its
+     UNREADABLE rule -- it never reached the VERDICT line below. The sha substituted is the one
+     THIS REPORT NAMES IN ITS OWN OPENING as the bytes it measured; git diff --name-only over the
+     rule-5 paths since that commit is empty. The PM found this and deliberately did not fix it:
+     'a PM rewriting the evidence it is judging is a bad precedent even when the edit is right.'
+     Correct. It is the builder's edit, it changes no finding and no verdict, and it is announced
+     in the commit message as well as here. -->
 
 # Zero Day Audit — ChemoWell app-v71
 

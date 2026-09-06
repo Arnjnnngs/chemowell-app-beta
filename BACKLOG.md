@@ -417,3 +417,38 @@ when you're about to touch the relevant code; delete the line once it's actually
   toast-timing behavior, not caused by the 2026-08-07 tour-banner-positioning fix. Found during that
   fix's Designer review. Likely fix: either shorten the setup toast's life once the tour has started,
   or delay showing it until after the tour's first real step.
+
+## From the app-v71 Zero Day Audit (2026-09-06) — found, not fixed, recorded so they are not lost
+
+- **A paracentesis with no `loggedAt` and a future `ts` cannot be deleted, and the app says it was.**
+  The tombstone is stamped `loggedAt: Date.now()`, which loses `paraSupersedes()` to the future `ts`,
+  so the row stays on screen while the toast reads *"Paracentesis removed."* **Pre-existing —
+  identical on untouched app-v70**, neither introduced nor widened by v71. Worth its own small
+  release: a lie about a deletion in a medical record is the kind of thing that gets believed.
+- **The floating "Back" pill clips the last Radiation row's Remove button by about 71×8px at 360.**
+  Already true at 320px on v70; v71's add row pushed the list down far enough to reach 360 too. It
+  fails the safe way — a stray thumb hits Back, not a destructive control — but the fix is the same
+  tail-room the sibling app added to its report detail.
+- **"Total drained · 17.0 L" fails the same test the average failed.** A lifetime cumulative sum of
+  volumes that each depend on elapsed time, monotonically increasing, inviting *"she's had seventeen
+  liters taken off."* The auditor's proposal, and it is **Aaron's call, not the team's** — he asked
+  for the average removed, not this. **"Procedures · 2" should stay**: how often a drain is needed is
+  a real ascites signal.
+- **Weight can now ADD but still cannot EDIT or REMOVE.** The ALL READINGS rows carry no controls at
+  all, so a mistyped `1156.2` distorts the trend permanently from that screen. **This is the exact
+  inverse of the Paracentesis defect v71 just fixed** — and the Enhancer walked that screen while
+  adding the add row and did not notice, which is the same blind spot recorded in TEAM.md.
+
+### Two gaps in the v71 SUITE itself, recorded because they were written nowhere at all
+
+The PM gate found these missing from every file — the audit had raised them and they existed only
+inside an agent's report, which does not survive a session.
+
+- **S7 — nothing checks the `loggedAt: Math.max(Date.now(), prev + 1)` guard.** Replace it with a
+  bare `Date.now()` and `test/v71-report-controls.mjs` stays green. That guard is the whole reason a
+  paracentesis edit still works on a legacy record with no `loggedAt` or one dated in the future;
+  right now it is load-bearing and unguarded. Needs a fixture with a future-dated record.
+- **S6 — the suite can crash mid-run and silently shorten its own coverage.** It reports only the
+  checks it reached, so a crash after check 9 looks like a shorter, passing run rather than a
+  failure. The same shape as the "a suite that cannot start looks exactly like a suite that passes"
+  trap hit twice on this project in one day. It needs an expected-check-count assertion at the end.
