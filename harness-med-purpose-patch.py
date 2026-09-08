@@ -106,7 +106,7 @@ const MED_PURPOSE = {
   'hydrocodone': 'A strong pain reliever for moderate to severe pain.',
   'tramadol': 'A pain reliever for moderate pain.',
   'gabapentin': 'Eases nerve pain, and is also used for some seizures.',
-  'lidocaine': 'Numbs the part of the body it is used on.',
+  'lidocaine': 'Numbs the area where it is used.',
   'pantoprazole': 'Lowers stomach acid, which protects the stomach and eases reflux.',
   'protonix': 'Lowers stomach acid, which protects the stomach and eases reflux.',
   'omeprazole': 'Lowers stomach acid, which protects the stomach and eases reflux.',
@@ -186,7 +186,7 @@ rep("""      h('label', null, fieldLabel('Generic name'), formInput({ value: for
 # ---- 4. the Meds screen shows it, with one disclaimer above the list -----------------------------
 rep("""          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '1px' } }, med.sub || 'No generic name')""",
     """          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '1px' } }, med.sub || 'No generic name'),
-          purposeOf(med) ? h('div', { 'data-med-purpose': med.id, style: { ...TYPE.caption, color: '#4A3F47', marginTop: '4px', lineHeight: '1.35' } }, purposeOf(med)) : null""")
+          purposeOf(med) ? h('div', { 'data-med-purpose': med.id, style: { ...TYPE.caption, color: '#4A3F47', marginTop: '4px', lineHeight: '1.35', overflowWrap: 'anywhere' } }, purposeOf(med)) : null""")
 rep("""    h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),""",
     """    // ONLY when at least one medication actually carries a line. This app has no default
     // medication list and the table is supportive-care drugs, so "no medication is recognised" is a

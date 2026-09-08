@@ -5427,7 +5427,7 @@ const MED_PURPOSE = {
   'hydrocodone': 'A strong pain reliever for moderate to severe pain.',
   'tramadol': 'A pain reliever for moderate pain.',
   'gabapentin': 'Eases nerve pain, and is also used for some seizures.',
-  'lidocaine': 'Numbs the part of the body it is used on.',
+  'lidocaine': 'Numbs the area where it is used.',
   'pantoprazole': 'Lowers stomach acid, which protects the stomach and eases reflux.',
   'protonix': 'Lowers stomach acid, which protects the stomach and eases reflux.',
   'omeprazole': 'Lowers stomach acid, which protects the stomach and eases reflux.',
@@ -6298,7 +6298,7 @@ function renderMedicationManager(now) {
         h('div', { style: { minWidth: '0', flex: '1' } },
           h('div', { style: { ...TYPE.title, color: '#2A2127' } }, med.name),
           h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '1px' } }, med.sub || 'No generic name'),
-          purposeOf(med) ? h('div', { 'data-med-purpose': med.id, style: { ...TYPE.caption, color: '#4A3F47', marginTop: '4px', lineHeight: '1.35' } }, purposeOf(med)) : null
+          purposeOf(med) ? h('div', { 'data-med-purpose': med.id, style: { ...TYPE.caption, color: '#4A3F47', marginTop: '4px', lineHeight: '1.35', overflowWrap: 'anywhere' } }, purposeOf(med)) : null
         ),
         h('div', { style: { display: 'flex', gap: '5px', flexShrink: '0' } },
           h('button', { onClick: () => openMedicationEditor(med), 'aria-label': 'Edit ' + med.name, style: { width: '44px', height: '44px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(200,83,32,0.10)', color: '#A83D0F', border: '1px solid rgba(200,83,32,0.18)' } }, appIcon('edit', 16)),
