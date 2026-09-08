@@ -1,287 +1,299 @@
-VERDICT: BLOCK
+AUDITED-COMMIT: fe83f72f62e1b0cbe85d0a4d1cff7d1d7567a3ed
+VERDICT: DO NOT SHIP
 
-**Headline: the only sentence in the table that describes a PRODUCT rather than a drug is wrong for
-the form an oncology patient most likely has — `'lidocaine': 'A numbing cream for soreness in one
-spot on the skin.'` is care-tracker's line about one patient's tube of cream, ported into an app
-where every medication is one the user typed, and "Lidocaine" here is just as likely to be the
-viscous rinse for chemo mouth sores or a patch. That is a wrong line on the right medication, which
-this brief ranks as the worst outcome class, and it ships under a disclaimer that says it is general
-information about the medication. Two smaller copy defects ride with it. Everything MECHANICAL in
-this release is clean: both care-tracker v74 blocks are genuinely fixed and I could not reopen
-either, the editor round-trip is field-for-field identical to app-v71 on four medication shapes,
-nothing clips at 320px, and 24/24 reproduces.**
+**Headline: all three blocks from the first pass are genuinely fixed and I could not reopen any of
+them — but a 42nd table entry was committed AFTER the fix commit, and it names a dosage form:
+`'tylenol liquid': 'Eases pain. This is Tylenol in liquid form.'` That is the exact class the release
+just declared forbidden, in the app's own source comment, in the patch header, and in a brand-new
+suite check literally named "NO entry names a dosage form, route or body site" — and that check
+reports PASS on it, because it is a list of eleven words and `liquid` is not one of them. The
+release's newest gate is already false-green on the first case it met. Two lines clear it: delete
+the second sentence, add `liquid` to the guard.**
 
-Audited 2026-09-08 against `index.html` (`APP_VERSION` read from the file under test: **app-v72**,
-`sw.js` CACHE `chemowell-app-v72-1`), control `git show ff407a7^:index.html` (**app-v71**). No
-network on any run (`env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy`; the suite
-refuses to start with a proxy set). Chromium at `/opt/pw-browsers/chromium`. **Nothing in the repo
-was edited except this file, and nothing was committed.** Probes live in the scratchpad.
+Delta pass, 2026-09-08. `APP_VERSION` read from the file under test: **app-v72**, `sw.js` CACHE
+`chemowell-app-v72-1`. Suite **27/27** at this commit, red on five hand-built mutants (numbers
+below). No network on any run (`env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy`; the
+suite refuses to start with a proxy set). Chromium at `/opt/pw-browsers/chromium`. **Nothing in the
+repo was edited except this file, and nothing was committed.** Probes live in the scratchpad.
 
----
-
-# BLOCK 1 — a statement about one person's tube of cream, shipped as a fact about a drug
-
-```js
-'lidocaine': 'A numbing cream for soreness in one spot on the skin.',
-```
-
-It is the **only** entry of the 41 that names a dosage form and a body site. Every other line names
-an effect and stops — "Eases nerve pain", "Slows the gut down to control diarrhea", "Lowers uric
-acid levels". That inconsistency is the tell, and its origin is visible in the sibling repo:
-care-tracker has a fixed thirteen-medication list in which Lidocaine *is* Brandi's cream, so the
-sentence was true there. **ChemoWell has no default medication list.** Every entry in the table is
-keyed to text a stranger typed, and the two lidocaine products an oncology patient most often has
-are neither a cream nor for the skin:
-
-- **lidocaine viscous**, the swish-and-spit rinse for chemotherapy mouth sores — mucositis is one of
-  the commonest reasons a chemo patient is given lidocaine at all;
-- a **lidocaine patch**, for a painful area.
-
-A patient given the rinse for mouth sores opens Meds, sees the app say her medication is a cream for
-skin, and now has to decide whether the app is confused or she is. Rule 2.7 question 1 is *"Is it
-true? Not roughly right — true."* It is not true, and it is untrue in the direction of route of
-administration, which is the one detail on which being wrong about a numbing agent matters.
-
-**Cheapest honest fix — one data line, no code:** describe the effect and drop the form.
-`'lidocaine': 'A numbing medicine that dulls pain in the area where it is used.'` That is true of the
-cream, the patch and the rinse. Then re-read the whole table for the same class: **no line may name a
-dosage form, a route or a body site**, because the key is a drug name and the drug has many forms.
-Worth adding to the suite as a guard (`/\b(cream|gel|patch|tablet|capsule|injection|rinse|skin)\b/i`
-over the table) — it would have caught this one and costs nothing.
-
-# BLOCK 2 — "used for sickness" is British idiom in an app that otherwise writes American
-
-```js
-'lorazepam': 'Eases anxiety, and is also used for sickness and sleep.',
-'ativan':    'Eases anxiety, and is also used for sickness and sleep.',
-```
-
-"Sickness" for nausea is British/Irish. The app's own display copy is American throughout — it says
-*liters*, and every other entry in this very table says **nausea** ("Prevents and settles nausea and
-vomiting", "Settles nausea and vomiting", "A steroid that calms nausea"). To a US patient at 2am
-"used for sickness" reads as *used for being ill*, which describes nothing and invites her to take a
-benzodiazepine because she feels unwell. Rule 2.7 question 2, failed.
-
-**Fix:** `'Eases anxiety, and is also used for nausea and for sleep.'`
-
-Worth flagging that the gate suite has the same idiom baked into its fixture — it types
-`'My oncologist prescribed this for sickness'` — so the wording will read as house style to whoever
-edits the table next.
-
-# BLOCK 3 — the disclaimer describes a line that is often not on the screen
-
-Measured, in a browser, with one unrecognised medication seeded and nothing else:
-
-```
-{ "disc": 1, "lines": 0,
-  "text": "The line under each medication is general information, not medical advice. ..." }
-```
-
-The disclaimer is rendered unconditionally, above the cards. **This app has no default medication
-list and the table is 41 supportive-care drugs** — no capecitabine, no paclitaxel, no
-letrozole, no trastuzumab, nothing a user is likely to type as their actual treatment. So a new user
-whose medications are all unrecognised, and who has typed no purposes of her own, gets a sentence
-telling her about "the line under each medication" when there is no line under any medication. It is
-the same class as the four consecutive false What's New notes Rule 2.7 was created for: a sentence
-that is not true of the screen it is printed on.
-
-**Fix, one line:** render the disclaimer only when at least one card has a line —
-`sortedMeds.some(purposeOf) ? h('div', {'data-med-disclaimer': ...}) : null`. The suite's
-"appears exactly once" check keeps passing (its fixture has recognised medications); add a second
-case with only unrecognised ones asserting **zero**.
+**The tree moved twice under me.** I started against `ef6fbc3`, and `bb396da` (the Tylenol Liquid
+entry) and `fe83f72` (docs only) landed while I was measuring. Everything below was re-run against
+the current HEAD. `index.html`, `sw.js`, the patch and the suite are byte-identical between `bb396da`
+and `fe83f72`, so the code I exercised is the code this report stamps.
 
 ---
 
-# NOT BLOCKING, but fix in the same pass
+# BLOCK — the 42nd entry, added after the fix, is the defect the fix was for
 
-## F1 — the schedule guard misses the exact phrase the patch says it catches
+```js
+'tylenol liquid': 'Eases pain. This is Tylenol in liquid form.',
+```
 
-The shipped source comment and the patch header both say:
+Committed in `bb396da`, three hours after the lidocaine line was rewritten to remove exactly this.
+Measured on screen: typing **Tylenol Liquid** (or `tylenol liquid`) as a medication name renders that
+sentence under the card; **Tylenol Extra Strength** and **Tylenol PM** render no line at all.
 
-> *"around chemo" / "after chemo" are gone because they are schedules written in words, which is what
-> the guard in `test/v72-med-purpose.mjs` exists to catch.*
+Three things are wrong with it, in descending order of importance:
 
-Run against the guard's own regex:
+**1. The new guard cannot fail on it, and it is the first case the guard ever met.** The suite check
+added this pass prints
 
-| candidate line | guard |
+```
+PASS  NO entry names a dosage form, route or body site
+```
+
+on a table containing the words *"in liquid form"*. The check is
+`/\b(cream|ointment|patch|gel|rinse|suppository|injection|syrup|lozenge|tablet form|on the skin)\b/i`
+— a list of the words in the sentence that got blocked, not the rule its name states. `liquid` is
+absent, `tablet form` is present but `liquid form` is not, and nothing checks a route or a body site
+at all. This project's own rule is that a check which cannot fail is worse than no check, and this
+one now certifies the class it was built to stop. That is the blocking half of this finding: not the
+sentence, the green light over it.
+
+**2. The sentence carries no purpose.** It is the only one of 42 whose second half describes the
+product rather than what the medication does. *"This is Tylenol in liquid form"* tells a tired
+caregiver nothing she did not already know from the name she typed. Rule 2.7 question 3 — does this
+belong on the screen at all — and the answer is no.
+
+**3. It is the seed of a product table.** The file's comment, corrected this same pass, argues that a
+name carrying extra words should MISS rather than resolve, *"which is a miss rather than a wrong
+answer."* One product-variant key is fine on its own; a table that grows *Tylenol Liquid*,
+*Children's Tylenol*, *Tylenol Extra Strength* one commit at a time is a maintenance surface nobody
+signed up for, and the release notes do not mention it exists.
+
+**In its defence, and this matters:** the sentence is **true**, and the key `tylenol liquid` names
+the form itself, so the "one drug, many forms" reasoning that made the lidocaine line dangerous does
+not apply here. **No patient is misled.** This is not the same severity as Block 1 last pass. I am
+refusing on the false green plus the empty half-sentence, and both fixes are one line each.
+
+**What clears it:**
+
+```js
+'tylenol liquid': 'Eases pain.',
+```
+identical to `'tylenol'`, no form language — and then `liquid` (and, while the file is open, `liquid
+form`, `topical`, `by mouth`, `under the tongue`) into `FORMY`. Re-run; it stays 27/27 and the guard
+goes red if the sentence ever comes back. **Verify the order:** fix the entry first, or the guard
+fails on the shipped table.
+
+---
+
+# THE THREE BLOCKS FROM THE FIRST PASS — all genuinely fixed, none merely moved
+
+## Block 1, lidocaine — CLEARED
+
+`'lidocaine': 'Numbs the part of the body it is used on.'` No form, no route, no site. True of the
+cream, the patch, the viscous swish-and-spit rinse for chemo mouth sores, and an injection — the four
+products an oncology patient actually has. Rendered and confirmed on screen at 390px and 320px.
+
+*Residual, not blocking:* systemic **intravenous lidocaine** (arrhythmia, or a perioperative
+analgesia infusion) does not numb the part of the body it is used on; it acts on the whole body. That
+is a hospital drug, not one a patient tracks in an outpatient app, and I would not spend a release on
+it — but it is the one form the new sentence is not true of, and it should be written down rather
+than discovered later.
+
+## Block 2, "sickness" — CLEARED
+
+`lorazepam` and `ativan` both now read *"Eases anxiety, and is also used for nausea and sleep."*
+Every entry in the table uses American register. **The suite fixture still types "My oncologist
+prescribed this for sickness"** as the user's own words — which is correct and should stay: it is the
+user's sentence, not the app's, and it proves typed text survives verbatim.
+
+## Block 3, the unconditional disclaimer — CLEARED, and I could not reopen it
+
+Measured in a browser, four fixtures:
+
+| fixture | medications | lines rendered | disclaimer |
+|---|---|---|---|
+| nothing recognised (`Zzunknownium`) | 1 | 0 | **0** |
+| **empty medication list** | 0 | 0 | **0** — no crash, no page error |
+| mixed (Zofran, Pantoprazole, Madeupzz) | 3 | 2 | 1 |
+| Tylenol variants + Lidocaine | 5 | 3 | 1 |
+
+`sortedMeds` is the exact array the cards are built from (`index.html:6265`, `:6293`, `:6346`), so
+`.some(m => purposeOf(m))` cannot disagree with what is on screen. The empty-list case returns `null`
+into the children array, which `h()` already handles — there is a `null` sitting in that same array
+from the v12 breadcrumb cut. Zero page errors on every fixture.
+
+**On the wording in the mixed case, which the brief asked about specifically.** The notice still
+reads *"The line under each medication is general information, not medical advice."* In the mixed
+case — three medications, two lines — "each" over-reaches. I am **not** blocking on it: it errs
+toward more disclaiming rather than less, it is a description of a class of lines rather than a claim
+about every card, and it is nothing like the blocked case where the sentence described something
+that was not on the screen at all. If it is being touched anyway, *"The lines under your medications
+are general information, not medical advice"* is true in all three states and costs nothing.
+
+*One observation, pre-existing, not from this delta:* when every line on screen is the user's **own
+typed** text, the notice calls her own words "general information". Harmless, and arguably still
+right to disclaim. Noted so it is not rediscovered as new.
+
+---
+
+# THE FOUR NON-BLOCKING ITEMS — three taken cleanly, one re-broken by the newer commit
+
+| | first pass | now |
+|---|---|---|
+| **F1** schedule guard missed `after chemo` | the patch header claimed it was caught; it was not | **fixed** — `after chemo` and `before chemo` added; verified red on a mutant |
+| **F2** no fever guard at all | the release's headline safety decision was unguarded | **added**, and it fires — but see G1 below, it is narrower than it looks |
+| **F3/F4** two false source comments | placeholder-while-typing, and the "Zofran (ODT)" claim | **both corrected**, and the corrected text now matches measured behaviour |
+| **F5** "42 entries" was 41 | `outputs/PM_app-v72.md` | **corrected to 41 — and the table is now 42 again.** The document says *"41 entries (the earlier draft and the audit brief both said 42; the audit counted)"* while the shipped table has 42 keys. Fix the number in the same commit that fixes the entry. |
+
+---
+
+# NEW THIS PASS
+
+## G1 — the fever guard misses the plainest way to write a fever clause
+
+The guard is `/fever|antipyretic/i`. The first pass recommended `/\bfever|temperature\b/i`;
+`temperature` was dropped and `antipyretic` — a word no plain-English line in this table would ever
+use — was substituted for it. Run directly:
+
+| candidate line | fever guard |
 |---|---|
-| `A steroid given around chemo` | **CAUGHT** |
-| `A steroid given after chemo to calm nausea.` | **passes** |
-| `Given after chemo.` | **passes** |
-| `Take at night for sleep.` | passes |
-| `Take two tablets` | passes |
+| `Reduces fever.` | **CAUGHT** |
+| `Eases pain and brings down a fever.` | **CAUGHT** |
+| `Eases pain and lowers a high temperature.` | **passes** |
 
-Half of the claim is false. `after chemo` is not in the alternation (`on chemo days|around chemo|with
-chemo` are), and neither is `at night`, nor any number written as a word. The guard is not too tight
-— no legitimate line trips it — it is **too loose in the one place its own documentation points at.**
+*"Lowers a high temperature"* is exactly how this table's register would phrase it — the app writes
+*"Lowers stomach acid"*, *"Lowers uric acid levels"*. One word closes it: add `|temperature`. It
+cannot false-positive; no entry in the table mentions temperature.
 
-## F2 — there is NO fever guard at all, and fever removal is this release's headline safety decision
+## G2 — the form guard catches words, not the class its name claims
 
-The header devotes a paragraph to it: *"EVERY FEVER CLAUSE IS DELIBERATELY GONE... a fever during
-chemo is a thing to REPORT, not to suppress."* I confirmed none is present in the shipped table
-(`fever`/`temperature`: zero matches). **But nothing in the suite would notice one coming back.**
-The patch header also says the table is expected to be refreshed later — *"Refreshing it to exact
-federal wording later is a data change into the same table"* — and federal wording for
-acetaminophen and ibuprofen says *reduces fever* in so many words. The single most likely future
-edit to this file walks straight through the gate. Add `/\bfever|temperature\b/i` to the section 1
-table checks; it is one line and it is the check that matters most here.
+Falsified against candidates that a future editor could plausibly write:
 
-## F3 — the placeholder does not appear while a new medication's name is typed
+| candidate line | form guard |
+|---|---|
+| `A numbing skin cream.` | **CAUGHT** |
+| `A numbing medicine you rub onto a sore spot.` | passes |
+| `A liquid you swish around your mouth to numb it.` | passes |
+| `Taken by mouth to ease pain.` | passes |
+| `Given as a shot under the skin.` | passes |
+| `An infusion given in the vein.` | passes |
+| `A tablet that eases pain.` | passes (`tablet form` is listed; `tablet` is not) |
 
-The patch header claims: *"The placeholder is resolved from the NAME BEING TYPED, so it appears as
-soon as a recognised medication name is entered on a brand-new medication."* Measured — Meds → Add,
-typed `Zofran` keystroke by keystroke, waited 1.2s:
+I ran a whole mutant build with `'lidocaine': 'A numbing medicine you rub onto a sore spot.'` — a
+route and a body site in one sentence — and the suite passed **27/27**. The guard pins the string
+that got blocked, the way a delete-ratchet pins a call site. That is worth having and it is not what
+the check's name says. Either widen it, or rename it to *"NO entry names one of these dosage
+forms"* so the next reader is not told a class is closed when a word list is.
 
-```
-{ "nameValue": "Zofran",
-  "purposePlaceholder": "For example: settles nausea",
-  "purposeValue": "" }
-```
+Related, and it is the same false-claim class as F3/F4: the comment directly above the schedule guard
+still reads *"Dosage forms are allowed; WHEN and HOW MUCH are not."* A guard forbidding dosage forms
+now sits three lines below it.
 
-`updateMedicationForm('name', ...)` is called with no `rerender` argument, so nothing re-renders and
-the placeholder — computed at render time from `state.medEditor.form.name` — never updates. The
-control for this is the suite's own section 4 PASS: on an already-saved Zofran the editor opens with
-`placeholder: "Prevents and settles nausea and vomiting."`, so the resolver is fine; only the live
-update is missing. Not harmful (the line appears on the card after saving, and reopening the editor
-shows it), but the claim in the release documentation is untrue and the feature is less discoverable
-than it is described as being. Either pass `rerender: 'debounced'` on the name field, or delete the
-sentence from the header.
+## G3 — the schedule guard is evaded by writing the word out
 
-## F4 — the key normaliser does not do what the comment above it says
+`\bafter chemo\b` catches `after chemo` and does **not** catch `after chemotherapy` (the `\b` needs a
+non-word character after `chemo`). Verified both ways. `chemo\w*` fixes it. Low urgency — no shipped
+line is affected — but it is the same evasion shape as G1 and G2 and the three are one commit.
+
+## G4 — four NUL bytes in the gate suite, invisible in every tool that reads it
+
+`test/v72-med-purpose.mjs` contains four literal `\x00` characters, at lines 163, 217, 224 and 267.
+Every one is in the same idiom:
 
 ```js
-// ...so "Zofran (ODT)" and "zofran" land on the same key.
+t('the line matches the table it came from', map['zofran'] === (TABLE['zofran'] || '\0'), ...)
 ```
 
-Measured: `"ZOFRAN (ODT)"` → `"zofran odt"`, which is not `"zofran"` and matches nothing. The
-comment is false. The behaviour is a **miss, not a wrong line**, which is the safe direction, so this
-is a comment fix, not a code fix — unless you want suffixed brand names to resolve, which I would
-not recommend: matching on a prefix is how a wrong line gets attached to the wrong drug.
+That was meant to be `|| ''`. Consequences, measured:
 
-## F5 — "42 entries" is 41
+- The file classifies as **binary**. `grep` refuses it without `-a`; `file` reports `data`. Anyone
+  grepping the harness for a check will silently not find it. `git diff` still renders it, but only
+  because the first NUL sits at byte 9849 and git only sniffs the first 8000.
+- The sentinel itself is **harmless and fails safe**: `TABLE['zofran']` is truthy whenever extraction
+  works, so the fallback never fires; if extraction ever broke, the comparison goes red, which is the
+  direction you want.
 
-`outputs/PM_app-v72.md` line 38 and the audit brief both say 42. The file has 41 keys, and the suite
-prints `41 entries`. No entry is being dropped by the suite's extraction regex — I checked
-(`suite-visible: 41`, `missed by suite: []`) — the count in the write-up is simply wrong.
+Not blocking, and **it predates this delta** — the NULs are already in `HEAD~2`, so it is a
+"did-not-reach-last-pass" finding rather than a regression. Replace the four with `''`.
 
 ---
 
 # WHAT I TRIED TO BREAK AND COULD NOT
 
-## The name-keyed lookup — this app's own risk, and it is properly guarded
+- **Tylenol PM does not get the Tylenol line.** `Tylenol PM` normalises to `tylenol pm`, misses, and
+  renders no line — correct, and it is the case that makes prefix-matching unsafe: Tylenol PM
+  contains diphenhydramine, so *"Eases pain"* would be a wrong line on the right medication. The
+  file's own comment argues this and the behaviour matches it. **Do not "fix" the miss with prefix
+  matching**; per-product keys, written carefully, are the right answer.
+- **`Tylenol Extra Strength`** — no line. Correct.
+- **The release is reproducible from the patch.** `harness-med-purpose-patch.py --base <app-v71
+  index.html> --out <scratch>` produces `index.html` and `sw.js` **byte-identical** to the shipped
+  files. The patch refuses a base that is not app-v71. Every hand-fix from this delta, the Tylenol
+  entry included, is in the patch as well as the file — the two do not disagree anywhere.
+- **The empty medication list** renders Meds with no cards, no disclaimer and no page error.
+- **320px** with the new lines: page `scrollWidth` 320, no purpose line clipped, no horizontal scroll.
+- **The first pass's mechanical findings still hold and I did not re-litigate them**: the
+  `hasOwnProperty` + `typeof` lookup (`constructor`, `toString`, `__proto__`, fullwidth text all
+  return `''` and never throw), the editor round-trip that adds `purpose` and drops nothing else on
+  four medication shapes, forward and backward storage compatibility with app-v71, and Home asserted
+  clean rather than skipped. Nothing in this delta touches any of that — it is a table edit and one
+  ternary.
 
-`purposeLookup` uses `Object.prototype.hasOwnProperty.call` **and** a `typeof v === 'string'` check.
-Both care-tracker v74 crash paths are closed. Probed keys and results:
+# FALSIFICATION NUMBERS — every new check, broken and watched go red
 
-| typed name | key | result |
-|---|---|---|
-| `constructor` / `Constructor` | `constructor` | `''` — no line, no throw |
-| `toString` | `tostring` | `''` |
-| `hasOwnProperty` | `hasownproperty` | `''` |
-| `__proto__` | `proto` | `''` |
-| `Zofran!!!` | `zofran` | correct line |
-| `  zofran  ` | `zofran` | correct line |
-| `ZOFRAN®` | `zofran` | correct line |
-| `Ｚｏｆｒａｎ` (fullwidth) | `` (empty) | `''` — the `!k` early return catches it |
-| `Tylenol #3` | `tylenol 3` | `''` — correct, that is a different drug |
-| `Senokot-S` | `senokot s` | `''` — correct |
+| mutant build | result |
+|---|---|
+| unmodified HEAD | **27/27** |
+| `acetaminophen` given a fever clause | **26/27** — fever guard red |
+| `lidocaine` restored to "A numbing cream … on the skin" | **26/27** — form guard red |
+| disclaimer made unconditional (`true ?`) | **26/27** — red on `lines=0 disclaimer=1` |
+| `dexamethasone` given "given after chemo" | **26/27** — schedule guard red |
+| `lidocaine` = "A numbing medicine you rub onto a sore spot" | **27/27 — GREEN. See G2.** |
 
-The empty-key early return matters more than it looks: without it, `''` would be tested against the
-table and a unicode-only name would take whatever `MED_PURPOSE['']` did. It is there.
-
-The suite's section 6 reproduces the care-tracker crash properly — **and its own comment records that
-its first version could not fail** (it drove the add form, which needs more than a name, so nothing
-was ever added and it passed 24/24 against the bare-index build). That rewrite is the right one:
-writing straight into storage and reloading is the truer test, because the damage was persistence,
-not the moment of adding. I looked for the same class elsewhere in the suite and found no second
-instance — every remaining assertion is against a value read from the file under test or from
-`localStorage`, none against `document.body.textContent`, none pinning a version literal.
-
-## The generic-name fallback
-
-`purposeOf` is `typed || lookup(name) || lookup(sub)`. Name-typed `Mystery` + generic `Ondansetron`
-resolves to the ondansetron line — correct, and the suite asserts it on Pantoprazole. Name matching
-one entry and generic matching a different one resolves to the **name**, which is the right
-precedence: the name is what the user calls the medication, the generic is a note about it.
-
-## The medication editor — the "neighbouring field gets dropped" class
-
-Four medication shapes seeded, editor opened, **Save changes** pressed with nothing altered, stored
-object dumped and diffed field-by-field against app-v71 doing the identical thing:
-
-| shape | fields exercised | difference v71 → v72 |
-|---|---|---|
-| Zofran | gap type, gapH, doses, quickLog, note, generic | `purpose` absent → `""` — **nothing else** |
-| Dexamethasone | window type, 2 windows, daily limit + unit, grouped-morning, treatment-only with before/after days, weekly schedule, paused, note | `purpose` absent → `""` — **nothing else** |
-| Iron | interval schedule with anchor, grouped-evening, pills limit unit | `purpose` absent → `""` — **nothing else** |
-| Madeupzz | minimal, unrecognised | `purpose` absent → `""` — **nothing else** |
-
-Schedule type, windows, gap hours, daily limit and unit, dose options, home-screen placement,
-treatment-day availability and day counts, notes, paused state and `alerts` all survive byte-identical.
-`normalizeMedication` spreads `...original` first, so the new key needs no whitelist entry. Zero page
-errors on either build.
-
-## Storage and rollback
-
-`persistMedicationConfig` writes the whole medication object, and `normalizeMedication` on **both**
-builds begins `{ ...original }`, so:
-
-- an app-v71 build reading a v72-written config **keeps** `purpose` (it passes through untouched and
-  is written back on the next save) — rollback is safe, nothing is lost going backwards;
-- a v72 build reading a pre-v72 config sees `purpose` absent, `purposeOf` falls to the table, and the
-  first save stamps `purpose: ""` — which resolves identically. No migration needed.
-
-`purpose` is never read by reminders, missed-dose tracking, dose ceilings, the report paths or the
-backup writer — I checked every read site of the medication object that the diff could reach. There
-is no medication-config diff/compare path in this build for two phones to disagree over (`sync` here
-covers entries, not the medication list), so the field cannot make two devices report as differing.
-
-## Rendering at 320px
-
-Meds screen, three recognised medications, 320px viewport: `documentElement.scrollWidth === 320`
-(no horizontal page scroll), every purpose line `scrollWidth === clientWidth` (nothing clipped), the
-line wraps to two rows and the card grows to fit, and **zero** elements overflow their box without an
-explicit scroll style. The `h()` trap does not apply: `'data-med-purpose': med.id` is always a string
-and the `placeholder` expression always ends in a string fallback, so no conditional attribute can
-arrive as `null`/`false`.
-
-## Falsification numbers
-
-- Gate suite on this build: **24/24**. On the app-v71 base it cannot even start section 2 — the
-  builder reports 12/24, consistent with what I see (no table, no `data-med-purpose`, no field).
-- My editor-round-trip probe, falsified: run against app-v71 as if it were the release and the
-  `purpose` column reads `<absent>` on all four shapes instead of `""` — the probe distinguishes the
-  builds, so a dropped field would show. Run against v72 it shows exactly one added key and no other
-  difference.
-- My placeholder probe, falsified against its control: on a **saved** Zofran the same selector reads
-  `placeholder: "Prevents and settles nausea and vomiting."` (suite section 4, PASS); on the
-  **add** form after typing the same name it reads `"For example: settles nausea"`. Same code, same
-  selector, opposite results — the probe is measuring the re-render, not the resolver.
-- The schedule-guard result above is the guard's own regex evaluated directly, red on
-  `around chemo` and green on `after chemo`.
+The three guard regexes were also evaluated directly against seventeen candidate sentences; the
+passes and catches are tabulated in G1–G3. No guard rejects any of the 42 lines the app actually
+ships, so none of them is too tight.
 
 # DELIBERATELY EXEMPT
 
-- **iPhone rendering.** This sandbox has Chromium only. 320/360/390 Chromium is not an iPhone and
-  never will be; the Meds card at small text sizes on a real iPhone is Aaron's phone test, not mine.
-- **Home is asserted clean, not skipped.** The suite checks `[data-med-purpose]` count is 0 on Home,
-  which is the right shape for a deliberate exemption — the exemption is written down as an
-  assertion instead of an absence.
-- **The 41 sentences' clinical accuracy beyond Blocks 1 and 2.** I read all 41 as a patient and as
-  someone checking for advice. The other 39 name an effect, carry no dose, no schedule, no fever
-  clause and no instruction. `'iron': 'An iron supplement, for low iron levels.'` is circular but
-  harmless; `'allopurinol': 'Lowers uric acid levels.'` is terse but true. None of them tells anyone
-  to do anything. I am not a clinician and this is not a clinician's review.
+- **iPhone rendering.** This sandbox has Chromium only. 320/360/390 in Chromium is not an iPhone and
+  never will be; the Meds card at large text sizes on a real phone is Aaron's test, not mine.
+- **Home is asserted clean, not skipped** — the suite checks `[data-med-purpose]` count is 0 on Home,
+  which is an exemption written down as an assertion instead of an absence.
+- **Clinical accuracy of the 42 sentences beyond what is named here.** I read all 42 again with the
+  eye that caught lidocaine, looking specifically for a second entry naming a product, a route, a
+  body site, or something true of only one form. There is exactly one: the Tylenol Liquid entry
+  above. `'pantoprazole': '…which protects the stomach'` and `'loperamide': 'Slows the gut down…'`
+  name organs, but as the mechanism, true of every form of the drug — that is not the defect class.
+  `'iron'` is still circular and still harmless. I am not a clinician and this is not a clinician's
+  review; `BACKLOG.md` now carries a standing item for a periodic clinical re-read, which is the
+  right home for it.
+- **The user's own typed purpose text** is never audited by any guard, by design — it is her sentence,
+  not the app's, and the guards run over `MED_PURPOSE` only.
 
-# WHAT WOULD CLEAR THE BLOCK
+# WHAT WOULD CLEAR THIS
 
-Three data edits and one conditional, then a delta re-audit that only re-reads the table and the
-Meds screen:
+One commit, four small edits, then a re-run of the suite — no re-audit of the mechanics is needed,
+nothing here reopens the build:
 
-1. Lidocaine line rewritten with no form, no route, no body site — plus a table guard for that class.
-2. "sickness" → "nausea" on lorazepam and ativan.
-3. Disclaimer rendered only when at least one line exists, with the zero-line case asserted.
-4. F1/F2 while the suite is open: `after chemo` into the schedule alternation, and a fever guard.
+1. `'tylenol liquid': 'Eases pain.'` — drop the second sentence.
+2. `liquid` into the form guard (and, cheaply, `temperature` into the fever guard, `chemo\w*` into the
+   schedule guard).
+3. The stale comment above the schedule guard — dosage forms are no longer allowed.
+4. `outputs/PM_app-v72.md`: 41 → 42.
 
-Nothing here needs the build re-architected. The engineering in app-v72 is the best-guarded version
-of this feature either repo has produced; it is the medical text that is not ready.
+Optional in the same pass, none of it blocking: the four NUL bytes in the suite, the mixed-case
+wording of the disclaimer, and one line somewhere recording that intravenous lidocaine is the form
+the new sentence does not describe.
+
+---
+
+# THE FIRST PASS, SUMMARISED (this file is the only one the gate reads)
+
+Audited `ef6fbc3^`, verdict **BLOCK**. Three blocks: **(1)** `'lidocaine': 'A numbing cream for
+soreness in one spot on the skin.'` — the only entry of 41 naming a form and a body site, ported from
+care-tracker where lidocaine is one patient's tube of cream, into an app whose `DEFAULT_MEDS` is
+empty and where every medication is one the user typed, so the same key is just as likely to be the
+viscous rinse for mouth sores or a patch. **(2)** `'…used for sickness and sleep'` on lorazepam and
+ativan — British idiom in an app that writes American throughout, and at 2am "sickness" reads as
+"being ill", which invites taking a benzodiazepine for feeling unwell. **(3)** the disclaimer
+rendered unconditionally, measured at `disclaimer=1, lines=0`, telling a new user about "the line
+under each medication" when no medication had one. Four non-blocking: the schedule guard missed the
+exact phrase its own documentation claimed it caught; there was no fever guard at all behind the
+release's headline safety decision; two source comments described behaviour the code does not have;
+and the write-up said 42 entries when there were 41. Cleared as unbreakable in that pass: the
+`hasOwnProperty` lookup against JavaScript built-in names, the editor round-trip on four medication
+shapes, storage compatibility in both directions with app-v71, and 320px rendering.

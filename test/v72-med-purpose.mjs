@@ -134,18 +134,18 @@ console.log('\n1. The table — what the app is willing to say about a medicatio
     ids.filter(k => /\d/.test(TABLE[k])).join(', '));
   // A schedule written in WORDS passed care-tracker's digit-only guard. Dosage forms are allowed;
   // WHEN and HOW MUCH are not.
-  const SCHEDULEY = /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|around chemo|with chemo|after chemo|before chemo|dose|doses|mg|ml|mcg)\b/i;
+  const SCHEDULEY = /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|around chemo|with chemo|after chemo|before chemo|chemotherapy|dose|doses|mg|ml|mcg)\b/i;
   // NO FEVER CLAUSE, EVER. Removing them was this release's safety decision -- a fever during
   // treatment is a thing to REPORT, not to suppress -- and nothing was holding it. The patch header
   // says a later refresh to federal label wording is planned, and federal wording says "reduces
   // fever", so this guard is what stops that refresh quietly undoing the decision.
-  const fevery = ids.filter(k => /fever|antipyretic/i.test(TABLE[k]));
+  const fevery = ids.filter(k => /fever|antipyretic|temperature/i.test(TABLE[k]));
   t('NO entry tells anyone a medication brings down a fever', fevery.length === 0,
     fevery.map(k => k + ': ' + TABLE[k]).join(' | '));
   // A LINE MUST DESCRIBE THE DRUG, NOT A PRODUCT. The audit blocked on lidocaine being called "a
   // numbing cream": in this app every medication is one the user typed, so the same name may be a
   // rinse for mouth sores or a patch, and a wrong line on the right medication is worse than none.
-  const FORMY = /\b(cream|ointment|patch|gel|rinse|suppository|injection|syrup|lozenge|tablet form|on the skin)\b/i;
+  const FORMY = /\b(cream|ointment|patch|gel|rinse|suppository|injection|infusion|syrup|lozenge|liquid|tablet|tablets|capsule|capsules|by mouth|topical|rub on|rubbed on|applied to|on the skin|under the tongue)\b/i;
   const formy = ids.filter(k => FORMY.test(TABLE[k]));
   t('NO entry names a dosage form, route or body site', formy.length === 0,
     formy.map(k => k + ': ' + TABLE[k]).join(' | '));
@@ -160,7 +160,7 @@ console.log('\n2. The Meds screen — recognised by brand, by generic, and not a
   const map = await purposeMap();
   t('a medication recognised by its BRAND name shows a line', !!map['zofran'], map['zofran'] || '(none)');
   t('a medication recognised by its GENERIC name shows a line', !!map['pantoprazole'], map['pantoprazole'] || '(none)');
-  t('the line matches the table it came from', map['zofran'] === (TABLE['zofran'] || ' '), map['zofran']);
+  t('the line matches the table it came from', map['zofran'] === (TABLE['zofran'] || '<<no such entry>>'), map['zofran']);
   t('a medication nobody recognises shows NO line at all rather than an empty one',
     map['madeupzz'] === undefined, JSON.stringify(map['madeupzz']));
   const disc = await page.evaluate(() => document.querySelectorAll('[data-med-disclaimer]').length);
@@ -214,14 +214,14 @@ console.log('\n4. The box is a PLACEHOLDER, and an edit stores nothing (care-tra
   });
   t('the box is EMPTY for a medication nobody has described', box && box.value === '', JSON.stringify(box && box.value));
   t('the built-in sentence shows as the PLACEHOLDER instead',
-    !!(box && box.placeholder === (TABLE['zofran'] || ' ')), JSON.stringify(box && box.placeholder));
+    !!(box && box.placeholder === (TABLE['zofran'] || '<<no such entry>>')), JSON.stringify(box && box.placeholder));
   await clickText(/^Save changes$/);
   await page.waitForTimeout(900);
   const stored = await storedPurpose('zofran');
   t('saving an untouched medication stores NOTHING — the wording is never frozen into the record',
     stored === '' || stored === '<<missing>>', stored);
   const after = (await purposeMap())['zofran'] || '';
-  t('and the line is still on screen afterwards', after === (TABLE['zofran'] || ' '), after);
+  t('and the line is still on screen afterwards', after === (TABLE['zofran'] || '<<no such entry>>'), after);
 }
 
 console.log('\n5. What the user types wins, and clearing it gives the built-in line back');
@@ -264,7 +264,7 @@ console.log('\n5. What the user types wins, and clearing it gives the built-in l
   await page.waitForTimeout(900);
   const cleared = (await purposeMap())['zofran'] || '';
   t('clearing the box returns to the built-in line rather than doing nothing',
-    cleared === (TABLE['zofran'] || ' '), cleared);
+    cleared === (TABLE['zofran'] || '<<no such entry>>'), cleared);
 }
 
 console.log('\n6. A medication named after a JavaScript built-in must not destroy the Meds screen');

@@ -35,7 +35,7 @@ wording is a data change into the same table rather than a rebuild.
 care-tracker has a fixed list of thirteen medications, so its table is keyed by medication **id**.
 **This app has no default list — every medication is one the user typed** — so the lookup here is by
 **name**, with the generic name as a fallback, both lowercased and punctuation-stripped. Someone who
-types "Zofran" and someone who types "ondansetron" get the same line. **41 entries** (the earlier draft of this document and the audit brief both said 42; the audit counted).
+types "Zofran" and someone who types "ondansetron" get the same line. **42 entries.** This line said 42, then 41, then 42 again: the count moved when `tylenol liquid` was added between audit passes, and the correction to 41 was made against the table as it stood an hour earlier. Counted against the shipped table.
 
 ## Findings carried across from care-tracker's audit, before this build existed
 
