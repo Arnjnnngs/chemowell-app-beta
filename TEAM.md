@@ -470,3 +470,25 @@ anything a caregiver reads while making a medical decision, not just a button la
 is doing that review (Designer or Auditor) should say so explicitly rather than guess, and
 the Lead Developer should flag it to Aaron as worth a real copywriter's pass rather than
 resolve it in-chain.
+
+
+## DO NOT REPORT UNTIL IT IS DONE (2026-09-08, Aaron, EXPLICIT, effective immediately)
+
+> *"I'm so tired of you stopping when you should be working. You WILL NOT give me a recap of what's
+> going on UNLESS I need to approve something OR until you are COMPLETE."*
+
+**Two reasons to send Aaron a message, and no others:** he has to approve or decide something, named
+in plain words; or the work is COMPLETE — built, verified, pushed, live, gates green, with the done /
+outstanding list included.
+
+Not "a background job is running" — start it and keep working. Not "the audit came back and I am
+fixing it" — fix it. Not "here is what I found" — fix it and say so at the end. If a check comes back
+red, the next thing that happens is the fix, not a paragraph about the fix. If a message ends with
+*"running in the background"*, *"now starting X"* or *"next I will"*, it should not have been sent.
+
+A turn that runs for an hour, launches four agents and ships two releases is correct. A short turn
+ending in a status paragraph is the failure. Delivering a finished file is not a recap; pairing it
+with a progress note is.
+
+**This supersedes any checkpoint guidance in this repo's process docs wherever the two disagree.**
+care-tracker carries the same rule as `CLAUDE.md` Rule 0.6.
