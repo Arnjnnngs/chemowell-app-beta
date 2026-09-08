@@ -35,8 +35,10 @@ WHAT IT DOES
     could be overwritten but never removed; and saving ANY edit froze that day's wording into the
     user's stored config, so a later correction would never reach a medication anyone had edited.
     Unset stays unset, typing overrides, clearing returns to the built-in line, nothing freezes.
-    The placeholder is resolved from the NAME BEING TYPED, so it appears as soon as a recognised
-    medication name is entered on a brand-new medication.
+    The placeholder is resolved from the name on the form, so an EXISTING medication's editor shows
+    its built-in line greyed out. On a brand-new medication it does not appear while the name is
+    being typed -- updateMedicationForm does not re-render for that field -- so the box shows the
+    generic example until the medication is saved and reopened. Measured, not assumed.
 
 WHAT IT DELIBERATELY DOES NOT DO
   * Nothing on the Home quick-log cards -- that is the screen a patient taps when they feel awful,
@@ -103,7 +105,7 @@ const MED_PURPOSE = {
   'hydrocodone': 'A strong pain reliever for moderate to severe pain.',
   'tramadol': 'A pain reliever for moderate pain.',
   'gabapentin': 'Eases nerve pain, and is also used for some seizures.',
-  'lidocaine': 'A numbing cream for soreness in one spot on the skin.',
+  'lidocaine': 'Numbs the part of the body it is used on.',
   'pantoprazole': 'Lowers stomach acid, which protects the stomach and eases reflux.',
   'protonix': 'Lowers stomach acid, which protects the stomach and eases reflux.',
   'omeprazole': 'Lowers stomach acid, which protects the stomach and eases reflux.',
@@ -115,8 +117,8 @@ const MED_PURPOSE = {
   'miralax': 'A laxative that draws water into the gut to ease constipation.',
   'loperamide': 'Slows the gut down to control diarrhea.',
   'imodium': 'Slows the gut down to control diarrhea.',
-  'lorazepam': 'Eases anxiety, and is also used for sickness and sleep.',
-  'ativan': 'Eases anxiety, and is also used for sickness and sleep.',
+  'lorazepam': 'Eases anxiety, and is also used for nausea and sleep.',
+  'ativan': 'Eases anxiety, and is also used for nausea and sleep.',
   'buspirone': 'Eases anxiety.',
   'paroxetine': 'Treats depression, and is also used for anxiety.',
   'sertraline': 'Treats depression, and is also used for anxiety.',
@@ -129,8 +131,10 @@ const MED_PURPOSE = {
   'diphenhydramine': 'An antihistamine, used for allergic reactions and to help with sleep.',
   'benadryl': 'An antihistamine, used for allergic reactions and to help with sleep.'
 };
-// Lowercased, and stripped of anything but letters, digits and single spaces, so "Zofran (ODT)" and
-// "zofran" land on the same key.
+// Lowercased, and stripped of anything but letters, digits and single spaces, so "Zofran!!!" and
+// "  Zofran  " land on the same key as "zofran". A name carrying EXTRA WORDS does not -- "Zofran
+// (ODT)" normalises to "zofran odt" and finds nothing, which is a miss rather than a wrong answer,
+// and a wrong line on the right medication would be far worse than no line.
 function medPurposeKey(text) {
   return String(text || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\\s+/g, ' ').trim();
 }
@@ -183,8 +187,12 @@ rep("""          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTo
     """          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '1px' } }, med.sub || 'No generic name'),
           purposeOf(med) ? h('div', { 'data-med-purpose': med.id, style: { ...TYPE.caption, color: '#4A3F47', marginTop: '4px', lineHeight: '1.35' } }, purposeOf(med)) : null""")
 rep("""    h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),""",
-    """    h('div', { 'data-med-disclaimer': 'true', style: { ...TYPE.caption, color: '#6B5F66', lineHeight: '1.4', margin: '2px 0 10px' } },
-      'The line under each medication is general information, not medical advice. Your care team is the answer for anything specific.'),
+    """    // ONLY when at least one medication actually carries a line. This app has no default
+    // medication list and the table is supportive-care drugs, so "no medication is recognised" is a
+    // common state, not an edge case -- and a notice about "the line under each medication" printed
+    // above a list with no lines in it is the app describing something that is not on the screen.
+    sortedMeds.some(m => purposeOf(m)) ? h('div', { 'data-med-disclaimer': 'true', style: { ...TYPE.caption, color: '#6B5F66', lineHeight: '1.4', margin: '2px 0 10px' } },
+      'The line under each medication is general information, not medical advice. Your care team is the answer for anything specific.') : null,
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),""")
 
 # ---- 5. version and cache ------------------------------------------------------------------------

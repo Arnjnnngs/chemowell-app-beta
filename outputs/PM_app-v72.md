@@ -35,7 +35,7 @@ wording is a data change into the same table rather than a rebuild.
 care-tracker has a fixed list of thirteen medications, so its table is keyed by medication **id**.
 **This app has no default list — every medication is one the user typed** — so the lookup here is by
 **name**, with the generic name as a fallback, both lowercased and punctuation-stripped. Someone who
-types "Zofran" and someone who types "ondansetron" get the same line. 42 entries.
+types "Zofran" and someone who types "ondansetron" get the same line. **41 entries** (the earlier draft of this document and the audit brief both said 42; the audit counted).
 
 ## Findings carried across from care-tracker's audit, before this build existed
 
@@ -69,11 +69,14 @@ this build was ever a candidate:
 
 | Build | Result |
 |---|---|
-| app-v72 as it stands | **24/24** |
-| app-v71 base (no feature) | 12/24 |
-| bare-index lookup (the crash) | 21/24 |
-| built-in line seeded as a value (care-tracker's block) | 22/24 |
-| save path drops the field | 21/24 |
+| app-v72 as it stands | **27/27** |
+| app-v71 base (no feature) | 15/27 |
+| bare-index lookup (the crash) | 22/27 |
+| built-in line seeded as a value (care-tracker's block) | 22/24 at the time it was measured |
+| save path drops the field | 21/24 at the time it was measured |
+| a fever clause restored | 26/27 |
+| lidocaine described as a cream again | 26/27 |
+| the disclaimer made unconditional again | 26/27 |
 
 **One check could not fail and was rewritten.** The crash section drove the add form, and this app's
 add form needs more than a name, so nothing was ever added — the section scored 24/24 against the
@@ -97,4 +100,38 @@ render afterwards throws.
   nothing writes it without a real edit, so two phones cannot be made to disagree by this release
   alone — but that is reasoned, not measured.
 
-**PM verdict: clear to ship once the Zero Day Audit reports.**
+## The Zero Day Audit BLOCKED the first build. Three findings, all copy or data, all fixed.
+
+1. **`'lidocaine': 'A numbing cream for soreness in one spot on the skin.'`** — the only entry that
+   described a PRODUCT rather than a drug. It was care-tracker's line, where lidocaine really is one
+   patient's tube of cream. **Here every medication is one the user typed**, so "Lidocaine" is just
+   as likely to be the viscous rinse for chemo mouth sores, or a patch. A wrong line on the right
+   medication, under a disclaimer promising general information about the drug. Now: *"Numbs the
+   part of the body it is used on."* — and a new table guard rejects any entry naming a form, route
+   or body site.
+2. **`'Eases anxiety, and is also used for sickness and sleep.'`** (lorazepam, ativan) — British
+   idiom in an app that writes American and says *nausea* in every other entry; a US patient reads
+   "sickness" as "being unwell". Now: *"...also used for nausea and sleep."*
+3. **The disclaimer rendered unconditionally** — measured at `disclaimer: 1, lines: 0`. A notice
+   about *"the line under each medication"* printed above a list with no lines in it. This app has
+   no default medication list and the table is supportive-care drugs, so that is a common state, not
+   an edge case. It renders only when at least one medication carries a line, and the suite asserts
+   the empty case.
+
+**Four non-blocking findings, all taken:** the schedule guard passed *"after chemo"* while the patch
+header claimed it caught it; there was **no fever guard at all**, despite fever removal being this
+release's headline safety decision and the header planning a later refresh to federal wording, which
+says *"reduces fever"*; the placeholder does not update while a new medication's name is being typed,
+so the header's discoverability claim was untrue and now says what actually happens; and the
+key-normaliser comment claimed *"Zofran (ODT)"* and *"zofran"* land on the same key — they do not, a
+safe miss but a false comment.
+
+**Could not be broken, and worth not re-litigating:** `purposeLookup` survives `constructor`,
+`toString`, `hasOwnProperty`, `__proto__`, fullwidth and empty names; the generic fallback and its
+precedence are right; saving preserves schedule type, windows, gap hours, daily limit and unit, dose
+options, placement, treatment-day availability, notes, paused and alerts byte-identical to app-v71,
+with only `purpose` added; rollback is safe in both directions; zero clipping and zero horizontal
+overflow at 320px.
+
+**PM verdict: clear to ship.** All three blocks fixed, every non-blocking finding taken, the suite
+grew from 24 checks to 27 and is red on five separate broken builds.

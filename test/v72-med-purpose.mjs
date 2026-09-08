@@ -134,7 +134,21 @@ console.log('\n1. The table — what the app is willing to say about a medicatio
     ids.filter(k => /\d/.test(TABLE[k])).join(', '));
   // A schedule written in WORDS passed care-tracker's digit-only guard. Dosage forms are allowed;
   // WHEN and HOW MUCH are not.
-  const SCHEDULEY = /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|around chemo|with chemo|dose|doses|mg|ml|mcg)\b/i;
+  const SCHEDULEY = /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|around chemo|with chemo|after chemo|before chemo|dose|doses|mg|ml|mcg)\b/i;
+  // NO FEVER CLAUSE, EVER. Removing them was this release's safety decision -- a fever during
+  // treatment is a thing to REPORT, not to suppress -- and nothing was holding it. The patch header
+  // says a later refresh to federal label wording is planned, and federal wording says "reduces
+  // fever", so this guard is what stops that refresh quietly undoing the decision.
+  const fevery = ids.filter(k => /fever|antipyretic/i.test(TABLE[k]));
+  t('NO entry tells anyone a medication brings down a fever', fevery.length === 0,
+    fevery.map(k => k + ': ' + TABLE[k]).join(' | '));
+  // A LINE MUST DESCRIBE THE DRUG, NOT A PRODUCT. The audit blocked on lidocaine being called "a
+  // numbing cream": in this app every medication is one the user typed, so the same name may be a
+  // rinse for mouth sores or a patch, and a wrong line on the right medication is worse than none.
+  const FORMY = /\b(cream|ointment|patch|gel|rinse|suppository|injection|syrup|lozenge|tablet form|on the skin)\b/i;
+  const formy = ids.filter(k => FORMY.test(TABLE[k]));
+  t('NO entry names a dosage form, route or body site', formy.length === 0,
+    formy.map(k => k + ': ' + TABLE[k]).join(' | '));
   const bad = ids.filter(k => SCHEDULEY.test(TABLE[k]));
   t('NO entry states a schedule or a dose in words either', bad.length === 0,
     bad.map(k => k + ': ' + TABLE[k]).join(' | '));
@@ -151,6 +165,29 @@ console.log('\n2. The Meds screen — recognised by brand, by generic, and not a
     map['madeupzz'] === undefined, JSON.stringify(map['madeupzz']));
   const disc = await page.evaluate(() => document.querySelectorAll('[data-med-disclaimer]').length);
   t('the "general information, not medical advice" line appears exactly once', disc === 1, disc + ' found');
+  // ...and NOT AT ALL when no medication carries a line. This app has no default medication list and
+  // the table is supportive-care drugs, so a list where nothing is recognised is a common state --
+  // the audit measured the notice printing above a list with no lines under it.
+  await page.evaluate((k) => {
+    const raw = JSON.parse(localStorage.getItem(k) || '{}');
+    raw.meds = [{ id: 'unknownzz', name: 'Zzunknownium', sub: '', type: 'gap', gapH: 6, doses: [{ label: '1 tab', mg: 0 }] }];
+    localStorage.setItem(k, JSON.stringify(raw));
+  }, MED_KEY);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1800);
+  await goMeds();
+  const discNone = await page.evaluate(() => document.querySelectorAll('[data-med-disclaimer]').length);
+  const linesNone = await page.evaluate(() => document.querySelectorAll('[data-med-purpose]').length);
+  t('with NO medication recognised, there are no lines and no disclaimer either',
+    linesNone === 0 && discNone === 0, 'lines=' + linesNone + ' disclaimer=' + discNone);
+  // restore the fixture for the sections that follow
+  await page.evaluate(([k, meds]) => {
+    const raw = JSON.parse(localStorage.getItem(k) || '{}');
+    raw.meds = meds; localStorage.setItem(k, JSON.stringify(raw));
+  }, [MED_KEY, SEED_MEDS]);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1800);
+  await goMeds();
 }
 
 console.log('\n3. THE EXEMPTION, ASSERTED: Home stays clean');
