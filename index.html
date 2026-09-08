@@ -5465,7 +5465,7 @@ function medicationFormFrom(med) {
   return {
     name: base.name || '',
     sub: base.sub || '',
-    purpose: purposeOf(base),
+    purpose: base.purpose || '',
     note: base.note || '',
     type: base.type === 'win' ? 'win' : 'gap',
     gapH: base.gapH || '', // v12: empty (grey placeholder 0) — no more delete-the-0-before-typing; empty still saves as 0/As needed
@@ -6008,7 +6008,7 @@ function renderMedicationEditor() {
     ),
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: '11px' } },
       h('label', null, fieldLabel('Medication name'), formInput({ value: form.name, placeholder: 'Medication name', onInput: event => updateMedicationForm('name', event.target.value) })),
-      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('What it’s for'), formInput({ value: form.purpose, placeholder: 'For example: settles nausea', onInput: event => updateMedicationForm('purpose', event.target.value) })),
+      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('What it’s for'), formInput({ value: form.purpose, placeholder: (purposeOf({ name: (state.medEditor && state.medEditor.form && state.medEditor.form.name) || '', sub: (state.medEditor && state.medEditor.form && state.medEditor.form.sub) || '' }) || 'For example: settles nausea'), onInput: event => updateMedicationForm('purpose', event.target.value) })),
       h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, placeholder: 'Generic name', onInput: event => updateMedicationForm('sub', event.target.value) })),
       // v38 (Aaron-requested reorder): Schedule type now sits right under Generic name instead of
       // after Daily limit/Limit unit, several fields away.

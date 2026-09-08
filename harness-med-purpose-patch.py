@@ -27,8 +27,16 @@ WHAT IT DOES
   * purposeOf(med): typed field > lookup on name > lookup on generic > '' (never an empty label).
   * "What it's for" is a real field in the medication editor, optional, free text.
   * The Meds screen shows it under the generic name, with ONE disclaimer above the list.
-  * medicationFormFrom() seeds the field, so editing a medication cannot silently wipe it. That is
+  * medicationFormFrom() carries the field, so editing a medication cannot silently wipe it. That is
     care-tracker's v43.3 failure class and this app has the identical seeder shape.
+  * THE BUILT-IN LINE IS A PLACEHOLDER, NEVER A SEEDED VALUE. care-tracker's v74 seeded it as a
+    value and the Zero Day Audit blocked that build twice over from the one root cause: clearing the
+    box and saving did NOTHING while the app said "updated", so a line someone believed was wrong
+    could be overwritten but never removed; and saving ANY edit froze that day's wording into the
+    user's stored config, so a later correction would never reach a medication anyone had edited.
+    Unset stays unset, typing overrides, clearing returns to the built-in line, nothing freezes.
+    The placeholder is resolved from the NAME BEING TYPED, so it appears as soon as a recognised
+    medication name is entered on a brand-new medication.
 
 WHAT IT DELIBERATELY DOES NOT DO
   * Nothing on the Home quick-log cards -- that is the screen a patient taps when they feel awful,
@@ -139,7 +147,7 @@ rep("""    name: base.name || '',
     note: base.note || '',""",
     """    name: base.name || '',
     sub: base.sub || '',
-    purpose: purposeOf(base),
+    purpose: base.purpose || '',
     note: base.note || '',""")
 
 rep("""    sub: String(form.sub || '').trim(),""",
@@ -148,7 +156,7 @@ rep("""    sub: String(form.sub || '').trim(),""",
 
 # ---- 3. the field in the editor -----------------------------------------------------------------
 rep("""      h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, place""",
-    """      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('What it\u2019s for'), formInput({ value: form.purpose, placeholder: 'For example: settles nausea', onInput: event => updateMedicationForm('purpose', event.target.value) })),
+    """      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('What it\u2019s for'), formInput({ value: form.purpose, placeholder: (purposeOf({ name: (state.medEditor && state.medEditor.form && state.medEditor.form.name) || '', sub: (state.medEditor && state.medEditor.form && state.medEditor.form.sub) || '' }) || 'For example: settles nausea'), onInput: event => updateMedicationForm('purpose', event.target.value) })),
       h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, place""")
 
 # ---- 4. the Meds screen shows it, with one disclaimer above the list -----------------------------
