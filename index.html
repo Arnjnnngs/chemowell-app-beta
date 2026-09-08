@@ -5397,12 +5397,75 @@ function medicationDoseSummary(med) {
   return med.doses && med.doses.length ? med.doses.map(dose => dose.label).join(' · ') : 'Single-tap log';
 }
 
+// ---- WHAT EACH MEDICATION IS FOR (app-v72) ----
+// Short original sentences, written for a patient rather than a clinician. Nothing is copied from
+// any site or label -- see this patch's header on why that is the safe answer. No dose, no
+// schedule, no advice: only what the medication is generally used for.
+// KEYED BY NAME, not by id: this app has no default medication list, so every entry is one the user
+// typed. Both the brand name and the generic resolve to the same line.
+const MED_PURPOSE = {
+  'ondansetron': 'Prevents and settles nausea and vomiting.',
+  'zofran': 'Prevents and settles nausea and vomiting.',
+  'prochlorperazine': 'Settles nausea and vomiting.',
+  'compazine': 'Settles nausea and vomiting.',
+  'dexamethasone': 'A steroid given around chemo to calm nausea, swelling and reactions.',
+  'decadron': 'A steroid given around chemo to calm nausea, swelling and reactions.',
+  'acetaminophen': 'Eases pain and brings down a fever.',
+  'paracetamol': 'Eases pain and brings down a fever.',
+  'tylenol': 'Eases pain and brings down a fever.',
+  'ibuprofen': 'Eases pain, swelling and fever.',
+  'advil': 'Eases pain, swelling and fever.',
+  'morphine': 'A strong pain reliever for moderate to severe pain.',
+  'oxycodone': 'A strong pain reliever for moderate to severe pain.',
+  'hydrocodone': 'A strong pain reliever for moderate to severe pain.',
+  'tramadol': 'A pain reliever for moderate pain.',
+  'gabapentin': 'Eases nerve pain, and is also used for some seizures.',
+  'lidocaine': 'A numbing cream for soreness in one spot on the skin.',
+  'pantoprazole': 'Lowers stomach acid, which protects the stomach and eases reflux.',
+  'protonix': 'Lowers stomach acid, which protects the stomach and eases reflux.',
+  'omeprazole': 'Lowers stomach acid, which protects the stomach and eases reflux.',
+  'famotidine': 'Lowers stomach acid, which eases reflux and heartburn.',
+  'senna': 'A gentle laxative for constipation.',
+  'senokot': 'A gentle laxative for constipation.',
+  'docusate': 'A stool softener for constipation.',
+  'polyethylene glycol': 'A laxative that draws water into the gut to ease constipation.',
+  'miralax': 'A laxative that draws water into the gut to ease constipation.',
+  'loperamide': 'Slows the gut down to control diarrhea.',
+  'imodium': 'Slows the gut down to control diarrhea.',
+  'lorazepam': 'Eases anxiety, and is also used for sickness and sleep.',
+  'ativan': 'Eases anxiety, and is also used for sickness and sleep.',
+  'buspirone': 'Eases anxiety.',
+  'paroxetine': 'Treats depression, and is also used for anxiety.',
+  'sertraline': 'Treats depression, and is also used for anxiety.',
+  'ferrous sulfate': 'An iron supplement, for low iron levels.',
+  'iron': 'An iron supplement, for low iron levels.',
+  'filgrastim': 'Helps the body make white blood cells after chemo.',
+  'neupogen': 'Helps the body make white blood cells after chemo.',
+  'pegfilgrastim': 'Helps the body make white blood cells after chemo.',
+  'allopurinol': 'Lowers uric acid levels.',
+  'diphenhydramine': 'An antihistamine, used for allergic reactions and to help with sleep.',
+  'benadryl': 'An antihistamine, used for allergic reactions and to help with sleep.'
+};
+// Lowercased, and stripped of anything but letters, digits and single spaces, so "Zofran (ODT)" and
+// "zofran" land on the same key.
+function medPurposeKey(text) {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+// What the user typed wins; then the name; then the generic; otherwise nothing at all -- never an
+// empty label under a medication nobody has described.
+function purposeOf(med) {
+  if (!med) return '';
+  const typed = String(med.purpose || '').trim();
+  if (typed) return typed;
+  return MED_PURPOSE[medPurposeKey(med.name)] || MED_PURPOSE[medPurposeKey(med.sub)] || '';
+}
 function medicationFormFrom(med) {
   const base = med || {};
   const max = medicationCeilingMax(base);
   return {
     name: base.name || '',
     sub: base.sub || '',
+    purpose: purposeOf(base),
     note: base.note || '',
     type: base.type === 'win' ? 'win' : 'gap',
     gapH: base.gapH || '', // v12: empty (grey placeholder 0) — no more delete-the-0-before-typing; empty still saves as 0/As needed
@@ -5674,6 +5737,7 @@ function saveMedicationEditor() {
     id,
     name,
     sub: String(form.sub || '').trim(),
+    purpose: String(form.purpose || '').trim(),
     note: String(form.note || '').trim(),
     type,
     gapH,
@@ -5944,6 +6008,7 @@ function renderMedicationEditor() {
     ),
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: '11px' } },
       h('label', null, fieldLabel('Medication name'), formInput({ value: form.name, placeholder: 'Medication name', onInput: event => updateMedicationForm('name', event.target.value) })),
+      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('What it’s for'), formInput({ value: form.purpose, placeholder: 'For example: settles nausea', onInput: event => updateMedicationForm('purpose', event.target.value) })),
       h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, placeholder: 'Generic name', onInput: event => updateMedicationForm('sub', event.target.value) })),
       // v38 (Aaron-requested reorder): Schedule type now sits right under Generic name instead of
       // after Daily limit/Limit unit, several fields away.
@@ -6210,7 +6275,8 @@ function renderMedicationManager(now) {
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' } },
         h('div', { style: { minWidth: '0', flex: '1' } },
           h('div', { style: { ...TYPE.title, color: '#2A2127' } }, med.name),
-          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '1px' } }, med.sub || 'No generic name')
+          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '1px' } }, med.sub || 'No generic name'),
+          purposeOf(med) ? h('div', { 'data-med-purpose': med.id, style: { ...TYPE.caption, color: '#4A3F47', marginTop: '4px', lineHeight: '1.35' } }, purposeOf(med)) : null
         ),
         h('div', { style: { display: 'flex', gap: '5px', flexShrink: '0' } },
           h('button', { onClick: () => openMedicationEditor(med), 'aria-label': 'Edit ' + med.name, style: { width: '44px', height: '44px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(200,83,32,0.10)', color: '#A83D0F', border: '1px solid rgba(200,83,32,0.18)' } }, appIcon('edit', 16)),
@@ -6252,6 +6318,8 @@ function renderMedicationManager(now) {
     ),
     renderMedicationEditor(),
     homeOrderSection,
+    h('div', { 'data-med-disclaimer': 'true', style: { ...TYPE.caption, color: '#6B5F66', lineHeight: '1.4', margin: '2px 0 10px' } },
+      'The line under each medication is general information, not medical advice. Your care team is the answer for anything specific.'),
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),
     null // v12 redundancy cut: stale "now live in Settings" breadcrumb removed
   ];
@@ -6666,7 +6734,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v71';
+const APP_VERSION = 'app-v72';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
