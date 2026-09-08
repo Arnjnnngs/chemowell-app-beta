@@ -141,7 +141,17 @@ reconstruct it from history.
 
 ## Open
 
-- [ ] **A short "what it's for" line on each medication.** Aaron, 2026-09-08: *"I asked a while ago
+- [x] **A short "what it's for" line on each medication — BUILT, app-v72.** 42 short original
+  sentences keyed by medication name, so both a brand name and a generic resolve. Nothing copied
+  from any site or label and the app cites nothing: what cannot be copied is somebody's prose, and
+  the fact that a drug treats nausea is not ownable. Federal sources (openFDA, DailyMed, MedlinePlus)
+  are public domain and were all blocked by the build sandbox's network — measured, not assumed — so
+  the text is original rather than quoted, and a refresh to exact federal wording later is a data
+  change into the same table. Editable per medication; the built-in line is a placeholder, never a
+  seeded value. The Zero Day Audit blocked the first build three times over on copy and data.
+  ORIGINAL ENTRY BELOW, kept because the record of it being dropped matters:
+
+- [ ] ~~**A short "what it's for" line on each medication.**~~ Aaron, 2026-09-08: *"I asked a while ago
   for the meds list to have a brief desc of what the med that was being added and what it was used
   for. not sure I saw that rolling out anywhere."* **He is right that it never shipped, and the
   original ask is not written down anywhere in this repo or in care-tracker** — this file and
