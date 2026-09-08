@@ -5403,18 +5403,24 @@ function medicationDoseSummary(med) {
 // schedule, no advice: only what the medication is generally used for.
 // KEYED BY NAME, not by id: this app has no default medication list, so every entry is one the user
 // typed. Both the brand name and the generic resolve to the same line.
+// EVERY FEVER CLAUSE IS DELIBERATELY GONE, on care-tracker's audit finding the same day: a fever
+// during chemo is a thing to REPORT, not to suppress, and a line that reads "brings down a fever" is
+// the one sentence here most likely to change what somebody does at 2am in the wrong direction.
+// "Gentle" is gone from senna, which is a stimulant laxative -- that was an editorial claim, not a
+// fact. And "around chemo" / "after chemo" are gone because they are schedules written in words,
+// which is what the guard in test/v72-med-purpose.mjs exists to catch.
 const MED_PURPOSE = {
   'ondansetron': 'Prevents and settles nausea and vomiting.',
   'zofran': 'Prevents and settles nausea and vomiting.',
   'prochlorperazine': 'Settles nausea and vomiting.',
   'compazine': 'Settles nausea and vomiting.',
-  'dexamethasone': 'A steroid given around chemo to calm nausea, swelling and reactions.',
-  'decadron': 'A steroid given around chemo to calm nausea, swelling and reactions.',
-  'acetaminophen': 'Eases pain and brings down a fever.',
-  'paracetamol': 'Eases pain and brings down a fever.',
-  'tylenol': 'Eases pain and brings down a fever.',
-  'ibuprofen': 'Eases pain, swelling and fever.',
-  'advil': 'Eases pain, swelling and fever.',
+  'dexamethasone': 'A steroid that calms nausea, swelling and allergic reactions.',
+  'decadron': 'A steroid that calms nausea, swelling and allergic reactions.',
+  'acetaminophen': 'Eases pain.',
+  'paracetamol': 'Eases pain.',
+  'tylenol': 'Eases pain.',
+  'ibuprofen': 'Eases pain and swelling.',
+  'advil': 'Eases pain and swelling.',
   'morphine': 'A strong pain reliever for moderate to severe pain.',
   'oxycodone': 'A strong pain reliever for moderate to severe pain.',
   'hydrocodone': 'A strong pain reliever for moderate to severe pain.',
@@ -5425,8 +5431,8 @@ const MED_PURPOSE = {
   'protonix': 'Lowers stomach acid, which protects the stomach and eases reflux.',
   'omeprazole': 'Lowers stomach acid, which protects the stomach and eases reflux.',
   'famotidine': 'Lowers stomach acid, which eases reflux and heartburn.',
-  'senna': 'A gentle laxative for constipation.',
-  'senokot': 'A gentle laxative for constipation.',
+  'senna': 'A laxative for constipation.',
+  'senokot': 'A laxative for constipation.',
   'docusate': 'A stool softener for constipation.',
   'polyethylene glycol': 'A laxative that draws water into the gut to ease constipation.',
   'miralax': 'A laxative that draws water into the gut to ease constipation.',
@@ -5439,9 +5445,9 @@ const MED_PURPOSE = {
   'sertraline': 'Treats depression, and is also used for anxiety.',
   'ferrous sulfate': 'An iron supplement, for low iron levels.',
   'iron': 'An iron supplement, for low iron levels.',
-  'filgrastim': 'Helps the body make white blood cells after chemo.',
-  'neupogen': 'Helps the body make white blood cells after chemo.',
-  'pegfilgrastim': 'Helps the body make white blood cells after chemo.',
+  'filgrastim': 'Helps the body make white blood cells.',
+  'neupogen': 'Helps the body make white blood cells.',
+  'pegfilgrastim': 'Helps the body make white blood cells.',
   'allopurinol': 'Lowers uric acid levels.',
   'diphenhydramine': 'An antihistamine, used for allergic reactions and to help with sleep.',
   'benadryl': 'An antihistamine, used for allergic reactions and to help with sleep.'

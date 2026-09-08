@@ -492,3 +492,10 @@ with a progress note is.
 
 **This supersedes any checkpoint guidance in this repo's process docs wherever the two disagree.**
 care-tracker carries the same rule as `CLAUDE.md` Rule 0.6.
+
+**WORK END TO END.** Aaron, same instruction: a task is not a series of steps to be reported between
+— it is one piece of work that starts when he asks and finishes when it is live. Build it, check it,
+fix what the checks find, audit it, ship it, update the docs and the lists, and port it to the
+sibling app if it belongs there. The two exceptions above are the only places that may be
+interrupted.
+
