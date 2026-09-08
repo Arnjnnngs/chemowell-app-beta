@@ -452,3 +452,24 @@ inside an agent's report, which does not survive a session.
   checks it reached, so a crash after check 9 looks like a shorter, passing run rather than a
   failure. The same shape as the "a suite that cannot start looks exactly like a suite that passes"
   trap hit twice on this project in one day. It needs an expected-check-count assertion at the end.
+
+## The medication purpose table needs a periodic clinical re-read (app-v72, 2026-09-08)
+
+app-v72 ships 42 short sentences saying what each medication is generally for. Two guards hold the
+line automatically — no digits, no schedule words, no dosage form, no fever clause — but **no check
+can tell whether a sentence is clinically WRONG**, and the audit found two that were:
+
+- `lidocaine` was described as "a numbing cream", which is false for the viscous rinse used for chemo
+  mouth sores and false for the patch. In an app where every medication is one the user typed, the
+  name says nothing about the form.
+- Every entry that mentioned fever was removed, because a fever during treatment is a thing to
+  report rather than suppress.
+
+Both were caught by a person reading the table, not by a gate. **Re-read the whole table whenever an
+entry is added, and treat "is this true for every form of this drug?" as the question that matters** —
+a wrong line on the right medication is worse than no line at all, because it ships under a
+disclaimer promising general information about the drug.
+
+The header's plan to refresh the table to exact federal label wording carries the same risk in
+reverse: federal wording says "reduces fever". The suite's fever guard is what stops that refresh
+quietly undoing this release's safety decision.
