@@ -5453,11 +5453,24 @@ function medPurposeKey(text) {
 }
 // What the user typed wins; then the name; then the generic; otherwise nothing at all -- never an
 // empty label under a medication nobody has described.
+// hasOwnProperty, NOT a bare index. MED_PURPOSE is a plain object, so MED_PURPOSE['constructor']
+// reads back Object.prototype.constructor -- a FUNCTION, truthy and not a string -- and h() then
+// throws inside the Meds list render. The medication persists, so every later render throws too and
+// the Meds screen comes up with no cards at all, which is the only place edit and delete live.
+// Here the key comes from the NAME the user typed, so it is reachable by typing "constructor" or
+// "Constructor" or "to string" as a medication name. care-tracker's Zero Day Audit blocked its v74
+// on exactly this, in the id-keyed version of the same lookup, the same day.
+function purposeLookup(key) {
+  const k = medPurposeKey(key);
+  if (!k || !Object.prototype.hasOwnProperty.call(MED_PURPOSE, k)) return '';
+  const v = MED_PURPOSE[k];
+  return typeof v === 'string' ? v : '';
+}
 function purposeOf(med) {
   if (!med) return '';
   const typed = String(med.purpose || '').trim();
   if (typed) return typed;
-  return MED_PURPOSE[medPurposeKey(med.name)] || MED_PURPOSE[medPurposeKey(med.sub)] || '';
+  return purposeLookup(med.name) || purposeLookup(med.sub);
 }
 function medicationFormFrom(med) {
   const base = med || {};
