@@ -1,5 +1,8 @@
 # PM sign-off — ChemoWell app-v72
 
+AUDITED-COMMIT: 9ece97fc856237825483df6f4588dc7dc778f22c
+VERDICT: SHIP
+
 **Release:** every medication says what it is for.
 **Base:** app-v71 (`chemowell-app-v71-1`) · **This build:** app-v72 (`chemowell-app-v72-1`)
 **Patch:** `harness-med-purpose-patch.py`, applied from the app-v71 base; refuses any other base.
@@ -135,3 +138,66 @@ overflow at 320px.
 
 **PM verdict: clear to ship.** All three blocks fixed, every non-blocking finding taken, the suite
 grew from 24 checks to 27 and is red on five separate broken builds.
+
+---
+
+# Round 4 — the audit went at this release's own newest check, and broke it eight ways
+
+**This section supersedes the verdict above where the two differ.** The sign-off said *clear to ship*
+after three blocks were fixed. Two further passes followed, and both found real things, so the
+sign-off had been given too early. That is worth recording rather than editing out.
+
+**Pass 2 (delta).** A 42nd entry was committed *after* the fix commit and read
+*"Eases pain. This is Tylenol in liquid form."* — a dosage form, the exact class this release had
+just declared forbidden in the app's source, in the patch header and in a brand-new check literally
+named *"NO entry names a dosage form, route or body site"*. **That check reported PASS on it**,
+because it was a list of eleven words and `liquid` was not one of them.
+
+**Pass 3.** The widened list was broken eight more ways: *"A pill you swallow"*, *"Given as a shot
+under the skin"*, *"Given through a drip"*, *"Numbs the skin"*, *"Placed under your tongue"*,
+*"rub onto"*, *"rub into"*, *"Applied where it hurts"*. Every one green. The auditor's ruling was the
+right one: **widen it or rename it, and it had been widened and not renamed.**
+
+**What was done, and it is a change of kind rather than of degree.** A list of words can never
+enforce *"names no dosage form"*, so the check no longer claims to. It is named for exactly what it
+does — *"NO entry uses a word from the dosage-form / route list"* — and the list now carries sixty-odd
+form and route words. It bans **route and form, not anatomy**: *"lowers stomach acid"* names the organ
+a drug acts on, which is the description; *"on the skin"* names where a caregiver puts it, which is a
+dosage instruction this app must never give.
+
+**And the port to `chemowell-beta` found the worst instance of the class.** That repo's copy of the
+same guard was written with a **doubled backslash**, so the pattern searched for a literal backslash
+and could never match anything. It had reported PASS for weeks over *"A numbing cream for soreness in
+one spot on the skin"* — the sentence pass 1 blocked here three releases ago, still shipping there.
+
+**The structural answer: four liveness checks.** Each guard is handed a sentence it MUST reject. A
+typo that kills a pattern now turns one check red instead of turning the whole table green. That is
+the cure for the class; widening the list was only the cure for the instance.
+
+**Three more findings from pass 3, all taken:**
+
+1. The comment three lines above the guard still read *"Dosage forms are allowed"* — in the commit
+   titled *"no entry may name a dosage form"*.
+2. The purpose line is free text and had **no wrapping rule**: 300 unbroken characters pushed the
+   page sideways at 320px. `overflowWrap` plus the check that catches it. The overflow scan never
+   could — it scans the app's own text, never text a caregiver typed into it.
+3. **Nothing anywhere asserted that a typed line survives closing and reopening the app.** It does;
+   the auditor confirmed it by hand. *"I checked by hand"* is the sentence this project has been
+   burned by, so it is a check.
+
+**Deliberately NOT done, and said out loud.** The auditor noted the table has no Neulasta, no
+Reglan/metoclopramide and no Phenergan/promethazine, and is missing the brand halves of a dozen drugs
+it covers. Every one of those is a new medical claim, and **adding table entries after the audit is
+exactly how the Tylenol Liquid block happened** — an entry committed after the fix, past the
+reviewer. They are queued as an Enhancer item for their own release, with their own read.
+
+Also open, non-blocking, recorded rather than fixed: a medication named *Tylenol PM* whose generic
+field says *Acetaminophen* does get *"Eases pain."* through the generic fallback. True but incomplete
+for a combination product. The fallback earns its place for the common case; combination products get
+their own pass with the entries above.
+
+**Suite 34/34.** Falsified this round on five mutants per app across all three apps — fifteen in
+total, every one red on the intended check and only that check, including the doubled-backslash bug
+itself, which turns the liveness check red while the table check stays green.
+
+**PM verdict: clear to ship**, and this time after four adversarial passes rather than one.
