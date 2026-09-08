@@ -141,6 +141,26 @@ reconstruct it from history.
 
 ## Open
 
+- [ ] **A short "what it's for" line on each medication.** Aaron, 2026-09-08: *"I asked a while ago
+  for the meds list to have a brief desc of what the med that was being added and what it was used
+  for. not sure I saw that rolling out anywhere."* **He is right that it never shipped, and the
+  original ask is not written down anywhere in this repo or in care-tracker** — this file and
+  `BACKLOG.md` have both existed since app-v25 and neither carries it. It was dropped, not
+  deprioritised, which is the exact failure this file exists to prevent. Today the editor has
+  **Notes** (`Take with food · From Dr. Kim · Crush if needed`) — instructions, not what the drug
+  treats — plus a Generic name. Nothing says what it is for. Needs Aaron's pick between a typed
+  field and built-in text for the medications the app already knows. M across both apps.
+
+- [ ] **Port care-tracker v72 and v73 — corrections must append, never delete.** Aaron, 2026-09-08:
+  *"will this be the same for chemowell?"* **Yes.** This app carries the identical four call sites
+  (`index.html` ~2246 symptom edit, ~2767 / ~2785 / ~2822 bowel and appetite): each deletes the old
+  record then adds the new one. The Firestore rules refuse a delete past 48 hours, so on a real
+  phone the correction is added beside the old answer, and where two documents share a day the
+  reader picks an arbitrary winner. This app also has the weight and paracentesis supersede model,
+  so v73's defect — removing a corrected reading restores the number it replaced — applies here too.
+  `chemowell-beta` has the same lines. M, audited, one app at a time.
+
+
 - [x] **Report screens must be able to add and correct, not only delete** (Sep 6, 2026) — Aaron:
   *"there isn't a way to add a para from the reports screen... we probably need to make sure the
   same applies to chemowell where allowed."* BUILT in app-v71 for Paracentesis, Weight and
