@@ -201,3 +201,49 @@ total, every one red on the intended check and only that check, including the do
 itself, which turns the liveness check red while the table check stays green.
 
 **PM verdict: clear to ship**, and this time after four adversarial passes rather than one.
+
+---
+
+# Round 5 — the suite's own parser was the hole in every guard
+
+Two more blocks, and the pattern is now unmistakable enough to write down as a finding in its own
+right: **every block after the first has been a check that printed green while the thing it guards
+was broken.** The feature has not needed a rebuild since round 1. The checks have needed four.
+
+**Block 1 — one entry in double quotes defeated all four guards at once.** The suite reads
+`MED_PURPOSE` out of `index.html` with a pattern that matched only a SINGLE-quoted value with an
+all-lowercase key. The auditor added a single line written with double quotes — the natural thing to
+reach for the moment a sentence contains an apostrophe, in a table made of prose about medicines —
+saying that a medication brings down a fever and to put one tablet under the tongue every four hours.
+The suite reported **42 entries for a 43-entry table and a full green board**: fever guard, number
+guard, form/route guard, schedule guard and all four liveness lines. Chromium, loading that same
+file, printed the sentence under the medication on the patient's Meds screen. **No typo was needed,
+and the only assertion on the parse was that it found more than zero entries.**
+
+It reads both quote styles now, and — the part that matters more — **the parsed count is asserted
+against the number of lines that look like entries**, because the next thing this parser cannot read
+will not be a quote style. A lowercase-key check comes with it: that had been "enforced" by the
+parser being unable to see such a key, which is the worst way to enforce anything, since being unable
+to see it was the bug.
+
+**Block 2 — the wrapping rule did not cover the note, and the comment beside it said it did.** The
+note and the dose summary render in a different container from the text column the rule was put on.
+Measured at a 320px viewport on the shipped file: a portal link pasted into the note 347px, a pasted
+pharmacy name in the note 668px, the same as a dose label 668px — against a 320px page. The four new
+overflow cases touched neither field and stayed green. The rule is on the whole card now, one
+property on the article, and a fifth case pastes into the note.
+
+**A claim of mine that was false, and is corrected rather than quietly dropped.** The round-4 commit
+said the two wrapping rules had been proved separately non-redundant "in both directions". The mutant
+that would have tested that was never run. `overflow-wrap` is inherited, so the purpose line's own
+copy did nothing at all. Both narrower copies are removed.
+
+**Two words are left out of the list on purpose, said out loud.** `oral` would reject "Treats oral
+thrush" — a condition, not a route, and nystatin is a supportive-care drug this table may well gain.
+`dissolve` would reject "Dissolves clots", which is what a drug does rather than how it is taken. The
+cost is that "An oral steroid" and "Dissolves on the tongue" pass. That is the accepted price of a
+list that must not reject true descriptions, and it is why the reader is the gate and the list is
+only the floor.
+
+**PM verdict: clear to ship.** Five adversarial passes. The feature was right after the first;
+everything since has been the checks catching up with it.
