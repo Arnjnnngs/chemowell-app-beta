@@ -263,11 +263,16 @@ reach. The release's own new section is titled *"nothing a caregiver pastes scro
 sideways"* and **every one of its five cases only ever looked at the Meds screen.**
 
 Three rounds of putting a property on whichever container the last audit named is three rounds of
-fixing an instance. **The rule is one line in the app's own CSS reset now** — `*{…;overflow-wrap:
-anywhere;}` — so every screen inherits it, Home and Reports and History and any screen written later.
-`overflow-wrap` cannot change a layout except to stop a long unbroken word pushing the page sideways,
-and the overflow scan across every screen at ten device widths is the evidence that nothing else
-moved. A Home case is added to the suite.
+fixing an instance, so this round put it on `*` in the app's own CSS reset. A Home case was added to
+the suite.
+
+> **BOTH SENTENCES THAT FOLLOWED THIS IN THE ORIGINAL WERE FALSE, AND ROUND 7 BELOW PROVED IT.**
+> They read: *"`overflow-wrap` cannot change a layout except to stop a long unbroken word pushing the
+> page sideways, and the overflow scan across every screen at ten device widths is the evidence that
+> nothing else moved."* It can and it did — the property changes min-content sizing and it broke two
+> screens — and the scan is not evidence of that, because the scan measures width and the damage was
+> vertical. They are quoted rather than deleted because a sign-off that quietly edits its own wrong
+> claims out teaches nobody what to distrust next time.
 
 **Block 2 — the new count check was blind in both halves at once.** It compared what the parser read
 against the number of lines that looked like entries — and a value wrapped across two lines with `+`
@@ -301,5 +306,69 @@ The lesson is not any of the individual fixes. It is that **on this project a gr
 evidence until somebody has watched it go red**, and that a check written to catch a class must be
 tested against the class rather than the instance that prompted it.
 
-**PM verdict: clear to ship.** Suite **40/40**. Falsified across the three apps on every guard, the
-parser, the wrapping rule, the liveness checks and both directions of the word list.
+---
+
+# Round 7 — the fix broke two screens, and the check that would have caught it was on the wrong screen
+
+**Block 1 — `*{overflow-wrap:anywhere}` broke Home and In-Patient.** The property changes
+**min-content intrinsic sizing** (`break-word` does not), so flex items across the app could shrink to
+about one character. Measured against app-v71 and against the same build minus that one line, twelve
+screens at 320/360/390/428: Home's hospital-stay banner text column collapsed 207px → 27.6px, its body
+went from **4 lines to 32** with words split mid-syllable, and the In-Patient heading rendered
+**"IN-PATIEN / T / STATU / S"**.
+
+**And the overflow scan reported CLEAN through all of it.** It measures WIDTH; that damage is
+vertical. The previous round of this document cited the scan as evidence the rule *"moved nothing
+else"* — **a false claim about what that tool can see**, and the most useful sentence in this whole
+release to have written down.
+
+**Block 2 — the property was never what fixed Home anyway.** Two causes, and `overflow-wrap` could
+reach neither: the medication name on the quick-log card sits under `white-space: nowrap`, which
+disables wrapping outright and carried no truncation, so it simply grew; and the dose buttons are
+`flex: 0 0 auto` with the name inside them, so they refused to shrink and had no maximum width. Both
+are fixed directly, and Home measures 320px at a 320px viewport where it measured 829px. The wrapping
+property is scoped to the three places that render a string a caregiver typed — the medication card,
+the Home quick-log cards, the grouped-medications card.
+
+**Block 3 — the Home check never reached Home.** It clicked a tab called *Today*; the tab is *Home*,
+so the click returned false and every measurement was taken on the Meds screen. On a build where Home
+measured 900px with the tab bar stretched to match — the previous round's block, unfixed — it printed
+PASS. Every step is asserted now: the navigation, that every bottom tab is still on the screen, and
+the restore, whose silent failure used to surface later as a misleading persistence failure on a
+different check.
+
+**Block 4 — the accounting check accepted a line its own parser could not read:** `'morphine' : '…'`,
+one space before the colon. Two patterns written by hand to agree with each other will not. Both are
+built from one source string now, so a line the accounting accepts is **by construction** a line the
+parser reads.
+
+---
+
+# THE FINDING OF THIS RELEASE, WORTH MORE THAN THE FEATURE
+
+Seven adversarial passes. **The feature has not been rebuilt since pass 1. Every block since has been
+a check that printed green while the thing it guarded was broken, or a record that said something
+untrue about what shipped:**
+
+| Pass | What was green while something was broken |
+|---|---|
+| 2 | the dosage-form guard, on the entry it was written for |
+| 3 | the same guard, on eight more sentences; its NAME overclaimed |
+| 4 | two liveness checks that re-typed their pattern instead of naming it; a 320px check measured with a ruler that stretches |
+| 5 | the suite's own PARSER — one double-quoted entry was invisible to all four guards at once |
+| 6 | a cross-check blind in both halves; five overflow cases that never left one screen |
+| 7 | the overflow SCAN, reporting CLEAN over two visibly broken screens, because it measures width and the damage was vertical; and the new Home check, on the wrong screen |
+
+Three lessons, in the order they cost something:
+
+1. **A green check is not evidence until somebody has watched it go red.**
+2. **A tool's silence is only evidence about the question that tool asks.** The scan answers *does
+   anything overflow sideways* and nothing else; it was cited as though it answered *did the layout
+   change*.
+3. **A check written to catch a class must be tested against the class**, not against the instance
+   that prompted it.
+
+**PM verdict: clear to ship.** Suite **43/43**. `overflow-scan` **170/170 CLEAN**.
+`./run-all-tests.sh`: PASS 26 / FAIL 4 / cannot-start 1 — **the four failures and the non-starter are
+pre-existing and identical on the untouched app-v70 and app-v71 baselines**, verified by running the
+same harness against them rather than inferred.
