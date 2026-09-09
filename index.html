@@ -36,7 +36,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/filesystem@8.1.2/dist/plugin.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/share@8.0.1/dist/plugin.js"></script>
 <style>
-*{box-sizing:border-box;margin:0;padding:0;overflow-wrap:anywhere;}
+*{box-sizing:border-box;margin:0;padding:0;}
 :root{--safe-top:env(safe-area-inset-top,0px);}
 html,body{height:100%;overscroll-behavior-y:none;}
 body{-webkit-font-smoothing:antialiased;background:#FAF7F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',system-ui,sans-serif;color:#2A2127;}
@@ -3568,7 +3568,7 @@ function renderGroupedMedsCard(title, meds, now) {
   // v20: paused and treatment-window-hidden meds are excluded from "due"/"Take all" the same way
   // medCards' upstream filter already excludes them for standalone Quick Log cards.
   const dueMeds = meds.filter(m => { if (m.paused) return false; if (treatmentOnlyBlocks(m, now)) return false; if (treatmentExcludedNow(m, now)) return false; if (!medScheduledOn(m, now)) return false; const s = status(m); return !s.locked; });
-  return h('section', null,
+  return h('section', { style: { overflowWrap: 'anywhere' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
       h('div', { style: { ...TYPE.label, color: '#915E48' } }, title),
       // 'Take all' was hidden for the whole of a stay, left behind when the Restricted tiles
@@ -5258,7 +5258,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('div', { 'data-tour': 'quick-log', style: { ...TYPE.label, color: '#915E48' } }, 'Quick log' + (quickLogOpen ? '' : ' (' + medCards.length + ')')),
       h('span', { style: { fontSize: '12px', color: '#915E48' } }, quickLogOpen ? '▲' : '▼')
     ),
-    quickLogOpen ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: '8px', marginTop: '8px' } }, ...medCards) : null
+    quickLogOpen ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: '8px', marginTop: '8px', overflowWrap: 'anywhere' } }, ...medCards) : null
   ));
 
   // Morning meds — grouped card (Buspirone, Paroxetine — 2h after Protonix's morning dose)
@@ -6293,7 +6293,7 @@ function renderMedicationManager(now) {
   ) : null;
   const cards = sortedMeds.map(med => {
     const deleting = state.confirmDeleteMed === med.id;
-    return h('article', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '17px', padding: '13px', boxShadow: '0 3px 16px rgba(203,122,87,0.09)' } },
+    return h('article', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '17px', padding: '13px', overflowWrap: 'anywhere', boxShadow: '0 3px 16px rgba(203,122,87,0.09)' } },
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' } },
         h('div', { style: { minWidth: '0', flex: '1' } },
           h('div', { style: { ...TYPE.title, color: '#2A2127' } }, med.name),
