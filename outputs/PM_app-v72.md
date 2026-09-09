@@ -322,13 +322,24 @@ vertical. The previous round of this document cited the scan as evidence the rul
 else"* — **a false claim about what that tool can see**, and the most useful sentence in this whole
 release to have written down.
 
-**Block 2 — the property was never what fixed Home anyway.** Two causes, and `overflow-wrap` could
-reach neither: the medication name on the quick-log card sits under `white-space: nowrap`, which
-disables wrapping outright and carried no truncation, so it simply grew; and the dose buttons are
-`flex: 0 0 auto` with the name inside them, so they refused to shrink and had no maximum width. Both
-are fixed directly, and Home measures 320px at a 320px viewport where it measured 829px. The wrapping
-property is scoped to the three places that render a string a caregiver typed — the medication card,
-the Home quick-log cards, the grouped-medications card.
+**Block 2 — the property was never what fixed Home… in the OTHER app.** In care-tracker there are two
+causes `overflow-wrap` could not reach: the quick-log medication name sits under `white-space:
+nowrap`, which disables wrapping outright and carried no truncation; and the dose buttons are
+`flex: 0 0 auto` with the name inside them, so they refuse to shrink. Both are fixed directly there.
+
+> **THIS PARAGRAPH ORIGINALLY CLAIMED THE SAME OF CHEMOWELL, AND PASS 8 PROVED IT FALSE.**
+> `flex: 0 0 auto` occurs **zero times** in this file and zero times in app-v71, and the quick-log
+> name is a plain div with no `nowrap`. **In this app the scoped `overflow-wrap` IS the fix** —
+> removing the single declaration on the quick-log grid returns Home to 900px. A record that says
+> otherwise invites the next person to delete the line holding the screen together, which is the
+> most dangerous kind of wrong a document like this can be. The baseline number was wrong too: 900px,
+> not 829 — that figure came from care-tracker as well.
+
+The wrapping property is scoped to the three places that render a string a caregiver typed: the
+medication card, the Home quick-log cards, the grouped-medications card. **Measured across 120 states
+per build** — six content variants on five screens at four widths — **app-v71 overflows in 32 of 120,
+worst 903px on a 320px phone; this build overflows in 0 of 120**, and the two screens pass 7 broke are
+pixel-identical to app-v71 at every width.
 
 **Block 3 — the Home check never reached Home.** It clicked a tab called *Today*; the tab is *Home*,
 so the click returned false and every measurement was taken on the Meds screen. On a build where Home
@@ -368,7 +379,65 @@ Three lessons, in the order they cost something:
 3. **A check written to catch a class must be tested against the class**, not against the instance
    that prompted it.
 
-**PM verdict: clear to ship.** Suite **43/43**. `overflow-scan` **170/170 CLEAN**.
-`./run-all-tests.sh`: PASS 26 / FAIL 4 / cannot-start 1 — **the four failures and the non-starter are
-pre-existing and identical on the untouched app-v70 and app-v71 baselines**, verified by running the
-same harness against them rather than inferred.
+---
+
+# Round 8 — the Home guard measured an empty screen, and the ruler stretched again
+
+**Block 1 — the Home guard could not fail.** It clicked the right tab this time, but the medication it
+renames is not on the Home screen at all: the fixture's medications save with `quickLog: false`
+(`DEFAULT_QUICK_LOG_IDS` is empty here), so the 73-character pasted name never rendered there. It was
+measuring an **empty Home**. Proof rather than argument: remove the single declaration that holds Home
+together and Home measures **900px at a 320px viewport** — and the suite on that build prints
+`PASS  HOME does not scroll sideways at 320px … page=320px`, 43/43. **Third version of this check,
+third time green over a broken Home.** The fixture forces every medication onto Home now, and the case
+asserts the pasted name is actually ON the screen before it believes any measurement. A check that
+cannot see the thing it measures is not measuring it.
+
+**Block 2 — "every bottom tab is still on the screen" used a ruler that stretches.** It compared each
+tab's right edge to `window.innerWidth`, which grows with the overflow — measured at **900 on a 320px
+viewport** — so it reported 5 of 5 tabs reachable when 1 of 5 was inside the phone. **That is the
+pass-4 stretching-ruler defect, reintroduced inside the assertion written to close pass 7**, with `VW`
+in scope three lines above it and unused. It measures against `VW` now.
+
+**Block 3 — this document described the wrong app's markup**, corrected in round 7's section above
+rather than here, because that is where the false sentence lives.
+
+**And the one thing the last pass left unverified is now measured.** It reported that it could not
+finish checking whether `run-all-tests.sh`'s four failures are pre-existing. They are, exactly:
+`audit-v55` **38 passed / 3 failed on app-v71 and on this build**; `v57-browser-notice` **17 failures
+on both**; `pm-v55` **20 pass / 1 fail @360px on both**; `pm-v55b` **15 pass / 1 fail @360px on both**;
+`audit-v55b` cannot start on either, on a missing `/tmp/topics.js`. Measured by serving the app-v71
+file to the same harness, not inferred. (`pm-v55` and `pm-v55b` take a width as their first argument
+and ignore `--file`, which is why an earlier attempt to compare them looked like a difference and was
+not.)
+
+---
+
+# THE FINDING OF THIS RELEASE, WORTH MORE THAN THE FEATURE
+
+Eight adversarial passes. **The feature has not been rebuilt since pass 1. Every block since has been
+a check that printed green while the thing it guarded was broken, or a record that said something
+untrue about what shipped:**
+
+| Pass | What was green while something was broken |
+|---|---|
+| 2 | the dosage-form guard, on the entry it was written for |
+| 3 | the same guard, on eight more sentences; its NAME overclaimed |
+| 4 | two liveness checks that re-typed their pattern instead of naming it; a 320px check measured with a ruler that stretches |
+| 5 | the suite's own PARSER — one double-quoted entry was invisible to all four guards at once |
+| 6 | a cross-check blind in both halves; five overflow cases that never left one screen |
+| 7 | the overflow SCAN, CLEAN over two visibly broken screens, because it measures width and the damage was vertical; the new Home check, on the wrong screen |
+| 8 | the Home check again — right screen, but empty; and the stretching ruler back inside the fix for it |
+
+Four lessons, in the order they cost something:
+
+1. **A green check is not evidence until somebody has watched it go red.**
+2. **A tool's silence is only evidence about the question that tool asks.**
+3. **A check written to catch a class must be tested against the class**, not the instance that
+   prompted it.
+4. **A check must be able to see the thing it measures.** Twice now a measurement was taken of a
+   screen that did not contain the content under test, and both times it printed a number that looked
+   right.
+
+**PM verdict: clear to ship.** Suite **44/44**. `overflow-scan` **170/170 CLEAN**.
+`./run-all-tests.sh`: PASS 26 / FAIL 4 / cannot-start 1 — every one measured identical on app-v71.
