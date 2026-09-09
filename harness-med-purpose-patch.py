@@ -183,6 +183,14 @@ rep("""      h('label', null, fieldLabel('Generic name'), formInput({ value: for
     """      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('What it\u2019s for'), formInput({ value: form.purpose, placeholder: (purposeOf({ name: (state.medEditor && state.medEditor.form && state.medEditor.form.name) || '', sub: (state.medEditor && state.medEditor.form && state.medEditor.form.sub) || '' }) || 'For example: settles nausea'), onInput: event => updateMedicationForm('purpose', event.target.value) })),
       h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, place""")
 
+rep("""        h('div', { style: { minWidth: '0', flex: '1' } },
+          h('div', { style: { ...TYPE.title, color: '#2A2127' } }, med.name),""",
+    """        // overflowWrap belongs on the CARD's whole text column, not on the purpose line alone.
+        // The name, the generic name and the note are free text too, and pass 4 measured a
+        // 300-character name at 3267px on a 320px viewport while the purpose line beside it
+        // wrapped correctly -- the fix had been put on the one string this release added.
+        h('div', { style: { minWidth: '0', flex: '1', overflowWrap: 'anywhere' } },
+          h('div', { style: { ...TYPE.title, color: '#2A2127' } }, med.name),""")
 # ---- 4. the Meds screen shows it, with one disclaimer above the list -----------------------------
 rep("""          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '1px' } }, med.sub || 'No generic name')""",
     """          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '1px' } }, med.sub || 'No generic name'),
@@ -193,7 +201,7 @@ rep("""    h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9
     // common state, not an edge case -- and a notice about "the line under each medication" printed
     // above a list with no lines in it is the app describing something that is not on the screen.
     sortedMeds.some(m => purposeOf(m)) ? h('div', { 'data-med-disclaimer': 'true', style: { ...TYPE.caption, color: '#6B5F66', lineHeight: '1.4', margin: '2px 0 10px' } },
-      'The line under each medication is general information, not medical advice. Your care team is the answer for anything specific.') : null,
+      'Where a medication has a line under it, that is general information, not medical advice. Your care team is the answer for anything specific.') : null,
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),""")
 
 # ---- 5. version and cache ------------------------------------------------------------------------
