@@ -36,7 +36,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/filesystem@8.1.2/dist/plugin.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/share@8.0.1/dist/plugin.js"></script>
 <style>
-*{box-sizing:border-box;margin:0;padding:0;}
+*{box-sizing:border-box;margin:0;padding:0;overflow-wrap:anywhere;}
 :root{--safe-top:env(safe-area-inset-top,0px);}
 html,body{height:100%;overscroll-behavior-y:none;}
 body{-webkit-font-smoothing:antialiased;background:#FAF7F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',system-ui,sans-serif;color:#2A2127;}
@@ -6293,7 +6293,7 @@ function renderMedicationManager(now) {
   ) : null;
   const cards = sortedMeds.map(med => {
     const deleting = state.confirmDeleteMed === med.id;
-    return h('article', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '17px', padding: '13px', overflowWrap: 'anywhere', boxShadow: '0 3px 16px rgba(203,122,87,0.09)' } },
+    return h('article', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '17px', padding: '13px', boxShadow: '0 3px 16px rgba(203,122,87,0.09)' } },
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' } },
         h('div', { style: { minWidth: '0', flex: '1' } },
           h('div', { style: { ...TYPE.title, color: '#2A2127' } }, med.name),

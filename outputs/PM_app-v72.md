@@ -136,8 +136,13 @@ options, placement, treatment-day availability, notes, paused and alerts byte-id
 with only `purpose` added; rollback is safe in both directions; zero clipping and zero horizontal
 overflow at 320px.
 
-**PM verdict: clear to ship.** All three blocks fixed, every non-blocking finding taken, the suite
-grew from 24 checks to 27 and is red on five separate broken builds.
+**PM verdict at the end of round 1: clear to ship — and it was given too early.** All three blocks
+of that round were fixed and every non-blocking finding taken, and the suite had grown from 24
+checks to 27. Five further adversarial passes followed and every one of them found something
+real, so the numbers in this paragraph are the numbers of the *first* round and nothing more.
+**The shipped figures are in the final verdict at the foot of this document**, and the rounds
+below say what changed. This paragraph is left standing rather than edited into agreement,
+because a sign-off that quietly rewrites itself teaches nobody anything; but it is labelled, because the last audit found a reader could reach a verdict here and never reach the correction.
 
 ---
 
@@ -245,5 +250,56 @@ cost is that "An oral steroid" and "Dissolves on the tongue" pass. That is the a
 list that must not reject true descriptions, and it is why the reader is the gate and the list is
 only the floor.
 
-**PM verdict: clear to ship.** Five adversarial passes. The feature was right after the first;
-everything since has been the checks catching up with it.
+---
+
+# Round 6 — the screen none of the checks ever visited, and a cross-check blind in both halves
+
+**Block 1 — Home.** The wrapping rule has now been put on three different containers in three rounds,
+each time the one the last audit named: the purpose line, then the medication card, then Home. Paste a
+long pharmacy name into a medication's **name** and Home reached **1019px on a 320px phone** — and the
+bottom tab bar stretched with it, so the **Meds** tab a caregiver would use to go back and fix the name
+was no longer on the screen. The paste that causes the problem moves the only route to the fix out of
+reach. The release's own new section is titled *"nothing a caregiver pastes scrolls the page
+sideways"* and **every one of its five cases only ever looked at the Meds screen.**
+
+Three rounds of putting a property on whichever container the last audit named is three rounds of
+fixing an instance. **The rule is one line in the app's own CSS reset now** — `*{…;overflow-wrap:
+anywhere;}` — so every screen inherits it, Home and Reports and History and any screen written later.
+`overflow-wrap` cannot change a layout except to stop a long unbroken word pushing the page sideways,
+and the overflow scan across every screen at ten device widths is the evidence that nothing else
+moved. A Home case is added to the suite.
+
+**Block 2 — the new count check was blind in both halves at once.** It compared what the parser read
+against the number of lines that looked like entries — and a value wrapped across two lines with `+`
+is read by NEITHER, so the two agreed and the board stayed green while the app rendered the whole
+sentence. **A cross-check whose halves fail in the same direction is not a cross-check.** Counting was
+the wrong shape: every line inside the table must now be something the suite can **account for** — one
+complete entry, a comment, or blank. Anything else is red, whatever it turns out to be, which covers
+the continuation line, the template literal, two entries on one line, and the next trick as well.
+
+**Block 3 — this document contradicted itself.** Round 5's numbers were appended below round 1's
+verdict rather than replacing it, so a reader could reach *"clear to ship … 34/34 … fifteen mutants"*
+and never reach the correction. That paragraph is now labelled as the first round's, and points here.
+
+---
+
+# THE FINDING OF THIS RELEASE, WORTH MORE THAN THE FEATURE
+
+Six adversarial passes. **The feature has not been rebuilt since pass 1. Every block since has been a
+check that printed green while the thing it guarded was broken**, or a record that said something
+untrue about what shipped:
+
+| Pass | What was green while something was broken |
+|---|---|
+| 2 | the dosage-form guard, on the entry it was written for |
+| 3 | the same guard, on eight more sentences; the guard's NAME overclaimed |
+| 4 | two liveness checks that re-typed their pattern instead of naming it; a 320px check measured with a ruler that stretches |
+| 5 | the suite's own PARSER — one double-quoted entry was invisible to all four guards at once |
+| 6 | a cross-check blind in both halves; and five overflow cases that never left one screen |
+
+The lesson is not any of the individual fixes. It is that **on this project a green check is not
+evidence until somebody has watched it go red**, and that a check written to catch a class must be
+tested against the class rather than the instance that prompted it.
+
+**PM verdict: clear to ship.** Suite **40/40**. Falsified across the three apps on every guard, the
+parser, the wrapping rule, the liveness checks and both directions of the word list.
