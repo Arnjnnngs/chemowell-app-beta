@@ -183,18 +183,18 @@ rep("""      h('label', null, fieldLabel('Generic name'), formInput({ value: for
     """      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('What it\u2019s for'), formInput({ value: form.purpose, placeholder: (purposeOf({ name: (state.medEditor && state.medEditor.form && state.medEditor.form.name) || '', sub: (state.medEditor && state.medEditor.form && state.medEditor.form.sub) || '' }) || 'For example: settles nausea'), onInput: event => updateMedicationForm('purpose', event.target.value) })),
       h('label', null, fieldLabel('Generic name'), formInput({ value: form.sub, place""")
 
-rep("""        h('div', { style: { minWidth: '0', flex: '1' } },
-          h('div', { style: { ...TYPE.title, color: '#2A2127' } }, med.name),""",
-    """        // overflowWrap belongs on the CARD's whole text column, not on the purpose line alone.
-        // The name, the generic name and the note are free text too, and pass 4 measured a
-        // 300-character name at 3267px on a 320px viewport while the purpose line beside it
-        // wrapped correctly -- the fix had been put on the one string this release added.
-        h('div', { style: { minWidth: '0', flex: '1', overflowWrap: 'anywhere' } },
-          h('div', { style: { ...TYPE.title, color: '#2A2127' } }, med.name),""")
+# ---- the wrapping rule, on the WHOLE medication card -------------------------------------------
+# Pass 4 put it on the purpose line; pass 5 found the note and the dose summary render in a
+# different container, so a pasted pharmacy name in the note measured 668px at a 320px viewport
+# while the new checks stayed green. One property on the article covers every string the card
+# renders. The two narrower copies are gone: overflow-wrap is inherited, so they did nothing,
+# and keeping them let a comment claim a non-redundancy the audit disproved in one run.
+rep("""    return h('article', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '17px', padding: '13px', boxShadow: '0 3px 16px rgba(203,122,87,0.09)' } },""",
+    """    return h('article', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '17px', padding: '13px', overflowWrap: 'anywhere', boxShadow: '0 3px 16px rgba(203,122,87,0.09)' } },""")
 # ---- 4. the Meds screen shows it, with one disclaimer above the list -----------------------------
 rep("""          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '1px' } }, med.sub || 'No generic name')""",
     """          h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '1px' } }, med.sub || 'No generic name'),
-          purposeOf(med) ? h('div', { 'data-med-purpose': med.id, style: { ...TYPE.caption, color: '#4A3F47', marginTop: '4px', lineHeight: '1.35', overflowWrap: 'anywhere' } }, purposeOf(med)) : null""")
+          purposeOf(med) ? h('div', { 'data-med-purpose': med.id, style: { ...TYPE.caption, color: '#4A3F47', marginTop: '4px', lineHeight: '1.35' } }, purposeOf(med)) : null""")
 rep("""    h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),""",
     """    // ONLY when at least one medication actually carries a line. This app has no default
     // medication list and the table is supportive-care drugs, so "no medication is recognised" is a
