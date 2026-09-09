@@ -439,5 +439,41 @@ Four lessons, in the order they cost something:
    screen that did not contain the content under test, and both times it printed a number that looked
    right.
 
-**PM verdict: clear to ship.** Suite **44/44**. `overflow-scan` **170/170 CLEAN**.
+---
+
+# Round 9 — the first verdict of this release that was not a refusal
+
+**The audit returned SHIP**, and it reached that by breaking the app rather than by agreeing with it.
+With the single declaration that holds Home together removed and nothing else — the exact build
+rounds 6 and 8 blocked — the suite drops from 44/44 to a failing board and prints the true numbers:
+**Home 900px at a 320px viewport, one of five tabs reachable.** With all three declarations removed,
+37/44. On the shipped build, 320px and five of five. An independent probe written by the auditor,
+with its own seeded medication and its own ruler, agrees with the suite in every cell.
+
+It also reproduced from scratch the baseline this document had claimed: `pm-v55` is **20 pass / 1 fail
+@360px on app-v71 and on this build, the same failing check with the same detail line.**
+
+**Two non-blocking findings, both taken rather than filed.**
+
+1. **The third wrapping declaration had nothing guarding it.** Remove the one on the
+   grouped-medications card and the board stays fully green, because the fixture never renders a
+   grouped card. It is not decorative: with a 73-character name that element measures **872px inside
+   a 175px box with `overflow: hidden` above it**, so about eighty per cent of the medication name
+   becomes invisible and unreachable — and the page width never moves, which is precisely why every
+   width check on the board stays green. **The real fix is a fixture that renders a grouped card, and
+   it is queued as its own change.** A source-level check stands in the meantime, with its own
+   weakness written down beside it: this file says elsewhere that presence checks pass on nonsense,
+   and that is still true here. It is here because the alternative was no evidence at all.
+2. **"The pasted name is actually on the Home screen" proved only that the name was on SOME screen.**
+   The auditor built the mutant: make the Home tab a no-op on top of a broken Home and both Home
+   lines print PASS, because the measurement lands on Meds, where the name also appears. It now also
+   requires the Home tab to carry `aria-current="page"`. **The first draft of that fix used a
+   `data-tour` marker that exists in one app and not the other** — the same portability trap that made
+   the original version of this case click a tab called *Today*.
+
+---
+
+**PM verdict: clear to ship.** Suite **47/47**. `overflow-scan` **170/170 CLEAN**.
 `./run-all-tests.sh`: PASS 26 / FAIL 4 / cannot-start 1 — every one measured identical on app-v71.
+Nine adversarial passes; the feature was right after the first, and the last one is the only pass that
+found nothing wrong with the checks either.
