@@ -39,9 +39,14 @@ CASES = [
                          "    const text = String(found.text || '').trim();"),
      'text carrying a dose, a schedule, a route AND a fever claim is discarded'),
 
-    ('the guard stops running on the way OUT, so a record from another phone is trusted',
-     lambda h: h.replace("  return purposeTextIsSafe(text) ? text : '';",
-                         "  return text;"),
+    # SAID OUT LOUD: the re-check inside sourcedPurposeText() is REDUNDANT and has no mutant of its
+    # own, because normalizeMedication() strips the same text first on every load and nothing can
+    # reach the screen past it. It is kept as a second line on patient-facing medical text, and
+    # removing it alone changes no behaviour -- which is why no check here goes red for it. The
+    # mutant below targets the guard that actually fires.
+    ('the LOAD-TIME guard stops running, so a record from another phone is trusted',
+     lambda h: h.replace("        text: purposeTextIsSafe(srcText) ? srcText : '',",
+                         "        text: srcText,"),
      'THE OUT-GUARD HOLDS: the unsafe sentence does not reach the screen'),
 
     ('the fetched text is no longer cached, so it dies at the first reload',

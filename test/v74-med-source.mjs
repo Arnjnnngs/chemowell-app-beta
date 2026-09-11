@@ -97,7 +97,9 @@ await ctx.route('**/*', async route => {
     if (sourceMode === 'slow-then-ok') {
       // Stalls past the caregiver's next edit, then answers. The abort timeout in the app is 6s, so
       // this waits under it -- the point is a LATE answer, not a dead one.
-      await new Promise(r => setTimeout(r, 2500));
+      // Long enough to outlast her reopening the editor, retyping the name and saving -- if it
+      // lands BEFORE that, the rename simply overwrites it and nothing about staleness is tested.
+      await new Promise(r => setTimeout(r, 5000));
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body()) });
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body()) });
@@ -277,8 +279,16 @@ console.log('\n7. A SLOW SOURCE NEVER DELAYS THE SAVE');
   await page.waitForTimeout(600);
   const started = Date.now();
   await clickText(/^Save changes$/);
-  await page.waitForFunction(() => !document.querySelector('[data-med-editor]'), null, { timeout: 5000 }).catch(() => {});
-  const closed = await page.evaluate(() => !document.querySelector('[data-med-editor]'));
+  // THE EDITOR IS GONE WHEN ITS SAVE BUTTON IS. The first version of this asked for
+  // `[data-med-editor]`, WHICH THIS APP DOES NOT HAVE -- so the expression was always true and the
+  // check passed on every build, broken or not. Found by breaking the thing it was supposed to
+  // catch and watching it stay green. The button is what the caregiver actually taps.
+  const editorOpen = () => page.evaluate(() =>
+    [...document.querySelectorAll('button')].some(b => /^Save changes$/.test((b.innerText || '').trim())));
+  await page.waitForFunction(() =>
+    ![...document.querySelectorAll('button')].some(b => /^Save changes$/.test((b.innerText || '').trim())),
+    null, { timeout: 5000 }).catch(() => {});
+  const closed = !(await editorOpen());
   const took = Date.now() - started;
   t('the editor closed without waiting on the lookup', closed && took < 5000, took + 'ms, with the source stalling for 9s');
   sourceMode = 'dead';
@@ -338,7 +348,8 @@ console.log('\n9. AN ANSWER THAT ARRIVES TOO LATE IS DROPPED, not written over h
   });
   t('the medication can be renamed while the lookup is still in flight', renamed);
   await clickText(/^Save changes$/);
-  await page.waitForTimeout(4000);
+  // past the stub's 5s stall, so the stale answer has definitely come back by now
+  await page.waitForTimeout(6000);
   const rec = await medRec('zofran');
   t('the rename survived -- the late answer did not write the old record back',
     !!rec && rec.name === 'Zofran Renamed', rec ? rec.name : '(gone)');
