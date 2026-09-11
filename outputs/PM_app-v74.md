@@ -26,7 +26,7 @@ meant "fixing" something that was not broken and quietly inventing a provenance 
 
 ## The write model, stated before a line was written
 
-* **Appends** one optional field per medication: `purposeSource { text, url, label, fetchedAt }`.
+* **Appends** one optional field per medication: `purposeSource { text, url, label, forName, fetchedAt }`. **`forName` was missing from this line** until the second audit pass — the write model is the one statement Rule 1.5 makes binding, and it omitted the field the whole first fix was built on.
 * **Deletes** nothing. No entry is written, edited or deleted. The built-in table is untouched.
 * **Tie-break**, one rung added to the order that already existed:
   what she **typed** → cached **official** text → the **built-in** line → nothing at all.
@@ -63,7 +63,9 @@ A link may only claim to be the source of wording that is **actually on screen**
 | Cached official text | **Where this came from · MedlinePlus** | the exact page it came from |
 | The caregiver's own wording | Look it up on MedlinePlus | a search |
 | Our built-in line | Look it up on MedlinePlus | a search |
-| Nothing | *(no link)* | — |
+| Nothing | Look it up on MedlinePlus | a search |
+
+**That last row said *(no link)* and it was false** — measured on the running build, a medication with no typed purpose, nothing in the table and no cached source still renders the lookup link, because the link sits outside the description's conditional and `purposeSourceLink()` returns null only for an empty name. The README in the same commit already said every card gains a link, so the two documents for one release contradicted each other. **That is the defect that got this release refused in the first place, repeated inside the file written to fix it.**
 
 Calling a search "the source" of a sentence written here would be a false citation, which is the one
 thing this feature must not do.
@@ -101,7 +103,7 @@ written for patients rather than clinicians, and with stable pages worth linking
 
 ## The suite, and what falsifying it found
 
-`test/v74-med-source.mjs` **36/36**. `test/falsify-app-v74.py`: **ALL MUTANTS BEHAVED**.
+`test/v74-med-source.mjs` **43/43**. `test/falsify-app-v74.py`: **ALL MUTANTS BEHAVED**.
 
 Falsification found **four** real defects in the release and the suite, three of them checks that
 could not fail:
@@ -124,9 +126,25 @@ Two guards cover stored text and neither can be turned red alone, because each c
 is defence in depth rather than a hole, and it is proved by a mutant that breaks **both**, with each
 alone listed as expected-green.
 
+## THE DEFECT AN AUDIT BLOCKED THIS RELEASE FOR, and the guard that closed it
+
+**Renaming a medication carried the previous drug's sentence AND its citation onto the new one.** An
+edit keeps the record — same id, fields spread from the original — so a medication renamed from
+Zofran to Compazine printed *"Prevents and settles nausea and vomiting."* with a link to
+**ondansetron's** page underneath, and **beat the app's own correct line for Compazine**. Permanent,
+with nothing to correct it, and it needed no race: the in-flight guard was already there and this sat
+outside it, because the check written for it deliberately clears the field before renaming.
+
+A cached description now records **`forName`**, the name it was looked up under, and is used only
+while that still matches. The second pass attacked the fix five ways — a changed generic name, a
+case-only rename, whitespace, two medications sharing a name, and races stacked on top — and it held
+each time. **An entry stored without `forName` stops being displayed rather than being trusted**;
+that loses a correct description rather than keeping a possibly-false one, and since app-v74 has
+never shipped, no record in the wild carries one at all.
+
 ## The full sweep
 
-`v74-med-source` 36/36 · `v73-archived-meds` 50/50 · `v72-med-purpose` 62/62 · `overflow-scan` PASS.
+`v74-med-source` 43/43 · `v73-archived-meds` 50/50 · `v72-med-purpose` 62/62 · `overflow-scan` PASS.
 30 PASS, 4 FAIL, 1 COULD-NOT-START — and those five (`audit-v55`, `pm-v55`, `pm-v55b`,
 `v57-browser-notice`, `audit-v55b`) are pre-existing and were verified identical on app-v71.
 

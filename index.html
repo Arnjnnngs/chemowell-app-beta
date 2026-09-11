@@ -1126,10 +1126,12 @@ const MED_SOURCE = {
 // where no suite can see it, so the same rules are enforced here, before a single fetched character
 // can reach the screen. Every one of them was paid for by an audit block on this project.
 const PURPOSE_MAX_LEN = 150;
-// The `u` flag matters: without it \d misses non-ASCII digits, and a line reading "Take ٢
-// tablets" carried a dose past a guard whose whole job is to stop one. Spelled-out numbers were
-// missed entirely for the same reason -- they are not digits at all.
-const PURPOSE_NUMBERY = /\d|[\u0660-\u0669\u06F0-\u06F9\u0966-\u096F]/u;
+// \p{Nd} IS THE POINT, not the `u` flag on its own. An earlier comment here said the flag was what
+// caught non-ASCII digits; measured, \d is false on ٢ with it and without it -- the flag only
+// makes \p{Nd} available, and that is what actually matches every decimal digit there is. Listing
+// ranges by hand caught Arabic and Devanagari and missed Thai and fullwidth. A guard whose whole job
+// is to stop a dose reaching the screen should not be a list somebody has to keep extending.
+const PURPOSE_NUMBERY = /\p{Nd}/u;
 const PURPOSE_WORDNUM = /\b(one|two|three|four|five|six|seven|eight|nine|ten|twice|thrice|half|quarter)\b/i;
 const PURPOSE_FEVERY = /fever|febrile|pyrexia|antipyretic|temperature/i;
 const PURPOSE_SCHEDULEY = /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|around chemo|with chemo|after chemo|before chemo|chemotherapy|dose|doses|mg|ml|mcg)\b/i;
@@ -5732,11 +5734,15 @@ function purposeSourceMatchesName(med) {
 function purposeSourceLink(med) {
   if (!med) return null;
   const src = (med.purposeSource && typeof med.purposeSource === 'object') ? med.purposeSource : null;
-  const label = (src && String(src.label || '').trim()) || MED_SOURCE.label;
+  // THE LABEL IS ONLY THE RECORD'S WHERE THE RECORD IS BEING USED. Read unconditionally it captioned
+  // a URL it did not describe: a stored label of "Drugs.com" printed "Look it up on Drugs.com" over a
+  // medlineplus.gov search. Unreachable before this release; the rename path is a new route to it.
+  const usable = purposeSourceMatchesName(med);
+  const label = (usable && src && String(src.label || '').trim()) || MED_SOURCE.label;
   const shown = purposeOf(med);
   const sourced = sourcedPurposeText(med);
   const usingSourceText = !!sourced && shown === sourced;
-  if (usingSourceText && src && src.url && purposeSourceMatchesName(med)) {
+  if (usingSourceText && src && src.url && usable) {
     return { url: String(src.url), label: label, exact: true, text: 'Where this came from \u00b7 ' + label };
   }
   const name = String(med.name || '').trim();

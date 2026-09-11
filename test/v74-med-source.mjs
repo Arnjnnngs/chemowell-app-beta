@@ -74,7 +74,7 @@ const URL_ = 'http://127.0.0.1:' + PORT + '/index.html';
 // THE STUBBED SOURCE. What the real service sends cannot be observed from here -- the egress policy
 // in this sandbox refuses every external host -- so the endpoint is stubbed exactly the way Firebase
 // has always been stubbed in this project, and `sourceMode` steers it per check.
-let sourceMode = 'dead';        // dead | ok | unsafe | slow | slow-then-ok | nolink
+let sourceMode = 'dead';        // dead | ok | unsafe | badurl | slow | slow-then-ok | nolink
 let sourceHits = 0;
 const PAGE_URL = 'https://medlineplus.gov/druginfo/meds/a601209.html';
 const GOOD_TEXT = 'Prevents and settles nausea and vomiting.';
@@ -89,6 +89,7 @@ const askedName = (url) => {
 };
 const body = (name) => {
   if (sourceMode === 'nolink') return { feed: { entry: [{ title: { _value: 'X' }, summary: { _value: GOOD_TEXT } }] } };
+  if (sourceMode === 'badurl') return { feed: { entry: [{ link: [{ href: 'javascript:alert(1)' }], title: { _value: name }, summary: { _value: GOOD_TEXT } }] } };
   const text = sourceMode === 'unsafe' ? UNSAFE_TEXT : GOOD_TEXT;
   return { feed: { entry: [{ link: [{ href: pageFor(name) }], title: { _value: name }, summary: { _value: text } }] } };
 };
@@ -442,11 +443,31 @@ console.log("\n10. A RENAME DOES NOT CARRY THE PREVIOUS DRUG'S SENTENCE OR ITS C
   const line = await purposeText('madeupzz');
   t('THE PREVIOUS DRUG\'S SENTENCE DOES NOT FOLLOW THE NAME',
     line !== 'Prevents and settles nausea and vomiting.', String(line));
+  // EXACT, not a pattern. /settles nausea/i matches the stub's sentence AND Compazine's built-in
+  // one, so this check could not fail on its own -- it leaned entirely on the exact-string check
+  // above it. Two checks that can only fail together are one check.
   t("and the app's OWN line for the new name is what shows instead",
-    !!line && /settles nausea/i.test(line), String(line));
+    line === 'Settles nausea and vomiting.', String(line));
   const link = await sourceLink('madeupzz');
   t('and nothing cites a page this sentence did not come from',
     !!link && link.exact === 'false', link ? link.text + ' -> ' + link.href : '(none)');
+}
+
+console.log('\n11. A HOSTILE URL FROM THE SERVICE ITSELF NEVER REACHES AN href');
+{
+  // The load-time check (section 6) only ever sees what is already in storage. This is the other
+  // route, and until the app-v74 audit it had no test at all: refreshPurposeSource writes the
+  // response URL straight into state, and from there into an href, without passing through the
+  // normaliser. A redirect, a compromised service or a changed API could hand back anything.
+  sourceMode = 'badurl';
+  await resave('Zofran');
+  const rec = await medRec('zofran');
+  t('nothing was stored from an answer carrying a javascript: URL',
+    !rec || !rec.purposeSource, rec && rec.purposeSource ? JSON.stringify(rec.purposeSource) : '(nothing, as intended)');
+  const link = await sourceLink('zofran');
+  t('and no javascript: link reaches the screen',
+    !link || /^https:\/\//i.test(link.href), link ? link.href : '(no link)');
+  sourceMode = 'dead';
 }
 
 console.log('\n-- nothing broke on the way');
