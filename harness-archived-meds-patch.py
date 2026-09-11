@@ -133,6 +133,7 @@ rep("""    archived[id] = { name: String(value.name || id), sub: String(value.su
     // archive cannot inject a malformed medication: whatever it holds goes through
     // normalizeMedication() exactly like any other.
     const entry = { name: String(value.name || id), sub: String(value.sub || ''), pausePeriods: normalizePausePeriods(value.pausePeriods) };
+    if (Number(value.removedAt)) entry.removedAt = Number(value.removedAt);
     if (value.config && typeof value.config === 'object') {
       try { entry.config = normalizeMedication(JSON.parse(JSON.stringify(value.config))); } catch (e) {}
     }
@@ -142,7 +143,7 @@ rep("""  const archivedMeds = { ...(state.archivedMeds || {}), [id]: { name: med
     """  // app-v73: archive the WHOLE medication, not just its name and pause record. Until now removing
   // one threw away its doses, windows, limits and notes -- in an app where every medication is one
   // the user typed, that is the whole of their work on it.
-  const archivedMeds = { ...(state.archivedMeds || {}), [id]: { name: med.name, sub: med.sub || '', pausePeriods: archivedPausePeriods, config: JSON.parse(JSON.stringify(med)) } };""")
+  const archivedMeds = { ...(state.archivedMeds || {}), [id]: { name: med.name, sub: med.sub || '', pausePeriods: archivedPausePeriods, config: JSON.parse(JSON.stringify(med)), removedAt: dayStart(state.now || Date.now()) } };""")
 
 # ================= A: restoring =================================================================
 rep("""function deleteMedicationConfig(id) {""",
@@ -177,10 +178,18 @@ function restoreMedicationConfig(id) {
   if (hadConfig) med = normalizeMedication(JSON.parse(JSON.stringify(entry.config)));
   else med = normalizeMedication({ id: id, name: entry.name || id, sub: entry.sub || '' });
   med.id = id;
-  // REMINDERS COME BACK AS THEY WERE, and the GAP is what is suppressed. The first version of this
-  // release switched them off instead; the audit showed that was wrong in both apps and in opposite
-  // directions -- erased by a normaliser in one, permanent with no way back in the other.
-  med.alertsFrom = dayStart(state.now || Date.now());
+  // REMINDERS COME BACK AS THEY WERE. What is suppressed is the SPAN IT WAS AWAY -- from the day it
+  // left the list to today -- and nothing outside it. The first version switched reminders off
+  // instead, which removed safety cover invisibly; the second suppressed everything BEFORE the
+  // restore, which erased the medication's entire missed-dose history from the banner, the day
+  // summaries and the clinician export. Both ends, or it is not a gap.
+  // An archive written before this release carries no removedAt: that restore gets a single-day
+  // span, which suppresses nothing that matters and never reaches backwards.
+  const awayFrom = dayStart(Number(entry.removedAt) || (state.now || Date.now()));
+  const awayTo = dayStart(state.now || Date.now());
+  med.awayPeriods = (Array.isArray(med.awayPeriods) ? med.awayPeriods : [])
+    .filter(p => p && Number(p.start) && Number(p.end))
+    .concat([{ start: awayFrom, end: awayTo }]);
   med.pausePeriods = normalizePausePeriods(entry.pausePeriods);
   const meds = state.meds.concat([med]);
   const archivedMeds = { ...(state.archivedMeds || {}) };
@@ -189,7 +198,7 @@ function restoreMedicationConfig(id) {
   setState({ meds, archivedMeds, confirmRestoreMed: null });
   setToast(med.name + (hadConfig ? ' is back, with its doses and rules.'
     : ' is back. Its doses and rules were not kept \\u2014 set them in Edit.')
-    + ' Its reminders come back on from today \\u2014 the days it was away are not counted as missed.');
+    + ' Its reminders come back on, and the days it was off the list are not counted as missed.');
   markNotifDirty(); // whatever alarms this medication had are gone; nothing new is armed
 }
 function deleteMedicationConfig(id) {""")
@@ -222,7 +231,7 @@ rep("""    h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9
     archivedList.length ? h('div', { 'data-archived-meds': 'true', style: { marginTop: '18px' } },
       h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '4px' } }, 'Removed medications'),
       h('div', { style: { ...TYPE.caption, color: '#6B5F66', lineHeight: '1.4', marginBottom: '9px' } },
-        'Their dose history is still in the app. Bring one back and its old doses read properly again \\u2014 it comes back with its reminders on again from today, so the days it was away are not counted as missed.'),
+        'Their dose history is still in the app. Bring one back and its old doses read properly again \\u2014 it comes back with its reminders on again, and only the days it was off the list are left uncounted.'),
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...archivedList.map(item => {
         const restoring = state.confirmRestoreMed === item.id;
         return h('article', { 'data-archived-med': item.id, style: { background: '#FFFFFF', border: '1px dashed #E0CEC6', borderRadius: '15px', padding: '12px', display: 'flex', alignItems: 'center', gap: '10px', overflowWrap: 'anywhere' } },
@@ -248,8 +257,12 @@ rep("""    h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9
 # them, and the engine is otherwise untouched.
 rep("""  state.meds.filter(m => m.alerts && m.windows).forEach(med => {""",
     """  state.meds.filter(m => m.alerts && m.windows).forEach(med => {
-    // Brought back from the archive: nothing before the day it returned is a missed dose.
-    if (med.alertsFrom && d0 < dayStart(med.alertsFrom)) return;""")
+    // BROUGHT BACK FROM THE ARCHIVE: the days it was AWAY are not missed doses. Both ends matter.
+    // The version before this one suppressed everything before the restore day, so bringing a
+    // medication back erased its whole missed-dose history -- 122 misses over two months, gone from
+    // the banner, the day summaries and the report that goes to the doctor, for a medication that
+    // had been off the list for two seconds.
+    if ((med.awayPeriods || []).some(p => p && d0 >= dayStart(p.start) && d0 <= dayStart(p.end))) return;""")
 
 # ---- TWO THINGS THE AUDIT FOUND AROUND THE NEW CONTROL ----------------------------------------
 # 1. A half-armed "Bring back" survived navigation. The confirm beside it -- Remove -- has been

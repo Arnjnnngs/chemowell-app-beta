@@ -304,12 +304,21 @@ console.log('\n3. THE SAFETY CHECK: it comes back with reminders OFF');
   const back = ((await savedCfg()).meds || []).find(m => m.id === MED_ID);
   t('its reminders came back exactly as they were, rather than being switched off',
     !!back && back.alerts === true, 'alerts=' + (back && back.alerts));
-  t('and the day it came back is stamped, so the gap is what gets suppressed',
-    !!back && typeof back.alertsFrom === 'number' && back.alertsFrom > 0, 'alertsFrom=' + (back && back.alertsFrom));
+  t('the span it was away is recorded with BOTH ends',
+    !!back && Array.isArray(back.awayPeriods) && back.awayPeriods.length > 0
+      && Number(back.awayPeriods[back.awayPeriods.length - 1].start) > 0
+      && Number(back.awayPeriods[back.awayPeriods.length - 1].end) > 0,
+    JSON.stringify(back && back.awayPeriods));
   const missedAfter = await missedTotal();
-  if (missedAfter === null || missedRemoved === null) exempt('THE SAFETY CHECK on the banner', 'banner not readable in this build; alerts and alertsFrom are asserted from the saved record above');
-  else t('THE SAFETY CHECK: bringing it back does not put the days it was away back on the banner',
-    missedAfter === missedRemoved,
+  // THE SAFETY CHECK, AND IT ASSERTS BOTH ENDS. This medication was off the list for about two
+  // seconds, so the span it was away contains no missed doses at all -- which means the total must
+  // come back to EXACTLY where it started. The version before this one asserted it equalled the
+  // REMOVED number, and that assertion was green on a build that erased the medication's entire
+  // missed-dose history: 122 misses over two months, gone from the banner, the day summaries and
+  // the report that goes to the doctor. Comparing to the BEFORE number is what catches that.
+  if (missedAfter === null || missedRemoved === null) exempt('THE SAFETY CHECK on the banner', 'banner not readable in this build; the saved record is asserted above');
+  else t('THE SAFETY CHECK: bringing it back suppresses ONLY the days it was away, and it was away for none',
+    missedAfter === missedBefore,
     missedBefore + ' before -> ' + missedRemoved + ' with it removed -> ' + missedAfter + ' after');
   await goMeds();
   t("the caregiver's own version came back", !!back && back.purpose === MARKER, back ? String(back.purpose) : '(missing)');
@@ -329,12 +338,12 @@ console.log('\n4. It survives a reload, and there is nothing left to bring back'
   await goMeds();
   t('still on the active list after closing and reopening the app', (await activeIds()).includes(MED_ID));
   const back = ((await savedCfg()).meds || []).find(m => m.id === MED_ID);
-  t('the day it came back survived the reload', !!back && typeof back.alertsFrom === 'number',
-    'alertsFrom=' + (back && back.alertsFrom));
+  t('the span it was away survived the reload', !!back && Array.isArray(back.awayPeriods) && back.awayPeriods.length > 0,
+    JSON.stringify(back && back.awayPeriods));
   const stillClear = await missedTotal();
-  if (stillClear === null || missedRemoved === null) exempt('the banner after a reload', 'banner not readable in this build');
-  else t('and the banner still does not count the days it was away', stillClear === missedRemoved,
-    missedRemoved + ' -> ' + stillClear);
+  if (stillClear === null || missedBefore === null) exempt('the banner after a reload', 'banner not readable in this build');
+  else t('and after a reload the history is still all there', stillClear === missedBefore,
+    missedBefore + ' -> ' + stillClear);
   await goMeds();
   t('there is no "Bring back" control for it any more', !(await clickLabel('Bring back ' + MED_NAME)));
 }
@@ -384,8 +393,8 @@ console.log('\n6. An archive written by an OLDER build still restores something 
   await page.waitForTimeout(900);
   const back = ((await savedCfg()).meds || []).find(m => m.id === MED_ID);
   t('it still comes back', !!back);
-  t('the day it came back is stamped on this path too', !!back && typeof back.alertsFrom === 'number',
-    'alertsFrom=' + (back && back.alertsFrom));
+  t('the span it was away is recorded on this path too', !!back && Array.isArray(back.awayPeriods) && back.awayPeriods.length > 0,
+    JSON.stringify(back && back.awayPeriods));
 }
 
 console.log('\n-- nothing broke on the way');
