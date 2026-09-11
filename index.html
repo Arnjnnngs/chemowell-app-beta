@@ -1159,6 +1159,44 @@ function normalizeMedication(raw, index) {
   } else {
     delete medication.scheduleDays;
   }
+  // v75: THE SPANS THE MEDICATION WAS OFF THE LIST, VALIDATED. This function runs on every load and
+  // over anything medsync publishes from another device, and it hands the result straight to the
+  // missed-dose walk. A malformed span fails safe -- every comparison against NaN is false, so
+  // nothing is suppressed -- but a WIDE one does not: {start: 0, end: <huge>} would swallow the
+  // whole record. Nothing in this release can write that; medsync means the walk should not be the
+  // thing that trusts it. Same shape of guard the sibling app's pausePeriods already gets.
+  const awaySpans = (Array.isArray(original.awayPeriods) ? original.awayPeriods : [])
+    .map(span => ({ start: Number(span && span.start), end: Number(span && span.end) }))
+    .filter(span => isFinite(span.start) && isFinite(span.end)
+      && span.start > 0 && span.end > 0 && span.start <= span.end
+      // AND IT CANNOT END IN THE FUTURE. This app only ever writes a span ending on the day of the
+      // restore, so an end beyond now did not come from it -- and that is the shape that does real
+      // damage: {start: 1, end: <far future>} suppresses every missed dose the record holds.
+      // Rejecting malformed spans was not enough; the first version of this filter passed that one.
+      // SAID OUT LOUD, because it is a real limit rather than an oversight: a span ending in the
+      // PAST cannot be checked this way -- it is indistinguishable from a medication that was
+      // genuinely off the list for a long time. The narrow way one could arise here is a phone whose
+      // DATE WAS WRONG AT THE MOMENT OF REMOVAL and was corrected afterwards.
+      // AND IT CANNOT BE UNDONE. Removing the medication ARCHIVES it, spans and all, and bringing it
+      // back re-adds them; there is no purge control anywhere in this app, by design, because a
+      // control that edits suppression is a control that can hide real missed doses. An earlier
+      // version of this comment said deleting the medication undid it. It does not, and the audit
+      // was right to refuse that twice.
+      // WHAT ACTUALLY MAKES THIS SAFE, stated from a measurement rather than from what would be
+      // reassuring: NO ENTRY IS WRITTEN, EDITED OR DELETED by any of this, every logged dose stays
+      // exactly where it is, and the suppression is DERIVED AT RENDER TIME -- drop the span and every
+      // count returns exactly.
+      // WHAT A SPAN DOES CHANGE in THIS app is every surface fed by missedDosesFor(): the banner,
+      // the card's MISSED label, Today's journal, and the History rows and day summaries -- where a
+      // day can stop appearing at all, because a History day here exists only if it has misses.
+      // IT DOES NOT CHANGE THE EXPORT IN THIS APP. buildExportRows() is allEntriesRaw().filter().map()
+      // and never calls missedDosesFor(); there are no derived missed-dose rows here to drop. The
+      // sibling app HAS them and its copy of this comment says so; a previous version of this one
+      // named the export and quoted the sibling's fixture numbers, which is the same
+      // write-it-because-it-reads-well defect in the opposite direction.
+      // Do not write a reassurance here that has not been measured IN THIS FILE.
+      && span.end <= Date.now());
+  if (awaySpans.length) medication.awayPeriods = awaySpans; else delete medication.awayPeriods;
   if (doses && doses.length) medication.doses = doses; else delete medication.doses;
   if (type === 'win') medication.windows = windows.length ? windows : [{ start: 0, end: 24, name: 'Daily' }]; else delete medication.windows;
   return medication;
@@ -1173,7 +1211,17 @@ function normalizeArchivedMeds(raw) {
     // load, silently dropping pausePeriods the moment the page reloaded -- deleteMedicationConfig's
     // archive step below is only half the fix without this, since this function runs on every
     // loadMedicationConfig() call and would otherwise strip right back out what was just archived.
-    archived[id] = { name: String(value.name || id), sub: String(value.sub || ''), pausePeriods: normalizePausePeriods(value.pausePeriods) };
+    // app-v73: the CONFIG is preserved when the archive carries one -- the same line, for the same
+    // reason, as the pausePeriods one above it. This function runs on every load, so without it the
+    // widened archive written below is stripped straight back out again. A corrupted or hand-edited
+    // archive cannot inject a malformed medication: whatever it holds goes through
+    // normalizeMedication() exactly like any other.
+    const entry = { name: String(value.name || id), sub: String(value.sub || ''), pausePeriods: normalizePausePeriods(value.pausePeriods) };
+    if (Number(value.removedAt)) entry.removedAt = Number(value.removedAt);
+    if (value.config && typeof value.config === 'object') {
+      try { entry.config = normalizeMedication(JSON.parse(JSON.stringify(value.config))); } catch (e) {}
+    }
+    archived[id] = entry;
   });
   return archived;
 }
@@ -1708,6 +1756,12 @@ function missedDosesFor(dayTs, now) {
   // the bottom of this function, so a half-day stay suppresses only the doses inside it.
   const out = [];
   state.meds.filter(m => m.alerts && m.windows).forEach(med => {
+    // BROUGHT BACK FROM THE ARCHIVE: the days it was AWAY are not missed doses. Both ends matter.
+    // The version before this one suppressed everything before the restore day, so bringing a
+    // medication back erased its whole missed-dose history -- 122 misses over two months, gone from
+    // the banner, the day summaries and the report that goes to the doctor, for a medication that
+    // had been off the list for two seconds.
+    if ((med.awayPeriods || []).some(p => p && d0 >= dayStart(p.start) && d0 <= dayStart(p.end))) return;
     if (isPausedOn(med, d0)) return; // v20: skip exactly the days this medication was actually paused
     if (treatmentOnlyBlocks(med, d0)) return;
     if (treatmentExcludedNow(med, d0)) return; // v20: excluded near treatment day
@@ -3273,7 +3327,11 @@ function scrollToTop() {
 }
 function navigateTo(view) {
   const editorClosing = !!state.medEditor && view !== 'meds'; // audit v12 P3-1: nav-away also closes the editor
-  const next = { view, reportsView: view === 'reports' ? null : state.reportsView, medEditor: view === 'meds' ? state.medEditor : null, confirmDeleteMed: null };
+  // v75/app-v73: a half-armed "Bring back" is cleared on navigation exactly like a half-armed
+  // Remove. Leaving it armed means coming back to the Meds screen later and finding a button
+  // already one tap from acting -- the audit found it, and the neighbouring confirm has been
+  // cleared here since long before this release.
+  const next = { view, reportsView: view === 'reports' ? null : state.reportsView, medEditor: view === 'meds' ? state.medEditor : null, confirmDeleteMed: null, confirmRestoreMed: null };
   // v55: tapping Help in the menu always lands on the top level, the same way tapping Reports
   // always lands on the report list. Coming back to a walkthrough you left three screens deep,
   // with a stale search still in the box, is not what "Help" reads like it will do.
@@ -4622,7 +4680,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('div', { style: { flex: '1' } },
         h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '4px' } },
           h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127' } }, 'Missed dose' + (bannerItems.length > 1 ? 's' : '')),
-          h('button', { onClick: (ev) => { ev.stopPropagation(); clearMissedDoses(); }, style: { flexShrink: '0', minHeight: '44px', padding: '0 14px', borderRadius: '99px', background: 'transparent', border: '1px solid #F2BEA8', color: '#A83D0F', fontSize: '13px', fontWeight: '700' } }, 'Clear')
+          h('button', { onClick: (ev) => { ev.stopPropagation(); clearMissedDoses(); }, 'data-missed-clear': 'true', style: { flexShrink: '0', minHeight: '44px', padding: '0 14px', borderRadius: '99px', background: 'transparent', border: '1px solid #F2BEA8', color: '#A83D0F', fontSize: '13px', fontWeight: '700' } }, 'Clear')
         ),
         // One line per miss (item 8) — med name in ink, details in secondary
         ...bannerItems.map(m => h('div', { style: { ...TYPE.caption, color: '#554A52' } },
@@ -5451,12 +5509,68 @@ const MED_PURPOSE = {
   'pegfilgrastim': 'Helps the body make white blood cells.',
   'allopurinol': 'Lowers uric acid levels.',
   'diphenhydramine': 'An antihistamine, used for allergic reactions and to help with sleep.',
-  'benadryl': 'An antihistamine, used for allergic reactions and to help with sleep.'
+  'benadryl': 'An antihistamine, used for allergic reactions and to help with sleep.',
+  // app-v73 (B): the ones the table was missing entirely.
+  'neulasta': 'Helps the body make white blood cells.',
+  'metoclopramide': 'Settles nausea and helps the stomach empty.',
+  'reglan': 'Settles nausea and helps the stomach empty.',
+  'promethazine': 'Settles nausea and vomiting, and is also used for allergies. It causes drowsiness.',
+  'phenergan': 'Settles nausea and vomiting, and is also used for allergies. It causes drowsiness.',
+  // app-v73 (B): brand halves of drugs the table already covered by generic name. Typing the brand
+  // used to show no line at all, which reads as "the app does not know this one".
+  'motrin': 'Eases pain and swelling.',
+  'ms contin': 'A strong pain reliever for moderate to severe pain.',
+  'oxycontin': 'A strong pain reliever for moderate to severe pain.',
+  'roxicodone': 'A strong pain reliever for moderate to severe pain.',
+  'ultram': 'A pain reliever for moderate pain.',
+  'neurontin': 'Eases nerve pain, and is also used for some seizures.',
+  'lidoderm': 'Numbs the area where it is used.',
+  'xylocaine': 'Numbs the area where it is used.',
+  'prilosec': 'Lowers stomach acid, which protects the stomach and eases reflux.',
+  'pepcid': 'Lowers stomach acid, which eases reflux and heartburn.',
+  'colace': 'A stool softener for constipation.',
+  'buspar': 'Eases anxiety.',
+  'paxil': 'Treats depression, and is also used for anxiety.',
+  'zoloft': 'Treats depression, and is also used for anxiety.',
+  'zyloprim': 'Lowers uric acid levels.',
+  // app-v73 (C): COMBINATION PRODUCTS. Each names what is actually in it, because the generic
+  // fallback would otherwise describe one ingredient and stay silent about the other.
+  'tylenol pm': 'Eases pain, and also contains an antihistamine that helps with sleep.',
+  'percocet': 'A strong pain reliever that also contains acetaminophen.',
+  'norco': 'A strong pain reliever that also contains acetaminophen.',
+  // EXCEDRIN IS DELIBERATELY NOT HERE, and that is the C principle applied honestly rather than
+  // mechanically. The bare name covers products with DIFFERENT ingredients -- Tension Headache
+  // has no aspirin, PM swaps the caffeine for a sedating antihistamine -- so no single line is
+  // true of all of them. A name that cannot carry one true sentence gets no sentence: the app
+  // shows nothing, which is what it already does for every name it does not recognise.
+  'vicodin': 'A strong pain reliever that also contains acetaminophen.'
 };
 // Lowercased, and stripped of anything but letters, digits and single spaces, so "Zofran!!!" and
 // "  Zofran  " land on the same key as "zofran". A name carrying EXTRA WORDS does not -- "Zofran
 // (ODT)" normalises to "zofran odt" and finds nothing, which is a miss rather than a wrong answer,
 // and a wrong line on the right medication would be far worse than no line.
+// ---- LOOKING A MEDICATION UP (app-v74) --------------------------------------------------------
+// A SEARCH URL BUILT FROM THE NAME, WITH NO NETWORK. Nothing is requested, nothing is stored and
+// nothing leaves the phone until the caregiver taps the link herself.
+// MedlinePlus is the US National Library of Medicine: public domain, written for patients rather
+// than clinicians. WebMD and drugs.com are deliberately not used -- their text is copyrighted and
+// their terms forbid republishing it, which is exactly what this app set out to avoid when it wrote
+// its own descriptions by hand.
+const MED_SOURCE = {
+  label: 'MedlinePlus',
+  searchUrl: function (name) {
+    return 'https://medlineplus.gov/search/?query=' + encodeURIComponent(String(name || '').trim());
+  }
+};
+// THE LINK IS A LOOKUP, NEVER A CITATION. The description above it was written in this repo, so
+// saying "source" over it would be a false citation -- the class of defect this project has been
+// refused for repeatedly. When the baked-in database lands, text and page will travel together and
+// the wording changes to match. Not before.
+function purposeSourceLink(med) {
+  const name = med ? String(med.name || '').trim() : '';
+  if (!name) return null;
+  return { url: MED_SOURCE.searchUrl(name), text: 'Look it up on ' + MED_SOURCE.label };
+}
 function medPurposeKey(text) {
   return String(text || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -5847,9 +5961,90 @@ function moveReorderableMed(id, dir) {
   setState({ meds });
 }
 
+// ---- BRINGING A MEDICATION BACK (app-v73) ----
+// REMINDERS COME BACK EXACTLY AS THEY WERE. What is suppressed is the SPAN IT WAS AWAY, both ends
+// of it: removal writes down the day the medication left, restore turns that into an `awayPeriods`
+// span ending today, and the missed-dose walk skips a day only when it falls INSIDE one.
+// The audit refused two earlier designs here. The first switched reminders OFF -- erased at the next
+// load by a normaliser in one app, permanent with no control to undo it in the other, and either way
+// a silent loss of missed-dose cover under a button labelled "Bring back". The second suppressed
+// everything BEFORE the restore day, which erased the medication's entire missed-dose history.
+// AN ENTRY FROM AN OLDER BUILD CARRIES NO `removedAt` and gets a single-day span, so it suppresses
+// nothing -- the toast and the row say so rather than promising otherwise.
+// PAUSE PERIODS DO come back: app-v20 archives them precisely so a medication re-added later is not
+// flagged for days it was legitimately paused, and dropping them here would undo that from the
+// other end.
+function restoreMedicationConfig(id) {
+  // hasOwnProperty, NOT a bare index -- the guard every neighbouring lookup in this file got after
+  // v74, when a medication named `Constructor` read back Object.prototype's own property and
+  // destroyed the Meds screen permanently.
+  const archive = state.archivedMeds || {};
+  const entry = Object.prototype.hasOwnProperty.call(archive, id) ? archive[id] : null;
+  if (!entry || typeof entry !== 'object') return;
+  // TIE-BREAK, and the reason this control exists at all. The id is what every stored dose points
+  // at. If an active medication already holds it, putting this one back would collide; giving it a
+  // NEW id instead would orphan its whole dose history, which is exactly what typing the medication
+  // in again does today and the thing this is here to stop.
+  if (state.meds.some(item => item.id === id)) {
+    setToast('A medication called ' + (entry.name || id) + ' is already on the list. Remove or rename that one first.');
+    return;
+  }
+  if (state.confirmRestoreMed !== id) { setState({ confirmRestoreMed: id }); return; }
+  let med = null;
+  const hadConfig = !!entry.config;
+  if (hadConfig) med = normalizeMedication(JSON.parse(JSON.stringify(entry.config)));
+  else med = normalizeMedication({ id: id, name: entry.name || id, sub: entry.sub || '' });
+  med.id = id;
+  // REMINDERS COME BACK AS THEY WERE. What is suppressed is the SPAN IT WAS AWAY -- from the day it
+  // left the list to today -- and nothing outside it. The first version switched reminders off
+  // instead, which removed safety cover invisibly; the second suppressed everything BEFORE the
+  // restore, which erased the medication's entire missed-dose history from the banner, the day
+  // summaries and the clinician export. Both ends, or it is not a gap.
+  // An archive written before this release carries no removedAt: that restore gets a single-day
+  // span, which suppresses nothing that matters and never reaches backwards.
+  // WHETHER THE APP EVER KNEW. An entry written before this release carries no `removedAt`, so the
+  // span collapses to a single day and suppresses nothing. That is the right fallback -- it can
+  // never reach backwards over days the medication was on the list -- but it is NOT what the copy
+  // used to promise, and the first medication anybody brings back is necessarily such an entry.
+  // A DAY IN THE FUTURE IS NOT A RECORD OF WHEN IT LEFT. The previous version of this line asked only
+  // whether `removedAt` was present, and the row then printed the date and promised the days would not
+  // count -- which cannot happen: a future removal day makes start > end, the guard never matches, and
+  // the validator drops the span. One flag decides the span AND the words, so they cannot disagree.
+  const leftOn = Number(entry.removedAt);
+  const knewWhenItLeft = isFinite(leftOn) && leftOn > 0
+    && dayStart(leftOn) <= dayStart(state.now || Date.now());
+  const awayFrom = dayStart(knewWhenItLeft ? leftOn : (state.now || Date.now()));
+  const awayTo = dayStart(state.now || Date.now());
+  // IF IT DOES NOT KNOW WHEN THE MEDICATION LEFT, IT SUPPRESSES NOTHING. The version before this one
+  // appended a {today, today} span on that path, which is not nothing: it took both of a tracked
+  // medication's windows off the restore day and two rows off the clinician export, while the toast,
+  // the row and the records all said the days would still show as missed. Three false statements in
+  // the under-reporting direction, and the honest fix was the code rather than the wording -- now all
+  // three are true as written. The cost, said out loud: a window missed earlier today while the
+  // medication was off the list counts as missed on this path. That is the over-reporting direction,
+  // it is visible, and it is what the caregiver is told.
+  const kept = (Array.isArray(med.awayPeriods) ? med.awayPeriods : [])
+    .filter(p => p && Number(p.start) && Number(p.end));
+  med.awayPeriods = knewWhenItLeft ? kept.concat([{ start: awayFrom, end: awayTo }]) : kept;
+  med.pausePeriods = normalizePausePeriods(entry.pausePeriods);
+  const meds = state.meds.concat([med]);
+  const archivedMeds = { ...(state.archivedMeds || {}) };
+  delete archivedMeds[id];
+  persistMedicationConfig(meds, archivedMeds);
+  setState({ meds, archivedMeds, confirmRestoreMed: null });
+  setToast(med.name + (hadConfig ? ' is back, with its doses and rules.'
+    : ' is back. Its doses and rules were not kept \u2014 set them in Edit.')
+    + (knewWhenItLeft
+        ? ' Its reminders come back on, and the days it was off the list are not counted as missed.'
+        : ' Its reminders come back on. The app has no usable record of when you removed it, so the days it was away will still show as missed.'));
+  markNotifDirty(); // whatever alarms this medication had are gone; nothing new is armed
+}
 function deleteMedicationConfig(id) {
   const med = state.meds.find(item => item.id === id);
   if (!med) return;
+  // app-v73: starting a removal clears any half-tapped restore, so the two confirmations can never
+  // be armed at once and a second tap can never land on the control she was not looking at.
+  if (state.confirmRestoreMed) setState({ confirmRestoreMed: null });
   if (state.confirmDeleteMed !== id) { setState({ confirmDeleteMed: id }); return; }
   const meds = state.meds.filter(item => item.id !== id);
   // v20 restart (audit P1-1): archive pausePeriods too, not just {name, sub} -- otherwise a medication
@@ -5862,7 +6057,10 @@ function deleteMedicationConfig(id) {
   // opposite direction.
   const today = dayStart(state.now);
   const archivedPausePeriods = normalizePausePeriods(med.pausePeriods).map(p => p.end === null ? { ...p, end: today } : p);
-  const archivedMeds = { ...(state.archivedMeds || {}), [id]: { name: med.name, sub: med.sub || '', pausePeriods: archivedPausePeriods } };
+  // app-v73: archive the WHOLE medication, not just its name and pause record. Until now removing
+  // one threw away its doses, windows, limits and notes -- in an app where every medication is one
+  // the user typed, that is the whole of their work on it.
+  const archivedMeds = { ...(state.archivedMeds || {}), [id]: { name: med.name, sub: med.sub || '', pausePeriods: archivedPausePeriods, config: JSON.parse(JSON.stringify(med)), removedAt: dayStart(state.now || Date.now()) } };
   persistMedicationConfig(meds, archivedMeds);
   setState({ meds, archivedMeds, confirmDeleteMed: null, medEditor: state.medEditor && state.medEditor.sourceId === id ? null : state.medEditor });
   setToast(med.name + ' was removed from the active list. Existing dose history was preserved.');
@@ -6264,6 +6462,17 @@ function renderMedicationManager(now) {
   // Alphabetical for easy scanning — independent of the underlying state.meds array order, which is
   // preserved separately to drive Home's Quick Log card order (see the Home screen order section below).
   const sortedMeds = state.meds.slice().sort((a, b) => a.name.localeCompare(b.name));
+  // app-v73: what has been removed, in the same order the active list uses.
+  const archivedList = Object.entries(state.archivedMeds || {})
+    .map(([id, item]) => {
+      // The SAME test the restore uses, so the row cannot promise what the restore will not do.
+      const left = Number(item.removedAt);
+      const today = dayStart(state.now || Date.now());
+      const usable = isFinite(left) && left > 0 && dayStart(left) <= today;
+      return { id: id, name: String(item.name || id), sub: String(item.sub || ''), config: !!item.config,
+        knewWhenItLeft: usable, daysAway: usable ? Math.round((today - dayStart(left)) / 86400000) : 0 };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
   const reorderable = reorderableHomeMeds();
   const homeOrderSection = reorderable.length > 1 ? h('section', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } },
     h('div', null,
@@ -6298,7 +6507,18 @@ function renderMedicationManager(now) {
         h('div', { style: { minWidth: '0', flex: '1' } },
           h('div', { style: { ...TYPE.title, color: '#2A2127' } }, med.name),
           h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '1px' } }, med.sub || 'No generic name'),
-          purposeOf(med) ? h('div', { 'data-med-purpose': med.id, style: { ...TYPE.caption, color: '#4A3F47', marginTop: '4px', lineHeight: '1.35' } }, purposeOf(med)) : null
+          purposeOf(med) ? h('div', { 'data-med-purpose': med.id, style: { ...TYPE.caption, color: '#4A3F47', marginTop: '4px', lineHeight: '1.35' } }, purposeOf(med)) : null,
+          (function () {
+            const link = purposeSourceLink(med);
+            if (!link) return null;
+            return h('a', {
+              'data-med-source': med.id,
+              href: link.url,
+              target: '_blank',
+              rel: 'noopener noreferrer',
+              style: { ...TYPE.caption, display: 'inline-block', color: '#0A6B4A', fontWeight: '700', textDecoration: 'underline', marginTop: '3px', minHeight: '44px', lineHeight: '44px' }
+            }, link.text);
+          })()
         ),
         h('div', { style: { display: 'flex', gap: '5px', flexShrink: '0' } },
           h('button', { onClick: () => openMedicationEditor(med), 'aria-label': 'Edit ' + med.name, style: { width: '44px', height: '44px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(200,83,32,0.10)', color: '#A83D0F', border: '1px solid rgba(200,83,32,0.18)' } }, appIcon('edit', 16)),
@@ -6345,8 +6565,33 @@ function renderMedicationManager(now) {
     // common state, not an edge case -- and a notice about "the line under each medication" printed
     // above a list with no lines in it is the app describing something that is not on the screen.
     sortedMeds.some(m => purposeOf(m)) ? h('div', { 'data-med-disclaimer': 'true', style: { ...TYPE.caption, color: '#6B5F66', lineHeight: '1.4', margin: '2px 0 10px' } },
-      'Where a medication has a line under it, that is general information, not medical advice. Your care team is the answer for anything specific.') : null,
+      'These descriptions are written here \u2014 general information about what a medication is usually for, not advice and not a dose. Each one links to ' + MED_SOURCE.label + ', where you can read more. Follow her care team.') : null,
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),
+    // ONLY when something has been removed. A heading over an empty list is a notice about
+    // nothing -- the defect the v72 audit found in the disclaimer two lines above.
+    archivedList.length ? h('div', { 'data-archived-meds': 'true', style: { marginTop: '18px' } },
+      h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '4px' } }, 'Removed medications'),
+      h('div', { style: { ...TYPE.caption, color: '#6B5F66', lineHeight: '1.4', marginBottom: '9px' } },
+        'Their dose history is still in the app. Bring one back and its old doses read properly again, with its reminders on. Each one says below whether the days it was away will still count as missed.'),
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...archivedList.map(item => {
+        const restoring = state.confirmRestoreMed === item.id;
+        return h('article', { 'data-archived-med': item.id, style: { background: '#FFFFFF', border: '1px dashed #E0CEC6', borderRadius: '15px', padding: '12px', display: 'flex', alignItems: 'center', gap: '10px', overflowWrap: 'anywhere' } },
+          h('div', { style: { minWidth: '0', flex: '1' } },
+            h('div', { style: { ...TYPE.title, color: '#554A52' } }, item.name),
+            h('div', { style: { ...TYPE.caption, color: '#6B5F66', marginTop: '1px' } },
+              (item.sub || 'No generic name') + (item.config ? '' : ' \u00b7 doses and rules were not kept')),
+            h('div', { style: { fontSize: '11px', color: '#8A7280', fontWeight: '600', marginTop: '2px' } },
+              item.knewWhenItLeft
+                ? (item.daysAway === 0 ? 'Removed today'
+                    : item.daysAway === 1 ? 'Removed yesterday'
+                    : 'Removed ' + item.daysAway + ' days ago')
+                  + ' \u00b7 the days it was away will not count as missed doses'
+                : 'The app has no usable record of when this was removed, so the days it was away will still count as missed doses')
+          ),
+          h('button', { onClick: () => restoreMedicationConfig(item.id), 'aria-label': restoring ? 'Confirm bringing back ' + item.name : 'Bring back ' + item.name, style: { flexShrink: '0', minHeight: '44px', padding: '0 13px', borderRadius: '999px', background: restoring ? '#0A6B4A' : 'rgba(10,107,74,0.10)', color: restoring ? '#fff' : '#0A6B4A', border: '1px solid ' + (restoring ? '#0A6B4A' : 'rgba(10,107,74,0.28)'), fontSize: '13px', fontWeight: '700' } }, restoring ? 'Yes, bring it back' : 'Bring back')
+        );
+      }))
+    ) : null,
     null // v12 redundancy cut: stale "now live in Settings" breadcrumb removed
   ];
 }
@@ -6760,7 +7005,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v72';
+const APP_VERSION = 'app-v74';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -9980,7 +10225,7 @@ setInterval(() => {
   // tick to update there and no reason to leave a second way for this bug to come back a
   // fifth time. Interaction re-renders (setState/render) still repaint it instantly.
   if (state.view !== 'help'
-      && !state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.noteModal && !state.checkinModal && !state.medEditor && !state.infoModal && !state.eraseAllModalOpen && !state.confirmDeleteMed && !state.confirmDeleteAppt && !state.confirmDeleteNote && !state.confirmDeleteProfile && !state.confirmRemove && !isEditing) render();
+      && !state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.noteModal && !state.checkinModal && !state.medEditor && !state.infoModal && !state.eraseAllModalOpen && !state.confirmDeleteMed && !state.confirmRestoreMed && !state.confirmDeleteAppt && !state.confirmDeleteNote && !state.confirmDeleteProfile && !state.confirmRemove && !isEditing) render();
   checkNotifications();
   checkAppointmentReminders();
   // v35 backstop. Everything that changes the plan already calls markNotifDirty(), but a backstop
