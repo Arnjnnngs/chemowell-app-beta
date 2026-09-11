@@ -28,10 +28,23 @@ the placeholder failure this repo's `release_check.sh` was hardened against thre
 * **Restore puts it back under its ORIGINAL id.** Every stored dose references that id, so the old
   doses read properly again. A new id leaves them orphaned, which is exactly what typing the
   medication in again does today.
-* **REMINDERS COME BACK EXACTLY AS THEY WERE, AND THE GAP IS WHAT IS SUPPRESSED.** Restore stamps
-  `alertsFrom`; the missed-dose walk skips days before it for that medication.
+* **REMINDERS COME BACK EXACTLY AS THEY WERE, AND WHAT IS SUPPRESSED IS THE SPAN IT WAS AWAY —
+  BOTH ENDS OF IT.** Removing a medication records the day it left (`removedAt`, written at the
+  moment of removal because that end cannot be recovered later); restore turns that into an
+  `awayPeriods` span running from that day to this one; the missed-dose walk skips a day only when
+  the day falls INSIDE one of those spans. An archive written by an older build carries no
+  `removedAt`, so that restore gets a single-day span — it suppresses nothing that matters and never
+  reaches backwards.
 
-  > **THE FIRST VERSION OF THIS RELEASE SAID "RESTORE ALWAYS COMES BACK WITH REMINDERS OFF", AND THE
+  > **THE SECOND VERSION STAMPED `alertsFrom` AND SKIPPED EVERYTHING BEFORE IT, AND THE AUDIT REFUSED
+  > THAT TOO — WORSE THAN THE FIRST.** The span a medication is archived for is only ever part of
+  > *everything before now*, so bringing one back erased every missed dose it had ever had. On the
+  > fixture, where the medication is off the list for about two seconds: 122 misses spanning two
+  > months gone from the banner, from the History day summaries, and from the report that goes to the
+  > doctor — measured on the export path, 122 rows to 0. One-way, invisible, permanent, under a
+  > button labelled *Bring back*, in a release whose own copy promised the opposite.
+  >
+  > **THE FIRST VERSION SAID "RESTORE ALWAYS COMES BACK WITH REMINDERS OFF", AND THE
   > AUDIT REFUSED IT IN BOTH APPS, IN OPPOSITE DIRECTIONS.** Here it did not even hold:
   > `normalizeMedication()` recomputes `alerts` from the schedule type and never reads what was
   > saved, so the flag was erased at the next app open and the flood was live. In care-tracker it
@@ -64,15 +77,27 @@ defect class this repo spent nine audit passes on.
 
 ## Gates
 
-* `test/v73-archived-meds.mjs` **36/36** — new.
+* `test/v73-archived-meds.mjs` **40/40** — new.
 * `test/v72-med-purpose.mjs` **47/47 → 61/61**.
 * **The suite's own safety check was worthless, and putting it right took three attempts** — it
   counted selectors that do not exist here, then counted names inside a banner that collapses to
   three days, then could not tell *no banner because nothing is wrong* from *a banner I cannot read*.
-  It reads the heading's count now: **60 before → 0 with the medication removed → 0 after bringing it
-  back**, and the first reading decides whether the build can be read at all.
-* **Every mutant red on the intended check**, including: the `alertsFrom` guard removed from the
-  missed-dose walk; the app-v20 strip trap in both directions; dropping
+  It reads the heading's count now: **60 before → 0 with the medication removed → 60 after bringing
+  it back** — back to exactly where it started, because this medication was away for no days at all.
+  Asserting that last number equalled the REMOVED one was green on the build that erased two months
+  of history.
+
+  **AND EVEN THAT CHECK COULD ONLY FAIL IN ONE DIRECTION.** It proves the suppression is not too
+  wide and says nothing about whether it happens at all: deleting the guard from the missed-dose walk
+  outright left every check green, which only breaking it on purpose was ever going to show. The
+  suite now also backdates the archive to read as removed a fortnight ago — what a real phone's would
+  say — and brackets the result from both sides: **60 → 32**, below the untouched number because those
+  fourteen days are not missed doses, above the 0 it reads with the medication removed because every
+  day outside the span is still counted. One mutant goes red on each side.
+* **Every mutant red on the intended check**, including: the away-span guard removed from the
+  missed-dose walk; the guard widened back to *everything before the restore*, which is the audit's
+  second refusal put back; the archive not recording the day the medication left; that day stripped
+  on the next load; the app-v20 strip trap in both directions; dropping
   pause periods on the way back in; removing the id tie-break; rendering the Removed-medications
   section when nothing is removed; restoring under a new id; and, for B and C, a missing entry, a
   brand name whose wording drifts from its generic, and the combination product falling back to its
@@ -81,6 +106,10 @@ defect class this repo spent nine audit passes on.
 ## What is deliberately exempt
 
 * **Home is untouched.** Nothing about removed medications appears there.
-* **The missed-dose engine is untouched.** Not one line of it changes; the safety argument is handled
-  where the medication is restored.
+* **The missed-dose engine gains ONE LINE and nothing else** — the guard that skips a day falling
+  inside an `awayPeriods` span. The earlier version of this sign-off claimed the engine was untouched,
+  which was written when the design put the whole safety argument at the restore and stopped being
+  true when it moved. **An exemption that is not true is worse than no exemption**, because it tells a
+  reviewer not to look at the one place that changed. No medication that was never archived carries
+  `awayPeriods`, so the line is a no-op for every one of them, and the walk is otherwise identical.
 * **Safari/WebKit** — Chromium only in this sandbox, as on every release here.
