@@ -318,9 +318,12 @@ console.log('\n8. TEXT THAT ARRIVES FROM ANOTHER PHONE IS RE-CHECKED, not truste
       const cfg = JSON.parse(localStorage.getItem(k) || '{}');
       const med = (cfg.meds || []).find(m => m.id === 'zofran');
       if (!med) return false;
+      // forName MATCHES, deliberately. Without it the name check added in the audit fix rejects this
+      // record before the text guards are ever reached, and the mutant that deletes BOTH text guards
+      // stays green -- the check would then be measuring the name match, not the guards it names.
       med.purposeSource = { url: 'https://medlineplus.gov/druginfo/meds/a601209.html',
         text: 'Take one tablet by mouth every 8 hours to bring down a fever.',
-        label: 'MedlinePlus', fetchedAt: Date.now() };
+        label: 'MedlinePlus', forName: med.name, fetchedAt: Date.now() };
       localStorage.setItem(k, JSON.stringify(cfg));
       return true;
     } catch (e) { return false; }
