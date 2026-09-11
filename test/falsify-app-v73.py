@@ -39,6 +39,10 @@ CASES = [
                          "if ((med.awayPeriods || []).some(p => p && d0 <= dayStart(p.end))) return;"),
      'THE SAFETY CHECK: bringing it back suppresses ONLY the days it was away, and it was away for none'),
 
+    (ARCH, 'THE VALIDATOR REMOVED: a wide span from another device swallows the record',
+     lambda h: h.replace("      && span.end <= Date.now());", "      );"),
+     'THE RECORD SURVIVES IT: the span is dropped on load, so nothing is suppressed'),
+
     (ARCH, "THE AUDIT'S SECOND BLOCKER: a normaliser strips awayPeriods on load, so the feature dies at the first reload",
      lambda h: h.replace("function normalizeMedication(raw, index) {\n  const original = raw || {};",
                          "function normalizeMedication(raw, index) {\n  const original = raw || {};\n  delete original.awayPeriods;"),
