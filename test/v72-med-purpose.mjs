@@ -98,7 +98,11 @@ if (tableMatch) {
 const SEED_MEDS = [
   { id: 'zofran', name: 'Zofran', sub: 'Ondansetron', type: 'gap', gapH: 8, doses: [{ label: '4 mg', mg: 4 }] },
   { id: 'pantoprazole', name: 'Pantoprazole', sub: '', type: 'gap', gapH: 24, doses: [{ label: '40 mg', mg: 40 }] },
-  { id: 'madeupzz', name: 'Madeupzz', sub: '', type: 'gap', gapH: 6, doses: [{ label: '1 tab', mg: 0 }] }
+  { id: 'madeupzz', name: 'Madeupzz', sub: '', type: 'gap', gapH: 6, doses: [{ label: '1 tab', mg: 0 }] },
+  // app-v73 (C): a COMBINATION product whose generic field names only one of its ingredients. Until
+  // this release the generic fallback answered for it -- "Eases pain." -- which is true of the
+  // acetaminophen in it and silent about the sedating antihistamine, the half that matters at 2am.
+  { id: 'tylenolpm', name: 'Tylenol PM', sub: 'Acetaminophen', type: 'gap', gapH: 6, doses: [{ label: '1 tab', mg: 0 }] }
 ];
 const SEED_PREFS = { patientName: 'Test Patient', sex: 'female', treatmentType: 'chemo',
   tourDone: true, ceilingMg: 2500, tempUnit: 'Fahrenheit', weightUnit: 'lbs' };
@@ -374,6 +378,35 @@ console.log('\n6. A medication named after a JavaScript built-in must not destro
   const map = await purposeMap();
   t('and it shows NO purpose line, rather than a function or the word Object',
     map['ctor1'] === undefined, JSON.stringify(map['ctor1']));
+}
+
+console.log('\napp-v73: the medications the table was missing, and the combination products');
+{
+  // B -- the three it did not know at all, and the brand halves of drugs it covered by generic name.
+  // Read out of the table in the file under test, never re-typed here.
+  for (const k of ['neulasta', 'metoclopramide', 'reglan', 'promethazine', 'phenergan'])
+    t('the table now knows ' + k, !!TABLE[k], TABLE[k] || '(missing)');
+  const brandPairs = [['ibuprofen', 'motrin'], ['oxycodone', 'oxycontin'], ['tramadol', 'ultram'],
+    ['gabapentin', 'neurontin'], ['omeprazole', 'prilosec'], ['famotidine', 'pepcid'],
+    ['docusate', 'colace'], ['buspirone', 'buspar'], ['paroxetine', 'paxil'],
+    ['sertraline', 'zoloft'], ['allopurinol', 'zyloprim'], ['pegfilgrastim', 'neulasta']];
+  const mismatched = brandPairs.filter(([g, b]) => !TABLE[b] || TABLE[b] !== TABLE[g]);
+  t('every brand name added says exactly what its generic says', mismatched.length === 0,
+    mismatched.map(([g, b]) => b + ' vs ' + g).join(', '));
+
+  // C -- the combination product must answer for ITSELF, not through the generic fallback. The
+  // assertion is that the line is NOT the one its generic would have produced: a check that only
+  // asked "is there a line?" would have passed before this release too.
+  await goMeds();
+  const map = await purposeMap();
+  const line = map['tylenolpm'] || '';
+  t('a combination product shows a line at all', !!line, line || '(none)');
+  t('and it is NOT the line its generic ingredient alone would give',
+    !!line && line !== TABLE['acetaminophen'], line);
+  t('it names the other ingredient rather than staying silent about it',
+    /antihistamine|sleep/i.test(line), line);
+  for (const k of ['tylenol pm', 'percocet', 'norco', 'vicodin', 'excedrin'])
+    t('the table answers for ' + k + ' itself', !!TABLE[k], TABLE[k] || '(missing)');
 }
 
 console.log('\nTyped text — it survives a reload, and nothing a caregiver pastes scrolls the page sideways');
