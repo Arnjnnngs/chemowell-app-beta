@@ -42,7 +42,7 @@ CASES = [
     ('the guard stops running on the way OUT, so a record from another phone is trusted',
      lambda h: h.replace("  return purposeTextIsSafe(text) ? text : '';",
                          "  return text;"),
-     'the card falls back to the line written here, not the unsafe one'),
+     'THE OUT-GUARD HOLDS: the unsafe sentence does not reach the screen'),
 
     ('the fetched text is no longer cached, so it dies at the first reload',
      lambda h: h.replace("  const meds = state.meds.map(item => item.id === id ? { ...item, purposeSource: found } : item);",
@@ -67,11 +67,19 @@ CASES = [
   const sourced = sourcedPurposeText(med);"""),
      'her wording is what shows'),
 
+    # The first version of this mutant awaited the lookup where it already sits -- AFTER the persist
+    # and the setState -- so it delayed nothing and the check stayed green on a build that was not
+    # actually broken. Moving the lookup IN FRONT of the save is the shape that really freezes the
+    # editor on a dead network, which is what the check exists to catch.
     ('the save waits on the lookup, so a dead network freezes the editor',
-     lambda h: h.replace("  refreshPurposeSource(saved.id, saved.name);",
-                         "  await refreshPurposeSource(saved.id, saved.name);").replace(
-                         "function saveMedicationEditor() {\n  if (!state.medEditor) return;",
-                         "async function saveMedicationEditor() {\n  if (!state.medEditor) return;"),
+     lambda h: h.replace("""  const meds = editor.sourceId ? state.meds.map(med => med.id === editor.sourceId ? saved : med) : [...state.meds, saved];
+  persistMedicationConfig(meds, state.archivedMeds);
+  setState({ meds, medEditor: null, confirmDeleteMed: null });""",
+                         """  await fetchPurposeSource(saved.name);
+  const meds = editor.sourceId ? state.meds.map(med => med.id === editor.sourceId ? saved : med) : [...state.meds, saved];
+  persistMedicationConfig(meds, state.archivedMeds);
+  setState({ meds, medEditor: null, confirmDeleteMed: null });""").replace(
+                         "function saveMedicationEditor() {", "async function saveMedicationEditor() {", 1),
      'the editor closed without waiting on the lookup'),
 
     ('the lookup runs at RENDER time instead of on save',
@@ -86,7 +94,7 @@ CASES = [
     ('the stale-result guard removed, so a rename is overwritten by an in-flight answer',
      lambda h: h.replace("  if (!current || String(current.name || '').trim() !== String(name || '').trim()) return;",
                          "  if (!current) return;"),
-     None),
+     'the rename survived -- the late answer did not write the old record back'),
 ]
 
 src = open(APP, encoding='utf-8').read()

@@ -74,7 +74,7 @@ const URL_ = 'http://127.0.0.1:' + PORT + '/index.html';
 // THE STUBBED SOURCE. What the real service sends cannot be observed from here -- the egress policy
 // in this sandbox refuses every external host -- so the endpoint is stubbed exactly the way Firebase
 // has always been stubbed in this project, and `sourceMode` steers it per check.
-let sourceMode = 'dead';        // dead | ok | unsafe | slow | nolink
+let sourceMode = 'dead';        // dead | ok | unsafe | slow | slow-then-ok | nolink
 let sourceHits = 0;
 const PAGE_URL = 'https://medlineplus.gov/druginfo/meds/a601209.html';
 const GOOD_TEXT = 'Prevents and settles nausea and vomiting.';
@@ -94,6 +94,12 @@ await ctx.route('**/*', async route => {
     sourceHits++;
     if (sourceMode === 'dead') return route.abort();
     if (sourceMode === 'slow') { await new Promise(r => setTimeout(r, 9000)); return route.abort(); }
+    if (sourceMode === 'slow-then-ok') {
+      // Stalls past the caregiver's next edit, then answers. The abort timeout in the app is 6s, so
+      // this waits under it -- the point is a LATE answer, not a dead one.
+      await new Promise(r => setTimeout(r, 2500));
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body()) });
+    }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body()) });
   }
   if (u.includes('cdn.jsdelivr.net')) return route.fulfill({ status: 200, contentType: 'application/javascript', body: '/* stubbed */' });
@@ -275,6 +281,67 @@ console.log('\n7. A SLOW SOURCE NEVER DELAYS THE SAVE');
   const closed = await page.evaluate(() => !document.querySelector('[data-med-editor]'));
   const took = Date.now() - started;
   t('the editor closed without waiting on the lookup', closed && took < 5000, took + 'ms, with the source stalling for 9s');
+  sourceMode = 'dead';
+}
+
+console.log('\n8. TEXT THAT ARRIVES FROM ANOTHER PHONE IS RE-CHECKED, not trusted');
+{
+  // Falsifying this file found the out-guard uncovered: deleting the re-check in
+  // sourcedPurposeText() left every check green, because nothing in the suite ever put UNSAFE text
+  // into storage -- the fetch-time guard had already thrown it away. That is the wrong half to test.
+  // The out-guard exists for text this app never fetched: medsync republishes a medication config
+  // from another device, and a stored string is not evidence it ever passed a guard here.
+  const plantedText = await page.evaluate((k) => {
+    try {
+      const cfg = JSON.parse(localStorage.getItem(k) || '{}');
+      const med = (cfg.meds || []).find(m => m.id === 'zofran');
+      if (!med) return false;
+      med.purposeSource = { url: 'https://medlineplus.gov/druginfo/meds/a601209.html',
+        text: 'Take one tablet by mouth every 8 hours to bring down a fever.',
+        label: 'MedlinePlus', fetchedAt: Date.now() };
+      localStorage.setItem(k, JSON.stringify(cfg));
+      return true;
+    } catch (e) { return false; }
+  }, MED_KEY);
+  t('unsafe text can be planted in storage, the way another device could publish it', plantedText);
+  sourceMode = 'dead';
+  await load();
+  await goMeds();
+  const line = await purposeText('zofran');
+  t('THE OUT-GUARD HOLDS: the unsafe sentence does not reach the screen',
+    !!line && !/fever|tablet|hours/i.test(line), String(line));
+  const link = await sourceLink('zofran');
+  t('and nothing claims that sentence came from anywhere', !!link && link.exact === 'false',
+    link ? link.text : '(none)');
+}
+
+console.log('\n9. AN ANSWER THAT ARRIVES TOO LATE IS DROPPED, not written over her edit');
+{
+  // Nothing covered this until falsification asked. The lookup is deliberately not awaited, so the
+  // caregiver can rename or retype a medication while it is still in flight -- and writing a stale
+  // answer back would quietly undo what she just did.
+  sourceMode = 'slow-then-ok';
+  await goMeds();
+  await clickLabel('Edit Zofran');
+  await page.waitForTimeout(600);
+  await clickText(/^Save changes$/);
+  await page.waitForTimeout(300);
+  // rename it while the lookup is still out
+  await goMeds();
+  await clickLabel('Edit Zofran');
+  await page.waitForTimeout(600);
+  const renamed = await page.evaluate(() => {
+    const lab = [...document.querySelectorAll('label')].find(l => /name/i.test(l.innerText || ''));
+    const inp = lab && lab.querySelector('input');
+    if (!inp) return false;
+    inp.value = 'Zofran Renamed'; inp.dispatchEvent(new Event('input', { bubbles: true })); return true;
+  });
+  t('the medication can be renamed while the lookup is still in flight', renamed);
+  await clickText(/^Save changes$/);
+  await page.waitForTimeout(4000);
+  const rec = await medRec('zofran');
+  t('the rename survived -- the late answer did not write the old record back',
+    !!rec && rec.name === 'Zofran Renamed', rec ? rec.name : '(gone)');
   sourceMode = 'dead';
 }
 
