@@ -103,12 +103,16 @@ await ctx.route('**/*', async route => {
     if (sourceMode === 'dead') return route.abort();
     if (sourceMode === 'slow') { await new Promise(r => setTimeout(r, 9000)); return route.abort(); }
     if (sourceMode === 'slow-then-ok') {
-      // Stalls past the caregiver's next edit, then answers. The abort timeout in the app is 6s, so
-      // this waits under it -- the point is a LATE answer, not a dead one.
-      // Long enough to outlast her reopening the editor, retyping the name and saving -- if it
-      // lands BEFORE that, the rename simply overwrites it and nothing about staleness is tested.
-      await new Promise(r => setTimeout(r, 5000));
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body(askedName(u))) });
+      // THE DELAY DEPENDS ON THE NAME ASKED, and it has to. With one fixed delay BOTH lookups answer
+      // and the second overwrites the first, so the stale write is gone by the time anything reads
+      // the record -- the check stayed green on a build with the guard deleted, which is how this was
+      // found. Here the answer for the OLD name comes back quickly and the answer for the NEW name
+      // never arrives, so anything in the record afterwards can only be the stale one, and the guard
+      // is the only thing that can keep it out.
+      const asked = askedName(u);
+      if (/renamed/i.test(asked)) { await new Promise(r => setTimeout(r, 30000)); return route.abort(); }
+      await new Promise(r => setTimeout(r, 3000));
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body(asked)) });
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body(askedName(u))) });
   }
@@ -339,6 +343,18 @@ console.log('\n9. AN ANSWER THAT ARRIVES TOO LATE IS DROPPED, not written over h
   // caregiver can rename or retype a medication while it is still in flight -- and writing a stale
   // answer back would quietly undo what she just did.
   sourceMode = 'slow-then-ok';
+  // Section 8 planted a source on this medication, so clear it first: otherwise this section reads
+  // that leftover and reports it as a stale write, which is a different thing entirely. What is
+  // measured here is only what the late lookup manages to put back.
+  await page.evaluate((k) => {
+    try {
+      const cfg = JSON.parse(localStorage.getItem(k) || '{}');
+      const med = (cfg.meds || []).find(m => m.id === 'zofran');
+      if (med) delete med.purposeSource;
+      localStorage.setItem(k, JSON.stringify(cfg));
+    } catch (e) {}
+  }, MED_KEY);
+  await load();
   await goMeds();
   await clickLabel('Edit Zofran');
   await page.waitForTimeout(600);
@@ -356,8 +372,9 @@ console.log('\n9. AN ANSWER THAT ARRIVES TOO LATE IS DROPPED, not written over h
   });
   t('the medication can be renamed while the lookup is still in flight', renamed);
   await clickText(/^Save changes$/);
-  // past the stub's 5s stall, so the stale answer has definitely come back by now
-  await page.waitForTimeout(7000);
+  // past the 3s answer for the OLD name; the answer for the NEW name is still stalling, so anything
+  // in the record now can only have come from the stale lookup
+  await page.waitForTimeout(6000);
   const rec = await medRec('zofran');
   // THE HAZARD IS NOT THE NAME -- the first version of this check asserted the rename survived, and
   // it always did: the write merges into the CURRENT record, so it never touched the name and the
@@ -367,8 +384,7 @@ console.log('\n9. AN ANSWER THAT ARRIVES TOO LATE IS DROPPED, not written over h
   t('the rename survived', !!rec && rec.name === 'Zofran Renamed', rec ? rec.name : '(gone)');
   const stored = rec && rec.purposeSource ? String(rec.purposeSource.url || '') : '';
   t('AND IT CARRIES NO DESCRIPTION FETCHED FOR THE NAME IT NO LONGER HAS',
-    stored === '' || /asked=Zofran%20Renamed$/.test(stored) || /asked=Zofran\+Renamed$/.test(stored),
-    stored || '(none, as intended)');
+    stored === '', stored || '(none, as intended)');
   sourceMode = 'dead';
 }
 
