@@ -405,8 +405,17 @@ console.log('\napp-v73: the medications the table was missing, and the combinati
     !!line && line !== TABLE['acetaminophen'], line);
   t('it names the other ingredient rather than staying silent about it',
     /antihistamine|sleep/i.test(line), line);
-  for (const k of ['tylenol pm', 'percocet', 'norco', 'vicodin', 'excedrin'])
+  for (const k of ['tylenol pm', 'percocet', 'norco', 'vicodin'])
     t('the table answers for ' + k + ' itself', !!TABLE[k], TABLE[k] || '(missing)');
+  // AND EXCEDRIN IS DELIBERATELY ABSENT. The bare name covers products with different ingredients
+  // -- Tension Headache has no aspirin, PM swaps caffeine for a sedating antihistamine -- so no
+  // single line is true of all of them. Asserted, not just left out: an absence nobody wrote down
+  // is indistinguishable from an oversight, and the next person to 'complete the set' needs to
+  // meet this check rather than a silence.
+  t('a product name that covers different ingredients gets NO line at all', !TABLE['excedrin'],
+    TABLE['excedrin'] || '(absent, as intended)');
+  t('promethazine says it causes drowsiness, which is the half a caregiver needs at 2am',
+    /drowsi/i.test(TABLE['promethazine'] || ''), TABLE['promethazine'] || '(missing)');
 }
 
 console.log('\nTyped text — it survives a reload, and nothing a caregiver pastes scrolls the page sideways');
