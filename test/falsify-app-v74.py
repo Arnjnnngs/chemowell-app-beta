@@ -70,14 +70,19 @@ CASES = [
      lambda h: h.replace("        forName: String(rawSource.forName || '').slice(0, 120),\n", ""),
      'the cached description is still there after closing and reopening'),
 
-    ('the citation ignores the name match even when the text is held back',
-     lambda h: h.replace("  if (usingSourceText && src && src.url && purposeSourceMatchesName(med)) {",
+    # SAID OUT LOUD: this one is REDUNDANT and cannot be turned red, like the out-guard above --
+    # sourcedPurposeText already gates the text on the same match, so usingSourceText is false before
+    # this line is reached. It stays as a second line on a citation, which is the claim in this
+    # release most worth being wrong about, and the redundancy is written down rather than covered by
+    # a check that cannot fail.
+    ('the citation drops its own name match -- redundant, so this stays GREEN',
+     lambda h: h.replace("  if (usingSourceText && src && src.url && usable) {",
                          "  if (usingSourceText && src && src.url) {"),
      None),
 
     ('the https check on the WRITE path removed, so an unvalidated URL reaches an href',
      lambda h: h.replace("  if (!/^https:\\/\\//i.test(String(found.url || ''))) return;\n", ""),
-     None),
+     'nothing was stored from an answer carrying a javascript: URL'),
 
     ('the fetched text is no longer cached, so it dies at the first reload',
      lambda h: h.replace("  const meds = state.meds.map(item => item.id === id ? { ...item, purposeSource: found } : item);",
