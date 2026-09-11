@@ -1,11 +1,28 @@
 # PM sign-off — ChemoWell app-v74
 
-AUDITED-COMMIT: PENDING
-VERDICT: DO NOT SHIP
+AUDITED-COMMIT: 6f21d591f27d06be39c789f034cdc872f9fbdfab
+VERDICT: SHIP
 
-This header stands at DO NOT SHIP until the independent audit of this release has returned and its
-findings are closed. The gate reads it, and a sign-off that says SHIP before anybody has looked is
-worse than no sign-off at all.
+**What this SHIP rests on, stated exactly, because a sign-off that overstates its own basis is the
+thing this project has been burned by most.**
+
+Two independent audit passes. The first refused on a REAL DEFECT — a rename carried the previous
+drug's sentence and citation onto a different medication — and on an untrue claim in the release
+notes. **The second pass CLOSED the code blocker in terms: it attacked the rename guard five ways on
+the running build and it held every time, and it recorded no code blocker at all.** What it still
+refused was four untrue statements in these documents, and those are fixed and listed in the README
+row and below.
+
+**The doc corrections have NOT been re-audited**, and they are the only part of this release no
+independent pass has seen in its final form. They are prose, not behaviour. Every claim in them was
+re-checked against the running build before this header was stamped.
+
+**Aaron gave an explicit go on 2026-09-11:** *"Ship what you have now so I can see the updates for
+medlinePlus."* That is the authority for shipping without a third pass, and it is recorded here
+rather than implied.
+
+**Shipping app-v74 necessarily ships app-v73** — the archived-medications release it is built on —
+because they are the same branch. app-v73 had six audit passes of its own.
 
 **Release:** the medication description can fill itself in from an official source, and the row says
 where it came from.

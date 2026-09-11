@@ -460,7 +460,12 @@ console.log('\n11. A HOSTILE URL FROM THE SERVICE ITSELF NEVER REACHES AN href')
   // response URL straight into state, and from there into an href, without passing through the
   // normaliser. A redirect, a compromised service or a changed API could hand back anything.
   sourceMode = 'badurl';
-  await resave('Zofran');
+  // BY NAME, AND THE NAME HAS MOVED. Section 9 renamed this medication to "Zofran Renamed", so
+  // resave('Zofran') found no such medication, saved nothing, fired no lookup -- and both checks
+  // below passed on a build with the guard deleted. Reading the record's CURRENT name means the
+  // section exercises the path it is named after instead of a medication that is not there.
+  const zName = (await medRec('zofran') || {}).name || 'Zofran';
+  await resave(zName);
   const rec = await medRec('zofran');
   t('nothing was stored from an answer carrying a javascript: URL',
     !rec || !rec.purposeSource, rec && rec.purposeSource ? JSON.stringify(rec.purposeSource) : '(nothing, as intended)');
