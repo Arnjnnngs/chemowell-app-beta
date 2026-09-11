@@ -209,6 +209,66 @@ console.log('\n5. RENAMING A MEDICATION MOVES THE LINK WITH IT');
   t("and the app's own description for the new name appears", desc === 'Settles nausea and vomiting.', String(desc));
 }
 
+console.log('\n6. THE NOTE APPEARS WHEREVER A LINK DOES, and says what tapping costs');
+{
+  // THE AUDIT'S BLOCKER ON THE SHIPPED BUILD. The note was gated on at least one medication having a
+  // built-in description; the link is gated on nothing but a name. So a caregiver whose medications
+  // are none of the ones this app knows -- which its own code calls "a common state, not an edge
+  // case" -- saw lookup links and NO explanation of them at all. Measured before the fix: two
+  // medications, two links, zero notes on screen.
+  await page.evaluate((k) => {
+    const cfg = JSON.parse(localStorage.getItem(k) || '{}');
+    cfg.meds = [
+      { id: 'unknown1', name: 'Qqzzxx', sub: '', type: 'gap', gapH: 6, doses: [{ label: '1 tab', mg: 0 }] },
+      { id: 'unknown2', name: 'Wwyyvv', sub: '', type: 'gap', gapH: 6, doses: [{ label: '1 tab', mg: 0 }] }
+    ];
+    localStorage.setItem(k, JSON.stringify(cfg));
+  }, MED_KEY);
+  await load();
+  await goMeds();
+  const counts = await page.evaluate(() => ({
+    links: document.querySelectorAll('[data-med-source]').length,
+    descriptions: document.querySelectorAll('[data-med-purpose]').length,
+    notes: document.querySelectorAll('[data-med-disclaimer]').length
+  }));
+  t('with NO medication the app can describe, there are still lookup links', counts.links === 2,
+    JSON.stringify(counts));
+  t('THE NOTE IS THERE ANYWAY -- it is gated on medications, not on descriptions',
+    counts.notes === 1, JSON.stringify(counts));
+  const note = await page.evaluate(() => {
+    const el = document.querySelector('[data-med-disclaimer]');
+    return el ? (el.innerText || '').trim() : '';
+  });
+  t('and it says what tapping actually does, before she taps', /opens MedlinePlus in your browser/i.test(note),
+    note.slice(0, 100));
+  t('and that the site will see which medication she looked up',
+    /see which medication/i.test(note), '');
+  t('and that nothing is sent unless she taps', /unless you tap/i.test(note), '');
+}
+
+console.log('\n7. THE LINK IS ONE TAP TARGET AT EVERY WIDTH, including 320');
+{
+  // Also from the shipped-build audit. The 44px target was made with lineHeight:'44px' on an
+  // inline-block, and line-height applies PER LINE -- so at 320px the text wrapped and rendered as
+  // two separate-looking underlined links with a 44px gap between them. Measured h=88.
+  for (const w of [320, 360, 390]) {
+    await page.setViewportSize({ width: w, height: 844 });
+    await page.waitForTimeout(400);
+    await goMeds();
+    const box = await page.evaluate(() => {
+      const el = document.querySelector('[data-med-source]');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const lh = parseFloat(getComputedStyle(el).lineHeight) || 0;
+      return { h: Math.round(r.height), lineHeight: Math.round(lh) };
+    });
+    t('at ' + w + 'px the link is a single target, not two stacked lines 44px apart',
+      !!box && box.h >= 44 && box.h < 70, box ? box.h + 'px tall, line-height ' + box.lineHeight : '(no link)');
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(300);
+}
+
 console.log('\n-- nothing broke on the way');
 t('no page errors', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 200));
 t('still nothing of hers has left the phone, after everything above',

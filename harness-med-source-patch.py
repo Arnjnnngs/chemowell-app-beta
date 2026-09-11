@@ -100,25 +100,49 @@ rep("""          purposeOf(med) ? h('div', { 'data-med-purpose': med.id, style: 
           (function () {
             const link = purposeSourceLink(med);
             if (!link) return null;
+            // 44px THE RIGHT WAY. It was built with lineHeight:'44px' on an inline-block, and
+            // line-height applies PER LINE -- so at 320px the text wrapped and rendered as two
+            // separate-looking underlined links with a 44px gap between them. Measured h=88.
+            // inline-flex + minHeight keeps one target whatever the text does.
             return h('a', {
               'data-med-source': med.id,
               href: link.url,
               target: '_blank',
               rel: 'noopener noreferrer',
-              style: { ...TYPE.caption, display: 'inline-block', color: '#0A6B4A', fontWeight: '700', textDecoration: 'underline', marginTop: '3px', minHeight: '44px', lineHeight: '44px' }
+              style: { ...TYPE.caption, display: 'inline-flex', alignItems: 'center', color: '#0A6B4A', fontWeight: '700', textDecoration: 'underline', marginTop: '3px', minHeight: '44px', lineHeight: '1.35' }
             }, link.text);
           })()""")
 
 # ---- 3. the disclaimer -------------------------------------------------------------------------
 # It said the descriptions were written here, which is still true, and must now also account for the
 # link. It must NOT imply the descriptions came from MedlinePlus -- they did not.
+# THE NOTE HAS TO APPEAR WHEREVER THE LINK DOES. It was gated on at least one medication having a
+# built-in description; the link is gated on nothing but a name. Measured: two medications the table
+# does not know gave TWO lookup links and NO note on screen -- and the code's own comment above that
+# gate says "no medication is recognised is a common state, not an edge case". The reasoning was
+# applied to the descriptions and not to the link put underneath them.
+# It also has to SAY WHAT TAPPING DOES. This release exists because a silent lookup would have made
+# the app's promise untrue; a link she taps without being told where it goes is a quieter version of
+# the same thing. She should know MedlinePlus will see which medication she tapped, before she taps.
+rep("""    sortedMeds.some(m => purposeOf(m)) ? h('div', { 'data-med-disclaimer': 'true'""",
+    """    sortedMeds.length ? h('div', { 'data-med-disclaimer': 'true'""")
 m2 = re.search(r"h\('div', \{ 'data-med-disclaimer': 'true'.*?\},\s*('[^']*')", s, re.S)
 if not m2:
     sys.exit('REFUSING: could not read the disclaimer string')
 NEW_DISC = ("'These descriptions are written here \\u2014 general information about what a medication "
-            "is usually for, not advice and not a dose. Each one links to ' + MED_SOURCE.label + ', "
-            "where you can read more. Follow her care team.'")
+            "is usually for, not advice and not a dose. Follow her care team. '"
+            " + 'Tapping \\u201cLook it up\\u201d opens ' + MED_SOURCE.label + ' in your browser, and that "
+            "site will see which medication you looked up. Nothing is sent unless you tap.'")
 s = s[:m2.start(1)] + NEW_DISC + s[m2.end(1):]
+
+# ---- the three places that promise, without qualification, that nothing is ever sent ------------
+# Each is TRUE of the app and now incomplete about the link, which is the distinction that matters.
+rep("no cloud, no accounts, no tracking, and the app never sends your information anywhere.'",
+    "no cloud, no accounts, no tracking, and the app never sends your information anywhere. The only exception is one you make yourself: tapping a \\u201cLook it up\\u201d link on the Meds screen opens MedlinePlus in your browser, and that site sees which medication you tapped.'")
+rep("there’s no cloud, no account, and nothing is ever sent anywhere.",
+    "there’s no cloud, no account, and the app never sends anything anywhere by itself. The one thing that leaves this phone is a \\u201cLook it up\\u201d link on the Meds screen, and only when you tap it: that opens MedlinePlus in your browser, which then sees which medication you looked up.")
+rep("ChemoWell does not send your information to us or to anyone else. There's no tracking and no analytics.",
+    "ChemoWell does not send your information to us or to anyone else. There's no tracking and no analytics. The single exception is one you choose: tapping a \\u201cLook it up\\u201d link on the Meds screen opens MedlinePlus in your browser, and that site sees which medication you tapped \\u2014 nothing is sent unless you tap it.")
 
 # ---- 4. version stamp --------------------------------------------------------------------------
 if "const APP_VERSION = '%s';" % FROM_V not in s: sys.exit('REFUSING: version stamp missing')
