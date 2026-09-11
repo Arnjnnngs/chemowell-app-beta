@@ -68,7 +68,7 @@ CASES = [
 
     ('the name is not carried through the normaliser, so the match can never succeed',
      lambda h: h.replace("        forName: String(rawSource.forName || '').slice(0, 120),\n", ""),
-     'the medication starts out carrying a cached description'),
+     'the cached description is still there after closing and reopening'),
 
     ('the citation ignores the name match even when the text is held back',
      lambda h: h.replace("  if (usingSourceText && src && src.url && purposeSourceMatchesName(med)) {",

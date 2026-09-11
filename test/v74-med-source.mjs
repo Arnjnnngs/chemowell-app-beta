@@ -268,7 +268,11 @@ console.log('\n6. A STORED URL THAT IS NOT https IS DROPPED ON LOAD');
       const cfg = JSON.parse(localStorage.getItem(k) || '{}');
       const med = (cfg.meds || []).find(m => m.id === 'zofran');
       if (!med) return false;
-      med.purposeSource = { url: 'javascript:alert(1)', text: 'Settles nausea.', label: 'MedlinePlus', fetchedAt: Date.now() };
+      // forName MATCHES, for the same reason section 8's plant does: without it the name check
+      // rejects this record before the URL is ever examined, and the mutant that trusts a non-https
+      // URL stays green -- the check would be measuring the name match instead of the scheme check
+      // it is named after.
+      med.purposeSource = { url: 'javascript:alert(1)', text: 'Settles nausea.', label: 'MedlinePlus', forName: med.name, fetchedAt: Date.now() };
       localStorage.setItem(k, JSON.stringify(cfg));
       return true;
     } catch (e) { return false; }
