@@ -388,6 +388,60 @@ console.log('\n9. AN ANSWER THAT ARRIVES TOO LATE IS DROPPED, not written over h
   sourceMode = 'dead';
 }
 
+console.log("\n10. A RENAME DOES NOT CARRY THE PREVIOUS DRUG'S SENTENCE OR ITS CITATION");
+{
+  // THE DEFECT THE app-v74 AUDIT FOUND, and it needed no race at all. Section 9 guards an answer
+  // still in flight; this is the committed case. Renaming a medication keeps its record -- same id,
+  // fields spread from the original -- so the cached sentence and the link under it walked across to
+  // a different drug and BEAT the app's own correct line for it. Measured on the shipped build: a
+  // medication renamed from Zofran to Compazine read "Prevents and settles nausea and vomiting."
+  // with a link to ondansetron's page under it. Permanent, with nothing to correct it.
+  // Section 9 could not see this because it deletes purposeSource before renaming.
+  sourceMode = 'ok';
+  // Section 4 typed her own wording onto this medication and it rightly outranks everything, which
+  // would hide the whole point of this section. Clear it so the fallback chain is visible.
+  await page.evaluate((k) => {
+    try {
+      const cfg = JSON.parse(localStorage.getItem(k) || '{}');
+      const med = (cfg.meds || []).find(m => m.id === 'madeupzz');
+      if (med) med.purpose = '';
+      localStorage.setItem(k, JSON.stringify(cfg));
+    } catch (e) {}
+  }, MED_KEY);
+  await load();
+  await goMeds();
+  await clickLabel('Edit Madeupzz');
+  await page.waitForTimeout(600);
+  await clickText(/^Save changes$/);
+  await page.waitForTimeout(1800);
+  await goMeds();
+  const before = await medRec('madeupzz');
+  t('the medication starts out carrying a cached description',
+    !!before && !!before.purposeSource && !!before.purposeSource.url, before && before.purposeSource ? before.purposeSource.url : '(none)');
+  sourceMode = 'dead';
+  await goMeds();
+  await clickLabel('Edit Madeupzz');
+  await page.waitForTimeout(600);
+  const renamed2 = await page.evaluate(() => {
+    const lab = [...document.querySelectorAll('label')].find(l => /name/i.test(l.innerText || ''));
+    const inp = lab && lab.querySelector('input');
+    if (!inp) return false;
+    inp.value = 'Compazine'; inp.dispatchEvent(new Event('input', { bubbles: true })); return true;
+  });
+  t('it can be renamed to a different drug the app already knows about', renamed2);
+  await clickText(/^Save changes$/);
+  await page.waitForTimeout(1500);
+  await goMeds();
+  const line = await purposeText('madeupzz');
+  t('THE PREVIOUS DRUG\'S SENTENCE DOES NOT FOLLOW THE NAME',
+    line !== 'Prevents and settles nausea and vomiting.', String(line));
+  t("and the app's OWN line for the new name is what shows instead",
+    !!line && /settles nausea/i.test(line), String(line));
+  const link = await sourceLink('madeupzz');
+  t('and nothing cites a page this sentence did not come from',
+    !!link && link.exact === 'false', link ? link.text + ' -> ' + link.href : '(none)');
+}
+
 console.log('\n-- nothing broke on the way');
 t('no page errors', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 200));
 

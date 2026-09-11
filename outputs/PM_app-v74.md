@@ -83,9 +83,14 @@ written for patients rather than clinicians, and with stable pages worth linking
   **stubbed endpoint**, the way Firebase has always been stubbed here, and what is **not** proved is
   that the real service answers a browser at all: a service that sends no `Access-Control-Allow-Origin`
   header cannot be read cross-origin, and no local test reveals that.
-  **The release is built so this is safe: if the fetch never succeeds, the app is exactly what it is
-  today** — no error, no empty state, and no promise on screen that did not come true. Confirming it
-  needs Aaron's phone, and the check is named in the release message.
+  **Stated accurately rather than reassuringly:** if the fetch never succeeds there is no error, no
+  empty state and no false citation — the built-in line shows and nothing claims a source it does not
+  have. **What changes either way** is that every card gains a *"Look it up on MedlinePlus"* link and
+  the disclaimer is reworded; an earlier draft of this file said the app would be *"exactly what it is
+  today"*, which omitted the single most visible change in the release. **And the likely real outcome
+  is that the auto-fill never triggers:** MedlinePlus Connect's summary is HTML and will almost
+  certainly exceed the 150-character ceiling, so the text is discarded and only the link survives.
+  Safe, and not the feature. Confirming the response shape needs Aaron's phone.
 * **The re-check inside `sourcedPurposeText()` is redundant** and has no mutant of its own:
   `normalizeMedication()` strips the same text first on every load. It is kept as a second line on
   patient-facing medical text, and removing it alone changes no behaviour — which is why no check goes

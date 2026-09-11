@@ -1126,15 +1126,20 @@ const MED_SOURCE = {
 // where no suite can see it, so the same rules are enforced here, before a single fetched character
 // can reach the screen. Every one of them was paid for by an audit block on this project.
 const PURPOSE_MAX_LEN = 150;
-const PURPOSE_NUMBERY = /\d/;
-const PURPOSE_FEVERY = /fever|antipyretic|temperature/i;
+// The `u` flag matters: without it \d misses non-ASCII digits, and a line reading "Take ٢
+// tablets" carried a dose past a guard whose whole job is to stop one. Spelled-out numbers were
+// missed entirely for the same reason -- they are not digits at all.
+const PURPOSE_NUMBERY = /\d|[\u0660-\u0669\u06F0-\u06F9\u0966-\u096F]/u;
+const PURPOSE_WORDNUM = /\b(one|two|three|four|five|six|seven|eight|nine|ten|twice|thrice|half|quarter)\b/i;
+const PURPOSE_FEVERY = /fever|febrile|pyrexia|antipyretic|temperature/i;
 const PURPOSE_SCHEDULEY = /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|around chemo|with chemo|after chemo|before chemo|chemotherapy|dose|doses|mg|ml|mcg)\b/i;
-const PURPOSE_FORMY = /\b(pills?|tablets?|capsules?|caplets?|troches?|lozenges?|liquids?|syrups?|elixirs?|powders?|sachets?|patches|patch|creams?|ointments?|gels?|lotions?|rinses?|mouthwash|gargle|suppositor(?:y|ies)|enemas?|sprays?|sprayed|inhalers?|inhaled|nebuli[sz]ed|injections?|injected|inject|shots?|infusions?|infused|drips?|intravenous(?:ly)?|iv|subcutaneous(?:ly)?|intramuscular(?:ly)?|sublingual(?:ly)?|transdermal|intranasal|swallow(?:ed)?|chew(?:able)?|topical(?:ly)?|orally|by mouth|rub|rubs|rubbed|applied|apply|smear|dab|rectally|on the skin|onto the skin|into the skin|under the skin|under the tongue|under your tongue|into a vein|through a vein|into a muscle|in a drip|through a drip)\b/i;
+const PURPOSE_FORMY = /\b(pills?|tablets?|capsules?|caplets?|troches?|lozenges?|liquids?|syrups?|elixirs?|powders?|sachets?|patches|patch|creams?|ointments?|gels?|lotions?|rinses?|mouthwash|gargle|suppositor(?:y|ies)|enemas?|sprays?|sprayed|inhalers?|inhaled|nebuli[sz]ed|injections?|injected|inject|shots?|infusions?|infused|drips?|intravenous(?:ly)?|iv|subcutaneous(?:ly)?|intramuscular(?:ly)?|sublingual(?:ly)?|transdermal|intranasal|swallow(?:ed)?|chew(?:able)?|topical(?:ly)?|orally|by mouth|rub|rubs|rubbed|applied|apply|smear|dab|rectally|on the skin|onto the skin|into the skin|under the skin|under the tongue|under your tongue|into a vein|through a vein|into a muscle|in a drip|through a drip|eye drops?|ear drops?|nose drops?|into the eye|into the ear|into the nose|per os|p\.?o\.?|nebuli[sz]er|vaginally|buccal(?:ly)?|implants?|pessar(?:y|ies))\b/i;
 function purposeTextIsSafe(text) {
   const t = String(text || '').trim();
   if (!t) return false;
   if (t.length > PURPOSE_MAX_LEN) return false;
   if (PURPOSE_NUMBERY.test(t)) return false;
+  if (PURPOSE_WORDNUM.test(t)) return false;
   if (PURPOSE_FEVERY.test(t)) return false;
   if (PURPOSE_SCHEDULEY.test(t)) return false;
   if (PURPOSE_FORMY.test(t)) return false;
@@ -1162,7 +1167,13 @@ async function fetchPurposeSource(name) {
     // The TEXT must earn its place; the URL does not have to. A link is not a claim about wording,
     // so a page whose summary is unusable still gives the caregiver somewhere real to read.
     const text = purposeTextIsSafe(found.text) ? String(found.text).trim() : '';
-    return { text: text, url: String(found.url), label: MED_SOURCE.label, fetchedAt: Date.now() };
+    // forName: THE NAME THIS WAS FETCHED FOR, and it is the whole of the fix for the defect the
+    // app-v74 audit found. Renaming a medication in the editor keeps its record -- same id, fields
+    // spread from the original -- so the cached sentence and its citation survived onto a DIFFERENT
+    // drug. Measured: a medication renamed from Zofran to Compazine printed ondansetron's sentence
+    // with a link to ondansetron's page under it, beating the app's own correct line for Compazine,
+    // permanently, with nothing to correct it. The in-flight race was guarded; this needs no race.
+    return { text: text, url: String(found.url), label: MED_SOURCE.label, forName: clean, fetchedAt: Date.now() };
   } catch (e) {
     return null;
   } finally {
@@ -1297,6 +1308,11 @@ function normalizeMedication(raw, index) {
         url: srcUrl,
         text: purposeTextIsSafe(srcText) ? srcText : '',
         label: String(rawSource.label || 'MedlinePlus').slice(0, 40),
+        // CARRIED THROUGH ON PURPOSE. This object is a WHITELIST -- anything not named here is gone
+        // at the next load. The audit hit exactly that: its first attempt at the rename fix still
+        // showed the false citation, because the new field was dropped here and the match could
+        // never succeed.
+        forName: String(rawSource.forName || '').slice(0, 120),
         fetchedAt: Number(rawSource.fetchedAt) > 0 ? Number(rawSource.fetchedAt) : 0
       };
     } else {
@@ -5690,8 +5706,23 @@ function purposeOf(med) {
 function sourcedPurposeText(med) {
   const src = med && med.purposeSource;
   if (!src || typeof src !== 'object') return '';
+  if (!purposeSourceMatchesName(med)) return '';
   const text = String(src.text || '').trim();
   return purposeTextIsSafe(text) ? text : '';
+}
+// A cached description belongs to the NAME it was looked up under, and to nothing else. Renaming a
+// medication keeps its record, so without this the sentence and the citation walk across to whatever
+// the medication is called next.
+// An entry written before this check existed carries no `forName`: it is treated as NOT matching, so
+// it stops being displayed rather than being trusted. That loses a correct description on the next
+// load for medications that had one -- and it is the right way round, because the alternative is
+// keeping a possibly-false one. Saving the medication looks it up again.
+function purposeSourceMatchesName(med) {
+  const src = med && med.purposeSource;
+  if (!src || typeof src !== 'object') return false;
+  const forName = String(src.forName || '').trim().toLowerCase();
+  if (!forName) return false;
+  return forName === String(med.name || '').trim().toLowerCase();
 }
 // WHICH LINK IS HONEST FOR THIS MEDICATION. A link may only claim to be the source of wording that
 // is actually on screen: showing the cached official text earns "Where this came from" and the exact
@@ -5705,7 +5736,7 @@ function purposeSourceLink(med) {
   const shown = purposeOf(med);
   const sourced = sourcedPurposeText(med);
   const usingSourceText = !!sourced && shown === sourced;
-  if (usingSourceText && src && src.url) {
+  if (usingSourceText && src && src.url && purposeSourceMatchesName(med)) {
     return { url: String(src.url), label: label, exact: true, text: 'Where this came from \u00b7 ' + label };
   }
   const name = String(med.name || '').trim();
@@ -5924,9 +5955,16 @@ function deriveWindowEnds(rows) {
 async function refreshPurposeSource(id, name) {
   const found = await fetchPurposeSource(name);
   if (!found) return;
+  // THE SAME https CHECK THE LOAD PATH MAKES. Without it this is the one route by which a URL
+  // reaches an href without ever having been validated -- the load-time guard only sees what is
+  // already in storage, and this writes straight into state. A redirect or a changed service could
+  // hand back anything.
+  if (!/^https:\/\//i.test(String(found.url || ''))) return;
   const current = state.meds.find(item => item.id === id);
-  // Gone, renamed, or already described by the caregiver while the request was in flight: in every
-  // one of those cases the answer is now stale and is dropped rather than written.
+  // Gone, or RENAMED while the request was in flight: the answer is stale and is dropped. Note what
+  // this does NOT check -- text she typed in the meantime. It does not need to: her wording outranks
+  // a cached source everywhere it is read, so storing one under it changes nothing she sees. An
+  // earlier version of this comment claimed the typed case was checked here, which was not true.
   if (!current || String(current.name || '').trim() !== String(name || '').trim()) return;
   const meds = state.meds.map(item => item.id === id ? { ...item, purposeSource: found } : item);
   persistMedicationConfig(meds, state.archivedMeds);
