@@ -77,7 +77,7 @@ defect class this repo spent nine audit passes on.
 
 ## Gates
 
-* `test/v73-archived-meds.mjs` **42/42** — new.
+* `test/v73-archived-meds.mjs` **44/44** — new.
 * `test/v72-med-purpose.mjs` **47/47 → 61/61**.
 * **The suite's own safety check was worthless, and putting it right took three attempts** — it
   counted selectors that do not exist here, then counted names inside a banner that collapses to
