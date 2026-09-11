@@ -62,6 +62,23 @@ CASES = [
      lambda h: h.replace("  return purposeTextIsSafe(text) ? text : '';", "  return text;"),
      None),
 
+    ('THE AUDIT BLOCKER: a rename keeps the previous drug\'s sentence and its citation',
+     lambda h: h.replace("  if (!purposeSourceMatchesName(med)) return '';\n", ""),
+     "THE PREVIOUS DRUG'S SENTENCE DOES NOT FOLLOW THE NAME"),
+
+    ('the name is not carried through the normaliser, so the match can never succeed',
+     lambda h: h.replace("        forName: String(rawSource.forName || '').slice(0, 120),\n", ""),
+     'the medication starts out carrying a cached description'),
+
+    ('the citation ignores the name match even when the text is held back',
+     lambda h: h.replace("  if (usingSourceText && src && src.url && purposeSourceMatchesName(med)) {",
+                         "  if (usingSourceText && src && src.url) {"),
+     None),
+
+    ('the https check on the WRITE path removed, so an unvalidated URL reaches an href',
+     lambda h: h.replace("  if (!/^https:\\/\\//i.test(String(found.url || ''))) return;\n", ""),
+     None),
+
     ('the fetched text is no longer cached, so it dies at the first reload',
      lambda h: h.replace("  const meds = state.meds.map(item => item.id === id ? { ...item, purposeSource: found } : item);",
                          "  const meds = state.meds.slice();"),
