@@ -28,10 +28,18 @@ the placeholder failure this repo's `release_check.sh` was hardened against thre
 * **Restore puts it back under its ORIGINAL id.** Every stored dose references that id, so the old
   doses read properly again. A new id leaves them orphaned, which is exactly what typing the
   medication in again does today.
-* **RESTORE ALWAYS COMES BACK WITH REMINDERS OFF**, whatever the archive says, and the app says so.
-  The missed-dose walk reads every tracked medication for every day in range, so restoring one with
-  alerts on flags every dose window during the archived weeks — the flood ending a hospital stay
-  produced once already.
+* **REMINDERS COME BACK EXACTLY AS THEY WERE, AND THE GAP IS WHAT IS SUPPRESSED.** Restore stamps
+  `alertsFrom`; the missed-dose walk skips days before it for that medication.
+
+  > **THE FIRST VERSION OF THIS RELEASE SAID "RESTORE ALWAYS COMES BACK WITH REMINDERS OFF", AND THE
+  > AUDIT REFUSED IT IN BOTH APPS, IN OPPOSITE DIRECTIONS.** Here it did not even hold:
+  > `normalizeMedication()` recomputes `alerts` from the schedule type and never reads what was
+  > saved, so the flag was erased at the next app open and the flood was live. In care-tracker it
+  > stayed off forever, under a toast promising a reminders control the editor does not have.
+  > The design was wrong, not only the code: *reminders off* trades a visible, recoverable problem —
+  > a wall of missed doses for days she was not taking it — for an invisible, unrecoverable one.
+  > The sentence is quoted rather than deleted because a sign-off that edits its own wrong claims
+  > out teaches nobody what to distrust next time.
 * **Pause periods DO come back.** app-v20 archives them so a medication re-added later is not flagged
   for days it was legitimately paused; dropping them on the way back in would undo that from the
   other end.
@@ -56,10 +64,15 @@ defect class this repo spent nine audit passes on.
 
 ## Gates
 
-* `test/v73-archived-meds.mjs` **31/31** — new.
+* `test/v73-archived-meds.mjs` **36/36** — new.
 * `test/v72-med-purpose.mjs` **47/47 → 61/61**.
-* **Ten mutants, every one red on the intended check**, including: the safety one (delete
-  `med.alerts = false`, board drops to 29/31); the app-v20 strip trap in both directions; dropping
+* **The suite's own safety check was worthless, and putting it right took three attempts** — it
+  counted selectors that do not exist here, then counted names inside a banner that collapses to
+  three days, then could not tell *no banner because nothing is wrong* from *a banner I cannot read*.
+  It reads the heading's count now: **60 before → 0 with the medication removed → 0 after bringing it
+  back**, and the first reading decides whether the build can be read at all.
+* **Every mutant red on the intended check**, including: the `alertsFrom` guard removed from the
+  missed-dose walk; the app-v20 strip trap in both directions; dropping
   pause periods on the way back in; removing the id tie-break; rendering the Removed-medications
   section when nothing is removed; restoring under a new id; and, for B and C, a missing entry, a
   brand name whose wording drifts from its generic, and the combination product falling back to its
