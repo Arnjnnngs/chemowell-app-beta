@@ -39,6 +39,11 @@ CASES = [
                          "if ((med.awayPeriods || []).some(p => p && d0 <= dayStart(p.end))) return;"),
      'THE SAFETY CHECK: bringing it back suppresses ONLY the days it was away, and it was away for none'),
 
+    (ARCH, "THE AUDIT'S SECOND BLOCKER: a normaliser strips awayPeriods on load, so the feature dies at the first reload",
+     lambda h: h.replace("function normalizeMedication(raw, index) {\n  const original = raw || {};",
+                         "function normalizeMedication(raw, index) {\n  const original = raw || {};\n  delete original.awayPeriods;"),
+     'and the span survives closing and reopening the app, which storage cannot prove'),
+
     (ARCH, 'the restore stops recording the span it was away',
      lambda h: h.replace("  med.awayPeriods = (Array.isArray(med.awayPeriods) ? med.awayPeriods : [])", "  med.awayPeriods = ([])"
                          ).replace("    .filter(p => p && Number(p.start) && Number(p.end))\n    .concat([{ start: awayFrom, end: awayTo }]);", "    .slice();"),
