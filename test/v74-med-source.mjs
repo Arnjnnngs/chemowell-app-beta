@@ -79,10 +79,18 @@ let sourceHits = 0;
 const PAGE_URL = 'https://medlineplus.gov/druginfo/meds/a601209.html';
 const GOOD_TEXT = 'Prevents and settles nausea and vomiting.';
 const UNSAFE_TEXT = 'Take one tablet by mouth every 8 hours to bring down a fever.';
-const body = () => {
+// THE STUB ANSWERS FOR THE NAME IT WAS ASKED ABOUT. It used to return the same page whatever was
+// queried, which made "this URL is stale" and "this URL is the right one for the new name"
+// indistinguishable -- so the late-answer check could not be written honestly at all.
+const pageFor = (name) => PAGE_URL + '?asked=' + encodeURIComponent(String(name || ''));
+const askedName = (url) => {
+  try { return decodeURIComponent((String(url).match(/mainSearchCriteria\.v\.dn=([^&]*)/) || [])[1] || ''); }
+  catch (e) { return ''; }
+};
+const body = (name) => {
   if (sourceMode === 'nolink') return { feed: { entry: [{ title: { _value: 'X' }, summary: { _value: GOOD_TEXT } }] } };
   const text = sourceMode === 'unsafe' ? UNSAFE_TEXT : GOOD_TEXT;
-  return { feed: { entry: [{ link: [{ href: PAGE_URL }], title: { _value: 'Ondansetron' }, summary: { _value: text } }] } };
+  return { feed: { entry: [{ link: [{ href: pageFor(name) }], title: { _value: name }, summary: { _value: text } }] } };
 };
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
@@ -100,9 +108,9 @@ await ctx.route('**/*', async route => {
       // Long enough to outlast her reopening the editor, retyping the name and saving -- if it
       // lands BEFORE that, the rename simply overwrites it and nothing about staleness is tested.
       await new Promise(r => setTimeout(r, 5000));
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body()) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body(askedName(u))) });
     }
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body()) });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body(askedName(u))) });
   }
   if (u.includes('cdn.jsdelivr.net')) return route.fulfill({ status: 200, contentType: 'application/javascript', body: '/* stubbed */' });
   return route.abort();
@@ -181,7 +189,7 @@ console.log('\n2. WHEN IT SUCCEEDS the text is cached on the record');
   t('the official text is stored on the medication', !!rec && !!rec.purposeSource && rec.purposeSource.text === 'Prevents and settles nausea and vomiting.',
     rec && rec.purposeSource ? rec.purposeSource.text : '(none)');
   t('and the exact page it came from is stored with it',
-    !!rec && !!rec.purposeSource && rec.purposeSource.url === 'https://medlineplus.gov/druginfo/meds/a601209.html',
+    !!rec && !!rec.purposeSource && /a601209\.html\?asked=Madeupzz$/.test(String(rec.purposeSource.url)),
     rec && rec.purposeSource ? rec.purposeSource.url : '(none)');
   t('the day it was fetched is recorded', !!rec && !!rec.purposeSource && Number(rec.purposeSource.fetchedAt) > 0,
     rec && rec.purposeSource ? String(rec.purposeSource.fetchedAt) : '');
@@ -190,7 +198,7 @@ console.log('\n2. WHEN IT SUCCEEDS the text is cached on the record');
   const link = await sourceLink('madeupzz');
   t('THE CITATION IS EARNED: the link now says where this came from', !!link && link.exact === 'true', link ? link.text : '(none)');
   t('and it points at the EXACT page, not a search',
-    !!link && link.href === 'https://medlineplus.gov/druginfo/meds/a601209.html', link ? link.href : '');
+    !!link && /a601209\.html\?asked=Madeupzz$/.test(link.href), link ? link.href : '');
 }
 
 console.log('\n3. IT SURVIVES THE APP CLOSING, WITH THE NETWORK DEAD');
@@ -349,10 +357,18 @@ console.log('\n9. AN ANSWER THAT ARRIVES TOO LATE IS DROPPED, not written over h
   t('the medication can be renamed while the lookup is still in flight', renamed);
   await clickText(/^Save changes$/);
   // past the stub's 5s stall, so the stale answer has definitely come back by now
-  await page.waitForTimeout(6000);
+  await page.waitForTimeout(7000);
   const rec = await medRec('zofran');
-  t('the rename survived -- the late answer did not write the old record back',
-    !!rec && rec.name === 'Zofran Renamed', rec ? rec.name : '(gone)');
+  // THE HAZARD IS NOT THE NAME -- the first version of this check asserted the rename survived, and
+  // it always did: the write merges into the CURRENT record, so it never touched the name and the
+  // check could not fail. The real damage a late answer does is quieter: the medication now carries
+  // a description, and a citation, fetched for a DIFFERENT drug. That is a false statement about a
+  // patient's medication with a link under it saying where it came from.
+  t('the rename survived', !!rec && rec.name === 'Zofran Renamed', rec ? rec.name : '(gone)');
+  const stored = rec && rec.purposeSource ? String(rec.purposeSource.url || '') : '';
+  t('AND IT CARRIES NO DESCRIPTION FETCHED FOR THE NAME IT NO LONGER HAS',
+    stored === '' || /asked=Zofran%20Renamed$/.test(stored) || /asked=Zofran\+Renamed$/.test(stored),
+    stored || '(none, as intended)');
   sourceMode = 'dead';
 }
 

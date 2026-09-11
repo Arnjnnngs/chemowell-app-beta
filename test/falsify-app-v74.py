@@ -44,10 +44,23 @@ CASES = [
     # reach the screen past it. It is kept as a second line on patient-facing medical text, and
     # removing it alone changes no behaviour -- which is why no check here goes red for it. The
     # mutant below targets the guard that actually fires.
-    ('the LOAD-TIME guard stops running, so a record from another phone is trusted',
-     lambda h: h.replace("        text: purposeTextIsSafe(srcText) ? srcText : '',",
-                         "        text: srcText,"),
+    # TWO GUARDS COVER THIS, AND NEITHER CAN BE TURNED RED ALONE -- normalizeMedication strips the
+    # text on load, and sourcedPurposeText re-checks it on the way out. Breaking either leaves the
+    # other standing, which is exactly what defence in depth means and is NOT a hole. It is proved by
+    # breaking BOTH: that must go red, or the check is measuring nothing. Each-alone is listed too,
+    # and each-alone staying green is the property being asserted rather than a failure.
+    ('BOTH guards on stored text removed -- the only mutant that can turn this red',
+     lambda h: h.replace("        text: purposeTextIsSafe(srcText) ? srcText : '',", "        text: srcText,")
+                .replace("  return purposeTextIsSafe(text) ? text : '';", "  return text;"),
      'THE OUT-GUARD HOLDS: the unsafe sentence does not reach the screen'),
+
+    ('only the load-time guard removed -- the out-guard must still hold, so this stays GREEN',
+     lambda h: h.replace("        text: purposeTextIsSafe(srcText) ? srcText : '',", "        text: srcText,"),
+     None),
+
+    ('only the out-guard removed -- the load-time guard must still hold, so this stays GREEN',
+     lambda h: h.replace("  return purposeTextIsSafe(text) ? text : '';", "  return text;"),
+     None),
 
     ('the fetched text is no longer cached, so it dies at the first reload',
      lambda h: h.replace("  const meds = state.meds.map(item => item.id === id ? { ...item, purposeSource: found } : item);",
@@ -99,7 +112,7 @@ CASES = [
     ('the stale-result guard removed, so a rename is overwritten by an in-flight answer',
      lambda h: h.replace("  if (!current || String(current.name || '').trim() !== String(name || '').trim()) return;",
                          "  if (!current) return;"),
-     'the rename survived -- the late answer did not write the old record back'),
+     'AND IT CARRIES NO DESCRIPTION FETCHED FOR THE NAME IT NO LONGER HAS'),
 ]
 
 src = open(APP, encoding='utf-8').read()
