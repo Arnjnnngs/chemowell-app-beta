@@ -46,7 +46,7 @@ CASES = [
 
     (ARCH, 'the archive stops recording the day the medication left the list',
      lambda h: h.replace(", removedAt: dayStart(state.now || Date.now()) } };", " } };"),
-     'the span starts on the day it actually left, not on the day it came back'),
+     'the archive wrote down the day it left, which nothing can recover later'),
 
     (ARCH, 'the day it left is stripped on every load -- the app-v20 trap, on the new field',
      lambda h: h.replace("    if (Number(value.removedAt)) entry.removedAt = Number(value.removedAt);\n", ""),
@@ -63,7 +63,7 @@ CASES = [
     (ARCH, 'the archive is stripped again on every load (the app-v20 trap)',
      lambda h: h.replace("    if (value.config && typeof value.config === 'object') {",
                          "    if (false && value.config && typeof value.config === 'object') {"),
-     'the screen SAYS the settings were not kept, rather than pretending'),
+     'after closing and reopening the app, it still knows the settings were kept'),
 
     (ARCH, 'pause periods are dropped on the way back in, undoing app-v20 from the other end',
      lambda h: h.replace("  med.pausePeriods = normalizePausePeriods(entry.pausePeriods);\n",
