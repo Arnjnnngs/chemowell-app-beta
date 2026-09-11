@@ -1,9 +1,28 @@
 # PM sign-off — ChemoWell app-v74
 
-AUDITED-COMMIT: PENDING
-VERDICT: DO NOT SHIP
+AUDITED-COMMIT: 095851ea0512ac829cf49ea370a73edad820b257
+VERDICT: SHIP
 
-Stands at DO NOT SHIP until an independent pass has seen the release that actually ships. **The two
+**SHIPPED ON AARON'S EXPLICIT INSTRUCTION, WITHOUT AN AUDIT PASS ON THIS EXACT BUILD. Both halves of
+that sentence are true and neither is buried.**
+
+Aaron, 2026-09-11: *"Ship what you have now so I can see the updates for medlinePlus"*, then
+*"Strip the fetch ship the link and start database."*
+
+**What no independent pass has seen:** this build. The two audit reports on record examined the
+FETCHING release, which is deleted. A refusal against code that no longer exists is not a refusal
+against this, and it is not a clearance either.
+
+**Why shipping anyway is defensible, stated so it can be argued with:** what ships is strictly less
+than what was audited. No network request, no stored field, no record shape, no migration, no
+runtime guards, no citation logic — an anchor element and a disclaimer string. The whole diff against
+app-v73 is a link built from `med.name` at render time. `test/v74-med-lookup.mjs` is 23/23 and its
+first section pins the app's outbound destinations, which is the only property this release could
+plausibly have broken.
+
+**An audit pass on this build follows immediately.** If it finds anything, it ships again.
+
+Below stands as written before the merge. **The two
 audit passes on record examined a DIFFERENT release** — one that fetched from MedlinePlus at save
 time. That build is gone. Their findings are kept below because they are the reason this one looks
 the way it does, but neither of them is a sign-off on this code.
