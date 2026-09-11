@@ -348,6 +348,61 @@ console.log('\n4. It survives a reload, and there is nothing left to bring back'
   t('there is no "Bring back" control for it any more', !(await clickLabel('Bring back ' + MED_NAME)));
 }
 
+console.log('\n4B. THE OTHER HALF OF THE SAFETY CHECK: a span it really was away');
+{
+  // Section 3 proves the suppression is not too WIDE -- the medication is off the list for about two
+  // seconds, so the total has to come back to exactly where it started. It proves nothing about
+  // whether the suppression happens AT ALL: delete the guard from the missed-dose walk outright and
+  // every check above stays green. Found by breaking it on purpose, which is the only way that kind
+  // of hole is ever found.
+  // Here the archive is made to say what a real phone's would say after two weeks. Bringing the
+  // medication back must drop the total, and must NOT drop it to the removed number.
+  await goMeds();
+  await clickLabel('Remove ' + MED_NAME);
+  await page.waitForTimeout(500);
+  await clickLabel('Confirm removal of ' + MED_NAME);
+  await page.waitForTimeout(900);
+  const AWAY_DAYS = 14;
+  const backdated = await page.evaluate(([k, id, days]) => {
+    try {
+      const cfg = JSON.parse(localStorage.getItem(k) || '{}');
+      const arc = cfg.archivedMeds || {};
+      if (!Object.prototype.hasOwnProperty.call(arc, id)) return false;
+      const d = new Date(); d.setHours(0, 0, 0, 0);
+      arc[id].removedAt = d.getTime() - days * 86400000;
+      localStorage.setItem(k, JSON.stringify(cfg));
+      return true;
+    } catch (e) { return false; }
+  }, [MED_KEY, MED_ID, AWAY_DAYS]);
+  t('the archive can be made to read as removed ' + AWAY_DAYS + ' days ago, the way a real phone would',
+    backdated);
+  await reload();
+  const missedAway = await missedTotal();
+  await goMeds();
+  await clickLabel('Bring back ' + MED_NAME);
+  await page.waitForTimeout(500);
+  await clickLabel('Confirm bringing back ' + MED_NAME);
+  await page.waitForTimeout(1100);
+  const wide = ((await savedCfg()).meds || []).find(m => m.id === MED_ID);
+  const spans = (wide && Array.isArray(wide.awayPeriods)) ? wide.awayPeriods : [];
+  const span = spans.length ? spans[spans.length - 1] : null;
+  const spanDays = span ? Math.round((Number(span.end) - Number(span.start)) / 86400000) : -1;
+  t('the span starts on the day it actually left, not on the day it came back',
+    spanDays === AWAY_DAYS, spanDays + ' days recorded');
+  const missedWide = await missedTotal();
+  if (missedWide === null || missedAway === null || missedBefore === null)
+    exempt('the suppression is bounded at both ends', 'banner not readable in this build; the recorded span is asserted above');
+  else {
+    t('SUPPRESSION HAPPENS: the days it was off the list are not counted as missed',
+      missedWide < missedBefore,
+      missedBefore + ' if nothing were suppressed -> ' + missedWide + ' now');
+    t('SUPPRESSION IS BOUNDED: every day outside that span is still counted',
+      missedWide > missedAway,
+      missedAway + ' with it removed -> ' + missedWide + ' after bringing it back');
+  }
+  await goMeds();
+}
+
 console.log('\n5. Restore is REFUSED when an active medication already holds that id');
 {
   await clickLabel('Remove ' + MED_NAME);
