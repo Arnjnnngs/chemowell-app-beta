@@ -110,7 +110,11 @@ const SEED_MEDS = [
     windows: [{ start: 8, end: 11 }, { start: 19, end: 22 }], doses: [{ label: '40 mg', mg: 40 }] }
 ];
 const SEED_PREFS = { patientName: 'Test Patient', sex: 'female', treatmentType: 'chemo',
-  tourDone: true, ceilingMg: 2500, tempUnit: 'Fahrenheit', weightUnit: 'lbs' };
+  tourDone: true, ceilingMg: 2500, tempUnit: 'Fahrenheit', weightUnit: 'lbs',
+  // THIRTY DAYS AGO. Missed-dose tracking starts at `installedAt` -- a fresh install must never flag
+  // days before the app existed -- so a fixture installed "today" produces no missed doses at all and
+  // the safety check below would score zero against zero. Unfalsifiable is the one thing it must not be.
+  installedAt: Date.now() - 30 * 86400000 };
 
 const server = http.createServer((rq, rs) => {
   if (rq.url.startsWith('/index.html')) { rs.writeHead(200, { 'Content-Type': 'text/html' }); rs.end(rawHtml); return; }
@@ -178,6 +182,34 @@ const storedPurpose = (id) => page.evaluate(([k, i]) => {
 //   6. THE EXEMPTION, ASSERTED: with nothing removed there is no "Removed medications" heading.
 const MED_ID = 'protonix', MED_NAME = 'Protonix';
 const MARKER = 'Aaron changed this line before it was removed';
+// THE MISSED-DOSE TOTAL, READ OFF THE BANNER THE CAREGIVER ACTUALLY SEES.
+// The first version of this counted `[data-missed-row], [data-missed-banner]` -- NEITHER SELECTOR
+// EXISTS IN THIS APP. It scored 0 against 0 on every build, broken or not: a check that could not
+// fail, in the one file whose whole subject is checks that cannot fail.
+// The second version counted the medication's name inside the banner, and was worse: the banner
+// collapses to three days, so it counted VISIBLE rows and moved for reasons that had nothing to do
+// with the thing under test. The count in the banner's own heading is the whole number, collapsed
+// or not, and it is what the caregiver reads.
+// RETURNS null WHERE THE BANNER HAS NO SUCH HEADING -- one of the three builds carries an older
+// design -- and the callers then print EXEMPT with the reason rather than asserting on a zero.
+// A suite that cannot see the thing it measures must say so.
+let missedBefore = null, missedRemoved = null;
+const missedTotal = async () => {
+  await clickText(/^Home$/);
+  await page.waitForTimeout(900);
+  const raw = await page.evaluate(() => {
+    const txt = ((document.getElementById('root') || {}).innerText || '');
+    const m = txt.match(/(\d+)\s+missed dose/i);
+    return m ? Number(m[1]) : null;
+  });
+  // THE FIRST READING DECIDES WHETHER THIS BUILD CAN BE READ AT ALL, and it is taken while the
+  // fixture is guaranteed to have missed doses on screen. After that, "no count" means zero -- the
+  // banner is simply gone because there is nothing left to report. Collapsing those two into one
+  // answer is what made three checks quietly EXEMPT themselves the moment the count reached zero.
+  if (raw === null && missedBefore === null) return null;
+  return raw === null ? 0 : raw;
+};
+const exempt = (name, why) => console.log('  EXEMPT  ' + name + '  |  ' + why);
 const savedCfg = () => page.evaluate((k) => {
   try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch (e) { return {}; }
 }, MED_KEY);
@@ -203,6 +235,12 @@ console.log('\n1. With nothing removed, the app says nothing about removed medic
   t('the fixture medication is TRACKED, so the reminder trap is reachable',
     !!tracked && tracked.alerts === true && (tracked.windows || []).length > 0,
     tracked ? 'alerts=' + tracked.alerts + ' windows=' + (tracked.windows || []).length : '(missing)');
+  missedBefore = await missedTotal();
+  if (missedBefore === null) exempt('the missed-dose banner could not be read in this build',
+    'this build carries an older banner with no findable container; the record-level checks below still hold');
+  else t('the fixture really does produce missed doses, so the checks below can fail', missedBefore > 0,
+    'total=' + missedBefore);
+  await goMeds();
 }
 
 console.log('\n2. Removing it archives the WHOLE medication, and the app still has it after a reload');
@@ -246,6 +284,11 @@ console.log('\n2. Removing it archives the WHOLE medication, and the app still h
   const note = await archivedRowText(MED_ID);
   t('after closing and reopening the app, it still knows the settings were kept',
     note !== '(no row)' && !/not kept/i.test(note), note.replace(/\n/g, ' | ').slice(0, 80));
+  missedRemoved = await missedTotal();
+  if (missedRemoved === null || missedBefore === null) exempt('removing it clears its rows from the banner', 'banner not readable in this build');
+  else t('taking it off the list took its missed doses off the banner too', missedRemoved < missedBefore,
+    missedBefore + ' -> ' + missedRemoved);
+  await goMeds();
 }
 
 console.log('\n3. THE SAFETY CHECK: it comes back with reminders OFF');
@@ -259,7 +302,16 @@ console.log('\n3. THE SAFETY CHECK: it comes back with reminders OFF');
   t('it is on the active list again', (await activeIds()).includes(MED_ID));
   t('it is gone from the archive', !(await archivedIds()).includes(MED_ID));
   const back = ((await savedCfg()).meds || []).find(m => m.id === MED_ID);
-  t('REMINDERS ARE OFF in the saved record', !!back && back.alerts === false, 'alerts=' + (back && back.alerts));
+  t('its reminders came back exactly as they were, rather than being switched off',
+    !!back && back.alerts === true, 'alerts=' + (back && back.alerts));
+  t('and the day it came back is stamped, so the gap is what gets suppressed',
+    !!back && typeof back.alertsFrom === 'number' && back.alertsFrom > 0, 'alertsFrom=' + (back && back.alertsFrom));
+  const missedAfter = await missedTotal();
+  if (missedAfter === null || missedRemoved === null) exempt('THE SAFETY CHECK on the banner', 'banner not readable in this build; alerts and alertsFrom are asserted from the saved record above');
+  else t('THE SAFETY CHECK: bringing it back does not put the days it was away back on the banner',
+    missedAfter === missedRemoved,
+    missedBefore + ' before -> ' + missedRemoved + ' with it removed -> ' + missedAfter + ' after');
+  await goMeds();
   t("the caregiver's own version came back", !!back && back.purpose === MARKER, back ? String(back.purpose) : '(missing)');
   t('its dose windows came back too', !!back && (back.windows || []).length > 0,
     'windows=' + (back ? (back.windows || []).length : 0));
@@ -277,7 +329,13 @@ console.log('\n4. It survives a reload, and there is nothing left to bring back'
   await goMeds();
   t('still on the active list after closing and reopening the app', (await activeIds()).includes(MED_ID));
   const back = ((await savedCfg()).meds || []).find(m => m.id === MED_ID);
-  t('and reminders are still off', !!back && back.alerts === false, 'alerts=' + (back && back.alerts));
+  t('the day it came back survived the reload', !!back && typeof back.alertsFrom === 'number',
+    'alertsFrom=' + (back && back.alertsFrom));
+  const stillClear = await missedTotal();
+  if (stillClear === null || missedRemoved === null) exempt('the banner after a reload', 'banner not readable in this build');
+  else t('and the banner still does not count the days it was away', stillClear === missedRemoved,
+    missedRemoved + ' -> ' + stillClear);
+  await goMeds();
   t('there is no "Bring back" control for it any more', !(await clickLabel('Bring back ' + MED_NAME)));
 }
 
@@ -326,8 +384,8 @@ console.log('\n6. An archive written by an OLDER build still restores something 
   await page.waitForTimeout(900);
   const back = ((await savedCfg()).meds || []).find(m => m.id === MED_ID);
   t('it still comes back', !!back);
-  t('with reminders off, the same as every other path', !!back && back.alerts === false,
-    'alerts=' + (back && back.alerts));
+  t('the day it came back is stamped on this path too', !!back && typeof back.alertsFrom === 'number',
+    'alertsFrom=' + (back && back.alertsFrom));
 }
 
 console.log('\n-- nothing broke on the way');

@@ -30,11 +30,19 @@ THE WRITE MODEL FOR A, stated before a line was written.
   * RESTORE PUTS IT BACK UNDER ITS ORIGINAL ID. That is the point: every stored dose references
     that id, so the old doses read properly again. A new id leaves them orphaned, which is exactly
     what typing the medication in again does today.
-  * RESTORE ALWAYS COMES BACK WITH REMINDERS OFF, whatever the archive says, and the app says so.
-    THIS IS THE TRAP THIS RELEASE EXISTS TO AVOID. The missed-dose walk reads every tracked
-    medication for every day in range, so restoring one with alerts on flags every dose window
-    during the weeks it was archived -- the wall of red that ending a hospital stay produced once
-    already, and the reason per-window suppression was built.
+  * REMINDERS COME BACK EXACTLY AS THEY WERE, AND THE GAP IS WHAT IS SUPPRESSED. Restore stamps
+    `alertsFrom` with today and missedDosesFor() skips days before it for that medication.
+    THE FIRST VERSION OF THIS RELEASE GOT THIS WRONG and the audit refused it -- twice over, in
+    opposite directions. It restored the medication with reminders switched OFF, which in ChemoWell
+    was erased at the next app open (its normaliser RECOMPUTES `alerts` from the schedule type and
+    never reads what was saved), and in care-tracker stayed off FOREVER under a toast promising
+    "turn them back on in Edit" when the editor has no such control at all. Either way it removed
+    missed-dose cover invisibly, under a button labelled "Bring back".
+    The design was wrong, not just the code: "reminders off" trades a VISIBLE, recoverable problem
+    -- a wall of missed doses for days she was not taking it -- for an INVISIBLE, unrecoverable one.
+    A clinician takes the first every time.
+    SAID OUT LOUD: a phone still on the OLD build ignores `alertsFrom` and shows the gap as missed
+    until it updates. That is visible and self-correcting; silent loss of alerting is neither.
   * PAUSE PERIODS COME BACK TOO. app-v20 archives them precisely so a medication re-added later is
     not flagged for days it was legitimately paused; dropping them on the way back in would undo
     that fix from the other end.
@@ -135,17 +143,22 @@ rep("""  const archivedMeds = { ...(state.archivedMeds || {}), [id]: { name: med
 # ================= A: restoring =================================================================
 rep("""function deleteMedicationConfig(id) {""",
     """// ---- BRINGING A MEDICATION BACK (app-v73) ----
-// REMINDERS COME BACK OFF, ALWAYS, WHATEVER THE ARCHIVE SAYS. The missed-dose walk reads every
-// tracked medication for every day in range, so a medication restored with alerts on is flagged for
-// every dose window during the weeks it was archived -- a wall of red for days nobody was ever
-// meant to take it. That is the flood ending a hospital stay produced once already. It comes back
-// silent, and the caregiver turns reminders on again in Edit when she wants them.
+// REMINDERS COME BACK EXACTLY AS THEY WERE. What is suppressed is the GAP: `alertsFrom` tells
+// missedDosesFor() that nothing before today counts as a missed dose for this medication.
+// The first version of this release switched reminders OFF instead, and the audit refused it in
+// both apps and in opposite directions -- erased at the next load by a normaliser in one, permanent
+// with no control to undo it in the other. Both removed missed-dose cover invisibly, under a button
+// labelled "Bring back".
 // PAUSE PERIODS DO come back: app-v20 archives them precisely so a medication re-added later is not
 // flagged for days it was legitimately paused, and dropping them here would undo that from the
 // other end.
 function restoreMedicationConfig(id) {
-  const entry = (state.archivedMeds || {})[id];
-  if (!entry) return;
+  // hasOwnProperty, NOT a bare index -- the guard every neighbouring lookup in this file got after
+  // v74, when a medication named `Constructor` read back Object.prototype's own property and
+  // destroyed the Meds screen permanently.
+  const archive = state.archivedMeds || {};
+  const entry = Object.prototype.hasOwnProperty.call(archive, id) ? archive[id] : null;
+  if (!entry || typeof entry !== 'object') return;
   // TIE-BREAK, and the reason this control exists at all. The id is what every stored dose points
   // at. If an active medication already holds it, putting this one back would collide; giving it a
   // NEW id instead would orphan its whole dose history, which is exactly what typing the medication
@@ -160,7 +173,10 @@ function restoreMedicationConfig(id) {
   if (hadConfig) med = normalizeMedication(JSON.parse(JSON.stringify(entry.config)));
   else med = normalizeMedication({ id: id, name: entry.name || id, sub: entry.sub || '' });
   med.id = id;
-  med.alerts = false;
+  // REMINDERS COME BACK AS THEY WERE, and the GAP is what is suppressed. The first version of this
+  // release switched them off instead; the audit showed that was wrong in both apps and in opposite
+  // directions -- erased by a normaliser in one, permanent with no way back in the other.
+  med.alertsFrom = dayStart(state.now || Date.now());
   med.pausePeriods = normalizePausePeriods(entry.pausePeriods);
   const meds = state.meds.concat([med]);
   const archivedMeds = { ...(state.archivedMeds || {}) };
@@ -169,7 +185,7 @@ function restoreMedicationConfig(id) {
   setState({ meds, archivedMeds, confirmRestoreMed: null });
   setToast(med.name + (hadConfig ? ' is back, with its doses and rules.'
     : ' is back. Its doses and rules were not kept \\u2014 set them in Edit.')
-    + ' Reminders are off so the days it was away are not counted as missed.');
+    + ' Its reminders come back on from today \\u2014 the days it was away are not counted as missed.');
   markNotifDirty(); // whatever alarms this medication had are gone; nothing new is armed
 }
 function deleteMedicationConfig(id) {""")
@@ -202,7 +218,7 @@ rep("""    h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9
     archivedList.length ? h('div', { 'data-archived-meds': 'true', style: { marginTop: '18px' } },
       h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '4px' } }, 'Removed medications'),
       h('div', { style: { ...TYPE.caption, color: '#6B5F66', lineHeight: '1.4', marginBottom: '9px' } },
-        'Their dose history is still in the app. Bring one back and its old doses read properly again \\u2014 it returns with reminders off, so the days it was away are not counted as missed.'),
+        'Their dose history is still in the app. Bring one back and its old doses read properly again \\u2014 it comes back with its reminders on again from today, so the days it was away are not counted as missed.'),
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...archivedList.map(item => {
         const restoring = state.confirmRestoreMed === item.id;
         return h('article', { 'data-archived-med': item.id, style: { background: '#FFFFFF', border: '1px dashed #E0CEC6', borderRadius: '15px', padding: '12px', display: 'flex', alignItems: 'center', gap: '10px', overflowWrap: 'anywhere' } },
@@ -216,6 +232,46 @@ rep("""    h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9
       }))
     ) : null,
     null // v12 redundancy cut: stale "now live in Settings" breadcrumb removed""")
+
+# ---- NOTHING BEFORE THE DAY IT CAME BACK IS A MISSED DOSE -------------------------------------
+# The audit refused the first version of this release, and the design was wrong rather than only the
+# code. It restored the medication with its reminders switched OFF -- which in one app was erased at
+# the next load by a normaliser that recomputes `alerts`, and in the other stayed off forever under a
+# toast promising a control that does not exist. Either way it removed safety cover invisibly.
+# Reminders come back exactly as they were now. What is suppressed is the GAP: `alertsFrom` tells the
+# missed-dose walk that nothing before the day of the restore counts for this medication. No
+# medication that was never archived carries the field, so this line does nothing at all for any of
+# them, and the engine is otherwise untouched.
+rep("""  state.meds.filter(m => m.alerts && m.windows).forEach(med => {""",
+    """  state.meds.filter(m => m.alerts && m.windows).forEach(med => {
+    // Brought back from the archive: nothing before the day it returned is a missed dose.
+    if (med.alertsFrom && d0 < dayStart(med.alertsFrom)) return;""")
+
+# ---- TWO THINGS THE AUDIT FOUND AROUND THE NEW CONTROL ----------------------------------------
+# 1. A half-armed "Bring back" survived navigation. The confirm beside it -- Remove -- has been
+#    cleared on every view change since long before this release; this one was not, so leaving the
+#    Meds screen and coming back left a button one tap from acting.
+rep("""  const next = { view, reportsView: view === 'reports' ? null : state.reportsView, medEditor: view === 'meds' ? state.medEditor : null, confirmDeleteMed: null };""",
+    """  // v75/app-v73: a half-armed "Bring back" is cleared on navigation exactly like a half-armed
+  // Remove. Leaving it armed means coming back to the Meds screen later and finding a button
+  // already one tap from acting -- the audit found it, and the neighbouring confirm has been
+  // cleared here since long before this release.
+  const next = { view, reportsView: view === 'reports' ? null : state.reportsView, medEditor: view === 'meds' ? state.medEditor : null, confirmDeleteMed: null, confirmRestoreMed: null };""")
+
+# 2. THE 1s TICK GUARD. This file's own comment calls the exclusion list "a recurring bug class
+#    (v11, v22, v27 all hit the same thing -- a new confirm state gets added below and nobody
+#    remembers to list it here)". app-v73 added a sixth confirm and did exactly that: measured
+#    against the guarded control in the same session, an armed Remove kept the SAME node while an
+#    armed Bring back was REBUILT every second, dropping focus once a second under the caregiver.
+rep("""&& !state.confirmDeleteMed &&""",
+    """&& !state.confirmDeleteMed && !state.confirmRestoreMed &&""")
+
+# ---- THE MISSED-DOSE BANNER GETS THE HOOK ITS SIBLING ALREADY HAS ------------------------------
+# Without it a suite cannot tell "no banner, because there is nothing to report" from "a banner it
+# cannot read" -- and those two must never collapse into the same answer in a file whose subject is
+# a safety claim about that banner. One attribute, no behaviour change.
+rep("""h('button', { onClick: (ev) => { ev.stopPropagation(); clearMissedDoses(); }, style: { flexShrink: '0', minHeight: '44px'""",
+    """h('button', { onClick: (ev) => { ev.stopPropagation(); clearMissedDoses(); }, 'data-missed-clear': 'true', style: { flexShrink: '0', minHeight: '44px'""")
 
 if "const APP_VERSION = '%s';" % FROM_V not in s: sys.exit('REFUSING: version stamp missing')
 rep("const APP_VERSION = '%s';" % FROM_V, "const APP_VERSION = '%s';" % TO_V)

@@ -1717,6 +1717,8 @@ function missedDosesFor(dayTs, now) {
   // the bottom of this function, so a half-day stay suppresses only the doses inside it.
   const out = [];
   state.meds.filter(m => m.alerts && m.windows).forEach(med => {
+    // Brought back from the archive: nothing before the day it returned is a missed dose.
+    if (med.alertsFrom && d0 < dayStart(med.alertsFrom)) return;
     if (isPausedOn(med, d0)) return; // v20: skip exactly the days this medication was actually paused
     if (treatmentOnlyBlocks(med, d0)) return;
     if (treatmentExcludedNow(med, d0)) return; // v20: excluded near treatment day
@@ -3282,7 +3284,11 @@ function scrollToTop() {
 }
 function navigateTo(view) {
   const editorClosing = !!state.medEditor && view !== 'meds'; // audit v12 P3-1: nav-away also closes the editor
-  const next = { view, reportsView: view === 'reports' ? null : state.reportsView, medEditor: view === 'meds' ? state.medEditor : null, confirmDeleteMed: null };
+  // v75/app-v73: a half-armed "Bring back" is cleared on navigation exactly like a half-armed
+  // Remove. Leaving it armed means coming back to the Meds screen later and finding a button
+  // already one tap from acting -- the audit found it, and the neighbouring confirm has been
+  // cleared here since long before this release.
+  const next = { view, reportsView: view === 'reports' ? null : state.reportsView, medEditor: view === 'meds' ? state.medEditor : null, confirmDeleteMed: null, confirmRestoreMed: null };
   // v55: tapping Help in the menu always lands on the top level, the same way tapping Reports
   // always lands on the report list. Coming back to a walkthrough you left three screens deep,
   // with a stale search still in the box, is not what "Help" reads like it will do.
@@ -4631,7 +4637,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       h('div', { style: { flex: '1' } },
         h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '4px' } },
           h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127' } }, 'Missed dose' + (bannerItems.length > 1 ? 's' : '')),
-          h('button', { onClick: (ev) => { ev.stopPropagation(); clearMissedDoses(); }, style: { flexShrink: '0', minHeight: '44px', padding: '0 14px', borderRadius: '99px', background: 'transparent', border: '1px solid #F2BEA8', color: '#A83D0F', fontSize: '13px', fontWeight: '700' } }, 'Clear')
+          h('button', { onClick: (ev) => { ev.stopPropagation(); clearMissedDoses(); }, 'data-missed-clear': 'true', style: { flexShrink: '0', minHeight: '44px', padding: '0 14px', borderRadius: '99px', background: 'transparent', border: '1px solid #F2BEA8', color: '#A83D0F', fontSize: '13px', fontWeight: '700' } }, 'Clear')
         ),
         // One line per miss (item 8) — med name in ink, details in secondary
         ...bannerItems.map(m => h('div', { style: { ...TYPE.caption, color: '#554A52' } },
@@ -5887,17 +5893,22 @@ function moveReorderableMed(id, dir) {
 }
 
 // ---- BRINGING A MEDICATION BACK (app-v73) ----
-// REMINDERS COME BACK OFF, ALWAYS, WHATEVER THE ARCHIVE SAYS. The missed-dose walk reads every
-// tracked medication for every day in range, so a medication restored with alerts on is flagged for
-// every dose window during the weeks it was archived -- a wall of red for days nobody was ever
-// meant to take it. That is the flood ending a hospital stay produced once already. It comes back
-// silent, and the caregiver turns reminders on again in Edit when she wants them.
+// REMINDERS COME BACK EXACTLY AS THEY WERE. What is suppressed is the GAP: `alertsFrom` tells
+// missedDosesFor() that nothing before today counts as a missed dose for this medication.
+// The first version of this release switched reminders OFF instead, and the audit refused it in
+// both apps and in opposite directions -- erased at the next load by a normaliser in one, permanent
+// with no control to undo it in the other. Both removed missed-dose cover invisibly, under a button
+// labelled "Bring back".
 // PAUSE PERIODS DO come back: app-v20 archives them precisely so a medication re-added later is not
 // flagged for days it was legitimately paused, and dropping them here would undo that from the
 // other end.
 function restoreMedicationConfig(id) {
-  const entry = (state.archivedMeds || {})[id];
-  if (!entry) return;
+  // hasOwnProperty, NOT a bare index -- the guard every neighbouring lookup in this file got after
+  // v74, when a medication named `Constructor` read back Object.prototype's own property and
+  // destroyed the Meds screen permanently.
+  const archive = state.archivedMeds || {};
+  const entry = Object.prototype.hasOwnProperty.call(archive, id) ? archive[id] : null;
+  if (!entry || typeof entry !== 'object') return;
   // TIE-BREAK, and the reason this control exists at all. The id is what every stored dose points
   // at. If an active medication already holds it, putting this one back would collide; giving it a
   // NEW id instead would orphan its whole dose history, which is exactly what typing the medication
@@ -5912,7 +5923,10 @@ function restoreMedicationConfig(id) {
   if (hadConfig) med = normalizeMedication(JSON.parse(JSON.stringify(entry.config)));
   else med = normalizeMedication({ id: id, name: entry.name || id, sub: entry.sub || '' });
   med.id = id;
-  med.alerts = false;
+  // REMINDERS COME BACK AS THEY WERE, and the GAP is what is suppressed. The first version of this
+  // release switched them off instead; the audit showed that was wrong in both apps and in opposite
+  // directions -- erased by a normaliser in one, permanent with no way back in the other.
+  med.alertsFrom = dayStart(state.now || Date.now());
   med.pausePeriods = normalizePausePeriods(entry.pausePeriods);
   const meds = state.meds.concat([med]);
   const archivedMeds = { ...(state.archivedMeds || {}) };
@@ -5921,7 +5935,7 @@ function restoreMedicationConfig(id) {
   setState({ meds, archivedMeds, confirmRestoreMed: null });
   setToast(med.name + (hadConfig ? ' is back, with its doses and rules.'
     : ' is back. Its doses and rules were not kept \u2014 set them in Edit.')
-    + ' Reminders are off so the days it was away are not counted as missed.');
+    + ' Its reminders come back on from today \u2014 the days it was away are not counted as missed.');
   markNotifDirty(); // whatever alarms this medication had are gone; nothing new is armed
 }
 function deleteMedicationConfig(id) {
@@ -6439,7 +6453,7 @@ function renderMedicationManager(now) {
     archivedList.length ? h('div', { 'data-archived-meds': 'true', style: { marginTop: '18px' } },
       h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '4px' } }, 'Removed medications'),
       h('div', { style: { ...TYPE.caption, color: '#6B5F66', lineHeight: '1.4', marginBottom: '9px' } },
-        'Their dose history is still in the app. Bring one back and its old doses read properly again \u2014 it returns with reminders off, so the days it was away are not counted as missed.'),
+        'Their dose history is still in the app. Bring one back and its old doses read properly again \u2014 it comes back with its reminders on again from today, so the days it was away are not counted as missed.'),
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...archivedList.map(item => {
         const restoring = state.confirmRestoreMed === item.id;
         return h('article', { 'data-archived-med': item.id, style: { background: '#FFFFFF', border: '1px dashed #E0CEC6', borderRadius: '15px', padding: '12px', display: 'flex', alignItems: 'center', gap: '10px', overflowWrap: 'anywhere' } },
@@ -10085,7 +10099,7 @@ setInterval(() => {
   // tick to update there and no reason to leave a second way for this bug to come back a
   // fifth time. Interaction re-renders (setState/render) still repaint it instantly.
   if (state.view !== 'help'
-      && !state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.noteModal && !state.checkinModal && !state.medEditor && !state.infoModal && !state.eraseAllModalOpen && !state.confirmDeleteMed && !state.confirmDeleteAppt && !state.confirmDeleteNote && !state.confirmDeleteProfile && !state.confirmRemove && !isEditing) render();
+      && !state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.noteModal && !state.checkinModal && !state.medEditor && !state.infoModal && !state.eraseAllModalOpen && !state.confirmDeleteMed && !state.confirmRestoreMed && !state.confirmDeleteAppt && !state.confirmDeleteNote && !state.confirmDeleteProfile && !state.confirmRemove && !isEditing) render();
   checkNotifications();
   checkAppointmentReminders();
   // v35 backstop. Everything that changes the plan already calls markNotifDirty(), but a backstop
