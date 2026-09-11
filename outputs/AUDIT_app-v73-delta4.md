@@ -1,4 +1,7 @@
 # Zero Day Audit — delta pass 4 — care-tracker v75 / ChemoWell app-v73
+AUDITED-COMMIT: 9bdf1349ce8f24d2d06e91658bc685cd1fb07eca
+VERDICT: DO NOT SHIP
+
 **2026-09-11 · narrow delta over `7cf1b31..ab90f64` (care-tracker) and `95e2ccb..9bdf134` (ChemoWell)**
 
 ## VERDICT: DO NOT SHIP — one record defect, and it is the same class the last three passes refused

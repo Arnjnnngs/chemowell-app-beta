@@ -1,8 +1,9 @@
 # Zero Day Audit — ChemoWell app-v73 and care-tracker v75 — THIRD pass (delta)
 
-AUDITED-COMMIT: 31a20a4d08bbdeaa6cc490ae92760e5cf7910c6c (chemowell-app-beta)
-care-tracker commit examined: 866b26baf2aea205dcc0c35df7440b9c25fce4cf (v75)
+AUDITED-COMMIT: 31a20a4d08bbdeaa6cc490ae92760e5cf7910c6c
 VERDICT: DO NOT SHIP
+
+(chemowell-app-beta. care-tracker commit examined: 866b26baf2aea205dcc0c35df7440b9c25fce4cf, v75.)
 
 Both HEADs moved under me during this pass, in both repos, to *"the suite was supplying the thing
 it was meant to be checking."* Neither `index.html` changed; only suites and falsification
