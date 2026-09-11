@@ -1084,105 +1084,6 @@ function normalizePausePeriods(raw) {
   return Array.isArray(raw) ? raw.filter(p => p && Number.isFinite(p.start)).map(p => ({ start: p.start, end: Number.isFinite(p.end) ? p.end : null })) : [];
 }
 
-// ---- WHERE A DESCRIPTION MAY COME FROM (app-v74) ----------------------------------------------
-// One place, on purpose: the endpoint, the link builders and the shape-reading all live here, so
-// correcting any of it later is one edit rather than a hunt, and the suite can swap the whole thing
-// for a stub without touching a line of the logic that uses it.
-// MedlinePlus is the US National Library of Medicine: public domain, written for patients, and with
-// stable pages worth linking at. WebMD and drugs.com are deliberately NOT used -- their text is
-// copyrighted and their terms forbid republishing it, which is the whole reason this app writes its
-// own lines.
-const MED_SOURCE = {
-  label: 'MedlinePlus',
-  // A SEARCH on the official site. Built from the name with no network at all, so it works offline
-  // and on the very first paint. It is a lookup, not a citation, and the UI never calls it one.
-  searchUrl: function (name) {
-    return 'https://medlineplus.gov/search/?query=' + encodeURIComponent(String(name || '').trim());
-  },
-  // The lookup that MAY return an exact page. Wrapped so a stub can replace it wholesale.
-  lookupUrl: function (name) {
-    return 'https://connect.medlineplus.gov/service?knowledgeResponseType=application/json'
-      + '&mainSearchCriteria.v.dn=' + encodeURIComponent(String(name || '').trim());
-  },
-  // Reading the answer is separated from fetching it so the shape can be corrected without touching
-  // the network path, and so the suite can prove the reader on fixtures alone.
-  read: function (payload) {
-    try {
-      const feed = payload && payload.feed;
-      const entry = feed && Array.isArray(feed.entry) ? feed.entry[0] : null;
-      if (!entry) return null;
-      const link = Array.isArray(entry.link) ? entry.link.find(l => l && l.href) : null;
-      const url = link ? String(link.href) : '';
-      const title = entry.title && entry.title._value ? String(entry.title._value) : '';
-      const summary = entry.summary && entry.summary._value ? String(entry.summary._value) : '';
-      if (!url) return null;
-      return { url: url, title: title, text: summary };
-    } catch (e) { return null; }
-  }
-};
-
-// THE GUARDS, IN THE APP. Until this release these rules lived only in test/v72-med-purpose.mjs and
-// ran against the STATIC table at build time. Fetched text arrives at RUN time on a patient's phone
-// where no suite can see it, so the same rules are enforced here, before a single fetched character
-// can reach the screen. Every one of them was paid for by an audit block on this project.
-const PURPOSE_MAX_LEN = 150;
-// \p{Nd} IS THE POINT, not the `u` flag on its own. An earlier comment here said the flag was what
-// caught non-ASCII digits; measured, \d is false on ٢ with it and without it -- the flag only
-// makes \p{Nd} available, and that is what actually matches every decimal digit there is. Listing
-// ranges by hand caught Arabic and Devanagari and missed Thai and fullwidth. A guard whose whole job
-// is to stop a dose reaching the screen should not be a list somebody has to keep extending.
-const PURPOSE_NUMBERY = /\p{Nd}/u;
-const PURPOSE_WORDNUM = /\b(one|two|three|four|five|six|seven|eight|nine|ten|twice|thrice|half|quarter)\b/i;
-const PURPOSE_FEVERY = /fever|febrile|pyrexia|antipyretic|temperature/i;
-const PURPOSE_SCHEDULEY = /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|around chemo|with chemo|after chemo|before chemo|chemotherapy|dose|doses|mg|ml|mcg)\b/i;
-const PURPOSE_FORMY = /\b(pills?|tablets?|capsules?|caplets?|troches?|lozenges?|liquids?|syrups?|elixirs?|powders?|sachets?|patches|patch|creams?|ointments?|gels?|lotions?|rinses?|mouthwash|gargle|suppositor(?:y|ies)|enemas?|sprays?|sprayed|inhalers?|inhaled|nebuli[sz]ed|injections?|injected|inject|shots?|infusions?|infused|drips?|intravenous(?:ly)?|iv|subcutaneous(?:ly)?|intramuscular(?:ly)?|sublingual(?:ly)?|transdermal|intranasal|swallow(?:ed)?|chew(?:able)?|topical(?:ly)?|orally|by mouth|rub|rubs|rubbed|applied|apply|smear|dab|rectally|on the skin|onto the skin|into the skin|under the skin|under the tongue|under your tongue|into a vein|through a vein|into a muscle|in a drip|through a drip|eye drops?|ear drops?|nose drops?|into the eye|into the ear|into the nose|per os|p\.?o\.?|nebuli[sz]er|vaginally|buccal(?:ly)?|implants?|pessar(?:y|ies))\b/i;
-function purposeTextIsSafe(text) {
-  const t = String(text || '').trim();
-  if (!t) return false;
-  if (t.length > PURPOSE_MAX_LEN) return false;
-  if (PURPOSE_NUMBERY.test(t)) return false;
-  if (PURPOSE_WORDNUM.test(t)) return false;
-  if (PURPOSE_FEVERY.test(t)) return false;
-  if (PURPOSE_SCHEDULEY.test(t)) return false;
-  if (PURPOSE_FORMY.test(t)) return false;
-  return true;
-}
-
-// THE ONLY OUTBOUND REQUEST THIS APP MAKES, and it is made ONCE, when a medication is SAVED --
-// never at render time, never on a timer, never on load. What it finds is cached on the medication
-// record, so every later paint is offline-identical to today.
-// IT CANNOT FAIL LOUDLY. Offline, a blocked cross-origin read, a 404, a timeout, a shape that
-// changed: every one of them returns null and the app carries on being exactly what it was. That is
-// deliberate and it is the reason this release is safe to ship without the live endpoint having been
-// verified -- see the header of harness-med-source-patch.py.
-async function fetchPurposeSource(name) {
-  const clean = String(name || '').trim();
-  if (!clean || typeof fetch !== 'function') return null;
-  const controller = (typeof AbortController === 'function') ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => { try { controller.abort(); } catch (e) {} }, 6000) : null;
-  try {
-    const response = await fetch(MED_SOURCE.lookupUrl(clean), controller ? { signal: controller.signal } : {});
-    if (!response || !response.ok) return null;
-    const payload = await response.json();
-    const found = MED_SOURCE.read(payload);
-    if (!found || !found.url) return null;
-    // The TEXT must earn its place; the URL does not have to. A link is not a claim about wording,
-    // so a page whose summary is unusable still gives the caregiver somewhere real to read.
-    const text = purposeTextIsSafe(found.text) ? String(found.text).trim() : '';
-    // forName: THE NAME THIS WAS FETCHED FOR, and it is the whole of the fix for the defect the
-    // app-v74 audit found. Renaming a medication in the editor keeps its record -- same id, fields
-    // spread from the original -- so the cached sentence and its citation survived onto a DIFFERENT
-    // drug. Measured: a medication renamed from Zofran to Compazine printed ondansetron's sentence
-    // with a link to ondansetron's page under it, beating the app's own correct line for Compazine,
-    // permanently, with nothing to correct it. The in-flight race was guarded; this needs no race.
-    return { text: text, url: String(found.url), label: MED_SOURCE.label, forName: clean, fetchedAt: Date.now() };
-  } catch (e) {
-    return null;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
 function normalizeMedication(raw, index) {
   const original = raw || {};
   const id = safeMedicationId(original.id, original.name || ('medication-' + (index + 1)));
@@ -1296,33 +1197,6 @@ function normalizeMedication(raw, index) {
       // Do not write a reassurance here that has not been measured IN THIS FILE.
       && span.end <= Date.now());
   if (awaySpans.length) medication.awayPeriods = awaySpans; else delete medication.awayPeriods;
-  // app-v74: THE CACHED SOURCE, VALIDATED. normalizeMedication runs on every load and over anything
-  // medsync publishes from another device, and what it returns goes straight to the screen. A stored
-  // string is not evidence it ever passed a guard here, and a stored URL is not evidence it is a URL
-  // -- an unchecked one is a javascript: link waiting to be tapped by a caregiver at 2am.
-  const rawSource = original.purposeSource;
-  if (rawSource && typeof rawSource === 'object') {
-    const srcUrl = String(rawSource.url || '').trim();
-    const httpOnly = /^https:\/\//i.test(srcUrl);
-    const srcText = String(rawSource.text || '').trim();
-    if (httpOnly) {
-      medication.purposeSource = {
-        url: srcUrl,
-        text: purposeTextIsSafe(srcText) ? srcText : '',
-        label: String(rawSource.label || 'MedlinePlus').slice(0, 40),
-        // CARRIED THROUGH ON PURPOSE. This object is a WHITELIST -- anything not named here is gone
-        // at the next load. The audit hit exactly that: its first attempt at the rename fix still
-        // showed the false citation, because the new field was dropped here and the match could
-        // never succeed.
-        forName: String(rawSource.forName || '').slice(0, 120),
-        fetchedAt: Number(rawSource.fetchedAt) > 0 ? Number(rawSource.fetchedAt) : 0
-      };
-    } else {
-      delete medication.purposeSource;
-    }
-  } else {
-    delete medication.purposeSource;
-  }
   if (doses && doses.length) medication.doses = doses; else delete medication.doses;
   if (type === 'win') medication.windows = windows.length ? windows : [{ start: 0, end: 24, name: 'Daily' }]; else delete medication.windows;
   return medication;
@@ -5675,6 +5549,28 @@ const MED_PURPOSE = {
 // "  Zofran  " land on the same key as "zofran". A name carrying EXTRA WORDS does not -- "Zofran
 // (ODT)" normalises to "zofran odt" and finds nothing, which is a miss rather than a wrong answer,
 // and a wrong line on the right medication would be far worse than no line.
+// ---- LOOKING A MEDICATION UP (app-v74) --------------------------------------------------------
+// A SEARCH URL BUILT FROM THE NAME, WITH NO NETWORK. Nothing is requested, nothing is stored and
+// nothing leaves the phone until the caregiver taps the link herself.
+// MedlinePlus is the US National Library of Medicine: public domain, written for patients rather
+// than clinicians. WebMD and drugs.com are deliberately not used -- their text is copyrighted and
+// their terms forbid republishing it, which is exactly what this app set out to avoid when it wrote
+// its own descriptions by hand.
+const MED_SOURCE = {
+  label: 'MedlinePlus',
+  searchUrl: function (name) {
+    return 'https://medlineplus.gov/search/?query=' + encodeURIComponent(String(name || '').trim());
+  }
+};
+// THE LINK IS A LOOKUP, NEVER A CITATION. The description above it was written in this repo, so
+// saying "source" over it would be a false citation -- the class of defect this project has been
+// refused for repeatedly. When the baked-in database lands, text and page will travel together and
+// the wording changes to match. Not before.
+function purposeSourceLink(med) {
+  const name = med ? String(med.name || '').trim() : '';
+  if (!name) return null;
+  return { url: MED_SOURCE.searchUrl(name), text: 'Look it up on ' + MED_SOURCE.label };
+}
 function medPurposeKey(text) {
   return String(text || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -5697,57 +5593,7 @@ function purposeOf(med) {
   if (!med) return '';
   const typed = String(med.purpose || '').trim();
   if (typed) return typed;
-  // app-v74: the cached official line sits BETWEEN what she typed and what we wrote. It never
-  // overrides her -- that rung was already the top one and stays there.
-  const sourced = sourcedPurposeText(med);
-  if (sourced) return sourced;
   return purposeLookup(med.name) || purposeLookup(med.sub);
-}
-// Re-checked on the way OUT as well as on the way in. The record can reach this app from another
-// phone through medsync, and a stored string is not evidence that it ever passed a guard here.
-function sourcedPurposeText(med) {
-  const src = med && med.purposeSource;
-  if (!src || typeof src !== 'object') return '';
-  if (!purposeSourceMatchesName(med)) return '';
-  const text = String(src.text || '').trim();
-  return purposeTextIsSafe(text) ? text : '';
-}
-// A cached description belongs to the NAME it was looked up under, and to nothing else. Renaming a
-// medication keeps its record, so without this the sentence and the citation walk across to whatever
-// the medication is called next.
-// An entry written before this check existed carries no `forName`: it is treated as NOT matching, so
-// it stops being displayed rather than being trusted. That loses a correct description on the next
-// load for medications that had one -- and it is the right way round, because the alternative is
-// keeping a possibly-false one. Saving the medication looks it up again.
-function purposeSourceMatchesName(med) {
-  const src = med && med.purposeSource;
-  if (!src || typeof src !== 'object') return false;
-  const forName = String(src.forName || '').trim().toLowerCase();
-  if (!forName) return false;
-  return forName === String(med.name || '').trim().toLowerCase();
-}
-// WHICH LINK IS HONEST FOR THIS MEDICATION. A link may only claim to be the source of wording that
-// is actually on screen: showing the cached official text earns "Where this came from" and the exact
-// page; anything else gets a lookup into the official site's search, labelled as a lookup. Calling a
-// search "the source" of a sentence written here would be a false citation, which is the one thing
-// this feature must not do.
-function purposeSourceLink(med) {
-  if (!med) return null;
-  const src = (med.purposeSource && typeof med.purposeSource === 'object') ? med.purposeSource : null;
-  // THE LABEL IS ONLY THE RECORD'S WHERE THE RECORD IS BEING USED. Read unconditionally it captioned
-  // a URL it did not describe: a stored label of "Drugs.com" printed "Look it up on Drugs.com" over a
-  // medlineplus.gov search. Unreachable before this release; the rename path is a new route to it.
-  const usable = purposeSourceMatchesName(med);
-  const label = (usable && src && String(src.label || '').trim()) || MED_SOURCE.label;
-  const shown = purposeOf(med);
-  const sourced = sourcedPurposeText(med);
-  const usingSourceText = !!sourced && shown === sourced;
-  if (usingSourceText && src && src.url && usable) {
-    return { url: String(src.url), label: label, exact: true, text: 'Where this came from \u00b7 ' + label };
-  }
-  const name = String(med.name || '').trim();
-  if (!name) return null;
-  return { url: MED_SOURCE.searchUrl(name), label: label, exact: false, text: 'Look it up on ' + label };
 }
 function medicationFormFrom(med) {
   const base = med || {};
@@ -5956,26 +5802,6 @@ function deriveWindowEnds(rows) {
     name: String(row.name || '').trim() || ('Window ' + (index + 1))
   }));
 }
-// app-v74: look the medication up, cache what comes back, and touch nothing else. Every early
-// return here leaves the record exactly as it was.
-async function refreshPurposeSource(id, name) {
-  const found = await fetchPurposeSource(name);
-  if (!found) return;
-  // THE SAME https CHECK THE LOAD PATH MAKES. Without it this is the one route by which a URL
-  // reaches an href without ever having been validated -- the load-time guard only sees what is
-  // already in storage, and this writes straight into state. A redirect or a changed service could
-  // hand back anything.
-  if (!/^https:\/\//i.test(String(found.url || ''))) return;
-  const current = state.meds.find(item => item.id === id);
-  // Gone, or RENAMED while the request was in flight: the answer is stale and is dropped. Note what
-  // this does NOT check -- text she typed in the meantime. It does not need to: her wording outranks
-  // a cached source everywhere it is read, so storing one under it changes nothing she sees. An
-  // earlier version of this comment claimed the typed case was checked here, which was not true.
-  if (!current || String(current.name || '').trim() !== String(name || '').trim()) return;
-  const meds = state.meds.map(item => item.id === id ? { ...item, purposeSource: found } : item);
-  persistMedicationConfig(meds, state.archivedMeds);
-  setState({ meds });
-}
 function saveMedicationEditor() {
   if (!state.medEditor) return;
   const editor = state.medEditor;
@@ -6081,12 +5907,6 @@ function saveMedicationEditor() {
   const meds = editor.sourceId ? state.meds.map(med => med.id === editor.sourceId ? saved : med) : [...state.meds, saved];
   persistMedicationConfig(meds, state.archivedMeds);
   setState({ meds, medEditor: null, confirmDeleteMed: null });
-  // app-v74: THE SAVE IS ALREADY DONE. The lookup runs after it and is not awaited, so a slow or
-  // dead network cannot delay the medication being saved by a single millisecond -- the editor
-  // closes, the card appears, and the source arrives later or never. Re-reads state when it returns
-  // rather than closing over `meds`, because the caregiver may have edited or removed the
-  // medication while the request was in flight, and writing a stale list back would undo that.
-  refreshPurposeSource(saved.id, saved.name);
   setToast(saved.name + (editor.mode === 'add' ? ' added to medication management.' : ' updated.'));
   tourEvent('med:saved');
   markNotifDirty(); // v35 (Auditor F1): a saved med may add/remove/reshape windows an armed reminder depends on
@@ -6689,14 +6509,10 @@ function renderMedicationManager(now) {
           h('div', { style: { ...TYPE.caption, color: '#554A52', marginTop: '1px' } }, med.sub || 'No generic name'),
           purposeOf(med) ? h('div', { 'data-med-purpose': med.id, style: { ...TYPE.caption, color: '#4A3F47', marginTop: '4px', lineHeight: '1.35' } }, purposeOf(med)) : null,
           (function () {
-            // app-v74. Rendered only when there is a real place to send her. `exact` decides the
-            // WORDS, not just the address: "Where this came from" is a citation and is only ever
-            // printed over the page the sentence above actually came from.
             const link = purposeSourceLink(med);
             if (!link) return null;
             return h('a', {
               'data-med-source': med.id,
-              'data-med-source-exact': link.exact ? 'true' : 'false',
               href: link.url,
               target: '_blank',
               rel: 'noopener noreferrer',
@@ -6749,7 +6565,7 @@ function renderMedicationManager(now) {
     // common state, not an edge case -- and a notice about "the line under each medication" printed
     // above a list with no lines in it is the app describing something that is not on the screen.
     sortedMeds.some(m => purposeOf(m)) ? h('div', { 'data-med-disclaimer': 'true', style: { ...TYPE.caption, color: '#6B5F66', lineHeight: '1.4', margin: '2px 0 10px' } },
-      'These descriptions are general information about what a medication is usually for \u2014 not advice, and not a dose. Some are written here; where one came from ' + MED_SOURCE.label + ', the row links to the page it came from. Follow her care team.') : null,
+      'These descriptions are written here \u2014 general information about what a medication is usually for, not advice and not a dose. Each one links to ' + MED_SOURCE.label + ', where you can read more. Follow her care team.') : null,
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),
     // ONLY when something has been removed. A heading over an empty list is a notice about
     // nothing -- the defect the v72 audit found in the disclaimer two lines above.
