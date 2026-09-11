@@ -503,6 +503,50 @@ console.log('\n4D. A REMOVAL DAY IN THE FUTURE IS NOT A RECORD OF WHEN IT LEFT')
   await goMeds();
 }
 
+console.log('\n4E. THE UPGRADE-DAY PATH: no record of when it left means NOTHING is suppressed');
+{
+  // Every archive entry that existed before this release carries no `removedAt` -- no earlier build
+  // wrote one -- so this is the path the FIRST medication anybody brings back will take. Three
+  // separate places promise it suppresses nothing: the toast, the row, and the release notes. Until
+  // this check there was nothing measuring it, and the promise was false: the restore appended a
+  // {today, today} span that took a tracked medication's windows off the restore day.
+  await goMeds();
+  await clickLabel('Remove ' + MED_NAME);
+  await page.waitForTimeout(400);
+  await clickLabel('Confirm removal of ' + MED_NAME);
+  await page.waitForTimeout(800);
+  const stripped = await page.evaluate(([k, id]) => {
+    try {
+      const cfg = JSON.parse(localStorage.getItem(k) || '{}');
+      const arc = cfg.archivedMeds || {};
+      if (!Object.prototype.hasOwnProperty.call(arc, id)) return false;
+      delete arc[id].removedAt;
+      localStorage.setItem(k, JSON.stringify(cfg));
+      return true;
+    } catch (e) { return false; }
+  }, [MED_KEY, MED_ID]);
+  t('the archive can be stripped of the removal day, exactly as a pre-release build leaves it',
+    stripped);
+  await reload();
+  const missedStripped = await missedTotal();
+  await goMeds();
+  await clickLabel('Bring back ' + MED_NAME);
+  await page.waitForTimeout(400);
+  await clickLabel('Confirm bringing back ' + MED_NAME);
+  await page.waitForTimeout(1000);
+  const backNoDay = ((await savedCfg()).meds || []).find(m => m.id === MED_ID);
+  const newSpans = (backNoDay && Array.isArray(backNoDay.awayPeriods)) ? backNoDay.awayPeriods : [];
+  const today0 = await page.evaluate(() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); });
+  t('NO span is recorded at all when the app does not know when it left',
+    !newSpans.some(sp => Number(sp.end) >= today0), JSON.stringify(newSpans));
+  const missedNoDay = await missedTotal();
+  if (missedNoDay === null || missedBefore === null)
+    exempt('the upgrade-day path suppresses nothing', 'banner not readable in this build; the absence of a span is asserted above');
+  else t('THE PROMISE KEPT: the total returns to where it was, nothing suppressed',
+    missedNoDay === missedBefore, missedBefore + ' before -> ' + missedStripped + ' removed -> ' + missedNoDay + ' after');
+  await goMeds();
+}
+
 console.log('\n5. Restore is REFUSED when an active medication already holds that id');
 {
   await clickLabel('Remove ' + MED_NAME);
@@ -548,7 +592,13 @@ console.log('\n6. An archive written by an OLDER build still restores something 
   await page.waitForTimeout(900);
   const back = ((await savedCfg()).meds || []).find(m => m.id === MED_ID);
   t('it still comes back', !!back);
-  t('the span it was away is recorded on this path too', !!back && Array.isArray(back.awayPeriods) && back.awayPeriods.length > 0,
+  // AND NO SPAN IS RECORDED HERE, which is the OPPOSITE of what this check asserted until the sixth
+  // audit. An archive written by an older build carries no removal day, so the app does not know when
+  // the medication left -- and it now suppresses nothing rather than quietly taking the restore day
+  // off the count. This check asserting the old behaviour is why that went unnoticed: it was written
+  // when a span was always appended, and it kept passing on the wrong thing.
+  t('and NO span is recorded, because this archive never said when the medication left',
+    !!back && (!Array.isArray(back.awayPeriods) || back.awayPeriods.length === 0),
     JSON.stringify(back && back.awayPeriods));
 }
 

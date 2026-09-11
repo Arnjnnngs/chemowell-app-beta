@@ -1186,14 +1186,15 @@ function normalizeMedication(raw, index) {
       // reassuring: NO ENTRY IS WRITTEN, EDITED OR DELETED by any of this, every logged dose stays
       // exactly where it is, and the suppression is DERIVED AT RENDER TIME -- drop the span and every
       // count returns exactly.
-      // WHAT A SPAN DOES CHANGE is every surface fed by missedDosesFor(): the banner, the card's
-      // MISSED label, Today's journal, the History rows and day summaries, and the derived
-      // missed-dose rows in the clinician export. An earlier version of THIS comment said a span
-      // changes "only what the banner counts" and that "the export reads the entries themselves".
-      // Measured on a 14-day span: the export drops 305 rows to 277 and 14 History days change their
-      // MISSED count. It was false, it contradicted this file's own guard comment, and it was the
-      // FIFTH safety claim in this release the audit refused for describing a property the code does
-      // not have. Do not write a reassurance here that has not been measured.
+      // WHAT A SPAN DOES CHANGE in THIS app is every surface fed by missedDosesFor(): the banner,
+      // the card's MISSED label, Today's journal, and the History rows and day summaries -- where a
+      // day can stop appearing at all, because a History day here exists only if it has misses.
+      // IT DOES NOT CHANGE THE EXPORT IN THIS APP. buildExportRows() is allEntriesRaw().filter().map()
+      // and never calls missedDosesFor(); there are no derived missed-dose rows here to drop. The
+      // sibling app HAS them and its copy of this comment says so; a previous version of this one
+      // named the export and quoted the sibling's fixture numbers, which is the same
+      // write-it-because-it-reads-well defect in the opposite direction.
+      // Do not write a reassurance here that has not been measured IN THIS FILE.
       && span.end <= Date.now());
   if (awaySpans.length) medication.awayPeriods = awaySpans; else delete medication.awayPeriods;
   if (doses && doses.length) medication.doses = doses; else delete medication.doses;
@@ -5992,9 +5993,17 @@ function restoreMedicationConfig(id) {
     && dayStart(leftOn) <= dayStart(state.now || Date.now());
   const awayFrom = dayStart(knewWhenItLeft ? leftOn : (state.now || Date.now()));
   const awayTo = dayStart(state.now || Date.now());
-  med.awayPeriods = (Array.isArray(med.awayPeriods) ? med.awayPeriods : [])
-    .filter(p => p && Number(p.start) && Number(p.end))
-    .concat([{ start: awayFrom, end: awayTo }]);
+  // IF IT DOES NOT KNOW WHEN THE MEDICATION LEFT, IT SUPPRESSES NOTHING. The version before this one
+  // appended a {today, today} span on that path, which is not nothing: it took both of a tracked
+  // medication's windows off the restore day and two rows off the clinician export, while the toast,
+  // the row and the records all said the days would still show as missed. Three false statements in
+  // the under-reporting direction, and the honest fix was the code rather than the wording -- now all
+  // three are true as written. The cost, said out loud: a window missed earlier today while the
+  // medication was off the list counts as missed on this path. That is the over-reporting direction,
+  // it is visible, and it is what the caregiver is told.
+  const kept = (Array.isArray(med.awayPeriods) ? med.awayPeriods : [])
+    .filter(p => p && Number(p.start) && Number(p.end));
+  med.awayPeriods = knewWhenItLeft ? kept.concat([{ start: awayFrom, end: awayTo }]) : kept;
   med.pausePeriods = normalizePausePeriods(entry.pausePeriods);
   const meds = state.meds.concat([med]);
   const archivedMeds = { ...(state.archivedMeds || {}) };
