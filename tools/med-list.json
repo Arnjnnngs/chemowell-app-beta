@@ -1,0 +1,332 @@
+[
+  {
+    "name": "acetaminophen",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "advil",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "allopurinol",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "ativan",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "benadryl",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "buspar",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "buspirone",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "colace",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "compazine",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "decadron",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "dexamethasone",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "diphenhydramine",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "docusate",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "famotidine",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "ferrous sulfate",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "filgrastim",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "gabapentin",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "hydrocodone",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "ibuprofen",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "imodium",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "iron",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "lidocaine",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "lidoderm",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "loperamide",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "lorazepam",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "metoclopramide",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "miralax",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "morphine",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "motrin",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "ms contin",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "neulasta",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "neupogen",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "neurontin",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "norco",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "omeprazole",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "ondansetron",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "oxycodone",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "oxycontin",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "pantoprazole",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "paracetamol",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "paroxetine",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "paxil",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "pegfilgrastim",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "pepcid",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "percocet",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "phenergan",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "polyethylene glycol",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "prilosec",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "prochlorperazine",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "promethazine",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "protonix",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "reglan",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "roxicodone",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "senna",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "senokot",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "sertraline",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "tramadol",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "tylenol",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "tylenol liquid",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "tylenol pm",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "ultram",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "vicodin",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "xylocaine",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "zofran",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "zoloft",
+    "generic": "",
+    "url": ""
+  },
+  {
+    "name": "zyloprim",
+    "generic": "",
+    "url": ""
+  }
+]
