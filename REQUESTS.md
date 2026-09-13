@@ -43,33 +43,55 @@ new session the way a committed file does; see TEAM.md's opening note.
 - Nothing gets deleted when it's finished — it moves to Completed with a one-line note of
   what shipped and when, so there's a record if a question comes back to it later.
 
-## Next up, in order (read this first — updated 2026-08-13, app-v57)
+## Next up, in order (read this first — **rechecked against the shipped file 2026-09-13, app-v79**)
 
-**The ordering below this box was written for app-v52 on 2026-08-09 and item 2 is now WRONG — it
-points a fresh session at building server-based sync, which Aaron cancelled the same day (see
-"Decisions taken 2026-08-09"). It is left in place rather than deleted so the record of what was
-planned survives, but read this box first and ignore item 2.**
+**EVERY ITEM BELOW CARRIES THE DATE IT WAS LAST CHECKED AGAINST `index.html`. An item with no date
+is UNKNOWN, not open — check it before building it.**
+
+That line is here because the version of this box it replaces was written on 2026-08-13 at
+**app-v57**, and the app is now at **app-v79 — twenty-two releases later.** Its first item was
+*"app-v57 is built and gated but NOT pushed"*. This is the file `HANDOFF.md` sends a fresh session to
+first, for priorities, so for a month it has been pointing new work at things that shipped weeks ago.
+The sibling repo hit the same failure twice in its own standing-exceptions list on the same day, and
+the fix there was the same: **a date on every entry, and an undated entry treated as unknown.**
+*When one project fixes a process gap, check whether the other has it.*
 
 Current order, top to bottom:
 
-1. **app-v57 is built and gated but NOT pushed** — remove the help bubble, rename the menu row to
-   Help & FAQ, add the browser first-run notice for testers, fix the manifest wording. Both gates
-   returned NOT READY on the first pass and the findings are fixed; it re-enters the gates from
-   scratch per the restart rule.
-2. **Limit Units + the CSV unit bug** — the oldest open functional defect left.
-3. **Device-to-device encrypted-file sharing** (`outputs/SHARING_DEVELOPER_BRIEF_v3.md`). This is
-   what replaced sync. Gets the full Quality Chain.
-4. **Fix the Pro copy that promises "real-time shared access automatically"** — it was written when
-   sync was still the plan and is now a promise the product will not keep. Do this BEFORE Pro is
-   sold, not after.
-5. **"Save to this phone" on export**, then the **MedlinePlus per-medication link**, then the
-   **Pro-tier features**, then the **in-app bug logger**, then **drawer keyboard focus**.
-6. **Before the App Store:** a privacy-policy URL, and one oncology-nurse read of `sym-severe` and
-   `sym-medical-question` (the two pages that route a frightened person to their care team).
+1. **Phase 4 of `HARDCODED_MEDS_PLAN.md` — the editor exposes the five properties.**
+   *Checked 2026-09-13.* Design in `outputs/PHASE-4-DESIGN.md`; the argument for its urgency is in
+   `outputs/ENHANCER-PASS-v79.md`. **The app draws a daily-total card that no screen can create:**
+   `homeCard` is written only by `LEGACY_MED_RULES`, so a new customer who sets up paracetamol with
+   a 3,000 mg limit gets the ceiling warning and never the running total. Phases 1-3 took the fence
+   down; this is what opens the gate. First step is S — derive `homeCard` from the limit unit the
+   editor already collects.
 
-**Waiting on Aaron, not blocking anything:** the CSV/PDF share-sheet and reminder re-checks on his
-own Galaxy S25 Ultra, and the two open decisions — dropping the Male/Female onboarding question, and
-whether to do redeem codes.
+2. **The visual redesign.** *Proposed 2026-09-13, awaiting Aaron's direction.* Working files in
+   `outputs/design-v80/`. The finding is structural: the category leader's home screen is a timeline
+   of what is due when, and this app's is a stack of data-entry forms. Nothing is wired in.
+
+3. **Limit Units.** *Checked 2026-09-13 — still open, and narrower than it was written.* The unit
+   list is exactly three: `Total milligrams (mg)`, `Number of pills / doses`, `Number of
+   applications`. mcg, mL, puffs and drops are not offered, and the app's own help text already
+   promises them ("The list is currently only those three. More units are planned"). A liquid
+   medication's cap lives in `volumeCeilingMl` and is reachable from no unit in that list.
+
+4. **Device-to-device encrypted file sharing** (`outputs/SHARING_DEVELOPER_BRIEF_v3.md`). Full
+   Quality Chain. *Not rechecked 2026-09-13 — treat as unknown until it is.*
+
+5. **Before the App Store:** a privacy-policy URL (*checked 2026-09-13: no privacy-policy URL
+   appears anywhere in `index.html`*), and one oncology-nurse read of `sym-severe` and
+   `sym-medical-question`, the two help pages that route a frightened person to their care team.
+
+**Closed since the 2026-08-13 box, all verified against the shipped file on 2026-09-13:**
+
+- ~~app-v57 built but not pushed~~ — shipped; the app is twenty-two releases past it.
+- ~~The MedlinePlus per-medication link~~ — shipped in **app-v74**, and **app-v75** baked in
+  MedlinePlus's own sentence with a real citation. 31 references in the file.
+- ~~Fix the Pro copy promising "real-time shared access automatically"~~ — the string does not appear
+  in the file at all.
+- ~~"Save to this phone" on export~~ — the string does not appear either; if this is still wanted it
+  needs re-specifying rather than re-queuing, because nothing by that name was ever built.
 
 ## Next up, in order (SUPERSEDED — written 2026-08-09, app-v52; item 2 is cancelled work)
 
