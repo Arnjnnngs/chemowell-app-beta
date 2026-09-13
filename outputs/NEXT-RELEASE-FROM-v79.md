@@ -45,7 +45,33 @@ what the last leak looked like.
 One line: `Object.getOwnPropertySymbols`. Inert today by language semantics rather than by luck,
 which is a better reason than the `__proto__` case had.
 
-## 5. `run-all-tests.sh` is red for two pre-existing reasons
+## 5. THE CI GATE ON `main` HAS BEEN RED SINCE BEFORE THIS RELEASE, AND IT IS THE IMPORTANT ONE
+
+`.github/workflows/verify-live.yml` runs `release_check.sh` against whatever is on `main`, from a
+machine that can actually reach the live site. It exists because this sandbox has no outbound
+network, so "verified live" was otherwise resting on Aaron opening the app on his phone. **It has
+failed on every recent push, including the one before this release**, so nobody could tell my
+release's result from the standing red.
+
+Two causes, both mechanical, neither anything to do with app-v79:
+
+1. **No browser on the runner.** `release_check.sh` runs `test/v76-empty-window-render.mjs`, which
+   is a Playwright suite. The workflow installs Node and nothing else, so the suite fails at import
+   and the gate refuses the commit. It passes locally because this sandbox has Chromium
+   pre-installed. **Fix:** add a chromium install step to the workflow.
+2. **`actions/checkout@v4` is shallow**, so `PUBLISHED.json`'s recorded SHA does not exist in the
+   runner's clone and the gate falls back to `origin/main` with a warning. **Fix:** `fetch-depth: 0`.
+
+**This is exactly the condition item 6 below describes, on the gate that matters most**: a check
+that has been red long enough that its redness carries no information. The app-v40 failure it was
+built to catch — a release pushed with `index.html` changed and the service-worker cache not — would
+be invisible today.
+
+**It is its own release, not a hotfix.** `.github/workflows/` is a Rule 5 path, so it gets the
+Auditor and PM like any other code change. Doing it that way is the point: the gate that enforces
+the chain should not itself be changed outside the chain.
+
+## 6. `run-all-tests.sh` is red for two pre-existing reasons
 
 `audit-v55` (three Help-screen assertions) and `audit-v55b` (cannot start — it reads `/tmp/topics.js`,
 which no longer exists). Neither gates the release, and both have been red long enough that the
