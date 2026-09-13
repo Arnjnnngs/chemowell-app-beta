@@ -71,6 +71,19 @@ export const GUARDS = [
   // Needles, syringes, catheters and insertion ARE here -- they name how a drug gets in, not where it
   // works, and they are what gives away the lidocaine sentence that got through the first draft.
   { name: 'a dosage form or route', re: /\b(pills?|tablets?|capsules?|caplets?|troches?|lozenges?|liquids?|syrups?|elixirs?|powders?|sachets?|patches|patch|creams?|ointments?|gels?|lotions?|rinses?|mouthwash|gargle|suppositor(?:y|ies)|enemas?|sprays?|sprayed|inhalers?|inhaled|nebuli[sz](?:ed|er)|injections?|injected|inject|shots?|infusions?|infused|drips?|intravenous(?:ly)?|iv|subcutaneous(?:ly)?|intramuscular(?:ly)?|sublingual(?:ly)?|transdermal|intranasal|swallow(?:ed)?|chew(?:able)?|topical(?:ly)?|orally|by mouth|per os|p\.?o\.?|rub|rubs|rubbed|applied|apply|smear|dab|rectally|vaginally|buccal(?:ly)?|implants?|pessar(?:y|ies)|eye drops?|ear drops?|nose drops?|needles?|syringes?|inserted|insertion|catheters?|on the skin|onto the skin|into the skin|under the skin|under the tongue|under your tongue|into a vein|through a vein|into a muscle|in a drip|through a drip)\b/i },
+  // IT MUST ACTUALLY SAY WHAT THE MEDICATION IS FOR. This one is a REQUIREMENT, not a ban: the
+  // sentence has to match, or it is rejected. Every other guard here asks "is there something bad in
+  // this sentence?", and MedlinePlus's real answer for dexamethasone got through all of them:
+  //   "Dexamethasone, a corticosteroid, is similar to a natural hormone produced by your adrenal
+  //    glands."
+  // Nothing in it is unsafe. It is simply not an answer to the question -- it says what the drug IS,
+  // and the card above it promises what the drug is FOR. A caregiver reading that line learns
+  // nothing and is quietly told the app has no better answer, when the app's own hand-written line
+  // ("Reduces swelling and helps with nausea") is right there and would have been used if this had
+  // been rejected. Every gate on this project asks whether a sentence is harmful; none asked whether
+  // it was ON TOPIC.
+  { name: 'not actually a description of what it is for', require: true,
+    re: /\b(?:used\s+(?:to|for|in|as|on|alone|with|along)|prevents|treats|relieves|eases|settles|reduces)\b/i },
   // NO INSTRUCTION TO THE READER. A description says what a medication is for; the moment it says
   // what to do it is advice, and this app does not give advice.
   { name: 'an instruction to the reader', re: /\b(you should|do not|don't|never take|always take|call your doctor|tell your doctor|ask your doctor|stop taking|keep taking)\b/i }
@@ -91,7 +104,7 @@ export function guardFailure(text) {
   if (/[a-z,)\]]\s+[A-Z][a-z]+\s+(?:is|are|was|were|can|may|also)\b/.test(t)) {
     return 'a run-on from a bulleted page';
   }
-  for (const g of GUARDS) if (g.re.test(t)) return g.name;
+  for (const g of GUARDS) if (g.require ? !g.re.test(t) : g.re.test(t)) return g.name;
   return null;
 }
 

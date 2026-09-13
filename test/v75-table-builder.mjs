@@ -47,6 +47,8 @@ console.log('\n2. EVERY GUARD FIRES ON PROSE OF THE KIND MEDLINEPLUS ACTUALLY WR
     ['a schedule or a dose unit',                 'Used to prevent nausea, taken daily.'],
     ['a dosage form or route',                    'Used to numb an area of skin before a needle is inserted.'],
     ['an instruction to the reader',              'Used to treat heartburn; do not take it with other acid reducers.'],
+    ['not actually a description of what it is for',
+                                                  'Dexamethasone, a corticosteroid, is similar to a natural hormone produced by your adrenal glands.'],
     ['a run-on from a bulleted page',             'Used to treat allergy symptoms: sneezing runny nose itching of the throat Diphenhydramine is also used for sleeplessness.'],
     ['longer than ' + MAX_LEN + ' characters',    'Used to treat ' + 'a very long list of conditions '.repeat(30)]
   ];
@@ -56,7 +58,7 @@ console.log('\n2. EVERY GUARD FIRES ON PROSE OF THE KIND MEDLINEPLUS ACTUALLY WR
   }
   t('and lets a good sentence through', guardFailure('Used to prevent nausea and vomiting.') === null,
     String(guardFailure('Used to prevent nausea and vomiting.')));
-  t('every guard in the list was exercised above', GUARDS.length === 6, GUARDS.length + ' guards');
+  t('every guard in the list was exercised above', GUARDS.length === 7, GUARDS.length + ' guards');
 }
 
 console.log('\n3. A REJECTED SENTENCE IS DROPPED, NEVER TRIMMED TO FIT');
@@ -177,6 +179,32 @@ console.log('\n9. A BULLETED ANSWER BECOMES PROSE, NOT A RUN-ON  (app-v75)');
   const glued = 'Used to treat certain viral infections including: herpes labialis (cold sores) varicella infections including shingles genital herpes It is in a class of antivirals.';
   t('FALSIFIED: with the separators removed, the run-on guard rejects it',
     guardFailure(glued) === 'a run-on from a bulleted page', String(guardFailure(glued)));
+}
+
+console.log('\n11. ON TOPIC, NOT JUST SAFE  (app-v75)');
+{
+  // The one guard here that is a REQUIREMENT rather than a ban. Everything else asks "is there
+  // something bad in this sentence?"; this asks "is it an answer to the question the card asks?".
+  const dex = 'Dexamethasone, a corticosteroid, is similar to a natural hormone produced by your adrenal glands.';
+  t('a sentence saying what the drug IS is rejected, however safe it is',
+    guardFailure(dex) === 'not actually a description of what it is for', String(guardFailure(dex)));
+  const { table } = buildTable([{ name: 'Dexamethasone', generic: 'Dexamethasone', url: U('a682792'), whyPrescribed: dex }]);
+  t('so it never reaches the table, and the app keeps its own line', !table['dexamethasone'], JSON.stringify(table));
+
+  // FALSIFICATION, BOTH DIRECTIONS. A requirement guard fails silently in the other direction from a
+  // ban: if the pattern were wrong it would reject everything, and an empty table has shipped on
+  // this project before and looked exactly like "MedlinePlus knows none of these drugs".
+  const real = [
+    'Used to prevent nausea and vomiting caused by cancer chemotherapy.',
+    'Used in combination with other medications to treat a certain type of lung cancer.',
+    'A synthetic sugar used to treat constipation.',
+    'Prescription ibuprofen is used to relieve pain, tenderness, swelling, and stiffness.',
+    'Used alone or in combination with other medications to treat lymphoma.',
+    'Used on a short-term basis to treat constipation.',
+    'Used to reduce the risk of inflammation of the bladder.'
+  ];
+  for (const r of real) t('FALSIFIED: a real on-topic answer still passes  |  ' + r.slice(0, 44),
+    guardFailure(r) === null, String(guardFailure(r)));
 }
 
 console.log('\n10. LENGTH IS A SANITY CEILING NOW, NOT A CARD WIDTH  (app-v75)');
