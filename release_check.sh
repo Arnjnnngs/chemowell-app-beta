@@ -635,6 +635,22 @@ fi
 # keyed to a medication id (a ratchet). This runs it HERE, because a suite that runs when somebody
 # remembers is the same as no suite. It BLOCKS the release, unlike the session hook, which only
 # reports: by the time a release is being cut there is no excuse left.
+# THE RELEASE'S OWN HEADLINE EVIDENCE MUST BE IN THE GATE. app-v76's proof that phase 1 changes no
+# behaviour lives in test/v76-properties-equivalence.mjs, and the gate did not run it -- so the one
+# suite the release rests on was optional. Added after the phase 1 audit pointed it out.
+# The render test is here for the same reason: it is the only check that catches the blank-screen
+# crash, and the unit suite never calls status(), so without it the fix for that finding had no test.
+for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs; do
+  [ -f "$SUITE" ] || continue
+  if node "$SUITE" >"/tmp/rc-$(basename "$SUITE").log" 2>&1; then
+    echo "ℹ️  $(basename "$SUITE"): green."
+  else
+    echo "❌ RELEASE CHECK FAILED: $SUITE"
+    sed -n '/FAIL/p' "/tmp/rc-$(basename "$SUITE").log" | head -10 | sed 's/^/   /'
+    FAIL=1
+  fi
+done
+
 if [ -f "test/v75-no-other-patient.mjs" ]; then
   if node test/v75-no-other-patient.mjs >/tmp/rc-no-other-patient.log 2>&1; then
     echo "ℹ️  No-other-patient check: clean."

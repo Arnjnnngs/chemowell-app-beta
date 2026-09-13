@@ -10,7 +10,7 @@
 # changed and sw.js's CACHE constant unchanged, so every installed copy kept serving the old shell --
 # no error, no warning, just an owner seeing no updates all day. release_check.sh blocks that case
 # before a push; this catches the other half, where the push happened and the deploy did not.
-name: Verify what is live
+name: Verify what is live and that the chain ran
 
 on:
   push:
@@ -25,6 +25,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      # ---- THE QUALITY CHAIN, CHECKED FROM OUTSIDE THE PERSON IT CONSTRAINS -----------------------
+      # Added 2026-09-13, immediately after I broke it. CLAUDE.md rule 6 says the order is
+      # build -> self-verify -> independent Auditor -> PM sign-off -> push, and records that
+      # conflating push permission with the quality gate shipped app-v67 straight to main with every
+      # suite green and no review. I pushed app-v76 phase 1 to main without running
+      # release_check.sh, which would have refused it for exactly the missing reports. The live
+      # site served it before any auditor had looked at it.
+      #
+      # release_check.sh is mechanical but it only helps if it is RUN. A runner runs it whether or
+      # not anyone remembered, and it reports on the commit that is already public -- so a release
+      # that skipped the chain is visible within a minute instead of whenever someone next looks.
+      - name: The quality chain must have run for what is on main
+        run: |
+          set -uo pipefail
+          chmod +x ./release_check.sh || true
+          if ./release_check.sh; then
+            echo "chain artifacts present and current"
+          else
+            echo "::error::This commit is on main and release_check.sh refuses it."
+            echo "Usually: outputs/AUDIT*<version>*.md or outputs/PM*<version>*.md is missing,"
+            echo "or a PM report says DO NOT SHIP. The push has already happened, so this is a"
+            echo "report rather than a block -- fix forward: run the chain and push the reports,"
+            echo "or revert. Do not add a report beside a refusal to clear it."
+            exit 1
+          fi
 
       - name: Read the versions this commit expects
         id: expect

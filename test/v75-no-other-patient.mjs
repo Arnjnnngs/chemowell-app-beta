@@ -132,7 +132,12 @@ console.log('\n4. THE RATCHET: BEHAVIOUR KEYED TO ONE PERSON\'S PRESCRIPTION');
   // Both can only go down, and both are checked for staleness, so neither can drift quietly.
   const RESOLVERS = ['medWindowsFor', 'medChemoBlockedOn', 'medChemoBlockingDay',
     'medChemoBlockSpanDays', 'medInteractionsFor', 'medHomeCardKind'];
-  const idRe = () => new RegExp("(?:med|entry|m)\\.(?:med)?[Ii]d\\s*===\\s*['\"](" + LEGACY_IDS.join('|') + ")['\"]", 'g');
+  // ANY variable name, and == as well as ===. The first version matched only `med|entry|m`, so
+  // `e.medId === 'tylenol'` and `e.medId === 'imodium'` were invisible to it in both app-v75 and
+  // app-v76 -- which means "outside = 0" at the end of phase 2 would not have meant zero. Found by
+  // the phase 1 audit. Also catches .includes() and a switch case on one of these ids.
+  const idRe = () => new RegExp(
+    "(?:\\w+\\.(?:med)?[Ii]d\\s*===?\\s*|\\.includes\\(\\s*|case\\s+)['\"](" + LEGACY_IDS.join('|') + ")['\"]", 'g');
   let rest = html, inside = 0;
   for (const r of RESOLVERS) {
     const m = html.match(new RegExp('function ' + r + '\\([^)]*\\) \\{[\\s\\S]*?\\n\\}'));
@@ -148,7 +153,12 @@ console.log('\n4. THE RATCHET: BEHAVIOUR KEYED TO ONE PERSON\'S PRESCRIPTION');
   // directions -- which would have let five new references in while claiming three helpers had been
   // removed that never existed. A ratchet pinned to a guess is not a ratchet.
   // Lower these as the phases land. NEVER raise them.
-  const CEILING = { outside: 13, inside: 8, helpers: 6 };
+  // MEASURED WITH THE WIDENED REGEX, AND AGAINST app-v75 TOO so the comparison is honest. The
+  // narrow version reported 17 for v75 and 13 for v76; the real numbers on the same regex are
+  // 20 -> 16 outside, 0 -> 5 inside. Phase 1 moved four scattered branches into named resolvers and
+  // the wider regex then found three more that had always been invisible. Lower these as the phases
+  // land; NEVER raise them.
+  const CEILING = { outside: 16, inside: 5, helpers: 6 };
 
   t('no NEW place in the app knows one patient\'s medication', direct.length <= CEILING.outside,
     direct.length + ' outside the resolvers, ceiling ' + CEILING.outside);

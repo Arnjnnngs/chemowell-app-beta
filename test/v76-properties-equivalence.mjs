@@ -44,29 +44,44 @@ const SRC = [
   grab(/function medWindowsFor\(med, dayTs\) \{[\s\S]*?\n\}/, 'medWindowsFor'),
   grab(/function medChemoBlockedOn\(med, dayTs\) \{[\s\S]*?\n\}/, 'medChemoBlockedOn'),
   grab(/function medChemoBlockingDay\(med, dayTs\) \{[\s\S]*?\n\}/, 'medChemoBlockingDay'),
-  grab(/function medChemoBlockSpanDays\(med\) \{[\s\S]*?\n\}/, 'medChemoBlockSpanDays')
+  grab(/function medChemoBlockSpanDays\(med\) \{[\s\S]*?\n\}/, 'medChemoBlockSpanDays'),
+  grab(/function protonixMorningLogTs\([\s\S]*?\n\}/, 'protonixMorningLogTs'),
+  grab(/function protonixEveningLogTs\([\s\S]*?\n\}/, 'protonixEveningLogTs'),
+  grab(/function morningWindowsFor\([\s\S]*?\n\}/, 'morningWindowsFor'),
+  grab(/function eveningWindowsFor\([\s\S]*?\n\}/, 'eveningWindowsFor')
 ].join('\n');
 
 // Two treatment dates three weeks apart, so offsets repeat and a block can span a boundary.
 const T0 = new Date('2026-03-02T12:00:00').getTime();
 const CHEMO = [T0, T0 + 21 * DAY];
 
-function world() {
+// The dates are baked into each world, so a world with none of them is a SEPARATE world rather
+// than something the test mutates afterwards. The first version cleared the outer array and
+// expected the sandbox to notice -- it could not, because the dates are serialised into the prelude,
+// and the check correctly reported that the fixture had not done what it claimed.
+function world(dates) {
   const prelude = `
-    const CHEMO_DAYS = ${JSON.stringify(CHEMO)};
+    const CHEMO_DAYS = ${JSON.stringify(dates || CHEMO)};
     function chemoDayList() { return CHEMO_DAYS.map(d => dayStart(d)); }
-    function eveningWindowsFor(med, d0) { return med.windows || []; }
-    function morningWindowsFor(med, d0) { return med.windows || []; }
+    // NOT STUBBED. The first version returned med.windows from both, which made a REAL behaviour
+    // change structurally invisible: medWindowsFor briefly applied the Protonix-linked branches,
+    // and two of the three call sites it replaced never had them, so the missed-dose walk's night
+    // window moved from 22:00-24:00 to 21:00-24:00 on a fixture with an evening Protonix dose --
+    // changing which doses count as MISSED. A stub that returns the same thing as the fallback
+    // cannot tell the two apart, which is the one job it had.
     const state = { meds: [], entries: [] };
+    function entriesFor(id) { return state.entries.filter(e => e.medId === id).sort((a, b) => a.ts - b.ts); }
   `;
   // chemoDayList and chemoOffsetFor come out of the file; chemoDayList is replaced by the stub above
   // so the simulation controls the dates. chemoOffsetFor is the real one.
   const body = SRC.replace(/function chemoDayList\(\)[\s\S]*?\n\}/, '');
   return new Function(prelude + '\n' + body +
     '\nreturn { dayStart, chemoOffsetFor, dexWindowsForOffset, zofranBlockedOn, zofranBlockingDay,' +
-    ' medWindowsFor, medChemoBlockedOn, medChemoBlockingDay, medChemoBlockSpanDays };')();
+    ' medWindowsFor, medChemoBlockedOn, medChemoBlockingDay, medChemoBlockSpanDays,' +
+    ' morningWindowsFor, eveningWindowsFor, state };')();
 }
 const W = world();
+const NO_DATES = world([]);   // a device with no treatment date on record: every new user, and anyone who used Clear
 
 console.log('\n1. THE RESOLVERS LOAD AND RUN OUT OF THE SHIPPED FILE');
 t('every function this test needs was found in index.html', true, Object.keys(W).join(', '));
@@ -150,6 +165,55 @@ console.log('\n4. THE PROPERTIES DO WHAT THEY SAY  (the behaviour phase 2 will m
   t('and two days after', W.medChemoBlockedOn(blocked, T0 + 2 * DAY) === true, '');
   t('and lifts on the third', W.medChemoBlockedOn(blocked, T0 + 3 * DAY) === false, '');
   t('and is not in force the day before', W.medChemoBlockedOn(blocked, T0 - DAY) === false, '');
+}
+
+console.log('\n4B. THE CHECKS THE AUDIT FOUND COULD NOT FAIL');
+{
+  // Both of these passed against a mutant. They are the two that matter most, because the branch
+  // they guard is the one behind the blank-screen crash.
+
+  // (a) NO TREATMENT DATE AT ALL. The old fixture used a day ten days after treatment, where
+  // chemoOffsetFor returns 10 -- not null -- so `if (offset === null) return []` was never
+  // exercised, and deleting that line left the suite 24/24 green. That branch is the default state
+  // of every new user and of anyone who used Clear.
+  const noDates = NO_DATES.medWindowsFor({ id: 'x',
+    chemoRelativeWindows: [{ dayOffset: 0, start: 8, end: 12, name: 'M' }],
+    windows: [{ start: 6, end: 7, name: 'Plain' }] }, T0);
+  t('with NO treatment date on record it returns NONE, never its plain windows',
+    Array.isArray(noDates) && noDates.length === 0, JSON.stringify(noDates));
+
+  // (b) UNSORTED INPUT. The old fixture was already in order, so deleting the sort changed nothing
+  // and the check passed against a mutant.
+  const unsorted = W.medWindowsFor({ id: 'x', chemoRelativeWindows: [
+    { dayOffset: 0, start: 18, end: 20, name: 'Evening' },
+    { dayOffset: 0, start: 8, end: 12, name: 'Morning' },
+    { dayOffset: 0, start: 13, end: 15, name: 'Afternoon' }
+  ] }, T0);
+  t('windows given out of order come back sorted',
+    unsorted.map(w => w.start).join(',') === '8,13,18', unsorted.map(w => w.start).join(','));
+}
+
+console.log('\n4C. THE PROTONIX-LINKED BRANCHES BELONG TO status(), NOT TO THE RESOLVER');
+{
+  // medWindowsFor replaced THREE call sites and only one of them -- status() -- ever applied these.
+  // The missed-dose walk and the dose-progress ring used `med.id === 'dexamethasone' ? ... :
+  // med.windows`, full stop. A resolver that applies them silently moves the walk's windows, which
+  // changes which doses count as missed. The real helpers are loaded here, not stubbed, so the two
+  // answers can actually differ.
+  const d0 = W.dayStart(T0);
+  W.state.entries.length = 0;
+  W.state.entries.push({ id: 'e1', medId: 'protonix', ts: d0 + 19 * 3600000 });
+  const linked = { id: 'some-evening-med', eveningLinkedToProtonix: true,
+    windows: [{ start: 22, end: 24, name: 'Night' }] };
+  const viaResolver = W.medWindowsFor(linked, d0);
+  const viaHelper = W.eveningWindowsFor(linked, d0);
+  t('the linked helper really does move the window, so this check has teeth',
+    JSON.stringify(viaHelper) !== JSON.stringify(linked.windows),
+    'helper: ' + JSON.stringify(viaHelper));
+  t('and medWindowsFor does NOT apply it -- it returns the plain windows',
+    JSON.stringify(viaResolver) === JSON.stringify(linked.windows),
+    'resolver: ' + JSON.stringify(viaResolver));
+  W.state.entries.length = 0;
 }
 
 console.log('\n5. BROKEN OR HOSTILE PROPERTY VALUES CANNOT CRASH A RENDER');

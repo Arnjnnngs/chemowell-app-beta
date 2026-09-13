@@ -77,17 +77,25 @@ function normChemoRelativeWindows(raw) {
   if (!Array.isArray(raw)) return undefined;
   const out = raw.map((w, i) => ({
     // dayOffset is relative to the treatment date: 0 = the day itself, -1 = the day before.
-    dayOffset: Math.trunc(Number(w && w.dayOffset) || 0),
-    start: Math.max(0, Math.min(23.75, Number(w && w.start) || 0)),
-    end: Math.max(1, Math.min(24, Number(w && w.end) || 24)),
+    dayOffset: Number.isFinite(Number(w && w.dayOffset)) ? Math.trunc(Number(w.dayOffset)) : NaN,
+    start: Number.isFinite(Number(w && w.start)) ? Math.max(0, Math.min(23.75, Number(w.start))) : NaN,
+    end: Number.isFinite(Number(w && w.end)) ? Math.max(1, Math.min(24, Number(w.end))) : NaN,
     name: String((w && w.name) || ('Window ' + (i + 1)))
-  })).filter(w => w.end > w.start);
+  // NaN rather than a default. `Number(x) || 0` turns junk into a real number -- an array
+  // [[1,2,3]] became a valid {dayOffset:0, start:0, end:24}, manufacturing an every-day window out
+  // of nonsense. A value that is not a number is not a window.
+  })).filter(w => w && Number.isFinite(w.dayOffset) && Number.isFinite(w.start)
+    && Number.isFinite(w.end) && w.end > w.start);
   return out.length ? out : undefined;
 }
 function normChemoBlock(raw) {
   if (!raw || typeof raw !== 'object') return undefined;
-  const from = Math.trunc(Number(raw.fromDayOffset) || 0);
-  const to = Math.trunc(Number(raw.toDayOffset) || 0);
+  if (!Number.isFinite(Number(raw.fromDayOffset)) || !Number.isFinite(Number(raw.toDayOffset))) return undefined;
+  const from = Math.trunc(Number(raw.fromDayOffset));
+  const to = Math.trunc(Number(raw.toDayOffset));
+  // A span of ten million days is not a rule anyone typed; it blocks the medication forever and
+  // reads on screen as an ordinary restriction. A treatment cycle is weeks.
+  if (Math.abs(from) > 400 || Math.abs(to) > 400) return undefined;
   // An inverted span would block nothing and read as if it blocked something, which is the worse of
   // the two failures: the caregiver sees a rule on screen that the app is not applying.
   if (to < from) return undefined;
@@ -105,7 +113,8 @@ function normInteractions(raw) {
     if (!x || typeof x !== 'object') return null;
     const withMedId = safeMedicationId(x.withMedId, '');
     if (!withMedId || withMedId === 'medication') return null;
-    const minGapH = Math.max(0, Number(x.minGapH) || 0);
+    if (!Number.isFinite(Number(x.minGapH))) return null;
+    const minGapH = Math.max(0, Math.min(72, Number(x.minGapH)));
     if (!minGapH) return null;
     const title = String(x.title || '').trim();
     const body = String(x.body || '').trim();
@@ -127,19 +136,41 @@ if src.count(anchor) != 1:
     die('normalizeMedication is not where it was')
 src = src.replace(anchor, NORMALISE.strip() + "\n" + anchor, 1)
 
-# and actually run them on the medication
-field_anchor = """    groupedAfternoon: !!original.groupedAfternoon,"""
-if src.count(field_anchor) != 1:
-    die('the medication field block is not where it was')
-src = src.replace(field_anchor, field_anchor + """
-    // app-v76 phase 1. `...original` would carry these through untouched; normalising them means a
-    // malformed one cannot reach a render, and a blank Meds screen is the one failure that takes
-    // edit and delete with it.
-    ...(normChemoRelativeWindows(original.chemoRelativeWindows) ? { chemoRelativeWindows: normChemoRelativeWindows(original.chemoRelativeWindows) } : {}),
-    ...(normChemoBlock(original.chemoBlock) ? { chemoBlock: normChemoBlock(original.chemoBlock) } : {}),
-    ...(normLinkedTo(original.linkedTo) ? { linkedTo: normLinkedTo(original.linkedTo) } : {}),
-    ...(normInteractions(original.interactions) ? { interactions: normInteractions(original.interactions) } : {}),
-    ...(normHomeCard(original.homeCard) ? { homeCard: normHomeCard(original.homeCard) } : {}),""", 1)
+# and actually run them on the medication.
+#
+# WITH `delete`, NOT A CONDITIONAL SPREAD. The first version spread the normalised values AFTER
+# `...original`, which reads as though it replaces them -- and does not. A normaliser that REJECTS a
+# value returns undefined, the spread becomes `...{}`, nothing is added, and the raw value copied by
+# `...original` a few lines earlier is still sitting there. So every guard written in those
+# normalisers was bypassed on exactly the inputs they were written to reject:
+#   * an inverted window {start:10, end:5} survived and reached medWindowsFor
+#   * an interaction with no `body` survived, and rendered a warning modal with `body: undefined` --
+#     under a comment in the normaliser reading "a warning with nothing to say is worse than none"
+# The guard was written, then bypassed by the line above it. Found by the phase 1 audit.
+#
+# The end of this same function already uses `if (x) medication.y = x; else delete medication.y` for
+# awayPeriods, doses and windows. This follows it.
+NORM_CALL = """  // app-v76 phase 1. Normalised ONCE each, then either set or DELETED -- a rejected value must not
+  // survive via the `...original` spread above. Number.isFinite throughout: `Number(x) || 0` lets
+  // Infinity through, and `minGapH: Infinity` makes an interaction match every dose of the paired
+  // medication forever.
+  const v76 = {
+    chemoRelativeWindows: normChemoRelativeWindows(original.chemoRelativeWindows),
+    chemoBlock: normChemoBlock(original.chemoBlock),
+    linkedTo: normLinkedTo(original.linkedTo),
+    interactions: normInteractions(original.interactions),
+    homeCard: normHomeCard(original.homeCard)
+  };
+  for (const key of Object.keys(v76)) {
+    if (v76[key] === undefined) delete medication[key]; else medication[key] = v76[key];
+  }
+  return medication;"""
+if src.count("  return medication;\n}") < 1:
+    die('normalizeMedication does not end the way it did')
+# the LAST `return medication;` in normalizeMedication
+nm_start = src.index("function normalizeMedication(raw, index) {")
+nm_ret = src.index("  return medication;\n}", nm_start)
+src = src[:nm_ret] + NORM_CALL + src[nm_ret + len("  return medication;"):]
 
 # ---- 2. the resolvers ---------------------------------------------------------------------------
 RESOLVERS = """
@@ -172,8 +203,16 @@ function medWindowsFor(med, dayTs) {
       .sort((a, b) => a.start - b.start);
   }
   if (med && med.id === 'dexamethasone') return dexWindowsForOffset(chemoOffsetFor(d0));
-  if (med && med.eveningLinkedToProtonix) return eveningWindowsFor(med, d0);
-  if (med && med.morningLinkedToProtonix) return morningWindowsFor(med, d0);
+  // THE PROTONIX-LINKED BRANCHES ARE DELIBERATELY NOT HERE, and putting them here was a real
+  // behaviour change hiding inside a patch whose entire claim is that it changes nothing.
+  // status() had them; the missed-dose walk and the dose-progress ring did NOT -- their line was
+  // `med.id === 'dexamethasone' ? ... : med.windows` with no Protonix branch at all. Folding all
+  // three call sites into one resolver that applies them silently moved the walk's windows: on a
+  // fixture with an evening Protonix dose at 19:00 the night window went from 22:00-24:00 to
+  // 21:00-24:00, which changes which doses count as MISSED.
+  // Not reachable in this app today -- nothing here has ever written those flags -- but reachable
+  // the moment this patch is ported to the web apps, where iron, buspirone and paroxetine carry
+  // them. status() keeps the branches at its own call site, where they have always been.
   return (med && med.windows) || [];
 }
 
@@ -218,7 +257,16 @@ function medInteractionsFor(entry) {
   const med = state.meds.find(m => m.id === entry.medId);
   if (med && Array.isArray(med.interactions) && med.interactions.length) {
     for (const rule of med.interactions) {
-      const gapMs = rule.minGapH * 3600000;
+      // EVERY FIELD, EVERY TIME. This resolver trusted normalizeMedication and the sibling resolver
+      // did not, which is the whole finding: `interactions: [null]` threw on `rule.minGapH`, and
+      // because afterLog runs inside a setTimeout the dose still SAVED -- so the caregiver lost the
+      // red acetaminophen-ceiling warning on that log and every later one, with nothing on screen
+      // to say anything had gone wrong. Number.isFinite, not `|| 0`: Infinity survives `|| 0` and
+      // makes `Math.abs(...) <= Infinity` match every dose of the paired medication forever.
+      if (!rule || typeof rule !== 'object') continue;
+      if (!Number.isFinite(Number(rule.minGapH)) || Number(rule.minGapH) <= 0) continue;
+      if (!rule.title || !rule.body) continue;
+      const gapMs = Number(rule.minGapH) * 3600000;
       const near = state.entries.find(e => e.medId === rule.withMedId && e.id !== entry.id
         && Math.abs(e.ts - entry.ts) <= gapMs);
       if (near) out.push({ tone: 'amber', title: rule.title, body: rule.body });
@@ -228,15 +276,13 @@ function medInteractionsFor(entry) {
   return out;
 }
 
-// Which daily-total card this medication gets on Home. Wired in phase 2; here so stored data and the
-// resolver land together and phase 2 is a deletion rather than a new feature.
-function medHomeCardKind(med) {
-  if (med && med.homeCard) return med.homeCard.kind;
-  if (med && med.id === 'tylenol') return 'mg';
-  if (med && med.id === 'tylenol-liquid') return 'ml';
-  if (med && (med.id === 'imodium' || med.id === 'lidocaine')) return 'pills';
-  return null;
-}
+// medHomeCardKind IS DELIBERATELY NOT HERE. The plan lists homeCard as a phase 1 property and an
+// earlier draft added a resolver for it -- which NOTHING CALLED, while the branches it mirrored
+// stayed exactly where they were. That is four NET-NEW references to one patient's medication ids,
+// counted by the ratchet as "inside the resolvers" as though they had been migrated, when nothing
+// had. Half of "the migration scaffold" was a function with no callers. The property is still
+// normalised and stored, so data written now is ready; the resolver lands in phase 2 with the call
+// sites that use it. Found by the phase 1 audit.
 """
 res_anchor = "function setToast(msg) {"
 if src.count(res_anchor) != 1:
@@ -254,8 +300,22 @@ CALLSITES = [
     if (zb !== null) return { locked: true, chemoBlock: true, availableAt: zb + medChemoBlockSpanDays(med) * 86400000 + 8 * 3600000 };""",
      'the block-until calculation'),
     # tomorrow's windows at the end of status()
-    ("""  const tomorrowWindows = med.id === 'dexamethasone' ? dexWindowsForOffset(chemoOffsetFor(d0 + 86400000)) : windows;""",
-     """  const tomorrowWindows = medWindowsFor(med, d0 + 86400000).length ? medWindowsFor(med, d0 + 86400000) : windows;""",
+    ("""  const tomorrowWindows = med.id === 'dexamethasone' ? dexWindowsForOffset(chemoOffsetFor(d0 + 86400000)) : windows;
+  const first = tomorrowWindows[0];
+  return { locked: true, availableAt: d0 + 86400000 + first.start * 3600000, windowName: first.name };""",
+     """  const tomorrowWindows = medWindowsFor(med, d0 + 86400000).length ? medWindowsFor(med, d0 + 86400000) : windows;
+  const first = tomorrowWindows[0];
+  // AN EMPTY WINDOW LIST MUST NOT THROW. In app-v75 this could not happen: normalizeMedication
+  // guarantees a 'win' medication at least one window, so med.windows was never empty and
+  // dexWindowsForOffset never returns []. medWindowsFor CAN return [] -- a medication with
+  // chemoRelativeWindows on a device with no treatment date on record, which is the default state
+  // of every new user and of anyone who used Clear. `first.start` then threw inside status(), which
+  // is called unguarded from the Home medication cards and from Meds, and Meds is the only place
+  // edit and delete live. A blank screen with no way back. Found by the phase 1 audit.
+  // Locked with no availableAt is an established shape here -- the daily-ceiling branch returns it
+  // and every consumer already guards `st.availableAt` before formatting it.
+  if (!first) return { locked: true, noWindowToday: true };
+  return { locked: true, availableAt: d0 + 86400000 + first.start * 3600000, windowName: first.name };""",
      "tomorrow's windows"),
 ]
 for old, new, what in CALLSITES:
@@ -277,7 +337,13 @@ TERNARY = ("  const windows = med.id === 'dexamethasone' ? dexWindowsForOffset(c
            " ? morningWindowsFor(med, d0) : med.windows;")
 if src.count(TERNARY) != 1:
     die('the status() window ternary is not where it was -- nothing written')
-src = src.replace(TERNARY, "  const windows = medWindowsFor(med, d0);", 1)
+# status() keeps the Protonix-linked branches AT ITS OWN CALL SITE -- see medWindowsFor's comment.
+# The resolver deliberately does not apply them, because two of the three call sites it replaced
+# never had them.
+src = src.replace(TERNARY,
+    "  const windows = (med.eveningLinkedToProtonix || med.morningLinkedToProtonix) && med.id !== 'dexamethasone'\n"
+    "    ? (med.eveningLinkedToProtonix ? eveningWindowsFor(med, d0) : morningWindowsFor(med, d0))\n"
+    "    : medWindowsFor(med, d0);", 1)
 
 # the two missed-dose walks
 WALKS = ("""    const windows = med.id === 'dexamethasone' ? dexWindowsForOffset(chemoOffsetFor(d0)) : med.windows;""",
@@ -297,8 +363,14 @@ if src.count(old_after) != 1:
 src = src.replace(old_after, """  // app-v76 phase 1: property-driven interaction rules, if this medication carries any. Falls
   // through to the legacy iron/protonix branch below when it does not, which is every medication
   // today. Phase 2 deletes that branch.
+  // NO EARLY RETURN. The first version returned here, which put a spacing reminder in front of the
+  // red "Acetaminophen ceiling exceeded" warning and dropped it entirely -- reproduced at 6,000mg
+  // against a 3,000mg limit. In app-v75 the collision was impossible, because the legacy branch only
+  // returned for iron/protonix, which is disjoint from the tylenol block; making the rule generic
+  // made it reachable. The ceiling warning is the one that matters, so it is allowed to run and to
+  // overwrite. Found by the phase 1 audit.
   const declared = medInteractionsFor(entry);
-  if (declared.length) { setState({ warn: declared[0] }); return; }
+  if (declared.length) setState({ warn: declared[0] });
   if (entry.medId === 'iron' || entry.medId === 'protonix') {""", 1)
 
 # ---- 4. version ---------------------------------------------------------------------------------
