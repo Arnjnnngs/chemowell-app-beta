@@ -46,8 +46,15 @@ vm.runInContext([
   fn('isOtherTreatmentType'), fn('isPausedOn'), fn('treatmentOnlyBlocks'), fn('treatmentExcludedNow'),
   fn('medScheduledOn'),
   fn('inpatientEntries'), fn('inpatientPeriods'),
+  // app-v76 phase 1: missedDosesFor no longer inlines the dexamethasone ternary -- it calls
+  // medWindowsFor. This harness lifts functions out of index.html and runs them in a vm, so a
+  // refactor that adds a helper breaks it with a bare ReferenceError and nothing about the app being
+  // wrong. Both v67 suites failed exactly that way. Keep this list in step with what the functions
+  // above actually call.
+  fn('medWindowsFor'), fn('eveningWindowsFor'), fn('morningWindowsFor'),
+  fn('protonixMorningLogTs'), fn('protonixEveningLogTs'),
   fn('isInpatientDay'), fn('inpatientCoversMoment'), fn('missedDosesFor'),
-  'globalThis.__api = { missedDosesFor, inpatientCoversMoment, dayStart };'
+  'globalThis.__api = { medWindowsFor, missedDosesFor, inpatientCoversMoment, dayStart };'
 ].join('\n'), ctx);
 const A = ctx.__api;
 
