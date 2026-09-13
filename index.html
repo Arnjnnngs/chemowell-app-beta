@@ -1703,6 +1703,27 @@ function rollingCeilingAvailableAt(med) {
 }
 // Meds sharing a ceilingGroup (e.g. Tylenol pills + Tylenol Liquid) count against ONE combined
 // daily mg ceiling, since it's the same acetaminophen safety limit regardless of dosage form.
+// What to call a total that belongs to several medications at once. Two surfaces show one --
+// the red ceiling warning and the Home daily-total card -- and until now each had its own copy of
+// the join, so a fix landed on one and not the other. The audit asked for both; one arrived.
+//
+// CAPPED, because it is unbounded otherwise: measured on a six-member group the join produced a
+// 114-character banner title, repeated verbatim in the body, with the number and the instruction
+// buried behind a list.
+//
+// AND PLACEHOLDER-PROOF, because normalizeMedication writes 'Untitled medication' for a missing
+// name -- so `.filter(Boolean)` can never fire, and the word reaches a safety warning. Falling back
+// to the ceiling owner is not enough either: the owner can be the unnamed one. The first member
+// that has a real name is the fallback, and only if there is none does the owner's name stand.
+const UNNAMED_MED = 'Untitled medication';
+function sharedTotalLabel(med) {
+  const names = med ? ceilingGroupMedIds(med)
+    .map(id => (state.meds.find(m => m.id === id) || {}).name)
+    .filter(n => n && n !== UNNAMED_MED) : [];
+  if (names.length > 2) return names.slice(0, 2).join(' + ') + ' and ' + (names.length - 2) + ' more';
+  if (names.length > 1) return names.join(' + ');
+  return names[0] || (med || {}).name || UNNAMED_MED;
+}
 function ceilingGroupMedIds(med) {
   if (!med) return [];
   if (!med.ceilingGroup) return [med.id];
@@ -2330,20 +2351,7 @@ function afterLog(entry, warnBatch) {
   // limit exceeded ... today's Tylenol total is 3,500 mg", naming a medication the caregiver did not
   // tap, with a number bigger than anything they logged under that name. At 2am that reads as
   // "I mis-tapped" or, worse, "the pills are over but the liquid is fine".
-  const ceilingNames = ceilingOwner ? ceilingGroupMedIds(ceilingOwner)
-    .map(id => (state.meds.find(m => m.id === id) || {}).name).filter(Boolean) : [];
-  // CAPPED AT TWO, AND NEVER THE PLACEHOLDER. Measured on a six-member group, the join produced a
-  // 114-character banner title, repeated verbatim in the body -- the number and the instruction
-  // buried behind a list, and the one word that catches the eye is "Untitled". `.filter(Boolean)`
-  // cannot help: normalizeMedication writes 'Untitled medication' for a missing name, so no member
-  // is ever falsy and the placeholder reaches a safety warning. Where any member is unnamed the
-  // label falls back to the medication that owns the limit, which is at least a real name.
-  const PLACEHOLDER = 'Untitled medication';
-  const limitLabel = (ceilingNames.length > 1 && !ceilingNames.includes(PLACEHOLDER))
-    ? (ceilingNames.length <= 2
-        ? ceilingNames.join(' + ')
-        : ceilingNames.slice(0, 2).join(' + ') + ' and ' + (ceilingNames.length - 2) + ' more')
-    : (ceilingOwner || {}).name;
+  const limitLabel = sharedTotalLabel(ceilingOwner);
   if (configuredLimit && configuredLimit.used > configuredLimit.max) {
     // Named for the medication that OWNS the limit, not the one just logged: "Tylenol daily limit
     // exceeded" after a dose of Tylenol Liquid is the true statement, because they share one total.
@@ -5263,10 +5271,19 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     // "1 doses". The unit is a plural word and the count can be one.
     const hcUnitFor = (n) => {
       if (n !== 1) return hcUnit;
-      // patches -> patch, boxes -> box, sprays -> spray, doses -> dose.
+      // WHERE THE RULE IS NOT SAFE THE UNIT IS LEFT EXACTLY AS TYPED. `ceilingUnit` is free text,
+      // so "2 feet" where "1 foot" was meant is a wording slip and "1 fee" is a different word.
+      // The endings below were measured across 42 real units by the round-3 audit.
+      // -us, -is, -as: bolus, dosis, gas -- singular nouns that happen to end in s.
+      if (/(us|is|as)$/i.test(hcUnit)) return hcUnit;
+      // lens, and anything else short enough that dropping a letter leaves a stump.
+      if (hcUnit.length <= 4) return hcUnit;
+      // suppositories -> suppository. The other common English plural.
+      if (/[^aeiou]ies$/i.test(hcUnit)) return hcUnit.replace(/ies$/i, 'y');
+      // patches -> patch, boxes -> box, glasses -> glass.
       if (/(ch|sh|ss|x|z)es$/i.test(hcUnit)) return hcUnit.replace(/es$/i, '');
-      // Not `ss` (a unit ending in double-s is not a plural), and not a bare one-letter word.
-      if (/[^s]s$/i.test(hcUnit) && hcUnit.length > 2) return hcUnit.replace(/s$/i, '');
+      // Not `ss` -- a unit ending in double-s is not a plural.
+      if (/[^s]s$/i.test(hcUnit)) return hcUnit.replace(/s$/i, '');
       return hcUnit;
     };
     const hcPct = hcMax > 0 ? Math.min(100, hcUsed / hcMax * 100) : 0;
@@ -5285,7 +5302,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
             // same false impression in the other direction -- found by looking at the rendered
             // screen, which is the thing no suite had been doing.
             (kind === 'mg' && hcMed.ceilingGroup && ceilingGroupMedIds(hcMed).length > 1
-              ? ceilingGroupMedIds(hcMed).map(gid => (state.meds.find(m => m.id === gid) || {}).name).filter(Boolean).join(' + ')
+              ? sharedTotalLabel(hcMed)
               : hcMed.name) + ' · today'),
           // NO CEILING IS A REAL STATE, and it must not read as a limit of zero. A medication with
           // no configured daily limit still gets its running total; it just has nothing to be

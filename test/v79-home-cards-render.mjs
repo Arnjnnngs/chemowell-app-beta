@@ -93,7 +93,17 @@ const seeded = await page.evaluate(() => {
     // could-not-fail defect round 1 was blocked for, in the release fixing it.
     { id: 'patch', name: 'Patch', type: 'gap', gapH: 8, homeCard: { kind: 'pills' },
       ceiling: true, ceilingMax: 1, ceilingUnit: 'patches',
-      doses: [{ label: '1 patch', mg: 0, pills: 1 }], quickLog: true }
+      doses: [{ label: '1 patch', mg: 0, pills: 1 }], quickLog: true },
+    // A UNIT THAT IS NOT A PLURAL. `ceilingUnit` is free text, and the singulariser's job is as much
+    // to LEAVE THINGS ALONE as to trim them: "bolus" is one bolus, and the first two versions of the
+    // rule turned it into "bolu". Nothing covered that, so removing the rule left the suite green.
+    { id: 'infusion', name: 'Infusion', type: 'gap', gapH: 8, homeCard: { kind: 'pills' },
+      ceiling: true, ceilingMax: 1, ceilingUnit: 'bolus',
+      doses: [{ label: '1 bolus', mg: 0, pills: 1 }], quickLog: true },
+    // A THIRD MEMBER OF THE ACETAMINOPHEN GROUP, so the label has something to cap. With two
+    // members the cap can never fire, which is why removing it left every check green.
+    { id: 'apap-chew', name: 'Chewable', type: 'gap', gapH: 4, ceilingGroup: 'apap',
+      doses: [{ label: '160 mg', mg: 160 }], quickLog: true }
   ], archivedMeds: {} }));
   const ekey = Object.keys(localStorage).find(k => /entries/.test(k));
   return { ok: true, key, ekey };
@@ -133,7 +143,9 @@ console.log('\n2. LOG A DOSE, AND THE DAILY-TOTAL CARD APPEARS AND IS RIGHT');
       { id: 'e3', medId: 'imodium', ts: now - 900000, dose: '1 pill', mg: 0, pills: 1 },
       { id: 'e4', medId: 'antacid', ts: now - 800000, dose: '1 tablet', mg: 0, pills: 1 },
       { id: 'e5', medId: 'lozenge', ts: now - 700000, dose: '1 lozenge', mg: 0, pills: 1 },
-      { id: 'e6', medId: 'patch', ts: now - 600000, dose: '1 patch', mg: 0, pills: 1 }
+      { id: 'e6', medId: 'patch', ts: now - 600000, dose: '1 patch', mg: 0, pills: 1 },
+      { id: 'e7', medId: 'infusion', ts: now - 500000, dose: '1 bolus', mg: 0, pills: 1 },
+      { id: 'e8', medId: 'apap-chew', ts: now - 400000, dose: '160 mg', mg: 160 }
     ];
     localStorage.setItem(key || 'chemowell-app-p-p1-entries-v1', JSON.stringify(rows));
   });
@@ -149,11 +161,11 @@ console.log('\n2. LOG A DOSE, AND THE DAILY-TOTAL CARD APPEARS AND IS RIGHT');
   // CASE-INSENSITIVE. TYPE.label uppercases these, so innerText comes back "TYLENOL + TYLENOL
   // LIQUID" and a case-sensitive match failed on a card that was rendering correctly.
   t('the mg total, which really is shared, names both medications',
-    /tylenol \+ tylenol liquid · today\s*\n?\s*[\d,]+ mg left/i.test(txt), (txt.match(/[A-Za-z +]+ · today/g) || []).join(' | '));
+    /tylenol \+ tylenol liquid[^\n]* · today\s*\n?\s*[\d,]+ mg left/i.test(txt), (txt.match(/[A-Za-z +]+ · today/g) || []).join(' | '));
   // And the mL card must NOT: a millilitre cap is one medication's own labelled limit, not a shared
   // total, so a grouped label over a figure counting only the liquid is a false impression too.
   t('but the mL total, which is not shared, names only its own medication',
-    /tylenol liquid · today\s*\n?\s*[\d,]+ mL left/i.test(txt) && !/tylenol \+ tylenol liquid · today\s*\n?\s*[\d,]+ mL/i.test(txt),
+    /tylenol liquid · today\s*\n?\s*[\d,]+ mL left/i.test(txt) && !/tylenol \+ tylenol liquid[^\n]* · today\s*\n?\s*[\d,]+ mL/i.test(txt),
     (txt.match(/[A-Za-z +]+ · TODAY[^\n]*\n[^\n]*/gi) || []).join(' || '));
   // A COUNT OF ONE IS NEVER PLURAL, on either branch. Falsified by reverting hcUnitFor at both
   // call sites and watching all three of these go red.
@@ -171,6 +183,14 @@ console.log('\n2. LOG A DOSE, AND THE DAILY-TOTAL CARD APPEARS AND IS RIGHT');
     (txt.match(/\d+ \/ \d+ \w+/g) || []).join(' | '));
   // AND THE SCREEN READER GETS THE SAME SENTENCE. No suite in this repo had ever asserted an
   // aria-label, so half of every accessibility fix here has gone unread by any check.
+  // A UNIT THE RULE MUST NOT TOUCH.
+  t('a unit that only looks plural is left exactly as typed',
+    /\b1 \/ 1 bolus\b/.test(txt) && !/\b1 \/ 1 bolu\b/.test(txt),
+    (txt.match(/1 \/ 1 \w+/g) || []).join(' | '));
+  // AND THE GROUPED LABEL IS CAPPED. Three members, so the third is summarised rather than listed.
+  t('a group of three is summarised, not spelled out',
+    /and 1 more/i.test(txt) && !/Tylenol \+ Tylenol Liquid \+ Chewable/i.test(txt),
+    (txt.match(/[A-Za-z ]+\+[^\n]{0,50}/g) || []).slice(0, 2).join(' | '));
   const labels = await page.evaluate(() =>
     [...document.querySelectorAll('[role="img"][aria-label]')].map(e => e.getAttribute('aria-label')));
   t('and so does the bar\'s screen-reader label',

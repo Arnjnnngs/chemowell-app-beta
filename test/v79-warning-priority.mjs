@@ -82,6 +82,9 @@ const seeded = await page.evaluate(() => {
         title: 'Iron + Protonix timing',
         body: 'These work best a couple of hours apart. Check with the care team.' }],
       doses: [{ label: '1 tablet', mg: 0, pills: 1 }], groupedEvening: true },
+    { id: 'antacid', name: 'Antacid', type: 'gap', gapH: 4, schemaV: 2,
+      ceiling: true, ceilingMax: 1, ceilingUnit: 'tablets',
+      doses: [{ label: '1 tablet', mg: 0, pills: 1 }], quickLog: true },
     { id: 'protonix', name: 'Protonix', type: 'win', schemaV: 2,
       windows: [{ start: 8, end: 12, name: 'Morning' }],
       doses: [{ label: '40 mg', mg: 40 }], quickLog: true }
@@ -97,7 +100,9 @@ await page.evaluate(() => {
   const now = Date.now();
   localStorage.setItem(key, JSON.stringify([
     { id: 'a1', medId: 'tylenol', ts: now - 5400000, dose: '500 mg', mg: 3020 },
-    { id: 'a2', medId: 'protonix', ts: now - 1800000, dose: '40 mg', mg: 40 }
+    { id: 'a2', medId: 'protonix', ts: now - 1800000, dose: '40 mg', mg: 40 },
+    { id: 'a3', medId: 'antacid', ts: now - 3600000, dose: '1 tablet', mg: 0, pills: 1 },
+    { id: 'a4', medId: 'antacid', ts: now - 3000000, dose: '1 tablet', mg: 0, pills: 1 }
   ]));
 });
 await page.reload({ waitUntil: 'domcontentloaded' });
@@ -212,7 +217,9 @@ console.log('\n3. THE REAL "TAKE ALL" CONTROL, WHICH IS THE ONE THE FIX ACTUALLY
     const now = Date.now();
     localStorage.setItem(key, JSON.stringify([
       { id: 'a1', medId: 'tylenol', ts: now - 6 * 3600000, dose: '500 mg', mg: 2600 },
-      { id: 'a2', medId: 'protonix', ts: now - 1800000, dose: '40 mg', mg: 40 }
+      { id: 'a2', medId: 'protonix', ts: now - 1800000, dose: '40 mg', mg: 40 },
+      { id: 'a3', medId: 'antacid', ts: now - 3600000, dose: '1 tablet', mg: 0, pills: 1 },
+      { id: 'a4', medId: 'antacid', ts: now - 3000000, dose: '1 tablet', mg: 0, pills: 1 }
     ]));
   });
 
@@ -236,12 +243,66 @@ console.log('\n3. THE REAL "TAKE ALL" CONTROL, WHICH IS THE ONE THE FIX ACTUALLY
     a.title === b.title, String(a.title) + '  vs  ' + String(b.title));
 }
 
-console.log('\n4. AND NOTHING THREW ALONG THE WAY');
+console.log('\n4. TWO REDS IN ONE BATCH: THE FIRST ONE STANDS');
+{
+  // THIRD ROUND RUNNING IN WHICH AN afterLog FIX SHIPPED WITH NO CHECK THAT COULD SEE IT.
+  // Round 2's guard -- `if (warnBatch && warnBatch.red && worst.tone !== 'red') return;` -- only
+  // suppressed a DOWNGRADE, so a second red overwrote the first, three lines under a comment saying
+  // an existing red is never overwritten. Round 3 made the comment true. Restoring round 2's line
+  // then left every suite green, so the fix was undone-able in silence.
+  //
+  // Stakes are lower than section 3 -- both candidates are red and both say "check with the care
+  // team", so the caregiver is warned either way -- but an uncovered fix rots.
+  const res = await page.evaluate(() => {
+    if (!window.__warnTest) return { unreachable: true };
+    window.__warnTest.clearWarn();
+    const batch = {};
+    // Tylenol is over the shared acetaminophen ceiling; Antacid is over its own 1-a-day limit.
+    // Two DIFFERENT reds, one batch, in that order.
+    window.__warnTest.afterLog({ medId: 'tylenol', ts: Date.now(), id: 'p1' }, batch);
+    const first = window.__warnTest.getWarn();
+    window.__warnTest.afterLog({ medId: 'antacid', ts: Date.now(), id: 'p2' }, batch);
+    const second = window.__warnTest.getWarn();
+    // THE SECOND WARNING, PROVED SEPARATELY. Reading state.warn after the second call cannot tell
+    // the two outcomes apart: if the guard works, what comes back IS the first red -- so asserting
+    // "the second is red" on that value is a check that cannot fail, which is the exact sin this
+    // release was blocked for twice. The liquid is run again in a FRESH batch, where nothing can
+    // suppress it, and that is what proves it earns a red of its own.
+    window.__warnTest.clearWarn();
+    window.__warnTest.afterLog({ medId: 'antacid', ts: Date.now(), id: 'p3' }, {});
+    const alone = window.__warnTest.getWarn();
+    return { first: first && first.title, firstTone: first && first.tone,
+             second: second && second.title, secondTone: second && second.tone,
+             alone: alone && alone.title, aloneTone: alone && alone.tone };
+  });
+  if (res.unreachable) {
+    t('afterLog is reachable from the test harness', false, 'window.__warnTest is not exposed');
+  } else {
+    t('the first red was raised', res.firstTone === 'red', JSON.stringify(res));
+    // The fixture must actually produce a SECOND red, or this section passes on a batch that only
+    // ever had one warning in it.
+    t('and the second medication really does earn a red of its own',
+      res.aloneTone === 'red' && res.alone !== res.first,
+      'alone: ' + String(res.alone) + ' / ' + String(res.aloneTone));
+    t('and the FIRST red is the one still on screen',
+      res.second === res.first, String(res.first) + '  vs  ' + String(res.second));
+  }
+}
+
+console.log('\n5. AND NOTHING THREW ALONG THE WAY');
 {
   // afterLog runs inside a setTimeout, so a throw there is SILENT and the dose still saves -- which
   // is the exact hazard medInteractionsFor's own comment documents. This suite collected pageerror
   // from the first line and never read it, which every other browser suite here does.
-  const real = errors.filter(e => !/Capacitor|cdn|Failed to fetch dynamically/i.test(e));
+  // MATCH THE MESSAGE, NOT THE STACK. `String(e)` carries the whole stack, and index.html loads from
+  // cdn.jsdelivr.net -- so /cdn/i matched the stack of every error raised anywhere in app code, and
+  // /Capacitor/i swallowed the plugin-failure class that cost this repo app-v47 through app-v49.
+  // Only the first line is the message, and only two exact sandbox conditions are excused.
+  const real = errors.filter(e => {
+    const first = String(e).split('\n')[0];
+    return !/Failed to fetch dynamically imported module/i.test(first)
+        && !/^Error: Could not load Capacitor/i.test(first);
+  });
   t('no page error during any of the above', real.length === 0, real.join(' | '));
 }
 

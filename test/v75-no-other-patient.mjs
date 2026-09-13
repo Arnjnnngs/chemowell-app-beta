@@ -98,61 +98,78 @@ console.log('\n3. NO DOSE, CEILING OR SCHEDULE FROM ONE CARE PLAN');
     t('no hardcoded dose or ceiling in ' + f.name, bad.length === 0, bad.join(' | '));
   }
 
-  // THE TABLE'S WHOLE SHAPE IS PINNED, NOT A LIST OF KEY NAMES.
+  // THE TABLE IS PARSED, NOT MATCHED. A REGEX HAS LOST THIS RACE THREE TIMES.
   //
-  // This check has now been wrong twice in the same release, in the same way, and the second time
-  // is the instructive one. Round 1's guard matched `ceilingMg` and three-to-five digits beside a
-  // drug name followed by mg or mL -- shaped around the one instance that had already happened --
-  // and missed `ceilingMax: 4, ceilingUnit: 'applications'`. Round 2 named five ceiling keys and
-  // called itself "shaped around the PLACE". It was not: **Rule 0 shape 3 is "a dose, ceiling OR
-  // SCHEDULE from one care plan"**, and a schedule walked straight in. The auditor added
+  // Round 1's guard matched `ceilingMg` and three-to-five digits beside a drug name followed by mg
+  // or mL, and missed `ceilingMax: 4, ceilingUnit: 'applications'`.
+  // Round 2 named five ceiling keys and missed a whole care plan expressed as an interaction,
+  // because Rule 0 shape 3 is "a dose, ceiling OR SCHEDULE" and a schedule is not a ceiling.
+  // Round 3 pinned the ids and the numeric keys as TEXT, and the round-3 audit walked past it three
+  // ways in fifteen minutes: drop the quotes around the key (`warfarin:` is identical JavaScript and
+  // invisible to `/^\s{2}'([^']+)'\s*:/`); carry a full twice-daily schedule instead of a number,
+  // since `start`/`end`/`dayOffset` are allowed and uncapped; or write the number as a STRING --
+  // `ceilingMax: '3000'` -- which slips past `:\s*[\d.]+` and is still a live ceiling, because
+  // `dailyCeiling` reads `Number(med.ceilingMax)`. That last one re-enters the exact leak round 1
+  // was blocked for, with two quote characters.
   //
-  //     'warfarin': { interactions: [{ withMedId: 'aspirin', minGapH: 6, title: 'Warfarin + aspirin',
-  //       body: 'Space these six hours apart per the care plan.' }] },
-  //
-  // -- a whole new care plan, its own interval, its own caregiver-facing copy, for a drug pair
-  // nobody asked for -- and every gate was green.
-  //
-  // So the guard stops enumerating what is forbidden and pins what is ALLOWED: exactly these ids,
-  // exactly this many, and no numeric literal beyond the inventory below. A fourteenth entry fails
-  // whatever it contains. Lowering the pin is how a phase-3 deletion is recorded, the same ratchet
-  // discipline section 4 already uses -- and the numbers only ever go DOWN.
+  // Every one of those is a hole in the MATCHER, not in the rule. So the table is evaluated as the
+  // object literal it is -- the same `new Function` lift the v77 equivalence suite already uses --
+  // and the real object is walked. Quoting, indentation, nesting and the JavaScript type of a value
+  // all stop mattering, because none of them survive being parsed.
   {
-    const code = files.find(f => f.name === 'index.html').raw
-      .replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-    const i = code.indexOf('LEGACY_MED_RULES');
-    const table = i < 0 ? '' : code.slice(i, code.indexOf('\n};', i) + 3);
-    // A matcher that scanned an empty string would pass forever, so prove the table was found first.
-    t('the rule table was found and scanned', table.length > 200, String(table.length));
+    const raw = files.find(f => f.name === 'index.html').raw;
+    const open = raw.indexOf('const LEGACY_MED_RULES = {');
+    const close = raw.indexOf('\n};', open);
+    let TABLE = null, liftError = '';
+    try {
+      TABLE = new Function('return ' + raw.slice(open + 'const LEGACY_MED_RULES = '.length, close + 2))();
+    } catch (e) { liftError = String(e && e.message); }
+    // A suite that silently skipped when the lift failed would pass forever on a renamed table.
+    t('the rule table was lifted and parsed as a real object',
+      !!TABLE && typeof TABLE === 'object', liftError || typeof TABLE);
+    const entries = TABLE ? Object.keys(TABLE) : [];
 
-    // The thirteen legacy ids, and nothing else. Written out rather than counted, so a SWAP -- one
-    // id removed and a stranger's added -- fails as loudly as an addition.
+    // The legacy ids, written out. A SWAP -- one removed, a stranger added -- fails as loudly as an
+    // addition, which a count alone would miss.
     const ALLOWED = ['dexamethasone', 'zofran', 'tylenol', 'tylenol-liquid', 'imodium', 'lidocaine',
       'iron', 'protonix', 'morphine', 'buspirone', 'paroxetine', 'compazine', 'senokot', '__flags__'];
-    const keys = [...table.matchAll(/^\s{2}'([^']+)'\s*:/gm)].map(m => m[1]);
-    const strangers = keys.filter(k => !ALLOWED.includes(k));
+    const strangers = entries.filter(k => !ALLOWED.includes(k));
     t('no medication in the rule table that is not a known legacy id', strangers.length === 0,
-      strangers.join(', ') || keys.length + ' entr' + (keys.length === 1 ? 'y' : 'ies'));
-    t('and the table is not growing', keys.length <= ALLOWED.length,
-      keys.length + ' of at most ' + ALLOWED.length);
+      strangers.join(', ') || entries.length + ' entr' + (entries.length === 1 ? 'y' : 'ies'));
+    t('and the table is not growing', entries.length <= ALLOWED.length,
+      entries.length + ' of at most ' + ALLOWED.length);
 
-    // EVERY NUMBER IN THE TABLE, INVENTORIED. A dose, a ceiling, an interval or a day offset are all
-    // the same shape of thing -- somebody's care plan written down -- so the check does not try to
-    // tell them apart. The only numbers allowed are the day offsets the treatment-relative windows
-    // need and the hours-of-day they name; anything else is a new number nobody approved.
-    const nums = [...table.matchAll(/\b([A-Za-z_$][\w$]*)\s*:\s*(-?[\d.]+)/g)]
-      .map(m => m[1] + ': ' + m[2]);
-    const ALLOWED_NUMS = ['dayOffset', 'start', 'end', 'fromDayOffset', 'toDayOffset', 'gapH', 'minGapH'];
-    const unexpected = nums.filter(n => !ALLOWED_NUMS.includes(n.split(':')[0]));
-    t('no dose, ceiling or limit is written into the rule table', unexpected.length === 0,
-      unexpected.join(' | ') || nums.length + ' inventoried number(s)');
-    // The two intervals that ARE in there -- the iron/protonix gap -- are accounted-for phase 2/3
-    // debt, pinned so they cannot multiply quietly.
-    const gaps = nums.filter(n => /^(gapH|minGapH):/.test(n));
+    // EVERY LEAF, AT EVERY DEPTH. A dose, a ceiling, an interval and a day offset are all the same
+    // kind of thing -- somebody's care plan written down -- so the walk does not try to tell them
+    // apart by name. It collects every number ANYWHERE in the object, however it was written, and
+    // requires the field it sits under to be one the app's own treatment-window machinery needs.
+    const ALLOWED_NUMS = ['dayOffset', 'start', 'end', 'fromDayOffset', 'toDayOffset', 'minGapH', 'gapH'];
+    const found = [];
+    const walk = (node, trail) => {
+      if (node === null || node === undefined) return;
+      if (Array.isArray(node)) return node.forEach((v, i) => walk(v, trail));
+      if (typeof node === 'object') return Object.keys(node).forEach(k => walk(node[k], k));
+      // A STRING THAT IS A NUMBER IS A NUMBER. `ceilingMax: '3000'` is a live ceiling.
+      const n = typeof node === 'number' ? node
+        : (typeof node === 'string' && node.trim() !== '' && Number.isFinite(Number(node)) ? Number(node) : null);
+      if (n !== null) found.push(trail + ': ' + n);
+    };
+    walk(TABLE || {}, 'root');
+    const unexpected = found.filter(f => !ALLOWED_NUMS.includes(f.split(':')[0]));
+    t('no dose, ceiling or limit anywhere in the rule table, at any depth or in any type',
+      unexpected.length === 0, unexpected.join(' | ') || found.length + ' number(s), all schedule fields');
+
+    // The schedule fields are allowed but not UNLIMITED -- "allowed and uncapped" is how a complete
+    // twice-daily regimen for a drug nobody asked for went in with every gate green.
+    const sched = found.filter(f => /^(dayOffset|start|end|fromDayOffset|toDayOffset):/.test(f));
+    t('and the schedule numbers have not multiplied', sched.length <= 18,
+      sched.length + ' of at most 18');
+    const gaps = found.filter(f => /^(gapH|minGapH):/.test(f));
     t('and the two legacy spacing intervals have not multiplied', gaps.length <= 2,
       gaps.join(' | ') || 'none');
   }
 }
+
 
 console.log('\n4. THE RATCHET: BEHAVIOUR KEYED TO ONE PERSON\'S PRESCRIPTION');
 {
