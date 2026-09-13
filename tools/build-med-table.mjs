@@ -63,7 +63,7 @@ export const GUARDS = [
   // sentence for ondansetron -- "used to prevent nausea and vomiting caused by cancer chemotherapy" --
   // the single most relevant line in a chemotherapy app. The schedule phrasings ("on chemo days",
   // "with chemo") are still caught; the noun is not a schedule and banning it banned the subject.
-  { name: 'a schedule or a dose unit', re: /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|around chemo|with chemo|after chemo|before chemo|dose|doses|mg|ml|mcg)\b/i },
+  { name: 'a schedule or a dose unit', re: /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|around chemo|with chemo|after chemo|before chemo|dose|doses|mg|ml|mcg|short[ -]term|long[ -]term|short course|for up to|no longer than|continuous(?:ly)?)\b/i },
   // NO DOSAGE FORM OR ROUTE. The same name may be a rinse, a patch or an injection -- an audit
   // blocked "a numbing cream for soreness on the skin" for exactly this.
   // BARE ANATOMY IS DELIBERATELY NOT BANNED. That was tried on this project and was wrong: it
@@ -186,6 +186,14 @@ export function firstSentence(prose) {
 // at the front is noise on a card that already shows the name above it.
 export function tidy(sentence, name, generic) {
   let t = String(sentence || '').trim();
+  // MEDLINEPLUS SOMETIMES QUALIFIES THE OPENER, and the name-stripping below is anchored at the
+  // start of the string, so it missed every one of them: "Prescription ibuprofen is used to relieve
+  // pain..." and "Prescription famotidine is used to treat ulcers..." kept the drug's own name on a
+  // card that already shows it, AND gained a claim that the drug is prescription-only -- which is
+  // not true of the bottle in her cupboard and is not something this app should be asserting.
+  // Found by the app-v75 audit. Dropping the qualifier is right rather than rejecting the sentence:
+  // what follows it is the same answer MedlinePlus gives for the drug either way.
+  t = t.replace(/^(?:Prescription|Nonprescription(?:\s*\(over[- ]the[- ]counter\))?|Over[- ]the[- ]counter)\s+/i, '');
   for (const n of [generic, name]) {
     if (!n) continue;
     const esc = String(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

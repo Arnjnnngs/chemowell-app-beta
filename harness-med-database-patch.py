@@ -135,24 +135,39 @@ old_purpose = """function purposeOf(med) {
 }"""
 if src.count(old_purpose) != 1:
     die('purposeOf is not where it was')
-new_purpose = """function purposeOf(med) {
-  if (!med) return '';
+new_purpose = """// ONE FUNCTION DECIDES BOTH THE WORDS AND WHERE THEY CAME FROM, because the alternative is a
+// citation under a sentence that came from somewhere else. The first build of app-v75 had two
+// functions -- one picked the text, another decided whether to print "Read it on MedlinePlus" -- and
+// the audit that blocked the release found several paths where they disagreed.
+function describeMed(med) {
+  if (!med) return { text: '', source: null };
   // WHAT SHE TYPED WINS OVER EVERYTHING, ALWAYS. Her own words about her own medication are never
   // overwritten by a database, however official it is.
   const typed = String(med.purpose || '').trim();
-  if (typed) return typed;
-  // Then MedlinePlus (app-v75), because it is the only text that can honestly carry a citation.
+  if (typed) return { text: typed, source: null };
+  // THEN THIS APP'S OWN LINE, AND THIS ORDER IS THE WHOLE OF THE app-v75 AUDIT BLOCK.
+  // It shipped the other way round for an hour -- MedlinePlus first, because it is the only text
+  // that can carry a citation -- and that solved a citation problem by making the medicine worse.
+  // MedlinePlus answers for a drug's PRIMARY indication, which is very often not the reason a
+  // chemotherapy patient is taking it. Fourteen hand-written lines would have been overridden and
+  // six of them badly. The one that settles it: promethazine's card said "Settles nausea and
+  // vomiting... It causes drowsiness", and MedlinePlus's first sentence is about allergic rhinitis
+  // and itchy eyes. Clamped to two lines on a phone at 2am, with the patient vomiting, that card
+  // reads "her allergy medicine" -- and the sedation warning was gone too. Promethazine is one of
+  // the two drugs most likely to be reached for at that exact moment.
+  // These lines were written for THIS patient on THIS treatment, some of them by name after Aaron
+  // reported the gap. A general reference does not get to overrule them.
+  const own = purposeLookup(med.name) || purposeLookup(med.sub);
+  if (own) return { text: own, source: null };
+  // THEN MEDLINEPLUS, for the drugs this app has never had a line for -- which is the real win here
+  // and is untouched by the above: 19 of the 33 entries are drugs with no hand-written line at all,
+  // most of them the chemotherapy and supportive-care drugs the table never covered.
   const official = medSourceFor(med);
-  if (official) return official.t;
-  return purposeLookup(med.name) || purposeLookup(med.sub);
+  if (official) return { text: official.t, source: official };
+  return { text: '', source: null };
 }
-// Is the line on screen the quoted one? Used to decide whether the link may say "Read it on" (a
-// citation) or must say "Look it up on" (a search). If she typed her own description, MedlinePlus is
-// NOT the source of what she is reading, even where a quoted sentence exists for that drug.
-function purposeIsQuoted(med) {
-  if (!med) return false;
-  if (String(med.purpose || '').trim()) return false;
-  return !!medSourceFor(med);
+function purposeOf(med) {
+  return describeMed(med).text;
 }"""
 src = src.replace(old_purpose, new_purpose, 1)
 
@@ -167,14 +182,16 @@ if src.count(old_link) != 1:
 new_link = """function purposeSourceLink(med) {
   const name = med ? String(med.name || '').trim() : '';
   if (!name) return null;
-  // app-v75: where the sentence above came from a MedlinePlus page, the link goes to THAT page and
-  // says so. Where it did not, it stays app-v74's search -- honest about being a lookup rather than
-  // a source. The two must never be confused: a citation under text this repo wrote is a lie about
-  // where the words came from.
-  if (purposeIsQuoted(med)) {
-    const official = medSourceFor(med);
-    if (official) return { url: official.u, text: 'Read it on ' + MED_SOURCE.label, quoted: true };
+  // THE CITATION IS FOR THE TEXT ON SCREEN, NOT FOR THE MEDICATION. describeMed returns the page
+  // only when the sentence it chose came FROM that page, so "Read it on MedlinePlus" cannot appear
+  // over a hand-written line or over something she typed. The first build asked a different
+  // question -- "is there a MedlinePlus entry for this drug?" -- and the audit found it citing the
+  // oxycodone page under the app's own Percocet line, with the acetaminophen warning deleted.
+  const described = describeMed(med);
+  if (described.source) {
+    return { url: described.source.u, text: 'Read it on ' + MED_SOURCE.label, quoted: true };
   }
+  // Otherwise app-v74's honest search: a lookup, not a source.
   return { url: MED_SOURCE.searchUrl(name), text: 'Look it up on ' + MED_SOURCE.label, quoted: false };
 }"""
 src = src.replace(old_link, new_link, 1)
@@ -316,11 +333,17 @@ if src.count("const APP_VERSION = 'app-v74';") != 1:
     die('APP_VERSION is not app-v74')
 src = src.replace("const APP_VERSION = 'app-v74';", "const APP_VERSION = 'app-v75';", 1)
 
-HTML.write_text(src, encoding='utf-8')
-
+# EVERY ANCHOR IS CHECKED BEFORE EITHER FILE IS WRITTEN. This used to write index.html and only
+# then look at sw.js, so a drifted CACHE line left a bumped APP_VERSION behind a stale service
+# worker -- the "devices get stale code" failure the deploy checklist calls critical -- and the
+# patch then refused to re-run because it could see its own half-applied work ("already applied").
+# Found by the app-v75 audit. Read and validate first, write last.
 sw = SW.read_text(encoding='utf-8')
 if "const CACHE = 'chemowell-app-v74-1';" not in sw:
-    die('sw.js CACHE is not at app-v74-1')
-SW.write_text(sw.replace("const CACHE = 'chemowell-app-v74-1';", "const CACHE = 'chemowell-app-v75-1';", 1), encoding='utf-8')
+    die('sw.js CACHE is not at app-v74-1 -- nothing was written')
+sw_next = sw.replace("const CACHE = 'chemowell-app-v74-1';", "const CACHE = 'chemowell-app-v75-1';", 1)
+
+HTML.write_text(src, encoding='utf-8')
+SW.write_text(sw_next, encoding='utf-8')
 
 print('app-v75 applied: %d MedlinePlus descriptions baked in' % len(rows))
