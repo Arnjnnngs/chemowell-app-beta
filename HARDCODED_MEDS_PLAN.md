@@ -85,7 +85,19 @@ Delete `RESERVED_LEGACY_MED_IDS`. A user can call their medication Zofran, get t
 and get **only** the behaviour they configured. Test: create a med named "Zofran" on a fresh
 install and assert it has no chemo block, no linked window, no inherited ceiling.
 
-### Phase 4 — Expose it in the editor
+### Phase 4 — Expose it in the editor  ← **NEXT, and the Enhancer pass argues it is now urgent**
+
+`outputs/ENHANCER-PASS-v79.md`: **the app renders a daily-total card that no screen can create.**
+`homeCard` is written in exactly one place — `LEGACY_MED_RULES` — so the running
+"2,500 / 3,000 mg · 500 mg left" card only ever appears for somebody who was already using one of
+four legacy medications. A new customer who sets up paracetamol with a 3,000 mg limit gets the
+ceiling WARNING and never the running total: they learn they are over at the moment they cross it.
+The same is true of all five properties.
+
+Phases 1-3 were sold as *a stranger can finally use their own medication's real name*, and that is
+true. But naming it Zofran now gets you a name and nothing else. **Phase 4 is where the customer
+gets the behaviour, and until it lands the app has removed the fence without opening the gate.**
+
 The properties are useless if only a developer can set them. The medication editor needs UI for:
 blocked-around-chemo, schedule-follows-another-med, and interaction warnings. **Design pass
 required** — this is the step most likely to produce a confusing screen, and it is the one that
