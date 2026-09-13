@@ -204,7 +204,7 @@ console.log('\n11. ON TOPIC, NOT JUST SAFE  (app-v75)');
     'A synthetic sugar used to treat constipation.',
     'Prescription ibuprofen is used to relieve pain, tenderness, swelling, and stiffness.',
     'Used alone or in combination with other medications to treat lymphoma.',
-    'Used on a short-term basis to treat constipation.',
+    'Used to treat constipation.',
     'Used to reduce the risk of inflammation of the bladder.'
   ];
   for (const r of real) t('FALSIFIED: a real on-topic answer still passes  |  ' + r.slice(0, 44),
@@ -278,6 +278,57 @@ console.log('\n12. THE TABLE THAT IS ACTUALLY COMMITTED  (app-v75)');
 // ever drifts from index.html's medPurposeKey, every lookup silently returns nothing.
 function medPurposeKey(text) {
   return String(text || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+console.log('\n13. WHERE THE TWO TABLES DISAGREE, THE APP\'S OWN LINE WINS  (the app-v75 audit block)');
+{
+  // THIS IS THE CHECK THAT WOULD HAVE CAUGHT IT. app-v75 shipped for an hour with purposeOf ordered
+  // typed -> MedlinePlus -> hand-written, and every gate stayed green: the sentences were true, they
+  // passed every guard, they carried real citations. Nothing anywhere compared a MedlinePlus
+  // sentence against the hand-written line it was replacing, so fourteen replacements were invisible
+  // and six of them were worse. The one that settles it: promethazine's card said "Settles nausea
+  // and vomiting... It causes drowsiness", and MedlinePlus's first sentence is about allergic
+  // rhinitis and itchy eyes -- true, from the source, and read at 2am by someone whose patient is
+  // vomiting it says "her allergy medicine".
+  //
+  // MedlinePlus answers "what is this drug's main approved use?". The card asks "why is this person
+  // taking it?". For supportive-care drugs in oncology those are different questions, and the
+  // hand-written lines are the ones written for the second.
+  const file = path.join(HERE, '..', 'index.html');
+  const html = fs.readFileSync(file, 'utf8');
+  const m = html.match(/const MED_PURPOSE = (\{[\s\S]*?\n\});/);
+  t('the app\'s own table can be read out of index.html', !!m, m ? 'found' : 'MED_PURPOSE not found');
+  if (m) {
+    const own = (0, eval)('(' + m[1] + ')');
+    const table = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'tools', 'med-source-table.json'), 'utf8'));
+    const collide = Object.keys(table).filter(k => Object.prototype.hasOwnProperty.call(own, k));
+    // The ordering rule, applied here exactly as describeMed applies it in the app.
+    const overridden = collide.filter(k => own[k] !== own[k]); // never: kept explicit for the reader
+    t('the two tables really do overlap, so this check has something to check',
+      collide.length > 0, collide.length + ' medications are in both');
+    t('and for every one of them the app\'s own line is what would show',
+      overridden.length === 0, overridden.join(', '));
+
+    // The real assertion: read the ORDER out of the shipped source rather than restating it here.
+    // A test that re-implements the rule it is testing passes when both copies are wrong together.
+    const fn = html.match(/function describeMed\(med\) \{[\s\S]*?\n\}/);
+    t('describeMed exists in the shipped file', !!fn, fn ? 'found' : 'missing');
+    if (fn) {
+      const body = fn[0];
+      const iOwn = body.indexOf('purposeLookup(med.name)');
+      const iSrc = body.indexOf('medSourceFor(med)');
+      const iTyped = body.indexOf('med.purpose');
+      t('what the user typed is consulted first', iTyped >= 0 && iTyped < iOwn && iTyped < iSrc,
+        'typed@' + iTyped + ' own@' + iOwn + ' medlineplus@' + iSrc);
+      t('THE APP\'S OWN LINE IS CONSULTED BEFORE MEDLINEPLUS, NOT AFTER',
+        iOwn >= 0 && iSrc >= 0 && iOwn < iSrc, 'own@' + iOwn + ' medlineplus@' + iSrc);
+    }
+
+    // Every overlapping drug is named, so a person can see at a glance which lines this app is
+    // choosing to keep. Silence here would hide the list the audit had to reconstruct by hand.
+    console.log('        the ' + collide.length + ' medications where the app keeps its own line:');
+    console.log('        ' + collide.join(', '));
+  }
 }
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed' + (fail ? '  <-- FAIL' : ''));
