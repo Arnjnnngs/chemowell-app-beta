@@ -207,7 +207,7 @@ console.log('\n11. ON TOPIC, NOT JUST SAFE  (app-v75)');
     'Used in combination with other medications to treat a certain type of lung cancer.',
     'A synthetic sugar used to treat constipation.',
     'Prescription ibuprofen is used to relieve pain, tenderness, swelling, and stiffness.',
-    'Used alone or in combination with other medications to treat lymphoma.',
+    'Used alone or in combination with other medications to relieve nerve pain.',
     'Used to treat constipation.',
     'Used to reduce the risk of inflammation of the bladder.'
   ];
