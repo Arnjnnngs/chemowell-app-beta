@@ -87,6 +87,28 @@ console.log('\n4. NOTHING THAT IS NOT A MEDLINEPLUS PAGE GETS IN');
     rejected.some(r => r.name === 'Nohttp'), '');
 }
 
+console.log('\n4B. www.medlineplus.gov IS THE HOST THE SITE ACTUALLY REDIRECTS TO');
+{
+  // THE BUG THAT MADE THE FIRST REAL RUN PRODUCE AN EMPTY TABLE. The resolver found 46 pages and
+  // this guard threw away every one of them, because it demanded the bare host and MedlinePlus
+  // redirects to www. The run went green and committed {} -- it looked exactly like "MedlinePlus
+  // knows none of these medications", which is the worst way for a bug to fail.
+  const { table, rejected } = buildTable([
+    { name: 'Ondansetron', url: 'https://www.medlineplus.gov/druginfo/meds/a601209.html',
+      whyPrescribed: 'Ondansetron is used to prevent nausea and vomiting.' }
+  ]);
+  t('a www url is accepted, because that is what the site returns', !!table['ondansetron'],
+    JSON.stringify(rejected));
+  t('and the url is kept exactly as the site gave it, not rewritten',
+    !!table['ondansetron'] && table['ondansetron'].u === 'https://www.medlineplus.gov/druginfo/meds/a601209.html',
+    table['ondansetron'] && table['ondansetron'].u);
+  const bare = buildTable([{ name: 'Zofran', url: U('a601209'), whyPrescribed: 'Used to prevent nausea.' }]);
+  t('and the bare host still works too', !!bare.table['zofran'], JSON.stringify(bare.rejected));
+  const evil = buildTable([{ name: 'Evil', url: 'https://wwwXmedlineplus.gov/druginfo/meds/a1.html', whyPrescribed: 'Used to treat nausea.' }]);
+  t('but a lookalike host does NOT slip through the widened rule', Object.keys(evil.table).length === 0,
+    JSON.stringify(evil.table));
+}
+
 console.log('\n5. THE KEY MATCHES THE ONE THE APP ALREADY LOOKS UP BY');
 {
   // medPurposeKey() in the app lowercases and strips punctuation. A table keyed any other way would

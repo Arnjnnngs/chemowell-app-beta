@@ -101,7 +101,12 @@ export function buildTable(pages) {
   for (const page of Array.isArray(pages) ? pages : []) {
     const name = String(page && page.name || '').trim();
     const url = String(page && page.url || '').trim();
-    if (!name || !/^https:\/\/medlineplus\.gov\//i.test(url)) {
+    // www OR NOT. MedlinePlus redirects to www.medlineplus.gov, so every URL the resolver produces
+    // carries it -- and the first version of this check demanded the bare host and threw away all 46
+    // pages the resolver had just found. The run went green, committed an empty table, and looked
+    // like "MedlinePlus knows none of these medications". A guard that rejects its own pipeline's
+    // output is worse than no guard, because it fails quietly and plausibly.
+    if (!name || !/^https:\/\/(www\.)?medlineplus\.gov\//i.test(url)) {
       rejected.push({ name: name || '(no name)', why: 'no name, or a url that is not a MedlinePlus page' });
       continue;
     }
