@@ -52,7 +52,7 @@ read_cache() {   # stdin: a sw.js. stdout: the bare value, or "none"/"multi".
 
 # THE BASE REF IS THE WHOLE POINT (fixed 2026-08-10, found by the app-v52 PM gate).
 # This script used to diff against HEAD, i.e. only UNCOMMITTED work. That made it pass green on
-# the exact failure it exists to block: APP_CLAUDE.md rule 8 says commit early and often, and
+# the exact failure it exists to block: CLAUDE.md rule 8 says commit early and often, and
 # pushes here are manual GitHub web uploads of files that are already committed -- so by the time
 # anyone runs this, the risky change is in a commit and `git diff HEAD` is empty. The PM
 # reproduced it on a scratch clone: commit an index.html-only change with no sw.js bump, run this,
@@ -171,7 +171,7 @@ INDEX_CHANGED=$(git diff --name-only "$BASE" -- index.html)
 # REPORT PRESENT AT ALL -- including for a change to sw.js alone, which is a real release that
 # reaches every installed phone. A gate that only guards one file is a gate with a door beside it.
 #
-# APP_CLAUDE.md rule 5 names index.html, sw.js, .github/workflows/, sync-backend/, package.json,
+# CLAUDE.md rule 5 names index.html, sw.js, .github/workflows/, sync-backend/, package.json,
 # package-lock.json and capacitor.config.ts. All of them count.
 # TRACKED CHANGES PLUS UNTRACKED FILES. `git diff` compares tracked paths only, so a release made
 # entirely of NEW files -- a new .github/workflows/*.yml, a new file under sync-backend/ -- was
@@ -348,7 +348,7 @@ fi
 # ---- THE CHAIN GATE MUST HAVE ACTUALLY RUN FOR *THIS* VERSION ------------------------------
 # Added 2026-08-29 after the Lead Developer shipped app-v67 to main with every suite green and
 # WITHOUT the Auditor + PM gate, having conflated two different things: Aaron's standing permission
-# to PUSH to the ChemoWell repos, and APP_CLAUDE.md rule 5's requirement that an independent Zero
+# to PUSH to the ChemoWell repos, and CLAUDE.md rule 5's requirement that an independent Zero
 # Day Auditor and PM sign off first. Aaron, 2026-08-29, settling it: "you CAN always push to
 # chemowell, after audit pass and PM."
 #
@@ -437,7 +437,7 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
           ;;
       esac
     done
-    echo "   Every suite passing is SELF-verification. APP_CLAUDE.md rule 5 requires an independent"
+    echo "   Every suite passing is SELF-verification. CLAUDE.md rule 5 requires an independent"
     echo "   Auditor pass and PM sign-off before this ships, with no size exception. Permission to"
     echo "   push is not that gate."
     exit 1

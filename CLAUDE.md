@@ -1,6 +1,57 @@
-# APP_CLAUDE.md — chemowell-app-beta (APP-BETA)
+# CLAUDE.md — chemowell-app-beta (APP-BETA)
 
 Instructions for any AI agent working in this repo.
+
+## RULE 0 — WHO THIS APP IS FOR. Read this before anything else.
+
+**ChemoWell is a product. Every user is a different patient. None of them is the owner's wife.**
+
+This repo shares ancestry with `care-tracker`, which is ONE named person's app — her medications,
+her care team, her diagnosis, her phone. That is correct there and wrong here, and the ancestry
+keeps leaking across. On 2026-09-13 Aaron found the medication disclaimer — the only place in the
+app that gives safety guidance about medication, directly above the list of them — reading
+**"Follow her care team."** It had passed every gate, including a test that checks her NAME is not
+in the file.
+
+He had already given this directive once, on 2026-08-19: *"at no point in time should Brandi's meds
+ever show in code for chemowell. scrub that entirely."* `HARDCODED_MEDS_PLAN.md` is the plan from
+that directive. It was not carried out. That is why he had to say it again.
+
+**WHY IT KEEPS HAPPENING, and the reason this file is now named `CLAUDE.md`:** it used to be called
+`APP_CLAUDE.md`, which Claude Code does not auto-load. So the ONLY instruction file that loaded in a
+session touching this repo was `care-tracker/CLAUDE.md` — 719 lines that name the other patient nine
+times and list four of her medications. Every session was briefed on her and never briefed on this
+product. The rename is the fix; do not rename it back, and do not create a `CLAUDE.md` above this
+directory that would apply to all three repos at once.
+
+### The four shapes the leak takes. Check all four, every release.
+
+1. **Her name.** Covered by an old test, and it is the shape that never actually occurs.
+2. **A pronoun.** "Follow her care team", "if she comes home part-way through a day". Most users are
+   not women. Write **they/them**, always — the patient is whoever the user set up, and this app has
+   never asked anyone's gender for this purpose.
+3. **A dose, ceiling or schedule from one care plan.** `CONFIG.ceilingMg = 2500` sat here for months.
+   Nothing read it, which is the only reason it was harmless.
+4. **Behaviour keyed to a medication id.** The big one. Seventeen branches on `med.id === 'zofran'`
+   and the like still drive a post-chemo block, dexamethasone windows, an Iron+Protonix warning and
+   a Tylenol ceiling. `RESERVED_LEGACY_MED_IDS` FORBIDS users from creating medications with those
+   thirteen names, so a stranger's "Zofran" becomes `zofran-2` and inherits nothing. **The app knows
+   its own logic is unsafe for strangers and fences users out of it rather than fixing it.**
+
+**`test/v75-no-other-patient.mjs` checks all four** and pins #4 as a ratchet at 17 references and 6
+helpers. A new one fails immediately; removing one requires lowering the number, which is also
+checked. Run it before every release. It is not a substitute for `HARDCODED_MEDS_PLAN.md` phases
+1-3, which are the actual fix.
+
+### Medical content
+
+Anything this app says about a medication is read by a stranger. It must not assert a diagnosis
+("cancer of the ovaries" under a drug used for six cancers), a stage, a surgery, or a stigmatised
+condition. The generator in `tools/build-med-table.mjs` carries nine guards for this; read the
+comments there before loosening one. A sentence can be true, federal, correctly cited, and still
+the wrong thing to print under someone's name.
+
+---
 
 ## What this repo is
 The **native mobile app** codebase (APP-BETA). Seeded from `chemowell-beta` v71, with Firebase completely removed. Target: Capacitor-wrapped iOS/Android builds for the stores (APP-LIVE later).
