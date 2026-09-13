@@ -640,6 +640,22 @@ fi
 # suite the release rests on was optional. Added after the phase 1 audit pointed it out.
 # The render test is here for the same reason: it is the only check that catches the blank-screen
 # crash, and the unit suite never calls status(), so without it the fix for that finding had no test.
+# ONE OF THESE IS A BROWSER SUITE AND NEEDS A SERVER. The first version of this wiring assumed one
+# was already running -- true on a developer's machine, false on a CI runner, so the gate failed on a
+# correct build and said "release check failed" about a missing web server. A gate that cries wolf is
+# a gate someone turns off. It starts its own if nothing is listening, and cleans up after itself.
+RC_SERVER_PID=""
+if ! curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:8899/index.html" 2>/dev/null; then
+  python3 -m http.server 8899 >/dev/null 2>&1 &
+  RC_SERVER_PID=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:8899/index.html" 2>/dev/null && break
+    sleep 1
+  done
+fi
+rc_stop_server() { [ -n "$RC_SERVER_PID" ] && kill "$RC_SERVER_PID" 2>/dev/null; RC_SERVER_PID=""; }
+trap rc_stop_server EXIT
+
 for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs; do
   [ -f "$SUITE" ] || continue
   if node "$SUITE" >"/tmp/rc-$(basename "$SUITE").log" 2>&1; then
@@ -647,9 +663,11 @@ for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mj
   else
     echo "❌ RELEASE CHECK FAILED: $SUITE"
     sed -n '/FAIL/p' "/tmp/rc-$(basename "$SUITE").log" | head -10 | sed 's/^/   /'
+    tail -4 "/tmp/rc-$(basename "$SUITE").log" | sed 's/^/   /'
     FAIL=1
   fi
 done
+rc_stop_server
 
 if [ -f "test/v75-no-other-patient.mjs" ]; then
   if node test/v75-no-other-patient.mjs >/tmp/rc-no-other-patient.log 2>&1; then
