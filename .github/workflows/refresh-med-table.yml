@@ -15,7 +15,16 @@ name: Refresh medication table
 # never been executed anywhere, and the first run is where we learn whether it works at all.
 # The monthly schedule is written below and commented out, ready to switch on in one edit.
 on:
+  # TWO WAYS IN, and the second exists because of a real limit rather than a preference.
+  #  * workflow_dispatch -- the Run workflow button in the Actions tab, for a person.
+  #  * a push to `run/refresh-meds` -- because the assistant that maintains this repo can push
+  #    branches but CANNOT start a workflow: dispatching one needs an Actions:write permission its
+  #    GitHub App does not have (403 Resource not accessible by integration). Aaron does not use
+  #    GitHub, so "press the button yourself" was never an acceptable answer. Pushing an empty commit
+  #    to that branch runs this job and is a thing the assistant can actually do.
   workflow_dispatch: {}
+  push:
+    branches: [ 'run/refresh-meds' ]
   # schedule:
   #   - cron: '0 6 1 * *'   # the 1st of each month; drug pages change slowly
 
