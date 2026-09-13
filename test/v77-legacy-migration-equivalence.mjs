@@ -189,5 +189,31 @@ console.log('\n5. THE app-v78 STAMP: A CUSTOMER\'S OWN MEDICATION IS NEVER MIGRA
     !!NEW.migrate({ id: 'zofran', schemaV: 'yes' }).chemoBlock, '');
 }
 
+console.log('\nA DIRECTIVE ON THE RULE IS NOT A FIELD ON THE MEDICATION');
+{
+  // `replaceWindows` tells migrateLegacyMedRules to overwrite a stored `windows` rather than only
+  // fill a gap. It is an instruction to the migration, not something a medication owns -- and the
+  // audit removed the `if (key === 'replaceWindows') continue;` line that separates the two and ran
+  // v75, v77, v78 and v79: all four stayed green while `replaceWindows: true` was persisted onto
+  // every legacy dexamethasone as a stored field. Inert today, which is exactly the argument that
+  // kept `ceilingMg: 2500` alive for months.
+  const dex = NEW.migrate({ id: 'dexamethasone', type: 'win',
+    windows: [{ start: 9, end: 11, name: 'Mine' }] });
+  t('a migrated dexamethasone carries no replaceWindows field',
+    !('replaceWindows' in dex), JSON.stringify(Object.keys(dex)));
+  // AND THE DIRECTIVE STILL DID ITS JOB, or the check above would pass on a migration that simply
+  // stopped working.
+  t('and the rule\'s own windows did replace the stored ones',
+    JSON.stringify(dex.windows) === JSON.stringify([{ start: 8, end: 12, name: 'Morning' },
+      { start: 14, end: 18, name: 'Afternoon' }]), JSON.stringify(dex.windows));
+  // AND THE STAMP REACHES A MEDICATION WITH NO LEGACY RULE AT ALL. It sat below the rule lookup's
+  // early return, so anything predating the properties and matching no rule was never stamped and
+  // was re-walked on every version-1 restore forever -- harmless only until an id is ADDED to the
+  // table, which would then apply retroactively to a customer's own medication of that name.
+  const stranger = NEW.migrate({ id: 'my-own-pill', type: 'gap' });
+  t('a medication with no legacy rule is stamped too', stranger.schemaV === 2,
+    JSON.stringify(stranger));
+}
+
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed' + (fail ? '  <-- FAIL' : ''));
 process.exit(fail ? 1 : 0);

@@ -1189,11 +1189,27 @@ const LEGACY_MED_RULES = {
   'tylenol': { homeCard: { kind: 'mg' } },
   // Was `const imoMax = 4` inline; see the imodium entry for why it is here.
   'tylenol-liquid': { homeCard: { kind: 'ml' } },
-  'imodium': { homeCard: { kind: 'pills' }, ceiling: true, ceilingMax: 4, ceilingUnit: 'pills' },
-  // Missing entirely, so its card disappeared: the old medHomeCardKind returned 'pills' for it and
-  // the old block carried `const lidoMax = 4`. Both were one care plan's numbers; they are written
-  // here as that medication's own configured limit, once, on data that predates the properties.
-  'lidocaine': { homeCard: { kind: 'pills' }, ceiling: true, ceilingMax: 4, ceilingUnit: 'applications' },
+  'imodium': { homeCard: { kind: 'pills' } },
+  // homeCard ONLY, AND DELIBERATELY. app-v79's first attempt also wrote `ceiling: true,
+  // ceilingMax: 4` here for both, justified as moving `const imoMax = 4` and `const lidoMax = 4`
+  // from inline. Those strings do not exist in the parent commit -- phase 2 and 3 had already
+  // removed them -- so it was not moving a number, it was putting one back: leak shape 3, a dose
+  // ceiling from one care plan, in the product whose Rule 0 forbids exactly that, added by the
+  // release meant to finish removing leak shape 4.
+  //
+  // It was also applied as a default over an ABSENCE. This migration writes a key when
+  // `next[key] === undefined`, and `ceiling` being absent does not mean nobody considered it -- it
+  // means the user configured this medication and set no daily limit. That is their decision and it
+  // was being silently overwritten with a stranger's number. (backfillDefaultMedFlags carries a
+  // whole comment about this absent-vs-false distinction, fifty lines from here.)
+  //
+  // And it could never have worked: dailyCeiling routes anything with a ceilingUnit through
+  // dailyPills, which sums entry.pills, and a lidocaine patch saved by a build before app-v45 has
+  // no pills field -- so the card would have read "0 / 4 applications" and "4 applications left"
+  // permanently, however many were logged. A limit that always reads as satisfied is worse than no
+  // limit shown. `homeCard` is a DISPLAY property and belongs here; a daily maximum is a
+  // prescription and does not.
+  'lidocaine': { homeCard: { kind: 'pills' } },
   // Not an id-keyed entry: a MIGRATION OF THE OLD FLAGS. morningLinkedToProtonix and
   // eveningLinkedToProtonix were booleans meaning "two hours after Protonix, in this half of the
   // day". Whoever carried them keeps exactly that, now as data anyone can set for any pair.
@@ -1216,13 +1232,25 @@ function migrateLegacyMedRules(med) {
   }
   const rules = med && Object.prototype.hasOwnProperty.call(LEGACY_MED_RULES, med.id)
     && LEGACY_MED_RULES[med.id] !== true ? LEGACY_MED_RULES[med.id] : null;
+  // STAMPED BEFORE THE RULE LOOKUP, NOT AFTER IT. This sat below `if (!rules) return next;`, so a
+  // medication that predates the properties and matches no legacy rule was never stamped and was
+  // re-walked by the migration on every version-1 restore, forever. Harmless while the rule table is
+  // fixed. It stops being harmless the first time an id is ADDED to LEGACY_MED_RULES, which would
+  // then apply retroactively to a customer's own medication of that name on an old device.
+  //
+  // `next &&` IS NOT DEFENSIVE PADDING. `next` is `med ? {...med} : med`, so a null or undefined
+  // medication reaches here as null -- and moving the stamp above the early return crashed on
+  // exactly that, caught by the hostile-value section of the equivalence suite the moment the line
+  // moved. A null medication is not hypothetical here: the resolvers are commented throughout as
+  // distrusting their normaliser because an import, a hand-edited config or a restored archive from
+  // an older build can all deliver one.
+  if (next) next.schemaV = MED_CONFIG_VERSION;
   if (!rules) return next;
   // `windows` is the one key the old code IGNORED on a legacy medication -- dexWindowsForOffset never
   // looked at med.windows -- so the rule's own times have to overwrite what is stored, exactly once.
   // Expressed as a flag ON THE RULE rather than a check on the id: an `if (med.id === '...')` here
   // would be the fifteenth such branch, in the release whose whole point is that there are none.
   if (rules.replaceWindows) delete next.windows;
-  next.schemaV = MED_CONFIG_VERSION;
   for (const key of Object.keys(rules)) {
     // `windows` is the one key a legacy medication always already has, and for dexamethasone the old
     // code IGNORED it entirely -- dexWindowsForOffset never looked at med.windows. So leaving the
@@ -2266,19 +2294,16 @@ function setToast(msg) {
   toastTimer = setTimeout(() => setState({ toast: null }), 4500);
 }
 
-function afterLog(entry) {
-  const twoH = 2 * 3600000;
-  // app-v76 phase 1: property-driven interaction rules, if this medication carries any. Falls
-  // through to the legacy iron/protonix branch below when it does not, which is every medication
-  // today. Phase 2 deletes that branch.
-  // NO EARLY RETURN. The first version returned here, which put a spacing reminder in front of the
-  // red "Acetaminophen ceiling exceeded" warning and dropped it entirely -- reproduced at 6,000mg
-  // against a 3,000mg limit. In app-v75 the collision was impossible, because the legacy branch only
-  // returned for iron/protonix, which is disjoint from the tylenol block; making the rule generic
-  // made it reachable. The ceiling warning is the one that matters, so it is allowed to run and to
-  // overwrite. Found by the phase 1 audit.
-  const declared = medInteractionsFor(entry);
-  if (declared.length) setState({ warn: declared[0] });
+function afterLog(entry, warnBatch) {
+  // THE TWO LINES THAT USED TO BE HERE ARE GONE, and their absence is the whole point of this
+  // function's shape. They read `const declared = medInteractionsFor(entry); if (declared.length)
+  // setState({ warn: declared[0] });` -- an amber spacing reminder written straight into state.warn
+  // BEFORE the collection below runs, so the red ceiling warning the collection exists to protect
+  // was destroyed three lines before anything could protect it. app-v79's first attempt rewrote
+  // everything from `const configuredMedication` down and left these standing above it, which meant
+  // the release that says "red beats amber" shipped the exact order-dependent behaviour it names.
+  // medInteractionsFor(entry) is still called, once, into `warnings` below. Nothing is lost.
+  // `const twoH` went with them; it had no readers left either.
   const configuredMedication = state.meds.find(med => med.id === entry.medId);
   // EVERY WARNING THIS DOSE EARNS, THEN THE WORST ONE. Three separate defects lived in the shape
   // this replaces, all found by the phase 2/3 audit:
@@ -2302,10 +2327,17 @@ function afterLog(entry) {
        || configuredMedication)
     : configuredMedication;
   const configuredLimit = dailyCeiling(ceilingOwner);
+  // WHAT THE TOTAL IS ACTUALLY OF. After logging Tylenol Liquid the warning read "Tylenol daily
+  // limit exceeded ... today's Tylenol total is 3,500 mg", naming a medication the caregiver did not
+  // tap, with a number bigger than anything they logged under that name. At 2am that reads as
+  // "I mis-tapped" or, worse, "the pills are over but the liquid is fine".
+  const ceilingNames = ceilingOwner ? ceilingGroupMedIds(ceilingOwner)
+    .map(id => (state.meds.find(m => m.id === id) || {}).name).filter(Boolean) : [];
+  const limitLabel = ceilingNames.length > 1 ? ceilingNames.join(' + ') : (ceilingOwner || {}).name;
   if (configuredLimit && configuredLimit.used > configuredLimit.max) {
     // Named for the medication that OWNS the limit, not the one just logged: "Tylenol daily limit
     // exceeded" after a dose of Tylenol Liquid is the true statement, because they share one total.
-    warnings.push({ tone: 'red', title: ceilingOwner.name + ' daily limit exceeded', body: "Today's " + ceilingOwner.name + ' total is ' + configuredLimit.used.toLocaleString() + ' ' + configuredLimit.unit + ', above the ' + configuredLimit.label + ' daily limit set for it. Check with the care team before logging more.' });
+    warnings.push({ tone: 'red', title: limitLabel + ' daily limit exceeded', body: "Today's " + limitLabel + ' total is ' + configuredLimit.used.toLocaleString() + ' ' + configuredLimit.unit + ', above the ' + configuredLimit.label + ' daily limit set for it. Check with the care team before logging more.' });
   }
   const volumeLimit = dailyVolumeCeiling(configuredMedication);
   if (volumeLimit && volumeLimit.used > volumeLimit.max) {
@@ -2318,7 +2350,14 @@ function afterLog(entry) {
   // ceiling warning raised by the first medication must survive a spacing reminder raised by the
   // third.
   const worst = warnings.find(w => w.tone === 'red') || warnings[0];
-  if (state.warn && state.warn.tone === 'red' && worst.tone !== 'red') return;
+  // SCOPED TO THIS BATCH, NOT TO THE SESSION. The first version read `state.warn`, which is cleared
+  // only when the caregiver taps the x on the banner -- so an undismissed red from an hour ago
+  // silenced every amber raised afterwards, on every medication, invisibly. A caregiver who leaves
+  // a "check with the care team" banner up, which is the sensible thing to do, would simply stop
+  // being told about interaction timing. `warnBatch` is an object "Take all" creates once per run
+  // and passes to each call; a single log passes none, so it never suppresses anything.
+  if (warnBatch && warnBatch.red && worst.tone !== 'red') return;
+  if (warnBatch && worst.tone === 'red') warnBatch.red = true;
   setState({ warn: worst });
 
 }
@@ -2572,7 +2611,9 @@ async function confirmTimeAndLog() {
     // app-v77 phase 2: was `if (ids.includes('iron'))`, so an interaction warning could only ever
     // be raised by one specific medication being in the batch. Every medication just logged gets
     // the same check any single log gets.
-    setTimeout(() => { ids.forEach(mid => afterLog({ medId: mid, ts, id: 'pending' })); }, 500);
+    // ONE BATCH TOKEN FOR THE WHOLE RUN, so a red raised by the first medication survives an amber
+    // raised by the third -- and nothing outside this run is affected by it.
+    setTimeout(() => { const warnBatch = {}; ids.forEach(mid => afterLog({ medId: mid, ts, id: 'pending' }, warnBatch)); }, 500);
   } else if (m.type === 'period') {
     // Retroactive Start(+Stop) logging for Cycle/In-Patient via the "+" control (v68 redesign).
     // Always writing a matched Start+End pair (instead of the old single-marker log) means the
@@ -5234,10 +5275,13 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         h('div', { className: 'mono', style: { fontSize: '20px', fontWeight: '600', letterSpacing: '-0.02em', whiteSpace: 'nowrap' } },
           hcUsed.toLocaleString(),
           h('span', { style: { color: '#7A6E76', fontSize: '13px', fontWeight: '400' } },
-            hcMax > 0 ? (' / ' + hcMax.toLocaleString() + ' ' + hcUnit) : (' ' + hcUnitFor(hcUsed)))
+            // The max is a count like any other: a medication limited to one pill a day read
+            // "0 / 1 pills". This site was left plural on purpose in the first pass and the purpose
+            // was wrong.
+            hcMax > 0 ? (' / ' + hcMax.toLocaleString() + ' ' + hcUnitFor(hcMax)) : (' ' + hcUnitFor(hcUsed)))
         )
       ),
-      hcMax > 0 ? h('div', { role: 'img', 'aria-label': hcUsed.toLocaleString() + ' of ' + hcMax.toLocaleString() + ' ' + hcUnit + ' used today', style: { height: '12px', background: 'rgba(246,108,49,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px' } },
+      hcMax > 0 ? h('div', { role: 'img', 'aria-label': hcUsed.toLocaleString() + ' of ' + hcMax.toLocaleString() + ' ' + hcUnitFor(hcMax) + ' used today', style: { height: '12px', background: 'rgba(246,108,49,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px' } },
         h('div', { style: { height: '100%', width: Math.round(hcPct) + '%', background: hcColor, borderRadius: '99px', transition: 'width .45s ease, background .45s ease' } })
       ) : null
     ));
@@ -10420,6 +10464,12 @@ function notifPlanSignature(plan) { return plan.map(notifPayloadKey).join(','); 
 // Function declarations are hoisted within their module, so this can sit right next to the functions
 // it exposes regardless of definition order elsewhere in the file.
 if (typeof window !== 'undefined') {
+  // app-v79: the warning path, for test/v79-warning-priority.mjs. See the note above __syncTest.
+  window.__warnTest = {
+    afterLog,
+    getWarn: () => state.warn,
+    clearWarn: () => setState({ warn: null }),
+  };
   window.__notifTest = {
     applyExactAlarmLeadBuffer, buildReminderPlan, batteryPlugin, lnPlugin,
     getNotifExactState: () => notifExactState,

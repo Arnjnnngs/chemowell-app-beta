@@ -73,7 +73,20 @@ const seeded = await page.evaluate(() => {
     { id: 'tylenol-liquid', name: 'Tylenol Liquid', type: 'gap', gapH: 4, ceilingGroup: 'apap',
       volumeCeilingMl: 90, doses: [{ label: '15 mL', mg: 480, volumeMl: 15 }], quickLog: true },
     { id: 'imodium', name: 'Imodium', type: 'gap', gapH: 6,
-      doses: [{ label: '1 pill', mg: 0, pills: 1 }], quickLog: true }
+      doses: [{ label: '1 pill', mg: 0, pills: 1 }], quickLog: true },
+    // TWO MEDICATIONS ADDED SO THAT THE SINGULAR-UNIT CHECK CAN ACTUALLY FAIL.
+    // The audit reverted the whole `hcUnitFor` helper and this suite stayed 12/12, because
+    // "1 doses" is only produced by the NO-LIMIT branch (`hcUsed + ' ' + unit`) and by
+    // `hcLeft === 1`, and the Imodium fixture above reaches neither: it has no ceiling, so
+    // `hcMax` is 0, and one pill of an unlimited medication was never rendered with a count.
+    // The check was asserting the absence of a string its own data could not generate.
+    //   * 'antacid' has a homeCard and NO ceiling  -> renders the bare "1 <unit>" form.
+    //   * 'lozenge' has a ceiling of 2 and one dose -> renders "1 <unit> left before the limit".
+    { id: 'antacid', name: 'Antacid', type: 'gap', gapH: 4, homeCard: { kind: 'pills' },
+      doses: [{ label: '1 tablet', mg: 0, pills: 1 }], quickLog: true },
+    { id: 'lozenge', name: 'Lozenge', type: 'gap', gapH: 4, homeCard: { kind: 'pills' },
+      ceiling: true, ceilingMax: 2, ceilingUnit: 'lozenges',
+      doses: [{ label: '1 lozenge', mg: 0, pills: 1 }], quickLog: true }
   ], archivedMeds: {} }));
   const ekey = Object.keys(localStorage).find(k => /entries/.test(k));
   return { ok: true, key, ekey };
@@ -110,7 +123,9 @@ console.log('\n2. LOG A DOSE, AND THE DAILY-TOTAL CARD APPEARS AND IS RIGHT');
     const rows = [
       { id: 'e1', medId: 'tylenol', ts: now - 3600000, dose: '500 mg', mg: 500 },
       { id: 'e2', medId: 'tylenol-liquid', ts: now - 1800000, dose: '15 mL', mg: 480, volumeMl: 15 },
-      { id: 'e3', medId: 'imodium', ts: now - 900000, dose: '1 pill', mg: 0, pills: 1 }
+      { id: 'e3', medId: 'imodium', ts: now - 900000, dose: '1 pill', mg: 0, pills: 1 },
+      { id: 'e4', medId: 'antacid', ts: now - 800000, dose: '1 tablet', mg: 0, pills: 1 },
+      { id: 'e5', medId: 'lozenge', ts: now - 700000, dose: '1 lozenge', mg: 0, pills: 1 }
     ];
     localStorage.setItem(key || 'chemowell-app-p-p1-entries-v1', JSON.stringify(rows));
   });
@@ -132,7 +147,16 @@ console.log('\n2. LOG A DOSE, AND THE DAILY-TOTAL CARD APPEARS AND IS RIGHT');
   t('but the mL total, which is not shared, names only its own medication',
     /tylenol liquid · today\s*\n?\s*[\d,]+ mL left/i.test(txt) && !/tylenol \+ tylenol liquid · today\s*\n?\s*[\d,]+ mL/i.test(txt),
     (txt.match(/[A-Za-z +]+ · TODAY[^\n]*\n[^\n]*/gi) || []).join(' || '));
-  t('no "1 doses"', !/\b1 doses\b/.test(txt), (txt.match(/\d+ \w+ left/g) || []).join(' | '));
+  // A COUNT OF ONE IS NEVER PLURAL, on either branch. Falsified by reverting hcUnitFor at both
+  // call sites and watching all three of these go red.
+  const plurals = (txt.match(/\b1 (?:doses|tablets|lozenges|pills|applications)\b/g) || []);
+  t('no count of 1 is printed with a plural unit', plurals.length === 0, plurals.join(' | '));
+  // AND THE FIXTURE REALLY REACHES BOTH BRANCHES. Without this the check above passes on a screen
+  // that simply never printed a 1, which is how its first version passed against its own mutant.
+  t('the no-limit branch is actually on screen', /No daily limit set/.test(txt),
+    txt.includes('Antacid') ? 'Antacid card present, no-limit text missing' : 'Antacid card missing');
+  t('and the remaining-count branch did too', /\b1 lozenge left\b/.test(txt),
+    (txt.match(/\d+ \w+ left/g) || []).join(' | '));
   const crash = errors.filter(e => /is not defined|Cannot read propert/.test(e));
   t('still no ReferenceError', crash.length === 0, crash.join(' | '));
 }

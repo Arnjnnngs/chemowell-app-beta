@@ -97,6 +97,31 @@ console.log('\n3. NO DOSE, CEILING OR SCHEDULE FROM ONE CARE PLAN');
     }
     t('no hardcoded dose or ceiling in ' + f.name, bad.length === 0, bad.join(' | '));
   }
+
+  // ANY LITERAL CEILING INSIDE THE LEGACY RULE TABLE, WHATEVER ITS UNIT OR SIZE.
+  // The two checks above were both blind to what app-v79's first attempt actually added:
+  // `ceilingMax: 4, ceilingUnit: 'applications'` on Imodium and Lidocaine. The first only matches
+  // `ceilingMg`. The second wants three to five digits next to a drug name followed by mg or ml,
+  // and a one-digit count of "applications" is none of those things. So the guard for this exact
+  // leak shape passed on this exact leak, in the release that introduced it.
+  //
+  // The lesson is bigger than the pattern: both checks were written against the ONE example that
+  // had already happened -- a four-digit milligram figure in CONFIG -- and a guard shaped around a
+  // single past instance catches that instance and nothing else. This one is shaped around the
+  // PLACE instead. LEGACY_MED_RULES is where a stranger's regimen would have to be written down to
+  // have any effect, so no daily maximum of any unit may appear inside it at all.
+  {
+    const code = files.find(f => f.name === 'index.html').raw
+      .replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const i = code.indexOf('LEGACY_MED_RULES');
+    const table = i < 0 ? '' : code.slice(i, code.indexOf('\n};', i) + 3);
+    const hits = [...table.matchAll(/\b(ceilingMax|ceilingMg|volumeCeilingMl|rollingCeilingH|gapH)\s*:\s*[\d.]+/g)]
+      .map(m => m[0]);
+    t('no daily maximum of any unit inside LEGACY_MED_RULES', hits.length === 0,
+      hits.join(' | ') || (table ? 'table found, ' + table.length + ' chars scanned' : 'TABLE NOT FOUND'));
+    // A matcher that scanned an empty string would pass forever. The table has to actually be there.
+    t('and the rule table was actually found and scanned', table.length > 200, String(table.length));
+  }
 }
 
 console.log('\n4. THE RATCHET: BEHAVIOUR KEYED TO ONE PERSON\'S PRESCRIPTION');
