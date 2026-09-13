@@ -11,7 +11,7 @@
 // invented to trip it proves nothing about the sentences it will really meet.
 //
 // Run:  node test/v75-table-builder.mjs
-import { buildTable, guardFailure, firstSentence, tidy, whySection, stripFormWords, addFormAliases, brandNames, GUARDS, MAX_LEN } from '../tools/build-med-table.mjs';
+import { buildTable, guardFailure, firstSentence, tidy, whySection, stripFormWords, addFormAliases, brandNames, purposeMismatch, GUARDS, MAX_LEN } from '../tools/build-med-table.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -438,6 +438,45 @@ console.log('\n14. FINDING THE PAGE AT ALL  (Aaron: "if there are 60 in, 60 shou
     !brands.some(b => /\d/.test(b)), brands.join(', '));
   t('an empty or junk page yields no brands',
     brandNames('').length === 0 && brandNames('<p>nothing here</p>').length === 0, '');
+}
+
+console.log('\n15. TRUE, SAFE, AND STILL THE WRONG ANSWER  (reported, never silently dropped)');
+{
+  // The class no regex can catch: MedlinePlus answers for a drug's MAIN APPROVED use, and this app
+  // is often tracking an off-label one. amitriptyline is on the list for "nerve pain and mouth
+  // sores"; MedlinePlus says "Used to treat symptoms of depression." Both true. Only one is why the
+  // patient is holding the bottle, and it is the wrong one to print under her name -- on a screen
+  // that gets exported.
+  //
+  // It is REPORTED rather than rejected on purpose. The sentence passes every guard and is true, so
+  // dropping it silently would throw away good text on a hunch, and a person reading a short list is
+  // a better judge here than a pattern.
+  t('a sentence that answers a different question than we asked is flagged',
+    /nerve pain/.test(purposeMismatch('Used to treat symptoms of depression.', 'nerve pain and mouth sores') || ''),
+    String(purposeMismatch('Used to treat symptoms of depression.', 'nerve pain and mouth sores')));
+  // FALSIFIED THE OTHER WAY, which is the direction that matters: if this over-fired it would bury
+  // the real cases in noise and the list would stop being read.
+  for (const [c, w] of [
+    ['Used to prevent nausea and vomiting caused by cancer chemotherapy.', 'nausea control'],
+    ['A synthetic sugar used to treat constipation.', 'constipation from opioids'],
+    ['Used to treat or prevent certain infections caused by bacteria.', 'infection risk when counts are low'],
+    ['Used to relieve severe pain.', 'pain']
+  ]) t('and a sentence that DOES answer it is not flagged  |  ' + c.slice(0, 40),
+      purposeMismatch(c, w) === null, String(purposeMismatch(c, w)));
+  t('a drug the app already describes is not flagged at all',
+    purposeMismatch('Anything at all.', 'already described in the app') === null, '');
+  t('and neither is one with no stated reason', purposeMismatch('Anything at all.', '') === null, '');
+
+  // Gendered anatomy, added the same day one specific woman was taken out of the app.
+  t('a sentence leading with a gendered body part is refused',
+    guardFailure('Used to treat fungal infections, including yeast infections of the vagina, mouth, throat.')
+      === 'a stigmatised indication a reader would attach to the patient', '');
+  // AND THE THING THAT MUST NOT BREAK: banning anatomy outright was tried on this project and was
+  // wrong -- it rejected "eases itching and swelling of the skin" while letting "settles the
+  // stomach" through.
+  t('but ordinary anatomy is still allowed',
+    guardFailure('Eases itching and swelling of the skin.') === null,
+    String(guardFailure('Eases itching and swelling of the skin.')));
 }
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed' + (fail ? '  <-- FAIL' : ''));

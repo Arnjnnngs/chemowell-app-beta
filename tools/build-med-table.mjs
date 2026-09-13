@@ -116,8 +116,14 @@ export const GUARDS = [
   // printed for a clinic. Being arithmetically true is not the test; what a reader concludes is.
   // Found by the app-v75 delta audit. The drug keeps its lookup link, so the page is a tap away for
   // anyone who wants the full answer -- what is refused is putting it on the card unasked.
+  // Gendered anatomy is here for the same reason, and it arrived the same day the app had one
+  // specific woman taken out of it. MedlinePlus's fluconazole sentence LEADS with "yeast
+  // infections of the vagina"; in this app it is nearly always oral thrush prophylaxis during
+  // treatment, and the card would open by naming a body part its user may not have.
+  // Non-gendered anatomy stays allowed -- "eases itching and swelling of the skin" is fine, and
+  // banning anatomy outright was tried on this project and was wrong.
   { name: 'a stigmatised indication a reader would attach to the patient',
-    re: /\b(sexually transmitted|venereal|genital herpes|hiv|aids\b|substance (?:use|abuse)|alcohol(?:ism| dependence| use disorder)|opioid (?:use disorder|dependence|addiction)|addiction|withdrawal syndrome)\b/i },
+    re: /\b(sexually transmitted|venereal|genital herpes|vagina|vaginal|penis|penile|testicle|hiv|aids\b|substance (?:use|abuse)|alcohol(?:ism| dependence| use disorder)|opioid (?:use disorder|dependence|addiction)|addiction|withdrawal syndrome)\b/i },
   // NO INSTRUCTION TO THE READER. A description says what a medication is for; the moment it says
   // what to do it is advice, and this app does not give advice.
   { name: 'an instruction to the reader', re: /\b(you should|do not|don't|never take|always take|call your doctor|tell your doctor|ask your doctor|stop taking|keep taking)\b/i }
@@ -351,9 +357,31 @@ export function tidy(sentence, name, generic) {
   return t.trim();
 }
 
+// WHERE MEDLINEPLUS'S ANSWER AND OUR REASON FOR ASKING DISAGREE. No regex can catch this class and
+// nothing should silently drop on it, so it is REPORTED for a person to read.
+// tools/med-list.json records why each drug is on the list. amitriptyline is there for "nerve pain
+// and mouth sores"; MedlinePlus's first sentence is "Used to treat symptoms of depression." Both
+// true; only one is why this patient is holding the bottle, and it is the wrong one to print under
+// her name. The guards can refuse a sentence that names a diagnosis SHE MIGHT NOT HAVE, but they
+// cannot know that a drug is being used off-label -- a person has to look.
+export function purposeMismatch(candidate, why) {
+  const w = String(why || '').toLowerCase();
+  if (!w || /already described in the app/.test(w)) return null;
+  const stop = new Set(['the','and','for','with','from','that','this','their','they','are','was','use',
+    'used','uses','when','what','why','a','an','of','to','in','on','or','it','is','be','as','at','by']);
+  const terms = w.split(/[^a-z]+/).filter(x => x.length > 3 && !stop.has(x));
+  if (!terms.length) return null;
+  const c = String(candidate || '').toLowerCase();
+  // A shared stem is enough -- "pain" matches "nerve pain", "nausea" matches "nausea and vomiting".
+  const shared = terms.filter(x => c.includes(x.slice(0, Math.max(4, x.length - 2))));
+  if (shared.length) return null;
+  return 'says nothing about "' + String(why).slice(0, 60) + '"';
+}
+
 export function buildTable(pages) {
   const table = {};
   const rejected = [];
+  const review = [];
   const seen = new Set();
   for (const page of Array.isArray(pages) ? pages : []) {
     const name = String(page && page.name || '').trim();
@@ -377,10 +405,17 @@ export function buildTable(pages) {
       rejected.push({ name, why: failure, candidate: candidate.slice(0, 120) });
       continue;
     }
+    const mismatch = purposeMismatch(candidate, page.why);
+    if (mismatch) {
+      // KEPT, BUT NAMED. This is not a guard failure -- the sentence is true and safe -- so dropping
+      // it silently would throw away good text on a hunch. It goes in the report instead, where a
+      // person decides.
+      review.push({ name, why: mismatch, candidate: candidate.slice(0, 120) });
+    }
     seen.add(key);
     table[key] = { t: candidate, u: url };
   }
-  return { table, rejected };
+  return { table, rejected, review };
 }
 
 // ---- CLI ----------------------------------------------------------------------------------------
@@ -388,7 +423,7 @@ const argv = process.argv.slice(2);
 const arg = (flag) => { const i = argv.indexOf(flag); return i >= 0 ? argv[i + 1] : null; };
 if (arg('--in')) {
   const pages = JSON.parse(fs.readFileSync(arg('--in'), 'utf8'));
-  const { table, rejected } = buildTable(pages);
+  const { table, rejected, review } = buildTable(pages);
   const outPath = arg('--out') || 'med-source-table.json';
   fs.writeFileSync(outPath, JSON.stringify(table, null, 2) + '\n');
   const lines = [
@@ -403,6 +438,14 @@ if (arg('--in')) {
     '|---|---|---|'
   ];
   for (const r of rejected) lines.push('| ' + r.name + ' | ' + r.why + ' | ' + (r.candidate || '') + ' |');
+  if (review.length) {
+    lines.push('', '## KEPT, BUT SOMEBODY SHOULD READ THESE', '',
+      'The sentence passed every guard and is true. It just does not mention the reason this drug is',
+      'on the list at all -- which usually means MedlinePlus is answering for the drug\'s main approved',
+      'use while this app is tracking an off-label one. No guard can catch that; a person has to look.',
+      '', '| Medication | Our reason for asking | What MedlinePlus answered |', '|---|---|---|');
+    for (const r of review) lines.push('| ' + r.name + ' | ' + r.why + ' | ' + (r.candidate || '') + ' |');
+  }
   if (arg('--report')) fs.writeFileSync(arg('--report'), lines.join('\n') + '\n');
   console.log('kept ' + Object.keys(table).length + ', rejected ' + rejected.length + ' -> ' + outPath);
 }
