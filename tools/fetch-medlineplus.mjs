@@ -52,25 +52,66 @@ function whySection(html) {
 // WRONG page -- so a candidate is only accepted when the link text matches the medication name
 // exactly, rather than merely containing it. "Ibuprofen" must not match "Ibuprofen and Famotidine".
 const INDEX_URL = 'https://medlineplus.gov/druginformation.html';
+
+// TWO HOPS, because the index is not a list of drugs. Measured on the real site by running a probe
+// inside the workflow and reading the log -- this sandbox cannot reach MedlinePlus, so the job that
+// CAN became the eyes.
+// What druginformation.html actually contains is 26 LETTER pages -- druginfo/drug_Aa.html,
+// drug_Ba.html and so on -- and the drug links live on those. The first version looked for drug
+// links on the index itself and found none, which is why it resolved zero and said so loudly.
+// Also measured: the site redirects to www.medlineplus.gov, and a relative href resolved against the
+// wrong host simply fails. Every URL below is resolved against the FINAL url of the response that
+// contained it, which is the only way that stays right if they change hosts again.
+async function getHtml(url) {
+  const res = await fetch(url, { headers: { 'User-Agent': UA }, redirect: 'follow' });
+  if (!res.ok) return null;
+  return { html: await res.text(), finalUrl: res.url };
+}
+function absolute(href, base) {
+  try { return new URL(href, base).href; } catch (e) { return ''; }
+}
+
+async function buildNameMap() {
+  const map = new Map();
+  const index = await getHtml(INDEX_URL);
+  if (!index) return map;
+  // the letter pages, from the index
+  const letters = [];
+  for (const m of index.html.matchAll(/<a[^>]+href="([^"]*druginfo\/drug_[A-Za-z]+\.html)"/gi)) {
+    const abs = absolute(m[1], index.finalUrl);
+    if (abs && !letters.includes(abs)) letters.push(abs);
+  }
+  console.log('  the index lists ' + letters.length + ' letter page(s)');
+  for (const letterUrl of letters) {
+    const page = await getHtml(letterUrl);
+    await sleep(700);
+    if (!page) { console.log('  could not read ' + letterUrl); continue; }
+    let found = 0;
+    for (const m of page.html.matchAll(/<a[^>]+href="([^"]*meds\/[a-z0-9]+\.html)"[^>]*>([^<]+)<\/a>/gi)) {
+      const abs = absolute(m[1], page.finalUrl);
+      // Spanish pages live under /spanish/ and end -es.html; this app is English only.
+      if (!abs || /\/spanish\//i.test(abs) || /-es\.html$/i.test(abs)) continue;
+      const label = m[2].replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      if (!label) continue;
+      if (!map.has(label)) { map.set(label, abs); found++; }
+    }
+    console.log('  ' + letterUrl.split('/').pop() + ': ' + found + ' medication(s)');
+  }
+  return map;
+}
+
 async function resolveUrls(entries) {
   const need = entries.filter(e => !e.url);
   if (!need.length) return { resolved: 0, unresolved: [] };
-  let html = '';
-  try {
-    const res = await fetch(INDEX_URL, { headers: { 'User-Agent': UA } });
-    if (res.ok) html = await res.text();
-  } catch (e) { /* handled by the zero-resolved path below */ }
-  const map = new Map();
-  for (const m of html.matchAll(/<a[^>]+href="([^"]*\/druginfo\/meds\/[^"]+\.html)"[^>]*>([^<]+)<\/a>/gi)) {
-    const href = m[1].startsWith('http') ? m[1] : 'https://medlineplus.gov' + (m[1].startsWith('/') ? '' : '/') + m[1];
-    const label = m[2].replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
-    if (label && !map.has(label)) map.set(label, href);
-  }
+  let map = new Map();
+  try { map = await buildNameMap(); } catch (e) { console.log('  index walk threw: ' + (e && e.message || e)); }
+  console.log('  ' + map.size + ' medication name(s) known to MedlinePlus');
   let resolved = 0;
   const unresolved = [];
   for (const e of need) {
     const key = String(e.name || '').trim().toLowerCase();
-    const hit = map.get(key);                    // EXACT match only. See the note above.
+    // EXACT match only: "Ibuprofen" must not resolve to "Ibuprofen and Famotidine".
+    const hit = map.get(key);
     if (hit) { e.url = hit; resolved++; } else { unresolved.push(e.name); }
   }
   return { resolved, unresolved };
