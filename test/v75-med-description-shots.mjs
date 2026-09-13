@@ -26,8 +26,9 @@ const BASE = 'http://127.0.0.1:8899/index.html';
 const OUT = 'outputs/v75-shots';
 fs.mkdirSync(OUT, { recursive: true });
 
-// shortest quoted / middling quoted / longest quoted / rejected-so-falls-back
-const MEDS = ['Buspirone', 'Ondansetron', 'Cyclophosphamide', 'Dexamethasone'];
+// hand-written and short (no expander) / quoted / quoted and long (expander) / MedlinePlus rejected,
+// so the app falls back to its own line and the link stays a search rather than a citation
+const MEDS = ['Buspirone', 'Granisetron', 'Mesna', 'Dexamethasone'];
 
 let fail = 0;
 const browser = await chromium.launch();

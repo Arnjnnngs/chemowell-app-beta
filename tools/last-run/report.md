@@ -1,6 +1,6 @@
 # Medication table build
 
-Pages in: **85** · kept: **31** · rejected: **54**
+Pages in: **85** · kept: **30** · rejected: **55**
 
 A rejected sentence is NOT trimmed to fit. The app keeps its own hand-written line for that drug.
 
@@ -26,6 +26,7 @@ A rejected sentence is NOT trimmed to fit. The app keeps its own hand-written li
 | epirubicin | a named diagnosis the patient may not have | Used in combination with other medications to treat breast cancer in patients who have had surgery to remove the tumor. |
 | etoposide | a named diagnosis the patient may not have | Used in combination with other medications to treat a certain type of lung cancer (small cell lung cancer; SCLC). |
 | filgrastim | a dosage form or route | Filgrastim injection products (Granix, Neupogen, Nivestym, Releuko, Zarxio) are used to decrease the chance of infection |
+| fluconazole | a stigmatised indication a reader would attach to the patient | Used to treat fungal infections, including yeast infections of the vagina, mouth, throat, esophagus (tube leading from t |
 | gabapentin | a dosage form or route | Gabapentin capsules, tablets, and oral solution are used along with other medications to help control certain types of s |
 | gemcitabine | a number, which could read as a dose | Used in combination with carboplatin to treat ovarian cancer (cancer that begins in the female reproductive organs where |
 | ifosfamide | a named diagnosis the patient may not have | Used to treat certain types of cancer of the testicles. |
