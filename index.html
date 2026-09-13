@@ -2031,6 +2031,7 @@ function missedDosesFor(dayTs, now) {
 // control that writes a dose is all this app should ever have, and the card below already carries
 // the ceiling check, the gap check and the override flow. A focus ring is set so the destination is
 // obvious to a screen reader and to anyone who cannot see the scroll happen.
+let medFlashTimer = null;
 function scrollToMedCard(medId) {
   // Two shapes, because a grouped medication has no card of its own: its own card first, then the
   // group card that contains it. CSS.escape is not assumed -- the id is sanitised the same way the
@@ -2045,8 +2046,19 @@ function scrollToMedCard(medId) {
   // every one of them was wiped within a second. On a phone the ring would have flashed and
   // vanished, and the caregiver would land on a card with nothing marking it. Caught by the suite
   // asserting the landing rather than the scroll.
+  // THE PREVIOUS TIMER IS CANCELLED. Without this, tapping the same button twice inside 1.8s let
+  // the first tap's timer clear the second tap's mark, and the control looked broken.
+  clearTimeout(medFlashTimer);
   setState({ medFlash: safe });
-  setTimeout(() => { if (state.medFlash === safe) setState({ medFlash: null }); }, 1800);
+  medFlashTimer = setTimeout(() => { if (state.medFlash === safe) setState({ medFlash: null }); }, 1800);
+}
+
+// True exactly when Home is already showing the day's dose count, which is the only condition
+// under which the header may drop it.
+function homeShowsDoseCount(now) {
+  const p = doseProgressToday(now);
+  if (p.scheduled <= 0) return false;
+  return !!nextDueDose(now) || p.taken >= p.scheduled;
 }
 
 function doseProgressToday(now) {
@@ -3864,12 +3876,29 @@ function renderTestingControls() {
 // "due" at any time -- it is available -- and putting one in a card headed "Up next" would tell a
 // caregiver to give a dose nobody asked for. Only medications with windows can be late for anything,
 // which is the same line `doseProgressToday` and the missed-dose walk already draw.
+// Is there anywhere on Home for this medication? The hero's only control scrolls to a card, so
+// naming a medication that has none leaves a caregiver told a dose is due with nothing to tap.
+function medHasReachableCard(med) {
+  return !!(med && (med.quickLog || med.groupedMorning || med.groupedAfternoon || med.groupedEvening));
+}
+
 function nextDueDose(now) {
   const d0 = dayStart(now);
   let best = null;
   for (const med of state.meds) {
     if (!med) continue;
-    if (!(med.windows && med.windows.length)) continue;      // as-needed: available, never due
+    // `med.alerts`, NOT `med.windows.length`. normalizeMedication sets alerts to exactly
+    // `type === 'win' && the schedule days are not "as needed"`, which is the same line the
+    // missed-dose walk draws -- so the hero and the walk cannot disagree about what "due" means.
+    // Guarding on windows instead let a medication marked AS NEEDED under "Days taken" through: it
+    // is type 'win', it has windows, and the app's own help text for that setting says missed doses
+    // are never flagged for it. The hero said "Due now" while its card said "Available".
+    if (!med.alerts) continue;
+    if (!(med.windows && med.windows.length)) continue;
+    // AND IT MUST HAVE SOMEWHERE TO SEND THE CAREGIVER. A medication set to "Managed only (no Home
+    // card)" was named by the hero, and its button then did nothing at all -- scrollToMedCard found
+    // no element and returned -- with no way to log the announced dose anywhere on Home.
+    if (!medHasReachableCard(med)) continue;
     if (!medScheduledOn(med, now)) continue;
     if (treatmentOnlyBlocks(med, now) || treatmentExcludedNow(med, now)) continue;
     const st = status(med);
@@ -3933,7 +3962,11 @@ function renderHeader(now) {
         h('div', { style: { ...TYPE.caption, color: '#7A6E76', fontWeight: '600', marginTop: '2px' } }, dateLabel)
       ),
       h('div', { style: { textAlign: 'right', flexShrink: '0', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' } },
-        state.view === 'home' ? null : doseRing(now)
+        // SUPPRESSED ONLY WHERE THE HERO ACTUALLY SHOWS THE SAME FIGURE. `state.view === 'home'`
+        // alone hid it on a day with an unlogged past window, where neither the hero nor the
+        // all-done card renders -- so the count vanished from the app completely, which is worse
+        // than showing it twice.
+        (state.view === 'home' && homeShowsDoseCount(now)) ? null : doseRing(now)
       )
     ),
     TEST_MODE ? h('div', { style: { maxWidth: '720px', margin: '8px auto 0' } }, ...renderTestingControls()) : null,
@@ -4061,11 +4094,22 @@ function renderGroupedMedsCard(title, meds, now) {
   // Set on the section rather than per row: the row is what the caregiver taps, the card is what
   // they need to be looking at, and landing mid-list with the heading off-screen is disorienting.
   const groupHook = {};
-  meds.forEach(m => { if (m && m.id) groupHook['data-med-card-' + String(m.id).replace(/[^A-Za-z0-9_-]/g, '')] = 'group'; });
+  let groupFlashed = false;
+  meds.forEach(m => {
+    if (!m || !m.id) return;
+    const k = String(m.id).replace(/[^A-Za-z0-9_-]/g, '');
+    groupHook['data-med-card-' + k] = 'group';
+    if (state.medFlash === k) groupFlashed = true;
+  });
+  // THE GROUP CARD LIGHTS UP TOO. It scrolled correctly and never showed the mark, because the mark
+  // was rendered only on standalone cards -- so for the morning and evening rounds, which are the
+  // batches, the caregiver landed on a card with nothing on it saying why. That is precisely the
+  // failure this release's own notes claim to have fixed, left in place for the grouped half.
+  if (groupFlashed) groupHook['data-flash'] = 'on';
   // v20: paused and treatment-window-hidden meds are excluded from "due"/"Take all" the same way
   // medCards' upstream filter already excludes them for standalone Quick Log cards.
   const dueMeds = meds.filter(m => { if (m.paused) return false; if (treatmentOnlyBlocks(m, now)) return false; if (treatmentExcludedNow(m, now)) return false; if (!medScheduledOn(m, now)) return false; const s = status(m); return !s.locked; });
-  return h('section', { ...groupHook, style: { overflowWrap: 'anywhere' } },
+  return h('section', { ...groupHook, style: { overflowWrap: 'anywhere', transition: 'box-shadow .25s ease', ...(groupFlashed ? { boxShadow: '0 0 0 3px rgba(191,76,26,0.55)', borderRadius: '18px' } : {}) } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
       h('div', { style: { ...TYPE.label, color: '#915E48' } }, title),
       // 'Take all' was hidden for the whole of a stay, left behind when the Restricted tiles
@@ -5330,14 +5374,21 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     const prog = doseProgressToday(now);
     if (nx) {
       const mins = Math.max(0, Math.round((nx.at - now) / 60000));
+      // "Due in 0 minutes" showed for the half-minute before a window opened -- true to the
+      // arithmetic and meaningless to read. Under a minute says so in words.
       const whenWords = nx.openNow
         ? 'Due now'
-        : mins < 60
-          ? ('Due in ' + mins + ' minute' + (mins === 1 ? '' : 's'))
-          : ('Due at ' + fmtTime(nx.at));
+        : mins < 1
+          ? 'Due in under a minute'
+          : mins < 60
+            ? ('Due in ' + mins + ' minute' + (mins === 1 ? '' : 's'))
+            : ('Due at ' + fmtTime(nx.at));
       // The dose, only where the medication actually carries one. "500 mg" is useful; an empty
       // separator where a dose would be is the app showing its own plumbing.
-      const firstDose = nx.med.doses && nx.med.doses.length ? nx.med.doses[0].label : null;
+      // ONLY WHERE THERE IS ONE DOSE TO NAME. A medication with several strengths printed its
+      // first as though it were THE dose -- "500 mg" on a card for something the caregiver might be
+      // about to give 1,000 mg of. Where there is a choice, the card that offers the choice makes it.
+      const firstDose = nx.med.doses && nx.med.doses.length === 1 ? nx.med.doses[0].label : null;
       const sub = [firstDose, nx.med.sub || null].filter(Boolean).join(' · ');
       const ringPct = prog.scheduled > 0 ? Math.min(100, Math.round(prog.taken / prog.scheduled * 100)) : 0;
       parts.push(h('section', {
@@ -5353,10 +5404,16 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         // were two pixels apart on the narrowest phone this app supports.
         h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '14px' } },
           h('div', { style: { flex: '1', minWidth: '0' } },
-            h('div', { style: { ...TYPE.label, color: 'rgba(255,255,255,0.82)' } }, 'Up next'),
+            // 0.82 white on this gradient measured 2.69:1. Full white clears 4.5:1 and the label is
+            // small and uppercase, which is where contrast matters most.
+            h('div', { style: { ...TYPE.label, color: '#FFFFFF' } }, 'Up next'),
             // overflowWrap, not ellipsis: a medication name is the one string on this card that must
             // never be trimmed, because it is what the caregiver is about to act on.
-            h('div', { style: { fontSize: '23px', fontWeight: '800', letterSpacing: '-0.02em', lineHeight: '1.15', marginTop: '3px', overflowWrap: 'anywhere' } }, nx.med.name),
+            // CAPPED AT THREE LINES. At 320 a long pasted medication name grew the card to 316px and
+            // pushed its only control under the fixed tab bar, which is the app-v75 Home bug in a new
+            // place: the control needed to fix the problem is the one carried off-screen. The full
+            // name is on the card the button goes to.
+            h('div', { style: { fontSize: '23px', fontWeight: '800', letterSpacing: '-0.02em', lineHeight: '1.15', marginTop: '3px', overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: '3', WebkitBoxOrient: 'vertical', overflow: 'hidden' } }, nx.med.name),
             sub ? h('div', { style: { fontSize: '14px', fontWeight: '500', color: 'rgba(255,255,255,0.88)', marginTop: '4px' } }, sub) : null,
             h('div', { style: { fontSize: '13.5px', fontWeight: '700', color: 'rgba(255,255,255,0.95)', marginTop: '7px' } },
               whenWords + (nx.st.windowName ? ' · ' + nx.st.windowName : ''))
@@ -5790,7 +5847,10 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
 
     const medHook = String(med.id).replace(/[^A-Za-z0-9_-]/g, '');
     const flashed = state.medFlash === medHook;
-    return h('div', { 'data-med-card': medHook, 'data-flash': flashed ? 'on' : null, style: { background: '#FFFFFF', border: '1px solid #E9D8D1', ...(st.chemoBlock ? { borderLeft: '4px solid #C0453B' } : {}), borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '6px', transition: 'box-shadow .25s ease', boxShadow: flashed ? '0 0 0 3px rgba(191,76,26,0.55), 0 3px 14px rgba(203,122,87,0.10)' : '0 3px 14px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
+    // NOT `'data-flash': flashed ? 'on' : null` -- h() writes the string "null" as an attribute
+    // value, so every unflashed card carried data-flash="null". A fresh instance of the trap this
+    // file warns about twice, added by the release that quotes the warning.
+    return h('div', { 'data-med-card': medHook, ...(flashed ? { 'data-flash': 'on' } : {}), style: { background: '#FFFFFF', border: '1px solid #E9D8D1', ...(st.chemoBlock ? { borderLeft: '4px solid #C0453B' } : {}), borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '6px', transition: 'box-shadow .25s ease', boxShadow: flashed ? '0 0 0 3px rgba(191,76,26,0.55), 0 3px 14px rgba(203,122,87,0.10)' : '0 3px 14px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
       // Header row
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' } },
         h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '4px', minWidth: '0', flex: '1', flexWrap: 'wrap' } },

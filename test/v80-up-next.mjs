@@ -134,6 +134,32 @@ console.log('\n2. IT NEVER NAMES A MEDICATION THE APP SAYS NOT TO GIVE');
   }
 }
 
+console.log('\n2b. THE GUARANTEES THE PROSE CLAIMED AND NO FIXTURE CHECKED');
+{
+  // The audit deleted the medScheduledOn guard and the treatment-block guard from nextDueDose and
+  // got 14/14 both times: the suite listed both cases in a comment and built a fixture for neither.
+  // Prose in a test file is not a check.
+  const dow = new Date(FROZEN).getDay();
+  const otherDays = [0,1,2,3,4,5,6].filter(d => d !== dow);
+  const cases = [
+    ['today is not one of its days', [win({ id: 'notoday', name: 'NotTodayMed', windows: openWin,
+      scheduleDays: { mode: 'weekly', days: otherDays } })], []],
+    ['it is marked as-needed under Days taken', [win({ id: 'prnday', name: 'PrnDaysMed', windows: openWin,
+      scheduleDays: { mode: 'asneeded' } })], []],
+    ['it has no card anywhere on Home', [win({ id: 'nocard', name: 'NoCardMed', windows: openWin,
+      quickLog: false })], []],
+    ['it is excluded around the treatment day',
+      [win({ id: 'excl', name: 'ExcludedMed', windows: openWin, treatmentMode: 'excluded',
+             treatmentDaysBefore: 1, treatmentDaysAfter: 1 })],
+      [{ id: 'cd', medId: 'chemo_date', ts: FROZEN, dose: null, mg: 0 }]]
+  ];
+  for (const [why, meds, entries] of cases) {
+    const txt = await setup(meds, entries);
+    const named = meds.map(m => m.name).filter(n => new RegExp(n).test(String(txt)));
+    t('never named when ' + why, named.length === 0, String(txt));
+  }
+}
+
 console.log('\n3. A FINISHED DAY LOOKS FINISHED, NOT BROKEN');
 {
   const txt = await setup([win({ id: 'done2', name: 'OnlyMed', windows: openWin })],
@@ -162,6 +188,35 @@ console.log('\n4. THE BUTTON GOES TO A CARD THAT EXISTS');
     (document.querySelector('[data-flash="on"]') || {}).getAttribute
       ? document.querySelector('[data-flash="on"]').getAttribute('data-med-card') : null);
   t('tapping it marks that card, and the mark survives a re-render', landed === 'due3', String(landed));
+}
+
+console.log('\n3b. A MEDICATION WITH MORE THAN ONE STRENGTH NAMES NONE OF THEM');
+{
+  // Printing doses[0] as THE dose put "500 mg" on a card for something the caregiver might be about
+  // to give 1,000 mg of. Where there is a choice, the card that offers the choice makes it.
+  const txt = await setup([win({ id: 'multi', name: 'MultiStrength', windows: openWin,
+    doses: [{ label: '500 mg', mg: 500 }, { label: '1000 mg', mg: 1000 }] })], []);
+  t('it still names the medication', /MultiStrength/.test(String(txt)), String(txt));
+  t('and prints no single strength as though it were the dose',
+    !/500 mg|1000 mg/.test(String(txt)), String(txt));
+}
+
+console.log('\n4b. A GROUPED MEDICATION IS MARKED TOO, NOT JUST A STANDALONE CARD');
+{
+  // A medication inside "Evening meds" has no card of its own, so the mark had to go on the group
+  // section -- and it did not. It scrolled correctly and lit up nothing, which is exactly the
+  // "landing on a card with nothing marking it" failure this release claims to have fixed, left in
+  // place for the morning and evening rounds, which are the batches.
+  await setup([win({ id: 'grouped', name: 'GroupedMed', windows: openWin, quickLog: false, groupedEvening: true })], []);
+  const txt = await page.evaluate(() => {
+    const el = document.querySelector('[data-home="up-next"]');
+    return el ? (el.innerText || '').replace(/\s+/g, ' ') : null;
+  });
+  t('a grouped medication can be the one named', /GroupedMed/.test(String(txt)), String(txt));
+  const btn = page.locator('[data-home="up-next"] button');
+  if (await btn.count()) { await btn.first().click(); await page.waitForTimeout(900); }
+  const marked = await page.evaluate(() => document.querySelectorAll('[data-flash="on"]').length);
+  t('and tapping the hero marks the card that holds it', marked > 0, marked + ' marked');
 }
 
 console.log('\n5. ONE PROGRESS FIGURE ON HOME, NOT TWO');
