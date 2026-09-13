@@ -1,15 +1,24 @@
 # HANDOFF.md — start here in a brand-new chat
 
-Written 2026-08-08, current as of app-v51. If you're a fresh Claude session and Aaron just
+Written 2026-08-08, last refreshed 2026-09-13 at app-v79. If you're a fresh Claude session and Aaron just
 pointed you at this repo, read this file first — it tells you what order to read everything else
 in, what's actually true right now, and what to do next. Nothing here should be taken on faith;
 every claim below is backed by a file in this repo, cite it back to Aaron if he asks.
 
 ## Read these, in this order, before touching any code
 
-1. **`APP_CLAUDE.md`** — the hard rules (data privacy, repo boundaries, commit/push
+1. **`CLAUDE.md`**, which is a three-line stub importing **`claude/chemowell-app-beta.md`** —
+   the hard rules (RULE 0: who this app is for, data privacy, repo boundaries, commit/push
    authorization, "find solutions don't surface problems," commit locally often). Non-negotiable
    constraints, not suggestions.
+   **It used to be called `APP_CLAUDE.md` and this line used to say so, which is exactly the bug.**
+   Claude Code auto-loads a file named `CLAUDE.md` and nothing else, so for months the only
+   instructions that ever loaded in a session touching this repo were `care-tracker`'s — another
+   patient's app, naming her nine times. Every session was briefed on her and never on this
+   product, and on 2026-09-13 Aaron found the medication disclaimer reading *"Follow her care
+   team."* The name goes on the file in `claude/`; the stub is what the loader finds. Do not move
+   it back and do not create a `CLAUDE.md` in the directory above, which would apply to all three
+   repos at once.
 2. **`TEAM.md`** — the actual release process: who does what, when the full Quality Chain is
    required vs. when the Lead Developer can move solo, the restart rule, release mechanics. Read
    the **"Process-gap incident, 2026-08-08"** section near the top especially — it's there because
@@ -51,7 +60,9 @@ authoritative version; follow TEAM.md where the two differ, and read its "Proces
 
 ## What's actually true right now (verify before trusting, this can go stale)
 
-- Live build: https://arnjnnngs.github.io/chemowell-app-beta/ — currently `app-v51`.
+- Live build: https://arnjnnngs.github.io/chemowell-app-beta/ — currently `app-v79`. The
+  version line in this file has been stale before; `README.md`'s version history is the record,
+  and `PUBLISHED.json` is what `release_check.sh` compares against.
 - Native Android debug APK: auto-built by `.github/workflows/android-build.yml` on every push
   that touches native-relevant files; published to the GitHub Release tagged
   `app-v14-native-test` (stable public URL, no login needed) once CI finishes. Check
