@@ -86,7 +86,14 @@ const seeded = await page.evaluate(() => {
       doses: [{ label: '1 tablet', mg: 0, pills: 1 }], quickLog: true },
     { id: 'lozenge', name: 'Lozenge', type: 'gap', gapH: 4, homeCard: { kind: 'pills' },
       ceiling: true, ceilingMax: 2, ceilingUnit: 'lozenges',
-      doses: [{ label: '1 lozenge', mg: 0, pills: 1 }], quickLog: true }
+      doses: [{ label: '1 lozenge', mg: 0, pills: 1 }], quickLog: true },
+    // A CEILING OF ONE, because a limit of 1 is the only thing that renders " / 1 <unit>". The two
+    // medications above cover the USED side of the singular fix; neither can ever produce the MAX
+    // side, so reverting hcUnitFor(hcMax) at both its call sites left this suite 14/14 -- the same
+    // could-not-fail defect round 1 was blocked for, in the release fixing it.
+    { id: 'patch', name: 'Patch', type: 'gap', gapH: 8, homeCard: { kind: 'pills' },
+      ceiling: true, ceilingMax: 1, ceilingUnit: 'patches',
+      doses: [{ label: '1 patch', mg: 0, pills: 1 }], quickLog: true }
   ], archivedMeds: {} }));
   const ekey = Object.keys(localStorage).find(k => /entries/.test(k));
   return { ok: true, key, ekey };
@@ -125,7 +132,8 @@ console.log('\n2. LOG A DOSE, AND THE DAILY-TOTAL CARD APPEARS AND IS RIGHT');
       { id: 'e2', medId: 'tylenol-liquid', ts: now - 1800000, dose: '15 mL', mg: 480, volumeMl: 15 },
       { id: 'e3', medId: 'imodium', ts: now - 900000, dose: '1 pill', mg: 0, pills: 1 },
       { id: 'e4', medId: 'antacid', ts: now - 800000, dose: '1 tablet', mg: 0, pills: 1 },
-      { id: 'e5', medId: 'lozenge', ts: now - 700000, dose: '1 lozenge', mg: 0, pills: 1 }
+      { id: 'e5', medId: 'lozenge', ts: now - 700000, dose: '1 lozenge', mg: 0, pills: 1 },
+      { id: 'e6', medId: 'patch', ts: now - 600000, dose: '1 patch', mg: 0, pills: 1 }
     ];
     localStorage.setItem(key || 'chemowell-app-p-p1-entries-v1', JSON.stringify(rows));
   });
@@ -157,6 +165,16 @@ console.log('\n2. LOG A DOSE, AND THE DAILY-TOTAL CARD APPEARS AND IS RIGHT');
     txt.includes('Antacid') ? 'Antacid card present, no-limit text missing' : 'Antacid card missing');
   t('and the remaining-count branch did too', /\b1 lozenge left\b/.test(txt),
     (txt.match(/\d+ \w+ left/g) || []).join(' | '));
+  // THE MAX SIDE, which nothing covered. "1 / 1 patches" is what a medication limited to one a day
+  // read before this.
+  t('a limit of one is printed singular too', /\b1 \/ 1 patch\b/.test(txt) && !/1 \/ 1 patches/.test(txt),
+    (txt.match(/\d+ \/ \d+ \w+/g) || []).join(' | '));
+  // AND THE SCREEN READER GETS THE SAME SENTENCE. No suite in this repo had ever asserted an
+  // aria-label, so half of every accessibility fix here has gone unread by any check.
+  const labels = await page.evaluate(() =>
+    [...document.querySelectorAll('[role="img"][aria-label]')].map(e => e.getAttribute('aria-label')));
+  t('and so does the bar\'s screen-reader label',
+    labels.some(l => /\b1 of 1 patch\b/.test(l) && !/1 of 1 patches/.test(l)), labels.join(' | '));
   const crash = errors.filter(e => /is not defined|Cannot read propert/.test(e));
   t('still no ReferenceError', crash.length === 0, crash.join(' | '));
 }

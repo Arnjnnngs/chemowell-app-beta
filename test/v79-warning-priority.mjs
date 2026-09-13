@@ -68,16 +68,20 @@ const seeded = await page.evaluate(() => {
   localStorage.setItem(key, JSON.stringify({ version: 2, meds: [
     { id: 'tylenol', name: 'Tylenol', type: 'gap', gapH: 4, schemaV: 2, ceiling: true,
       ceilingMax: 3000, ceilingGroup: 'apap', homeCard: { kind: 'mg' },
-      doses: [{ label: '500 mg', mg: 500 }], quickLog: true },
+      // groupedEvening on BOTH sides of the collision, because section 3 drives the real "Take all"
+      // control and that control only exists for a group.
+      doses: [{ label: '500 mg', mg: 500 }], groupedEvening: true },
     { id: 'tylenol-liquid', name: 'Tylenol Liquid', type: 'gap', gapH: 4, schemaV: 2,
       ceilingGroup: 'apap', volumeCeilingMl: 90, homeCard: { kind: 'ml' },
       doses: [{ label: '15 mL', mg: 480, volumeMl: 15 }], quickLog: true },
     { id: 'iron', name: 'Iron', type: 'win', schemaV: 2,
-      windows: [{ start: 8, end: 12, name: 'Morning' }],
+      // THE WHOLE DAY, not a morning window. Section 3 taps the real control, and a medication whose
+      // window has closed is filtered out of the batch before the defect can be reached.
+      windows: [{ start: 0, end: 24, name: 'All day' }],
       interactions: [{ withMedId: 'protonix', minGapH: 2, tone: 'amber',
         title: 'Iron + Protonix timing',
         body: 'These work best a couple of hours apart. Check with the care team.' }],
-      doses: [{ label: '1 tablet', mg: 0, pills: 1 }], quickLog: true },
+      doses: [{ label: '1 tablet', mg: 0, pills: 1 }], groupedEvening: true },
     { id: 'protonix', name: 'Protonix', type: 'win', schemaV: 2,
       windows: [{ start: 8, end: 12, name: 'Morning' }],
       doses: [{ label: '40 mg', mg: 40 }], quickLog: true }
@@ -157,6 +161,88 @@ console.log('\n2. A RED LEFT ON SCREEN FROM EARLIER DOES NOT SILENCE A NEW AMBER
     t('and a new amber in a SEPARATE action still reaches the screen',
       fresh.after === 'amber', JSON.stringify(fresh));
   }
+}
+
+console.log('\n3. THE REAL "TAKE ALL" CONTROL, WHICH IS THE ONE THE FIX ACTUALLY LIVES IN');
+{
+  // WHY THIS SECTION EXISTS, AND IT IS THE WHOLE POINT OF THE SUITE.
+  // Sections 1 and 2 build their own `batch = {}` inside page.evaluate and hand it to afterLog.
+  // That tests afterLog's CONTRACT and never the caller that has to honour it -- so the round-2
+  // audit deleted the batch token from the one and only production caller, the ids.forEach inside
+  // confirmTimeAndLog's 'multi' branch, and this suite stayed 6/6 while all nine suites stayed
+  // green, 243 checks, with the real app back at the exact app-v78 defect.
+  //
+  // That is the same failure as the thing it is fixing, one level up: round 1's collection logic was
+  // correct and the calling context was wrong; round 2's afterLog was correct and the calling
+  // context was untested. "Falsified three ways" was true and all three mutants were inside
+  // afterLog. This section drives the control a caregiver actually taps.
+  //
+  // Falsify it by removing `warnBatch` from that forEach and watching it go red.
+  const runTakeAll = async () => {
+    await page.evaluate(() => window.__warnTest && window.__warnTest.clearWarn());
+    await page.getByRole('button', { name: /^Home/ }).first().click();
+    await page.waitForTimeout(800);
+    const takeAll = page.getByRole('button', { name: /^Take all/ });
+    if (!(await takeAll.count())) return { missing: 'no Take all control on Home' };
+    await takeAll.first().click();
+    await page.waitForTimeout(700);
+    // The confirm sits inside the dialog and the page behind it intercepts pointer events, so the
+    // locator is scoped to the dialog rather than to the document.
+    const dlg = page.locator('[role=dialog]');
+    const ok = dlg.getByRole('button', { name: /^(Confirm|Log all)/ });
+    if (!(await ok.count())) return { missing: 'no confirm inside the dialog' };
+    await ok.last().click();
+    // afterLog runs inside a 500 ms setTimeout.
+    await page.waitForTimeout(1800);
+    return await page.evaluate(() => {
+      const w = window.__warnTest.getWarn();
+      return w ? { tone: w.tone, title: w.title } : { tone: null, title: null };
+    });
+  };
+
+  const reorder = async (order) => page.evaluate(({ key, order }) => {
+    const raw = JSON.parse(localStorage.getItem(key) || '{}');
+    raw.meds = order.map(id => (raw.meds || []).find(m => m.id === id)).filter(Boolean)
+      .concat((raw.meds || []).filter(m => !order.includes(m.id)));
+    localStorage.setItem(key, JSON.stringify(raw));
+  }, { key: seeded.key, order });
+
+  const seedDay = async () => page.evaluate(() => {
+    const key = Object.keys(localStorage).find(k => /entries-v1$/.test(k)) || 'chemowell-app-p-p1-entries-v1';
+    const now = Date.now();
+    localStorage.setItem(key, JSON.stringify([
+      { id: 'a1', medId: 'tylenol', ts: now - 6 * 3600000, dose: '500 mg', mg: 2600 },
+      { id: 'a2', medId: 'protonix', ts: now - 1800000, dose: '40 mg', mg: 40 }
+    ]));
+  });
+
+  const results = {};
+  for (const order of [['tylenol', 'iron'], ['iron', 'tylenol']]) {
+    await reorder(order);
+    await seedDay();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1900);
+    const sk = page.getByRole('button', { name: 'Skip guide' });
+    if (await sk.count()) { await sk.first().click(); await page.waitForTimeout(500); }
+    results[order.join(',')] = await runTakeAll();
+  }
+  const a = results['tylenol,iron'], b = results['iron,tylenol'];
+  t('the real Take all control was reachable in both orders',
+    !a.missing && !b.missing, JSON.stringify(a) + ' / ' + JSON.stringify(b));
+  t('Tylenol first -> the caregiver is left looking at the RED ceiling warning',
+    a.tone === 'red', JSON.stringify(a));
+  t('Iron first -> the same RED warning', b.tone === 'red', JSON.stringify(b));
+  t('so the warning no longer depends on the order of the medication list',
+    a.title === b.title, String(a.title) + '  vs  ' + String(b.title));
+}
+
+console.log('\n4. AND NOTHING THREW ALONG THE WAY');
+{
+  // afterLog runs inside a setTimeout, so a throw there is SILENT and the dose still saves -- which
+  // is the exact hazard medInteractionsFor's own comment documents. This suite collected pageerror
+  // from the first line and never read it, which every other browser suite here does.
+  const real = errors.filter(e => !/Capacitor|cdn|Failed to fetch dynamically/i.test(e));
+  t('no page error during any of the above', real.length === 0, real.join(' | '));
 }
 
 await browser.close();

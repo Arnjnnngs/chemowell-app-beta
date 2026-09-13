@@ -1187,7 +1187,6 @@ const LEGACY_MED_RULES = {
   // Which daily-total card this medication gets on Home, and which unit its history summary counts.
   // Was: tylenolMg(), dailyPills('imodium'), and `e.medId === 'tylenol'` inside the report builder.
   'tylenol': { homeCard: { kind: 'mg' } },
-  // Was `const imoMax = 4` inline; see the imodium entry for why it is here.
   'tylenol-liquid': { homeCard: { kind: 'ml' } },
   'imodium': { homeCard: { kind: 'pills' } },
   // homeCard ONLY, AND DELIBERATELY. app-v79's first attempt also wrote `ceiling: true,
@@ -2333,11 +2332,22 @@ function afterLog(entry, warnBatch) {
   // "I mis-tapped" or, worse, "the pills are over but the liquid is fine".
   const ceilingNames = ceilingOwner ? ceilingGroupMedIds(ceilingOwner)
     .map(id => (state.meds.find(m => m.id === id) || {}).name).filter(Boolean) : [];
-  const limitLabel = ceilingNames.length > 1 ? ceilingNames.join(' + ') : (ceilingOwner || {}).name;
+  // CAPPED AT TWO, AND NEVER THE PLACEHOLDER. Measured on a six-member group, the join produced a
+  // 114-character banner title, repeated verbatim in the body -- the number and the instruction
+  // buried behind a list, and the one word that catches the eye is "Untitled". `.filter(Boolean)`
+  // cannot help: normalizeMedication writes 'Untitled medication' for a missing name, so no member
+  // is ever falsy and the placeholder reaches a safety warning. Where any member is unnamed the
+  // label falls back to the medication that owns the limit, which is at least a real name.
+  const PLACEHOLDER = 'Untitled medication';
+  const limitLabel = (ceilingNames.length > 1 && !ceilingNames.includes(PLACEHOLDER))
+    ? (ceilingNames.length <= 2
+        ? ceilingNames.join(' + ')
+        : ceilingNames.slice(0, 2).join(' + ') + ' and ' + (ceilingNames.length - 2) + ' more')
+    : (ceilingOwner || {}).name;
   if (configuredLimit && configuredLimit.used > configuredLimit.max) {
     // Named for the medication that OWNS the limit, not the one just logged: "Tylenol daily limit
     // exceeded" after a dose of Tylenol Liquid is the true statement, because they share one total.
-    warnings.push({ tone: 'red', title: limitLabel + ' daily limit exceeded', body: "Today's " + limitLabel + ' total is ' + configuredLimit.used.toLocaleString() + ' ' + configuredLimit.unit + ', above the ' + configuredLimit.label + ' daily limit set for it. Check with the care team before logging more.' });
+    warnings.push({ tone: 'red', title: limitLabel + ' daily limit exceeded', body: "Today's " + limitLabel + ' total is ' + configuredLimit.used.toLocaleString() + ' ' + configuredLimit.unit + ', above the ' + configuredLimit.label + ' daily limit these share. Check with the care team before logging more.' });
   }
   const volumeLimit = dailyVolumeCeiling(configuredMedication);
   if (volumeLimit && volumeLimit.used > volumeLimit.max) {
@@ -2346,9 +2356,13 @@ function afterLog(entry, warnBatch) {
   for (const w of medInteractionsFor(entry)) warnings.push(w);
 
   if (!warnings.length) return;
-  // RED BEATS AMBER, AND AN EXISTING RED IS NEVER OVERWRITTEN. Take-all calls this in a loop; a
-  // ceiling warning raised by the first medication must survive a spacing reminder raised by the
-  // third.
+  // RED BEATS AMBER, AND THE FIRST RED OF A BATCH IS NEVER REPLACED -- INCLUDING BY ANOTHER RED.
+  // The previous guard only suppressed a DOWNGRADE, so with two reds in one "Take all" the second
+  // overwrote the first: a group acetaminophen ceiling raised first was replaced by a volume cap
+  // raised second, three lines under a comment saying an existing red is never overwritten. Not a
+  // regression -- there has only ever been one banner slot -- but the comment and the shipped
+  // version-history row both said something untrue about the one case that matters most, two reds
+  // at once with acetaminophen among them. The comment is now the behaviour.
   const worst = warnings.find(w => w.tone === 'red') || warnings[0];
   // SCOPED TO THIS BATCH, NOT TO THE SESSION. The first version read `state.warn`, which is cleared
   // only when the caregiver taps the x on the banner -- so an undismissed red from an hour ago
@@ -2356,7 +2370,7 @@ function afterLog(entry, warnBatch) {
   // a "check with the care team" banner up, which is the sensible thing to do, would simply stop
   // being told about interaction timing. `warnBatch` is an object "Take all" creates once per run
   // and passes to each call; a single log passes none, so it never suppresses anything.
-  if (warnBatch && warnBatch.red && worst.tone !== 'red') return;
+  if (warnBatch && warnBatch.red) return;
   if (warnBatch && worst.tone === 'red') warnBatch.red = true;
   setState({ warn: worst });
 
@@ -5247,7 +5261,14 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       : (kind === 'ml' ? dailyVolumeMl(hcMed.id) : dailyPills(hcMed.id));
     const hcUnit = kind === 'mg' ? 'mg' : (kind === 'ml' ? 'mL' : (hcMed.ceilingUnit || 'doses'));
     // "1 doses". The unit is a plural word and the count can be one.
-    const hcUnitFor = (n) => (n === 1 && /s$/.test(hcUnit)) ? hcUnit.replace(/s$/, '') : hcUnit;
+    const hcUnitFor = (n) => {
+      if (n !== 1) return hcUnit;
+      // patches -> patch, boxes -> box, sprays -> spray, doses -> dose.
+      if (/(ch|sh|ss|x|z)es$/i.test(hcUnit)) return hcUnit.replace(/es$/i, '');
+      // Not `ss` (a unit ending in double-s is not a plural), and not a bare one-letter word.
+      if (/[^s]s$/i.test(hcUnit) && hcUnit.length > 2) return hcUnit.replace(/s$/i, '');
+      return hcUnit;
+    };
     const hcPct = hcMax > 0 ? Math.min(100, hcUsed / hcMax * 100) : 0;
     const hcColor = hcMax > 0 && hcUsed >= hcMax ? '#C0453B' : hcPct >= 90 ? '#C0453B' : hcPct >= 60 ? '#9A6419' : '#BF4C1A';
     const hcLeft = Math.max(0, hcMax - hcUsed);

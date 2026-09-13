@@ -98,29 +98,59 @@ console.log('\n3. NO DOSE, CEILING OR SCHEDULE FROM ONE CARE PLAN');
     t('no hardcoded dose or ceiling in ' + f.name, bad.length === 0, bad.join(' | '));
   }
 
-  // ANY LITERAL CEILING INSIDE THE LEGACY RULE TABLE, WHATEVER ITS UNIT OR SIZE.
-  // The two checks above were both blind to what app-v79's first attempt actually added:
-  // `ceilingMax: 4, ceilingUnit: 'applications'` on Imodium and Lidocaine. The first only matches
-  // `ceilingMg`. The second wants three to five digits next to a drug name followed by mg or ml,
-  // and a one-digit count of "applications" is none of those things. So the guard for this exact
-  // leak shape passed on this exact leak, in the release that introduced it.
+  // THE TABLE'S WHOLE SHAPE IS PINNED, NOT A LIST OF KEY NAMES.
   //
-  // The lesson is bigger than the pattern: both checks were written against the ONE example that
-  // had already happened -- a four-digit milligram figure in CONFIG -- and a guard shaped around a
-  // single past instance catches that instance and nothing else. This one is shaped around the
-  // PLACE instead. LEGACY_MED_RULES is where a stranger's regimen would have to be written down to
-  // have any effect, so no daily maximum of any unit may appear inside it at all.
+  // This check has now been wrong twice in the same release, in the same way, and the second time
+  // is the instructive one. Round 1's guard matched `ceilingMg` and three-to-five digits beside a
+  // drug name followed by mg or mL -- shaped around the one instance that had already happened --
+  // and missed `ceilingMax: 4, ceilingUnit: 'applications'`. Round 2 named five ceiling keys and
+  // called itself "shaped around the PLACE". It was not: **Rule 0 shape 3 is "a dose, ceiling OR
+  // SCHEDULE from one care plan"**, and a schedule walked straight in. The auditor added
+  //
+  //     'warfarin': { interactions: [{ withMedId: 'aspirin', minGapH: 6, title: 'Warfarin + aspirin',
+  //       body: 'Space these six hours apart per the care plan.' }] },
+  //
+  // -- a whole new care plan, its own interval, its own caregiver-facing copy, for a drug pair
+  // nobody asked for -- and every gate was green.
+  //
+  // So the guard stops enumerating what is forbidden and pins what is ALLOWED: exactly these ids,
+  // exactly this many, and no numeric literal beyond the inventory below. A fourteenth entry fails
+  // whatever it contains. Lowering the pin is how a phase-3 deletion is recorded, the same ratchet
+  // discipline section 4 already uses -- and the numbers only ever go DOWN.
   {
     const code = files.find(f => f.name === 'index.html').raw
       .replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
     const i = code.indexOf('LEGACY_MED_RULES');
     const table = i < 0 ? '' : code.slice(i, code.indexOf('\n};', i) + 3);
-    const hits = [...table.matchAll(/\b(ceilingMax|ceilingMg|volumeCeilingMl|rollingCeilingH|gapH)\s*:\s*[\d.]+/g)]
-      .map(m => m[0]);
-    t('no daily maximum of any unit inside LEGACY_MED_RULES', hits.length === 0,
-      hits.join(' | ') || (table ? 'table found, ' + table.length + ' chars scanned' : 'TABLE NOT FOUND'));
-    // A matcher that scanned an empty string would pass forever. The table has to actually be there.
-    t('and the rule table was actually found and scanned', table.length > 200, String(table.length));
+    // A matcher that scanned an empty string would pass forever, so prove the table was found first.
+    t('the rule table was found and scanned', table.length > 200, String(table.length));
+
+    // The thirteen legacy ids, and nothing else. Written out rather than counted, so a SWAP -- one
+    // id removed and a stranger's added -- fails as loudly as an addition.
+    const ALLOWED = ['dexamethasone', 'zofran', 'tylenol', 'tylenol-liquid', 'imodium', 'lidocaine',
+      'iron', 'protonix', 'morphine', 'buspirone', 'paroxetine', 'compazine', 'senokot', '__flags__'];
+    const keys = [...table.matchAll(/^\s{2}'([^']+)'\s*:/gm)].map(m => m[1]);
+    const strangers = keys.filter(k => !ALLOWED.includes(k));
+    t('no medication in the rule table that is not a known legacy id', strangers.length === 0,
+      strangers.join(', ') || keys.length + ' entr' + (keys.length === 1 ? 'y' : 'ies'));
+    t('and the table is not growing', keys.length <= ALLOWED.length,
+      keys.length + ' of at most ' + ALLOWED.length);
+
+    // EVERY NUMBER IN THE TABLE, INVENTORIED. A dose, a ceiling, an interval or a day offset are all
+    // the same shape of thing -- somebody's care plan written down -- so the check does not try to
+    // tell them apart. The only numbers allowed are the day offsets the treatment-relative windows
+    // need and the hours-of-day they name; anything else is a new number nobody approved.
+    const nums = [...table.matchAll(/\b([A-Za-z_$][\w$]*)\s*:\s*(-?[\d.]+)/g)]
+      .map(m => m[1] + ': ' + m[2]);
+    const ALLOWED_NUMS = ['dayOffset', 'start', 'end', 'fromDayOffset', 'toDayOffset', 'gapH', 'minGapH'];
+    const unexpected = nums.filter(n => !ALLOWED_NUMS.includes(n.split(':')[0]));
+    t('no dose, ceiling or limit is written into the rule table', unexpected.length === 0,
+      unexpected.join(' | ') || nums.length + ' inventoried number(s)');
+    // The two intervals that ARE in there -- the iron/protonix gap -- are accounted-for phase 2/3
+    // debt, pinned so they cannot multiply quietly.
+    const gaps = nums.filter(n => /^(gapH|minGapH):/.test(n));
+    t('and the two legacy spacing intervals have not multiplied', gaps.length <= 2,
+      gaps.join(' | ') || 'none');
   }
 }
 
