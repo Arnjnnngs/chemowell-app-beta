@@ -142,7 +142,23 @@ async function resolveUrls(entries) {
       }
       unresolved.length = 0; unresolved.push(...still);
     }
-    console.log('  ' + brand.size + ' brand name(s) read off the pages themselves');
+    // SAY WHAT WAS SEEN, NOT JUST THE COUNT. The first run of this printed "0 brand name(s)" and
+    // that number sat in a log looking like "MedlinePlus does not list brands", when the parser was
+    // reading a table of contents. A sample of what it actually harvested is the difference between
+    // a number and a diagnosis.
+    console.log('  ' + brand.size + ' brand name(s) read off the pages themselves' +
+      (brand.size ? ': ' + [...brand.keys()].slice(0, 12).join(', ') + (brand.size > 12 ? ', ...' : '') : ''));
+    if (!brand.size && pages.length) {
+      console.log('  WARNING: read ' + pages.length + ' page(s) and found no brand names at all.');
+      console.log('  That is far more likely to be this parser than MedlinePlus having stopped');
+      console.log('  listing them. Check tools/last-run/brand-sample.html.');
+      const sample = await getHtml(pages[0]);
+      if (sample) {
+        const at = sample.html.search(/Brand names?/i);
+        fs.writeFileSync('tools/last-run/brand-sample.html',
+          at >= 0 ? sample.html.slice(Math.max(0, at - 400), at + 2500) : sample.html.slice(0, 3000));
+      }
+    }
   }
   return { resolved, unresolved };
 }

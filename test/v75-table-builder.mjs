@@ -367,10 +367,22 @@ console.log('\n14. FINDING THE PAGE AT ALL  (Aaron: "if there are 60 in, 60 shou
 
   // BRAND NAMES COME OFF THE PAGES, not out of a table written here -- a hand-written brand-to-
   // generic mapping is a medical claim this repo would be making, and it rots as brands change.
-  const page = '<h2>Brand names</h2><ul><li>Zofran&reg;</li><li>Zuplenz&reg;</li></ul>' +
-    '<h2>Brand names of combination products</h2><ul><li>Percocet&reg; (containing Acetaminophen, Oxycodone)</li></ul>' +
-    '<p>Last Revised - 01/15/2024</p>';
+  // THIS FIXTURE HAS A TABLE OF CONTENTS IN IT, and that is the whole point of it. The first
+  // version of this check used a fixture with only the section in it -- written by the same person
+  // who wrote the parser -- and it passed while a real run over 68 MedlinePlus pages harvested
+  // exactly ZERO brand names. Every drug page opens with its own contents list naming "Brand Names"
+  // as a link, so slicing from the first occurrence returned a few characters of navigation. It is
+  // the identical trap whySection already paid for on this same feature, and a clean-room fixture
+  // is what let it happen twice.
+  const page = '<nav><ul><li><a href="#why">Why is this medication prescribed?</a></li>' +
+    '<li><a href="#brand">Brand Names</a></li><li><a href="#other">Other names</a></li></ul></nav>' +
+    '<h2 id="why">Why is this medication prescribed?</h2><p>Ondansetron is used to prevent nausea.</p>' +
+    '<section id="brand"><h2>Brand names</h2><ul><li>Zofran&reg;</li><li>Zuplenz&reg;</li></ul></section>' +
+    '<h2>Brand names of combination products</h2><ul><li>Percocet&reg;</li></ul>' +
+    '<h2>Other names</h2><p>Last Revised - 01/15/2024</p>';
   const brands = brandNames(page);
+  t('a contents list naming the section is not mistaken for the section',
+    brands.length > 0, brands.join(', ') || '(nothing -- the table-of-contents trap again)');
   t('a brand is read off the page that claims it', brands.includes('zofran'), brands.join(', '));
   t('and so is a second one', brands.includes('zuplenz'), brands.join(', '));
   t('the page\'s own prose is not mistaken for a brand',

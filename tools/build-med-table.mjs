@@ -180,35 +180,45 @@ export function addFormAliases(map) {
 // source as the sentences, and a brand resolves to the page that claims it.
 export function brandNames(html) {
   const s = String(html || '');
-  const out = [];
-  // Both headings appear; "Brand names of combination products" is deliberately INCLUDED, because a
-  // combination product's page is the right page for that brand -- it is the one that describes both
-  // ingredients. What must never happen is a combination BRAND resolving to a single-ingredient page.
-  const re = /Brand names?(?: of combination products)?\s*:?/gi;
+  // THE SAME TRAP whySection ALREADY PAID FOR, and it caught this the moment it met a real page:
+  // the heading appears TWICE. Every MedlinePlus drug page opens with its own table of contents
+  // listing "Brand Names" as a link, and the real section is further down. Slicing from the first
+  // occurrence and stopping at the next heading name returned a few characters of navigation, so a
+  // run that read 68 pages harvested exactly ZERO brand names -- while the fixture in the suite
+  // passed, because a fixture written by the same person who wrote the parser has no table of
+  // contents in it. Take every occurrence and keep whichever yields the most.
+  const starts = [];
+  const re = /Brand names?(?: of combination products)?/gi;
   let m;
-  while ((m = re.exec(s)) !== null) {
-    const rest = s.slice(m.index + m[0].length);
-    // Stop at the next section. These pages put brand lists just before the disclaimer block.
-    const end = rest.search(/Brand names|Other names|Last Revised|Why is this|How should|American Society|Disclaimer|<\/(?:ul|div|section)>/i);
-    const block = end > 0 ? rest.slice(0, end) : rest.slice(0, 3000);
+  while ((m = re.exec(s)) !== null) starts.push(m.index + m[0].length);
+  if (!starts.length) return [];
+  let best = [];
+  for (const start of starts) {
+    const rest = s.slice(start);
+    // Stop at the next SECTION, not at the next mention of the phrase.
+    const end = rest.search(/Other names|Last Revised|Why is this|How should|What special|American Society|Disclaimer|Browse by|<footer/i);
+    const block = end > 0 ? rest.slice(0, end) : rest.slice(0, 2500);
     const text = block
       .replace(/<\/li>\s*<li[^>]*>/gi, '|')
       .replace(/<\/li>/gi, '|')
       .replace(/<[^>]+>/g, '|')
       .replace(/&[a-z]+;/gi, ' ')
-      .replace(/[®™]/g, '');
+      .replace(/[\u00AE\u2122]/g, '');
+    const out = [];
     for (const raw of text.split(/[|,;]/)) {
       const t = raw.replace(/\s+/g, ' ').trim();
-      // A brand is a short proper noun. Anything with a sentence in it is the page's prose, not a
-      // brand, and anything with a digit is a strength ("Tylenol 500") rather than a product name.
+      // A brand is a short proper noun. A sentence is the page's prose; a digit is a strength
+      // ("Tylenol 500") rather than a product name.
       if (!t || t.length > 40 || /\d/.test(t)) continue;
       if (!/^[A-Za-z][A-Za-z .'-]*$/.test(t)) continue;
-      if (/\b(and|the|of|for|is|are|in|with|see|also|more|information|names?|products?)\b/i.test(t)) continue;
+      if (/\b(and|the|of|for|is|are|in|with|see|also|more|information|names?|products?|containing|drug|medicine|health|topics?|espa|home|menu|search|about)\b/i.test(t)) continue;
       if (t.split(' ').length > 3) continue;
       out.push(t.toLowerCase());
     }
+    const uniq = [...new Set(out)];
+    if (uniq.length > best.length) best = uniq;
   }
-  return [...new Set(out)];
+  return best;
 }
 
 // ---- pulling the section out of a page ----------------------------------------------------------
