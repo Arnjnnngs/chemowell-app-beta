@@ -12,6 +12,10 @@
 //
 // Run:  node test/v75-table-builder.mjs
 import { buildTable, guardFailure, firstSentence, tidy, whySection, GUARDS, MAX_LEN } from '../tools/build-med-table.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 let pass = 0, fail = 0;
 const t = (name, cond, detail) => {
@@ -233,6 +237,47 @@ console.log('\n8. AN EMPTY OR BROKEN INPUT PRODUCES AN EMPTY TABLE, NOT A CRASH'
     const r = buildTable(bad);
     t('survives ' + JSON.stringify(bad), r && typeof r.table === 'object', Object.keys(r.table).length + ' entries');
   }
+}
+
+console.log('\n12. THE TABLE THAT IS ACTUALLY COMMITTED  (app-v75)');
+{
+  // Every section above tests the generator on fixtures. This one reads the FILE that gets baked
+  // into the app. The two can drift the moment a guard changes without a refresh run behind it --
+  // which happened while this release was being built: the on-topic guard was added and the
+  // committed table still carried the dexamethasone sentence it was written to reject. Nothing
+  // would have caught that; the patch would have baked it in and the suite would have stayed green,
+  // because the suite was only ever looking at fixtures it wrote itself.
+  const file = path.join(HERE, '..', 'tools', 'med-source-table.json');
+  const exists = fs.existsSync(file);
+  t('the generated table is committed', exists, file);
+  if (exists) {
+    const table = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const keys = Object.keys(table);
+    // An EMPTY table is the failure mode this project has already shipped once: a host check
+    // rejected its own resolver's output, the run went green, and the result looked like
+    // "MedlinePlus has no answer for any of these drugs".
+    t('and it is not empty', keys.length > 0, keys.length + ' entries');
+    t('and it has not quietly collapsed to a handful', keys.length >= 25, keys.length + ' entries');
+    const failures = [];
+    const badUrl = [];
+    for (const k of keys) {
+      const e = table[k] || {};
+      const why = guardFailure(e.t);
+      if (why) failures.push(k + ' :: ' + why);
+      if (!/^https:\/\/(www\.)?medlineplus\.gov\//i.test(String(e.u || ''))) badUrl.push(k);
+      if (medPurposeKey(k) !== k) failures.push(k + ' :: key is not in the app lookup\'s normal form');
+    }
+    t('every committed sentence still passes every guard', failures.length === 0, failures.join(' | '));
+    // TEXT AND PAGE ARE ONE RECORD OR NEITHER. An entry with text and no page puts a sentence on a
+    // card with nothing behind it; an entry with a page and no text points a citation at nothing.
+    t('every committed sentence carries a real MedlinePlus page', badUrl.length === 0, badUrl.join(', '));
+  }
+}
+// The app's key normaliser, duplicated here on purpose: the generator and the app must agree on how
+// a name becomes a key, and a shared helper would hide a disagreement rather than catch one. If this
+// ever drifts from index.html's medPurposeKey, every lookup silently returns nothing.
+function medPurposeKey(text) {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed' + (fail ? '  <-- FAIL' : ''));

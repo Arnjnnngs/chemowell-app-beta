@@ -1,5 +1,28 @@
 # REQUESTS.md — Aaron's open requests
 
+## 2026-09-12/13 — the medication description database
+
+- [x] **"The med desc should also fill automatically with what it's for based on the website it
+  was pulled from. There should be a clickable source link to get to the website with that exact
+  wording that pulls in the app"** (2026-09-11). Shipped in two halves, because the obvious build
+  was the wrong one. The first version looked the description up from the phone when a medication
+  was saved -- it worked, it was audited twice, and it was deleted: this app tells its users it
+  never sends their information anywhere, and a lookup sends the medication name. app-v74 shipped
+  the link alone. app-v75 ships the words, fetched once on a build machine and baked into the app,
+  so a phone downloads something that already knows the answers and still asks nobody anything.
+- [x] **"Strip the fetch ship the link and start database"** (2026-09-11). Done. The database is
+  33 medications with MedlinePlus's own sentence and the exact page it came from.
+- [x] **"120 is fine"** (2026-09-12), on how much description a card should show. Built as a
+  DISPLAY limit rather than the data rule it would otherwise have been -- as a data rule it would
+  have deleted 16 of the 46 medications fetched. The card shows two lines; the whole sentence opens
+  on tap.
+- [x] **"What about building it in the ellipsis? ... What's your honest suggestion?"** (2026-09-12),
+  clarified as the hamburger: *"it really can be a hidden thing that's only in the background. We
+  don't really need to show everything that's in mediplus. People can just go to that website."*
+  Agreed and built that way: no drawer row, no A-Z index. The database is the background thing that
+  fills the descriptions in, and the link sends anyone who wants more to MedlinePlus itself.
+
+
 The running list of everything Aaron has asked for — features, fixes, changes, even things
 mentioned in passing — checked off only once it's actually built, tested, and confirmed
 live. This exists because chat history alone doesn't reliably survive a context reset or a

@@ -1,6 +1,6 @@
 # Medication table build
 
-Pages in: **46** · kept: **34** · rejected: **12**
+Pages in: **46** · kept: **33** · rejected: **13**
 
 A rejected sentence is NOT trimmed to fit. The app keeps its own hand-written line for that drug.
 
@@ -9,6 +9,7 @@ A rejected sentence is NOT trimmed to fit. The app keeps its own hand-written li
 | acetaminophen | a fever claim | Used to relieve mild to moderate pain and to reduce fever. |
 | allopurinol | a spelled-out number | Used to treat gout (a type of arthritis in which uric acid, a naturally occurring substance in the body, builds up in th |
 | aprepitant | a number, which could read as a dose | Used with other medications in adults and children 6 months of age and older to prevent nausea and vomiting that may occ |
+| dexamethasone | not actually a description of what it is for | Dexamethasone, a corticosteroid, is similar to a natural hormone produced by your adrenal glands. |
 | duloxetine | a schedule or a dose unit | Used to treat depression and generalized anxiety disorder (GAD; excessive worry and tension that disrupts daily life). |
 | gabapentin | a dosage form or route | Gabapentin capsules, tablets, and oral solution are used along with other medications to help control certain types of s |
 | loperamide | a number, which could read as a dose | Nonprescription (over-the-counter) loperamide is used to control acute diarrhea (loose stools that come on suddenly and  |
