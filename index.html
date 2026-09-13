@@ -1302,7 +1302,11 @@ function persistMedicationConfig(meds, archivedMeds) {
   }
 }
 
-const CONFIG = { patientName: '', ceilingMg: 2500, tempUnit: 'Fahrenheit', weightUnit: 'lbs' };
+// ceilingMg: 2500 was here and is GONE. It is a daily acetaminophen limit from one specific
+// person's care plan, carried over from the sibling app, and nothing in this file ever read it --
+// so it was a named patient's dose ceiling sitting in a product every user shares. A daily limit
+// belongs to the medication the user sets up, which is where medicationCeilingMax reads it from.
+const CONFIG = { patientName: '', tempUnit: 'Fahrenheit', weightUnit: 'lbs' };
 function weightSuffix() { return CONFIG.weightUnit === 'kg' ? 'kg' : 'lbs'; }
 
 // State
@@ -3064,7 +3068,7 @@ const HELP_TOPICS = [
   { id: "sym-medical-question", cat: "symptoms", q: "Side effects — hair loss, sickness, tiredness: is this normal?", a: "**This is a question for the care team, and ChemoWell will not try to answer it.** The app keeps a record of what happened and when. It holds no information about any drug, has no idea what is normal for this person's treatment, and would be guessing if it said otherwise.", steps: ["Write the question down, along with what you have actually seen and when it started.", "Ask the care team, or the pharmacist who dispensed the medication \u2014 they have the person's actual treatment plan in front of them.", "Anything sudden, severe, or frightening is a phone call now, not a question for later.", "Log the symptom here with a note in your own words. Turning up to an appointment with dates and times is worth far more than trying to remember."], note: "ChemoWell is a record-keeping tool, not a source of medical information. Never delay care because of anything shown in this app.", keywords: ["side effect", "side effects", "hair", "hair loss", "sickness", "tiredness", "fatigue", "normal", "expect", "is that normal", "should i worry", "worried", "dangerous", "interact", "interaction", "safe to take", "what does it do"], related: ["sym-severe", "sym-log", "vit-temp-high"], medical: true, careLead: true, careTone: "calm" },
   { id: "sym-bowel-confusion", cat: "symptoms", q: "Should diarrhoea go in Symptoms or the bowel tracker?", a: "Either works, and they're for different things.", steps: ["Use the **Daily check-in** bowel question for the day's overall pattern — normal, very little, none, or diarrhoea.", "Use the **Symptoms** tab for a specific episode with a time and a note.", "The Symptoms list does include diarrhoea and constipation for exactly that reason.", "Both show up in your exported records."], keywords: ["diarrhea", "diarrhoea", "constipation", "bowel", "where"], related: ["vit-checkin-modal", "sym-log"] },
   { id: "ip-start-end", cat: "inpatient", q: "How do I record a hospital stay?", a: "The In-Patient tab at the bottom, with a start and an end.", steps: ["Tap **In-Patient** at the bottom of the screen.", "When the stay begins, tap **Log In-Patient Start**.", "A banner appears on Home showing which day of the stay you're on.", "When the person is discharged, tap **Log In-Patient End** — on that banner or on the In-Patient tab.", "Every past stay is kept in the **In-Patient History** list below."], keywords: ["hospital", "admitted", "in-patient", "stay", "discharged"], related: ["ip-meds-restricted", "ip-forgot-end"] },
-  { id: "ip-meds-restricted", cat: "inpatient", q: "Can I still log medications during a hospital stay?", a: "Yes. Everything stays loggable the whole time a stay is active.", steps: ["Log doses exactly as you normally would — nothing is locked.", "Doses the hospital gave are not counted as missed: any dose window that opened while the stay was running is treated as theirs.", "If she comes home part-way through a day, the windows after that point are yours again and are tracked normally. You do NOT need to end the stay early to log them.", "End the stay when it actually ends, on the **In-Patient** tab."], note: "This used to work the other way round. Medications showed as 'Restricted' and could not be logged at all while a stay was active, and this page told you to end the stay early to unlock them — which meant falsifying when she came home in order to record a dose she really took. Fixed 2026-08-26 after Aaron hit exactly that on a half-day stay.", keywords: ["restricted", "can't log", "hospital", "paused", "greyed", "half day", "discharged"], related: ["ip-start-end", "log-button-locked"], medical: true },
+  { id: "ip-meds-restricted", cat: "inpatient", q: "Can I still log medications during a hospital stay?", a: "Yes. Everything stays loggable the whole time a stay is active.", steps: ["Log doses exactly as you normally would — nothing is locked.", "Doses the hospital gave are not counted as missed: any dose window that opened while the stay was running is treated as theirs.", "If they come home part-way through a day, the windows after that point are yours again and are tracked normally. You do NOT need to end the stay early to log them.", "End the stay when it actually ends, on the **In-Patient** tab."], note: "This used to work the other way round. Medications showed as 'Restricted' and could not be logged at all while a stay was active, and this page told you to end the stay early to unlock them — which meant falsifying when they came home in order to record a dose that was really taken. Fixed 2026-08-26 after Aaron hit exactly that on a half-day stay.", keywords: ["restricted", "can't log", "hospital", "paused", "greyed", "half day", "discharged"], related: ["ip-start-end", "log-button-locked"], medical: true },
   { id: "ip-forgot-end", cat: "inpatient", q: "I forgot to end a hospital stay and it still says Active", a: "End it now — the stay keeps its real start date.", steps: ["Tap **In-Patient** at the bottom.", "Tap **Log In-Patient End**.", "The stay closes and moves into In-Patient History with its length.", "The end time is recorded as now. If the real discharge was earlier, add a note — menu → **Notes** — so the record is accurate."], keywords: ["still active", "forgot", "end", "discharge", "ongoing"], related: ["ip-start-end"] },
   { id: "ip-past-stay", cat: "inpatient", q: "I want to add a hospital stay that already happened", a: "There's a separate control for logging a past stay with both dates.", steps: ["Tap **In-Patient** at the bottom.", "Find the option to log a past stay (Start + End).", "Set the start date and time, then the end date and time.", "Confirm. It appears in In-Patient History."], keywords: ["past stay", "backdate", "previous", "add old"], related: ["ip-start-end"] },
   { id: "ip-undo", cat: "inpatient", q: "I tapped In-Patient Start by mistake", a: "There's an Undo, and it asks twice on purpose.", steps: ["On the **In-Patient** tab, tap the undo option on the active stay.", "It asks you to tap again to confirm.", "Tap it again within a few seconds.", "The entry is removed. Logging is not blocked by a stay — what changes is that dose windows opening during it stop being counted as the hospital's."], keywords: ["undo", "mistake", "accidental", "remove stay"], related: ["ip-start-end"] },
@@ -5569,14 +5573,16 @@ const MED_SOURCE = {
 function purposeSourceLink(med) {
   const name = med ? String(med.name || '').trim() : '';
   if (!name) return null;
-  // app-v75: where the sentence above came from a MedlinePlus page, the link goes to THAT page and
-  // says so. Where it did not, it stays app-v74's search -- honest about being a lookup rather than
-  // a source. The two must never be confused: a citation under text this repo wrote is a lie about
-  // where the words came from.
-  if (purposeIsQuoted(med)) {
-    const official = medSourceFor(med);
-    if (official) return { url: official.u, text: 'Read it on ' + MED_SOURCE.label, quoted: true };
+  // THE CITATION IS FOR THE TEXT ON SCREEN, NOT FOR THE MEDICATION. describeMed returns the page
+  // only when the sentence it chose came FROM that page, so "Read it on MedlinePlus" cannot appear
+  // over a hand-written line or over something the user typed. The first build asked a different
+  // question -- "is there a MedlinePlus entry for this drug?" -- and the audit found it citing the
+  // oxycodone page under the app's own Percocet line, with the acetaminophen warning deleted.
+  const described = describeMed(med);
+  if (described.source) {
+    return { url: described.source.u, text: 'Read it on ' + MED_SOURCE.label, quoted: true };
   }
+  // Otherwise app-v74's honest search: a lookup, not a source.
   return { url: MED_SOURCE.searchUrl(name), text: 'Look it up on ' + MED_SOURCE.label, quoted: false };
 }
 function medPurposeKey(text) {
@@ -5659,24 +5665,39 @@ function purposeLookup(key) {
   const v = MED_PURPOSE[k];
   return typeof v === 'string' ? v : '';
 }
-function purposeOf(med) {
-  if (!med) return '';
-  // WHAT SHE TYPED WINS OVER EVERYTHING, ALWAYS. Her own words about her own medication are never
-  // overwritten by a database, however official it is.
+// ONE FUNCTION DECIDES BOTH THE WORDS AND WHERE THEY CAME FROM, because the alternative is a
+// citation under a sentence that came from somewhere else. The first build of app-v75 had two
+// functions -- one picked the text, another decided whether to print "Read it on MedlinePlus" -- and
+// the audit that blocked the release found several paths where they disagreed.
+function describeMed(med) {
+  if (!med) return { text: '', source: null };
+  // WHAT THE USER TYPED WINS OVER EVERYTHING, ALWAYS. Their own words about their own
+  // medication are never overwritten by a database, however official it is.
   const typed = String(med.purpose || '').trim();
-  if (typed) return typed;
-  // Then MedlinePlus (app-v75), because it is the only text that can honestly carry a citation.
+  if (typed) return { text: typed, source: null };
+  // THEN THIS APP'S OWN LINE, AND THIS ORDER IS THE WHOLE OF THE app-v75 AUDIT BLOCK.
+  // It shipped the other way round for an hour -- MedlinePlus first, because it is the only text
+  // that can carry a citation -- and that solved a citation problem by making the medicine worse.
+  // MedlinePlus answers for a drug's PRIMARY indication, which is very often not the reason a
+  // chemotherapy patient is taking it. Fourteen hand-written lines would have been overridden and
+  // six of them badly. The one that settles it: promethazine's card said "Settles nausea and
+  // vomiting... It causes drowsiness", and MedlinePlus's first sentence is about allergic rhinitis
+  // and itchy eyes. Clamped to two lines on a phone at 2am, with the patient vomiting, that card
+  // reads "her allergy medicine" -- and the sedation warning was gone too. Promethazine is one of
+  // the two drugs most likely to be reached for at that exact moment.
+  // These lines were written for THIS patient on THIS treatment, some of them by name after Aaron
+  // reported the gap. A general reference does not get to overrule them.
+  const own = purposeLookup(med.name) || purposeLookup(med.sub);
+  if (own) return { text: own, source: null };
+  // THEN MEDLINEPLUS, for the drugs this app has never had a line for -- which is the real win here
+  // and is untouched by the above: 19 of the 33 entries are drugs with no hand-written line at all,
+  // most of them the chemotherapy and supportive-care drugs the table never covered.
   const official = medSourceFor(med);
-  if (official) return official.t;
-  return purposeLookup(med.name) || purposeLookup(med.sub);
+  if (official) return { text: official.t, source: official };
+  return { text: '', source: null };
 }
-// Is the line on screen the quoted one? Used to decide whether the link may say "Read it on" (a
-// citation) or must say "Look it up on" (a search). If she typed her own description, MedlinePlus is
-// NOT the source of what she is reading, even where a quoted sentence exists for that drug.
-function purposeIsQuoted(med) {
-  if (!med) return false;
-  if (String(med.purpose || '').trim()) return false;
-  return !!medSourceFor(med);
+function purposeOf(med) {
+  return describeMed(med).text;
 }
 function medicationFormFrom(med) {
   const base = med || {};
@@ -6710,7 +6731,7 @@ function renderMedicationManager(now) {
     // common state, not an edge case -- and a notice about "the line under each medication" printed
     // above a list with no lines in it is the app describing something that is not on the screen.
     sortedMeds.length ? h('div', { 'data-med-disclaimer': 'true', style: { ...TYPE.caption, color: '#6B5F66', lineHeight: '1.4', margin: '2px 0 10px' } },
-      'Some of these descriptions are quoted from ' + MED_SOURCE.label + ', the US National Library of Medicine; the rest are written here. Either way they are general information about what a medication is usually for, not advice and not a dose. Follow her care team. ' + 'Tapping a link opens ' + MED_SOURCE.label + ' in your browser, and that site will see which medication you looked up. Nothing is sent unless you tap.') : null,
+      'Some of these descriptions are quoted from ' + MED_SOURCE.label + ', the US National Library of Medicine; the rest are written here. Either way they are general information about what a medication is usually for, not advice and not a dose. Follow the care team. ' + 'Tapping a link opens ' + MED_SOURCE.label + ' in your browser, and that site will see which medication you looked up. Nothing is sent unless you tap.') : null,
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '9px' } }, ...cards),
     // ONLY when something has been removed. A heading over an empty list is a notice about
     // nothing -- the defect the v72 audit found in the disclaimer two lines above.
@@ -7564,7 +7585,7 @@ function helpMatch(query) {
 // SEARCH-BOX path, nobody ever measured what that did to a sentence the corpus has no answer for.
 // The Auditor measured it: v55 returned nothing for 49 of 50 clinical questions; v56/v57 return a
 // ranked list for 45 of 50. "she collapsed" ranked "All my medications vanished from Home" first --
-// a genuine keyword hit on `collapsed`, which is why no threshold catches it -- and "she is coughing
+// a genuine keyword hit on `collapsed`, which is why no threshold catches it -- and "they are coughing
 // up blood" returned 66 rows headed by "How do I record blood pressure?".
 //
 // Three separate problems, fixed separately, because conflating them is how the v56 guard went wrong:
@@ -7781,7 +7802,7 @@ function renderHelpView(now) {
   //
   // The Auditor typed real emergencies into this box and watched what a caregiver at 2am would see:
   // "she collapsed" ranks *All my medications vanished from Home* -- a true keyword hit on the word
-  // `collapsed`, so no score threshold anywhere can catch it -- and "she is unresponsive" ranks
+  // `collapsed`, so no score threshold anywhere can catch it -- and "they are unresponsive" ranks
   // *I tap something and nothing happens*. Both still do, deliberately; suppressing them would mean
   // building a classifier that decides which queries are the frightening ones, and that classifier
   // is precisely what failed twice in v56 and got this feature cut.

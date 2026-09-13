@@ -119,7 +119,7 @@ for (const width of [320, 360, 390]) {
   // from this sandbox, which has no outbound network. Filtering them by MESSAGE rather than by count
   // means a real error appearing alongside them is still caught; an exemption nobody wrote down is
   // indistinguishable from an oversight.
-  const cdnNoise = /ERR_TUNNEL_CONNECTION_FAILED|ERR_FAILED|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED|jsdelivr/;
+  const cdnNoise = /ERR_TUNNEL_CONNECTION_FAILED|ERR_FAILED|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED|ERR_CERT_AUTHORITY_INVALID|jsdelivr/;
   const real = errors.filter(e => !cdnNoise.test(e));
   t('no console or page errors, apart from the sandbox\'s blocked CDN', real.length === 0, real.join(' | '));
   t('the page does not scroll sideways', seen.scrollW <= seen.clientW + 1, seen.scrollW + ' > ' + seen.clientW);

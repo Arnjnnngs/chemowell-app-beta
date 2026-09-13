@@ -141,8 +141,8 @@ new_purpose = """// ONE FUNCTION DECIDES BOTH THE WORDS AND WHERE THEY CAME FROM
 // the audit that blocked the release found several paths where they disagreed.
 function describeMed(med) {
   if (!med) return { text: '', source: null };
-  // WHAT SHE TYPED WINS OVER EVERYTHING, ALWAYS. Her own words about her own medication are never
-  // overwritten by a database, however official it is.
+  // WHAT THE USER TYPED WINS OVER EVERYTHING, ALWAYS. Their own words about their own
+  // medication are never overwritten by a database, however official it is.
   const typed = String(med.purpose || '').trim();
   if (typed) return { text: typed, source: null };
   // THEN THIS APP'S OWN LINE, AND THIS ORDER IS THE WHOLE OF THE app-v75 AUDIT BLOCK.
@@ -184,7 +184,7 @@ new_link = """function purposeSourceLink(med) {
   if (!name) return null;
   // THE CITATION IS FOR THE TEXT ON SCREEN, NOT FOR THE MEDICATION. describeMed returns the page
   // only when the sentence it chose came FROM that page, so "Read it on MedlinePlus" cannot appear
-  // over a hand-written line or over something she typed. The first build asked a different
+  // over a hand-written line or over something the user typed. The first build asked a different
   // question -- "is there a MedlinePlus entry for this drug?" -- and the audit found it citing the
   // oxycodone page under the app's own Percocet line, with the acetaminophen warning deleted.
   const described = describeMed(med);
@@ -315,15 +315,18 @@ k = src.index(close_marker, close_after) + len(close_marker)
 src = src[:k] + "      " + NEW_BLOCK.lstrip() + ",\n" + src[k:]
 
 # --- 5. the disclaimer must now be true -----------------------------------------------------------
+# ANCHORS ON THE NEUTRAL WORDING, because harness-product-neutral-patch.py runs first and has
+# already taken "her" out of it. Run in the other order this dies rather than half-applying, which
+# is the point: the two patches are one release and the order is not optional.
 old_disc = ("'These descriptions are written here \\u2014 general information about what a medication is usually "
-            "for, not advice and not a dose. Follow her care team. ' + 'Tapping \\u201cLook it up\\u201d opens ' + "
+            "for, not advice and not a dose. Follow the care team. ' + 'Tapping \\u201cLook it up\\u201d opens ' + "
             "MED_SOURCE.label + ' in your browser, and that site will see which medication you looked up. "
             "Nothing is sent unless you tap.'")
 if src.count(old_disc) != 1:
     die('the disclaimer is not where it was -- refusing to leave a false one on screen')
 new_disc = ("'Some of these descriptions are quoted from ' + MED_SOURCE.label + ', the US National Library of "
             "Medicine; the rest are written here. Either way they are general information about what a "
-            "medication is usually for, not advice and not a dose. Follow her care team. ' + 'Tapping a link "
+            "medication is usually for, not advice and not a dose. Follow the care team. ' + 'Tapping a link "
             "opens ' + MED_SOURCE.label + ' in your browser, and that site will see which medication you looked "
             "up. Nothing is sent unless you tap.'")
 src = src.replace(old_disc, new_disc, 1)
