@@ -1169,6 +1169,10 @@ const LEGACY_MED_RULES = {
   // read like a sensible steroid taper and was wrong on 697 of 841 simulated hours. The two-release
   // comparison caught it; nothing else would have.
   'dexamethasone': {
+    // A legacy dexamethasone already has windows and the old code ignored them, so these have to
+    // replace what is stored rather than only filling a gap. The flag lives on the rule -- see
+    // migrateLegacyMedRules -- so no code anywhere branches on this medication's name.
+    replaceWindows: true,
     windows: [{ start: 8, end: 12, name: 'Morning' }, { start: 14, end: 18, name: 'Afternoon' }],
     chemoRelativeWindows: [{ dayOffset: 1, start: 8, end: 12, name: 'Morning' }]
   },
@@ -1183,8 +1187,13 @@ const LEGACY_MED_RULES = {
   // Which daily-total card this medication gets on Home, and which unit its history summary counts.
   // Was: tylenolMg(), dailyPills('imodium'), and `e.medId === 'tylenol'` inside the report builder.
   'tylenol': { homeCard: { kind: 'mg' } },
+  // Was `const imoMax = 4` inline; see the imodium entry for why it is here.
   'tylenol-liquid': { homeCard: { kind: 'ml' } },
-  'imodium': { homeCard: { kind: 'pills' } },
+  'imodium': { homeCard: { kind: 'pills' }, ceiling: true, ceilingMax: 4, ceilingUnit: 'pills' },
+  // Missing entirely, so its card disappeared: the old medHomeCardKind returned 'pills' for it and
+  // the old block carried `const lidoMax = 4`. Both were one care plan's numbers; they are written
+  // here as that medication's own configured limit, once, on data that predates the properties.
+  'lidocaine': { homeCard: { kind: 'pills' }, ceiling: true, ceilingMax: 4, ceilingUnit: 'applications' },
   // Not an id-keyed entry: a MIGRATION OF THE OLD FLAGS. morningLinkedToProtonix and
   // eveningLinkedToProtonix were booleans meaning "two hours after Protonix, in this half of the
   // day". Whoever carried them keeps exactly that, now as data anyone can set for any pair.
@@ -1208,13 +1217,25 @@ function migrateLegacyMedRules(med) {
   const rules = med && Object.prototype.hasOwnProperty.call(LEGACY_MED_RULES, med.id)
     && LEGACY_MED_RULES[med.id] !== true ? LEGACY_MED_RULES[med.id] : null;
   if (!rules) return next;
+  // `windows` is the one key the old code IGNORED on a legacy medication -- dexWindowsForOffset never
+  // looked at med.windows -- so the rule's own times have to overwrite what is stored, exactly once.
+  // Expressed as a flag ON THE RULE rather than a check on the id: an `if (med.id === '...')` here
+  // would be the fifteenth such branch, in the release whose whole point is that there are none.
+  if (rules.replaceWindows) delete next.windows;
+  next.schemaV = MED_CONFIG_VERSION;
   for (const key of Object.keys(rules)) {
     // `windows` is the one key a legacy medication always already has, and for dexamethasone the old
     // code IGNORED it entirely -- dexWindowsForOffset never looked at med.windows. So leaving the
     // stored value in place would change behaviour for the one medication this entry exists for.
     // Every other key is only written when absent, so a rule the user configured themselves wins.
-    const replace = (key === 'windows');
-    if (replace || next[key] === undefined) next[key] = JSON.parse(JSON.stringify(rules[key]));
+    // ONLY WHEN ABSENT, INCLUDING `windows`. This replaced windows unconditionally so that a
+    // dexamethasone medication stored before the properties existed got the everyday times the old
+    // code hardcoded and ignored med.windows for. But the migration can run more than once -- a
+    // backup restore writes version 1 -- so a caregiver who edited their dexamethasone times had
+    // them silently reverted to 8-12 / 14-18 on the next restore. The medication is stamped below
+    // instead, which makes the migration genuinely one-shot, so replacing once is enough.
+    if (key === 'replaceWindows') continue;   // a directive to this function, not a medication field
+    if (next[key] === undefined) next[key] = JSON.parse(JSON.stringify(rules[key]));
   }
   return next;
 }
@@ -1445,7 +1466,13 @@ function loadMedicationConfig() {
     // Persist immediately so the migration is genuinely one-shot. Without this it would re-run on
     // every load, which is harmless today and becomes the phase 3 defect the moment a customer is
     // allowed to name their medication Zofran.
-    if (needsLegacyMigration) persistMedicationConfig(meds, archivedMeds);
+    // DEFERRED, NOT INLINE. Called here it runs during module init, before `let state` is
+    // initialised -- and its own failure path calls setToast -> setState -> state, throwing a
+    // ReferenceError out of this function's try, whose catch returns the EMPTY fallback. On a device
+    // that cannot write to localStorage (Safari Private Browsing, a full disk) the caregiver's whole
+    // medication list disappeared for the session. A timeout puts the write after init, where a
+    // failed save is a toast rather than a data loss.
+    if (needsLegacyMigration) setTimeout(() => persistMedicationConfig(state.meds, state.archivedMeds), 0);
     return { meds, archivedMeds };
   } catch (error) {
     console.warn('Medication configuration could not be loaded:', error);
@@ -2214,7 +2241,18 @@ function medInteractionsFor(entry) {
   return out;
 }
 
-// medHomeCardKind IS DELIBERATELY NOT HERE. The plan lists homeCard as a phase 1 property and an
+// medHomeCardKind. Phase 1 removed it because nothing called it; phase 2 added three call sites and
+// did not put it back, so `medHomeCardKind is not defined` threw on every render after the first for
+// any device whose medications had been migrated. Home froze on its pre-entries paint -- the
+// caregiver could not see or log a dose from it -- and History died with it. Five suites, 103 checks,
+// all green, because not one of them renders a screen with a medication that has a homeCard.
+//
+// It reads the property and nothing else. The legacy ids it used to fall back to are gone.
+function medHomeCardKind(med) {
+  const kind = med && med.homeCard && typeof med.homeCard === 'object' ? med.homeCard.kind : null;
+  return ['mg', 'pills', 'ml'].includes(kind) ? kind : null;
+}
+// The phase 1 note, kept because it is still the reason this function is shaped the way it is: The plan lists homeCard as a phase 1 property and an
 // earlier draft added a resolver for it -- which NOTHING CALLED, while the branches it mirrored
 // stayed exactly where they were. That is four NET-NEW references to one patient's medication ids,
 // counted by the ratchet as "inside the resolvers" as though they had been migrated, when nothing
@@ -2242,18 +2280,47 @@ function afterLog(entry) {
   const declared = medInteractionsFor(entry);
   if (declared.length) setState({ warn: declared[0] });
   const configuredMedication = state.meds.find(med => med.id === entry.medId);
-  const configuredLimit = dailyCeiling(configuredMedication);
+  // EVERY WARNING THIS DOSE EARNS, THEN THE WORST ONE. Three separate defects lived in the shape
+  // this replaces, all found by the phase 2/3 audit:
+  //  * the mg branch `return`ed, so a liquid over BOTH its mg ceiling and its millilitre cap only
+  //    ever reported one of them;
+  //  * "Take all" calls this once per medication into a single `state.warn` slot, so with
+  //    ['tylenol','iron'] the red "daily limit exceeded" was silently overwritten by the amber
+  //    spacing reminder, and with ['iron','tylenol'] it was not -- the caregiver's warning depended
+  //    on list order;
+  //  * and a red warning must never lose to an amber one, whatever order they arrive in.
+  const warnings = [];
+
+  // THE ACETAMINOPHEN CEILING, WHICH WENT SILENT AND IS THE ONE THAT KILLS PEOPLE.
+  // dailyCeiling(theLiquid) is null -- a liquid carries a volume cap, not an mg ceiling -- so
+  // logging 1,500mg of liquid on top of 2,000mg of pills produced NO WARNING AT ALL against a
+  // 3,000mg limit. The old code deliberately borrowed the ceiling from the group. `ceilingGroup` is
+  // already the generic expression of "these share one daily total"; the group's ceiling-bearing
+  // medication is the one to ask.
+  const ceilingOwner = (configuredMedication && configuredMedication.ceilingGroup)
+    ? (state.meds.find(m => m.ceilingGroup === configuredMedication.ceilingGroup && medicationCeilingMax(m))
+       || configuredMedication)
+    : configuredMedication;
+  const configuredLimit = dailyCeiling(ceilingOwner);
   if (configuredLimit && configuredLimit.used > configuredLimit.max) {
-    setState({ warn: { tone: 'red', title: configuredMedication.name + ' daily limit exceeded', body: "Today's " + configuredMedication.name + ' total is ' + configuredLimit.used.toLocaleString() + ' ' + configuredLimit.unit + ', above the ' + configuredLimit.label + ' daily limit set for it. Check with the care team before logging more.' } });
-    return;
+    // Named for the medication that OWNS the limit, not the one just logged: "Tylenol daily limit
+    // exceeded" after a dose of Tylenol Liquid is the true statement, because they share one total.
+    warnings.push({ tone: 'red', title: ceilingOwner.name + ' daily limit exceeded', body: "Today's " + ceilingOwner.name + ' total is ' + configuredLimit.used.toLocaleString() + ' ' + configuredLimit.unit + ', above the ' + configuredLimit.label + ' daily limit set for it. Check with the care team before logging more.' });
   }
-  // app-v77 phase 2: the millilitre ceiling used to live inside a Tylenol-Liquid-shaped branch. It
-  // is a property (volumeCeilingMl) and dailyVolumeCeiling() was already generic; only the caller
-  // was not. A liquid can pass its mg limit and its volume limit independently, so both are checked.
   const volumeLimit = dailyVolumeCeiling(configuredMedication);
   if (volumeLimit && volumeLimit.used > volumeLimit.max) {
-    setState({ warn: { tone: 'red', title: configuredMedication.name + ' volume limit exceeded', body: "Today's " + configuredMedication.name + ' total is ' + volumeLimit.used + ' ' + volumeLimit.unit + ', above the ' + volumeLimit.label + ' daily limit set for it. Check with the care team before logging more.' } });
+    warnings.push({ tone: 'red', title: configuredMedication.name + ' volume limit exceeded', body: "Today's " + configuredMedication.name + ' total is ' + volumeLimit.used + ' ' + volumeLimit.unit + ', above the ' + volumeLimit.label + ' daily limit set for it. Check with the care team before logging more.' });
   }
+  for (const w of medInteractionsFor(entry)) warnings.push(w);
+
+  if (!warnings.length) return;
+  // RED BEATS AMBER, AND AN EXISTING RED IS NEVER OVERWRITTEN. Take-all calls this in a loop; a
+  // ceiling warning raised by the first medication must survive a spacing reminder raised by the
+  // third.
+  const worst = warnings.find(w => w.tone === 'red') || warnings[0];
+  if (state.warn && state.warn.tone === 'red' && worst.tone !== 'red') return;
+  setState({ warn: worst });
+
 }
 
 async function logMed(medId, dose, opts) {
@@ -5130,28 +5197,44 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // gave it a homeCard, and it shows ITS name, ITS limit and ITS unit.
   for (const hcMed of state.meds.filter(m => m && m.homeCard && !m.paused && usedRecently(m.id))) {
     const kind = medHomeCardKind(hcMed);
-    const hcMax = medicationCeilingMax(hcMed) || 0;
+    // A kind:'ml' card was structurally incapable of showing a limit or a bar: medicationCeilingMax
+    // reads `ceiling`/`ceilingMax` and a liquid's cap lives in `volumeCeilingMl`. It showed a bare
+    // running total with "No daily limit set" under a medication that has one.
+    const hcMax = (kind === 'ml' ? Number(hcMed.volumeCeilingMl) : medicationCeilingMax(hcMed)) || 0;
     const hcUsed = kind === 'mg'
       ? (hcMed.ceilingGroup ? dailyGroupMg(hcMed) : dailyDoseMg(hcMed.id))
       : (kind === 'ml' ? dailyVolumeMl(hcMed.id) : dailyPills(hcMed.id));
     const hcUnit = kind === 'mg' ? 'mg' : (kind === 'ml' ? 'mL' : (hcMed.ceilingUnit || 'doses'));
+    // "1 doses". The unit is a plural word and the count can be one.
+    const hcUnitFor = (n) => (n === 1 && /s$/.test(hcUnit)) ? hcUnit.replace(/s$/, '') : hcUnit;
     const hcPct = hcMax > 0 ? Math.min(100, hcUsed / hcMax * 100) : 0;
     const hcColor = hcMax > 0 && hcUsed >= hcMax ? '#C0453B' : hcPct >= 90 ? '#C0453B' : hcPct >= 60 ? '#9A6419' : '#BF4C1A';
     const hcLeft = Math.max(0, hcMax - hcUsed);
     parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '12px' } },
         h('div', null,
-          h('div', { style: { ...TYPE.label, color: '#915E48' } }, hcMed.name + ' · today'),
+          // A GROUPED CARD IS NOT ONE MEDICATION. With Tylenol and Tylenol Liquid sharing a
+          // ceilingGroup the total is both of them, and labelling it "Tylenol · today" tells a
+          // caregiver who gave 500mg of pills that they have given 980mg of Tylenol.
+          h('div', { style: { ...TYPE.label, color: '#915E48' } },
+            // ONLY WHERE THE TOTAL REALLY IS THE GROUP'S. A ceilingGroup shares an mg total; it does
+            // NOT share a millilitre cap, which is one medication's own labelled limit. Labelling the
+            // mL card "Tylenol + Tylenol Liquid" over a figure that counts only the liquid is the
+            // same false impression in the other direction -- found by looking at the rendered
+            // screen, which is the thing no suite had been doing.
+            (kind === 'mg' && hcMed.ceilingGroup && ceilingGroupMedIds(hcMed).length > 1
+              ? ceilingGroupMedIds(hcMed).map(gid => (state.meds.find(m => m.id === gid) || {}).name).filter(Boolean).join(' + ')
+              : hcMed.name) + ' · today'),
           // NO CEILING IS A REAL STATE, and it must not read as a limit of zero. A medication with
           // no configured daily limit still gets its running total; it just has nothing to be
           // "left" of.
           h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } },
-            hcMax > 0 ? (hcLeft.toLocaleString() + ' ' + hcUnit + ' left before the daily limit') : 'No daily limit set')
+            hcMax > 0 ? (hcLeft.toLocaleString() + ' ' + hcUnitFor(hcLeft) + ' left before the daily limit') : 'No daily limit set')
         ),
         h('div', { className: 'mono', style: { fontSize: '20px', fontWeight: '600', letterSpacing: '-0.02em', whiteSpace: 'nowrap' } },
           hcUsed.toLocaleString(),
           h('span', { style: { color: '#7A6E76', fontSize: '13px', fontWeight: '400' } },
-            hcMax > 0 ? (' / ' + hcMax.toLocaleString() + ' ' + hcUnit) : (' ' + hcUnit))
+            hcMax > 0 ? (' / ' + hcMax.toLocaleString() + ' ' + hcUnit) : (' ' + hcUnitFor(hcUsed)))
         )
       ),
       hcMax > 0 ? h('div', { role: 'img', 'aria-label': hcUsed.toLocaleString() + ' of ' + hcMax.toLocaleString() + ' ' + hcUnit + ' used today', style: { height: '12px', background: 'rgba(246,108,49,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px' } },
@@ -7398,7 +7481,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v78';
+const APP_VERSION = 'app-v79';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next

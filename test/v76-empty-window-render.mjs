@@ -140,6 +140,75 @@ console.log('\n3. AND WITH A TREATMENT DATE, THE DECLARED WINDOWS ARE THE ONES I
     Array.isArray(stored) && stored.length === 2, JSON.stringify(stored));
 }
 
+console.log('\n4. WHY THE CRASH IS NOW STRUCTURALLY IMPOSSIBLE -- AND THE CHECK THAT CAN SAY SO');
+{
+  // SECTIONS 1-3 PASS WITH `if (!first) return ...` DELETED. That was reported by the phase 2/3
+  // audit and it is true, and the reason matters more than the finding: phase 2 did not weaken the
+  // guard, it removed the thing the guard was guarding against.
+  //
+  // In phase 1, medWindowsFor RETURNED the chemo override -- `[]` on a device with no treatment date
+  // -- and `first.start` threw. Phase 2 made an override that matches nothing fall THROUGH to
+  // `med.windows`, and normalizeMedication line ~1360 gives a scheduled medication a 0-24 'Daily'
+  // window when it has none of its own. So for a `win` medication the list cannot be empty, and the
+  // guard is defence-in-depth rather than a live fix.
+  //
+  // A test that strains to reach dead code proves nothing. This one asserts the INVARIANT the crash
+  // now depends on, which is a check that can genuinely go red: strip a scheduled medication's
+  // windows down to nothing in storage, and the app must hand it one back. Falsified by deleting the
+  // `: [{ start: 0, end: 24, name: 'Daily' }]` default in normalizeMedication -- section 1's Quick Log
+  // card then disappears and this check fails with `0 window(s)`.
+  const stripped = await page.evaluate((key) => {
+    const raw = JSON.parse(localStorage.getItem(key) || '{}');
+    const med = (raw.meds || []).find(m => m.name === 'Steroid X');
+    if (!med) return { ok: false };
+    med.windows = [];
+    // An offset this device can never be on, so the override matches nothing and the resolver has to
+    // fall through -- which is the path phase 2 introduced and the one under test here.
+    med.chemoRelativeWindows = [{ dayOffset: 3, start: 8, end: 12, name: 'Morning' }];
+    localStorage.setItem(key, JSON.stringify(raw));
+    return { ok: true };
+  }, seeded.key);
+  t('a scheduled medication with no windows at all could be written to storage', stripped.ok === true);
+  errors.length = 0;
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1800);
+  const skip3 = page.getByRole('button', { name: 'Skip guide' });
+  if (await skip3.count()) { await skip3.first().click(); await page.waitForTimeout(500); }
+  await page.getByRole('button', { name: /^Home/ }).first().click();
+  await page.waitForTimeout(900);
+  // THE ASSERTION: the app handed it a window back. Read off the rendered Home card rather than out
+  // of state, which is not global -- a scheduled medication with no window has nothing to be
+  // available at, and its Quick Log card does not survive.
+  const named = await page.evaluate(() => (document.querySelector('main') || {}).innerText || '');
+  // THE DISCRIMINATING ASSERTION, and finding it took three tries worth writing down. "The card is
+  // still on screen" is NOT discriminating -- the card renders either way, because a Quick Log card
+  // does not need a window to draw itself. What changes is the day's dose progress: with the default
+  // the app expects one dose from this medication and Home reads `0/1`; without it the medication
+  // has nothing to be due and drops out of the count entirely, silently, with no error and a card
+  // that looks completely normal. That is the actual harm, and it is the thing to assert on.
+  // Read from <header>, not <main>: the day's dose progress is rendered in the app header beside the
+  // date, which is outside the element sections 1-3 read. innerText, never textContent -- in a
+  // single-file app textContent carries the source of the app itself and any string matches.
+  const ring = await page.evaluate(() => {
+    const h = document.querySelector('header') || document.body;
+    const m = (h.innerText || '').match(/\b\d+\s*\/\s*\d+\b/);
+    return m ? m[0].replace(/\s+/g, '') : '(no dose count in the header)';
+  });
+  t('the app gives it a window back, so it still counts toward the day', ring === '0/1', ring);
+  t('and its Quick Log card is on Home', /Steroid X/.test(named),
+    named.slice(0, 80).replace(/\n/g, ' / '));
+  const crash = errors.filter(e => /Cannot read properties of undefined|first\.start/.test(e));
+  t('and no render crash on Home', crash.length === 0, crash.join(' | '));
+  await page.getByRole('button', { name: /^Meds/ }).first().click();
+  await page.waitForTimeout(700);
+  const editable = await page.evaluate(() => ({
+    cards: document.querySelectorAll('main article').length,
+    remove: document.querySelectorAll('[aria-label^="Remove "]').length
+  }));
+  t('Meds still renders, so there is a way to delete it', editable.cards > 0 && editable.remove > 0,
+    JSON.stringify(editable));
+}
+
 await browser.close();
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed' + (fail ? '  <-- FAIL' : ''));
 process.exit(fail ? 1 : 0);

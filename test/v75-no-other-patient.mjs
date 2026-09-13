@@ -197,7 +197,8 @@ console.log('\n4. THE RATCHET: BEHAVIOUR KEYED TO ONE PERSON\'S PRESCRIPTION');
   // Asserting its ABSENCE matters as much as asserting its presence did: bringing it back would
   // mean thirteen real drug names are unusable again, and it would do so silently.
   t('the fence is gone, so a customer can use their medication\'s real name',
-    !/RESERVED_LEGACY_MED_IDS/.test(html), 'RESERVED_LEGACY_MED_IDS is back in the file');
+    !/RESERVED_LEGACY_MED_IDS/.test(html),
+    /RESERVED_LEGACY_MED_IDS/.test(html) ? 'RESERVED_LEGACY_MED_IDS is back in the file' : '');
   // And the reason it is safe for it to be gone: the migration is gated on a per-medication stamp,
   // not on the id. Without this, deleting the fence and deleting the stamp would both pass.
   t('and the legacy migration is gated on a per-medication stamp, not on the id',
