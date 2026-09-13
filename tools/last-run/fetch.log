@@ -1,0 +1,63 @@
+  the index lists 26 letter page(s)
+  drug_Aa.html: 433 medication(s)
+  drug_Ba.html: 195 medication(s)
+  drug_Ca.html: 250 medication(s)
+  drug_Da.html: 177 medication(s)
+  drug_Ea.html: 149 medication(s)
+  drug_Fa.html: 82 medication(s)
+  drug_Ga.html: 50 medication(s)
+  drug_Ha.html: 31 medication(s)
+  drug_Ia.html: 73 medication(s)
+  drug_Ja.html: 11 medication(s)
+  drug_Ka.html: 29 medication(s)
+  drug_La.html: 96 medication(s)
+  drug_Ma.html: 106 medication(s)
+  drug_Na.html: 64 medication(s)
+  drug_Oa.html: 55 medication(s)
+  drug_Pa.html: 72 medication(s)
+  drug_Qa.html: 9 medication(s)
+  drug_Ra.html: 46 medication(s)
+  drug_Sa.html: 40 medication(s)
+  drug_Ta.html: 53 medication(s)
+  drug_Ua.html: 3 medication(s)
+  drug_Va.html: 22 medication(s)
+  drug_Wa.html: 0 medication(s)
+  drug_Xa.html: 0 medication(s)
+  drug_Ya.html: 1 medication(s)
+  drug_Za.html: 10 medication(s)
+  2057 medication name(s) known to MedlinePlus
+  576 name(s) matched once a dosage form was allowed for
+  DECLINED to guess between pages for: epinephrine (3 pages), fluorouracil (2 pages), flunisolide (2 pages), oxymetazoline (2 pages), tobramycin (3 pages), estradiol (2 pages), betamethasone (2 pages), ciclesonide (2 pages), amikacin (2 pages), apomorphine (2 pages), fluticasone (3 pages), mometasone (3 pages), capsaicin (2 pages), azelastine (2 pages), ipratropium (2 pages), dihydroergotamine (2 pages), iloprost (2 pages), interferon beta-1a (2 pages), bacitracin (2 pages), glucagon (2 pages), beclomethasone (2 pages), cyanocobalamin (2 pages), bimatoprost (2 pages), butorphanol (2 pages), ranibizumab (2 pages), calcitonin salmon (2 pages), clotrimazole (3 pages), nicotine (4 pages), neomycin, polymyxin, bacitracin, and hydrocortisone (2 pages), cromolyn (2 pages), miconazole (3 pages), edaravone (2 pages), naloxone (2 pages), gentamicin (3 pages), nitroglycerin (4 pages), neomycin, polymyxin, and bacitracin (2 pages), nalmefene (2 pages), pentamidine (2 pages), olopatadine (2 pages)
+  345 brand name(s) read off the pages themselves: actamin, feverall, panadol, tempra quicklets, tylenol, dayquil, sitavig, zovirax, lopurin, zyloprim, teenagers, your family, ...
+resolved 85 page address(es) from the A-Z index
+  no page found for: ativan, colace, compazine, cyanocobalamin, docusate, epoetin alfa, ferrous sulfate, fluorouracil, imodium, iron, miralax, ms contin, norco, oxycontin, paclitaxel, paracetamol, paxil, percocet, phenergan, polyethylene glycol, reglan, roxicodone, sennosides, tylenol pm, ultram, vicodin, xylocaine, zoloft
+fetched 85 of 113, failed 28
+  FAILED  ativan -- no page on MedlinePlus under that exact name
+  FAILED  colace -- no page on MedlinePlus under that exact name
+  FAILED  compazine -- no page on MedlinePlus under that exact name
+  FAILED  cyanocobalamin -- no page on MedlinePlus under that exact name
+  FAILED  docusate -- no page on MedlinePlus under that exact name
+  FAILED  epoetin alfa -- no page on MedlinePlus under that exact name
+  FAILED  ferrous sulfate -- no page on MedlinePlus under that exact name
+  FAILED  fluorouracil -- no page on MedlinePlus under that exact name
+  FAILED  imodium -- no page on MedlinePlus under that exact name
+  FAILED  iron -- no page on MedlinePlus under that exact name
+  FAILED  miralax -- no page on MedlinePlus under that exact name
+  FAILED  ms contin -- no page on MedlinePlus under that exact name
+  FAILED  norco -- no page on MedlinePlus under that exact name
+  FAILED  oxycontin -- no page on MedlinePlus under that exact name
+  FAILED  paclitaxel -- no page on MedlinePlus under that exact name
+  FAILED  paracetamol -- no page on MedlinePlus under that exact name
+  FAILED  paxil -- no page on MedlinePlus under that exact name
+  FAILED  percocet -- no page on MedlinePlus under that exact name
+  FAILED  phenergan -- no page on MedlinePlus under that exact name
+  FAILED  polyethylene glycol -- no page on MedlinePlus under that exact name
+  FAILED  reglan -- no page on MedlinePlus under that exact name
+  FAILED  roxicodone -- no page on MedlinePlus under that exact name
+  FAILED  sennosides -- no page on MedlinePlus under that exact name
+  FAILED  tylenol pm -- no page on MedlinePlus under that exact name
+  FAILED  ultram -- no page on MedlinePlus under that exact name
+  FAILED  vicodin -- no page on MedlinePlus under that exact name
+  FAILED  xylocaine -- no page on MedlinePlus under that exact name
+  FAILED  zoloft -- no page on MedlinePlus under that exact name
+pages fetched: 85

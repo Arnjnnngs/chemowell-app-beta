@@ -1,0 +1,512 @@
+[
+  {
+    "name": "acetaminophen",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a681004.html",
+    "whyPrescribed": "Acetaminophen is used to relieve mild to moderate pain and to reduce fever. Acetaminophen is in a class of medications called analgesics (pain relievers) and antipyretics (fever reducers). It works by changing the way the body senses pain and by cooling the body."
+  },
+  {
+    "name": "acyclovir",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a681045.html",
+    "whyPrescribed": "Acyclovir is used to treat viral infections like chickenpox, herpes zoster (shingles) and genital herpes (a sexually transmitted disease). Acyclovir is in a class of medications called antivirals. It works by stopping the spread of the virus in the body. Acyclovir will not cure herpes infections and may not stop the spread of herpes virus to other people."
+  },
+  {
+    "name": "advil",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682159.html",
+    "whyPrescribed": "Prescription ibuprofen is used to relieve pain, tenderness, swelling, and stiffness caused by osteoarthritis (arthritis caused by a breakdown of the lining of the joints) and rheumatoid arthritis (arthritis caused by swelling of the lining of the joints). It is also used to relieve mild to moderate pain, including menstrual pain (pain that happens before or during a menstrual period). Nonprescription ibuprofen is used to reduce fever and to relieve minor aches and pain from headaches, muscle aches, arthritis, menstrual periods, the common cold, toothaches, and backaches. Ibuprofen is in a class of medications called NSAIDs. It works by stopping the body's production of a substance that causes pain, fever, and inflammation."
+  },
+  {
+    "name": "allopurinol",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682673.html",
+    "whyPrescribed": "Allopurinol is used to treat gout (a type of arthritis in which uric acid, a naturally occurring substance in the body, builds up in the joints and causes sudden attacks of redness, swelling, pain, and heat in one or more joints). Allopurinol is also used to treat high levels of uric acid that builds up in the blood as tumors break down in people with certain types of cancer who are being treated with chemotherapy medications. It is also used to treat kidney stones that have come back in people who have high levels of uric acid in their urine. Allopurinol is in a class of medications called xanthine oxidase inhibitors. It works by reducing the production of uric acid in the body. High levels of uric acid may cause gout attacks or kidney stones. Allopurinol is used to prevent gout attacks, not to treat them once they occur."
+  },
+  {
+    "name": "amitriptyline",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682388.html",
+    "whyPrescribed": "Amitriptyline is used to treat symptoms of depression. Amitriptyline is in a class of medications called tricyclic antidepressants. It works by increasing the amounts of certain natural substances in the brain that are needed to maintain mental balance."
+  },
+  {
+    "name": "aprepitant",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a604003.html",
+    "whyPrescribed": "Aprepitant is used with other medications in adults and children 6 months of age and older to prevent nausea and vomiting that may occur after receiving cancer chemotherapy treatment. It is also used with other medications in adults and children 6 months of age and older to prevent delayed nausea and vomiting that may occur several days after receiving certain chemotherapy medications. Aprepitant is not used to treat nausea and vomiting that you already have. Aprepitant is in a class of medications called antiemetics. It works by blocking the action of neurokinin, a natural substance in the brain that causes nausea and vomiting."
+  },
+  {
+    "name": "benadryl",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682539.html",
+    "whyPrescribed": "Diphenhydramine is used to treat allergy and cold symptoms: sneezing; runny nose; red, itchy, watery eyes; itching of the nose or throat. Diphenhydramine is also used to treat insomnia (difficulty falling asleep or staying asleep) in adults, but should not be used to make a child sleepy. Diphenhydramine is in a class of medications called antihistamines. It works by blocking the action of histamine, a substance in the body that causes allergic symptoms. Diphenhydramine is also available in combination with other medications. This monograph only includes information about the use of diphenhydramine alone. If you are taking the combination product, read the information on the package label or ask your doctor or pharmacist for more information."
+  },
+  {
+    "name": "bevacizumab",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a607001.html",
+    "whyPrescribed": "Bevacizumab injection products are used to treat a variety of solid tumors. This includes certain lung, kidney, liver, brain, colon, rectal, female reproductive organ or peritoneal (tissue that lines the abdomen) cancers. Bevacizumab injection products are in a class of medications called antiangiogenic agents. They work by stopping the formation of blood vessels that bring oxygen and nutrients to tumors. This may slow the growth and spread of tumors."
+  },
+  {
+    "name": "bisacodyl",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a601027.html",
+    "whyPrescribed": "Bisacodyl is used on a short-term basis to treat constipation. It also is used to empty the bowels before surgery and certain medical procedures. Bisacodyl is in a class of medications called stimulant laxatives. It works by increasing activity of the intestines to cause a bowel movement."
+  },
+  {
+    "name": "buspar",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a688005.html",
+    "whyPrescribed": "Buspirone is used to treat anxiety. Buspirone is in a class of medications called anxiolytics. It works by changing the amounts of certain natural substances in the brain."
+  },
+  {
+    "name": "buspirone",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a688005.html",
+    "whyPrescribed": "Buspirone is used to treat anxiety. Buspirone is in a class of medications called anxiolytics. It works by changing the amounts of certain natural substances in the brain."
+  },
+  {
+    "name": "capecitabine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a699003.html",
+    "whyPrescribed": "Capecitabine is used to treat certain types of breast cancer, colon or rectal cancer (cancer that begins in the large intestine), pancreatic cancer, and stomach or esophageal (tube that connects the throat with the stomach) cancers. Capecitabine is in a class of medications called antimetabolites. It works by stopping or slowing the growth of cancer cells."
+  },
+  {
+    "name": "carboplatin",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a695017.html",
+    "whyPrescribed": "Carboplatin is used alone or in combination with other medications to treat cancer of the ovaries (cancer that begins in the female reproductive organs where eggs are formed) that has spread to other parts of the body, not improved, or that has worsened after treatment with other medications or radiation therapy. Carboplatin is in a class of medications known as platinum-containing compounds. It works by stopping or slowing the growth of cancer cells."
+  },
+  {
+    "name": "ciprofloxacin",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a688016.html",
+    "whyPrescribed": "Ciprofloxacin is used to treat or prevent certain infections caused by bacteria. Ciprofloxacin is also used to treat or prevent plague (a serious infection that may be spread on purpose as part of a bioterror attack) and inhalation anthrax (a serious infection that may be spread by anthrax germs in the air on purpose as part of a bioterror attack). Ciprofloxacin is in a class of antibiotics called fluoroquinolones. It works by killing bacteria that cause infections. Antibiotics such as ciprofloxacin will not work for colds, flu, or other viral infections. Using antibiotics when they are not needed increases your risk of getting an infection later that resists antibiotic treatment."
+  },
+  {
+    "name": "cisplatin",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a684036.html",
+    "whyPrescribed": "Cisplatin is used combination with other medications to treat cancer of the testicles that has not improved or that has worsened after treatment with other medications or radiation therapy. Cisplatin is used alone or in combination with other medications to treat cancer of the ovaries (cancer that begins in the female reproductive organs where eggs are formed) that has not improved or that has worsened after treatment with other medications or radiation therapy. Cisplatin is also used alone or in combination with other medications to treat bladder cancer that can not be treated with surgery or radiation therapy alone. Cisplatin is in a class of medications known as platinum-containing compounds. It works by stopping or slowing the growth of cancer cells."
+  },
+  {
+    "name": "cyclophosphamide",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682080.html",
+    "whyPrescribed": "Cyclophosphamide is used alone or in combination with other medications to treat Hodgkin's lymphoma (Hodgkin's disease) and non-Hodgkin's lymphoma (types of cancer that begin in a type of white blood cells that normally fights infection); mycosis fungoides ( a type of blood cancer that first appears as skin rashes); multiple myeloma (a type of cancer of the bone marrow); and certain types of leukemia (cancer of the white blood cells), including chronic lymphocytic leukemia (CLL), chronic myelogenous leukemia (CML), acute myeloid leukemia (AML, ANLL), and acute lymphoblastic leukemia (ALL). It is also used to treat retinoblastoma (cancer in the eye), neuroblastoma (a cancer that begins in nerve cells and occurs mainly in children), ovarian cancer (cancer that begins in the female reproductive organs where eggs are formed), and breast cancer. Cyclophosphamide is also used to treat nephrotic syndrome (a disease that is caused by damage to the kidneys) in certain children. Cyclophosphamide is in a class of medications called alkylating agents. When cyclophosphamide is used to treat cancer, it works by slowing or stopping the growth of cancer cells in your body. When cyclophosphamide is used to treat nephrotic syndrome, it works by suppressing your body's immune system."
+  },
+  {
+    "name": "cytarabine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682222.html",
+    "whyPrescribed": "Cytarabine is used to treat certain types of leukemia (cancer of the white blood cells). Cytarabine is in a class of medications called antimetabolites. It works by slowing or stopping the growth of cancer cells in your body."
+  },
+  {
+    "name": "darbepoetin alfa",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a604022.html",
+    "whyPrescribed": "Darbepoetin alfa injection is used to treat anemia (a lower than normal number of red blood cells) in people with chronic kidney failure (condition in which the kidneys slowly and permanently stop working over a period of time). Darbepoetin alfa injection is also used to treat anemia caused by chemotherapy in people with certain types of cancer. Darbepoetin alfa cannot be used in place of a red blood cell transfusion to treat severe anemia and has not been shown to improve tiredness or poor well-being that may be caused by anemia. Darbepoetin alfa is in a class of medications called erythropoiesis-stimulating agents (ESAs). It works by causing the bone marrow (soft tissue inside the bones where blood is made) to make more red blood cells."
+  },
+  {
+    "name": "decadron",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682792.html",
+    "whyPrescribed": "Dexamethasone, a corticosteroid, is similar to a natural hormone produced by your adrenal glands. It often is used to replace this chemical when your body does not make enough of it. It relieves inflammation (swelling, heat, redness, and pain) and is used to treat certain forms of arthritis; skin, blood, kidney, eye, thyroid, and intestinal disorders (e.g., colitis); severe allergies; and asthma. Dexamethasone is also used to treat certain types of cancer. This medication is sometimes prescribed for other uses; ask your doctor or pharmacist for more information."
+  },
+  {
+    "name": "dexamethasone",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682792.html",
+    "whyPrescribed": "Dexamethasone, a corticosteroid, is similar to a natural hormone produced by your adrenal glands. It often is used to replace this chemical when your body does not make enough of it. It relieves inflammation (swelling, heat, redness, and pain) and is used to treat certain forms of arthritis; skin, blood, kidney, eye, thyroid, and intestinal disorders (e.g., colitis); severe allergies; and asthma. Dexamethasone is also used to treat certain types of cancer. This medication is sometimes prescribed for other uses; ask your doctor or pharmacist for more information."
+  },
+  {
+    "name": "dicyclomine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a684007.html",
+    "whyPrescribed": "Dicyclomine is used to treat the symptoms of irritable bowel syndrome. Dicyclomine is in a class of medications called anticholinergics. It relieves muscle spasms in the gastrointestinal tract by blocking the activity of a certain natural substance in the body."
+  },
+  {
+    "name": "diphenhydramine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682539.html",
+    "whyPrescribed": "Diphenhydramine is used to treat allergy and cold symptoms: sneezing; runny nose; red, itchy, watery eyes; itching of the nose or throat. Diphenhydramine is also used to treat insomnia (difficulty falling asleep or staying asleep) in adults, but should not be used to make a child sleepy. Diphenhydramine is in a class of medications called antihistamines. It works by blocking the action of histamine, a substance in the body that causes allergic symptoms. Diphenhydramine is also available in combination with other medications. This monograph only includes information about the use of diphenhydramine alone. If you are taking the combination product, read the information on the package label or ask your doctor or pharmacist for more information."
+  },
+  {
+    "name": "docetaxel",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a696031.html",
+    "whyPrescribed": "Docetaxel injection is used alone or in combination with other medications to treat certain types of breast, lung, prostate, stomach, and head and neck cancers. Docetaxel injection is in a class of medications called taxanes. It works by stopping the growth and spread of cancer cells."
+  },
+  {
+    "name": "doxorubicin",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682221.html",
+    "whyPrescribed": "Doxorubicin is used in combination with other medications to treat certain types of bladder, breast, lung, stomach, and ovarian cancer; Hodgkin's lymphoma (Hodgkin's disease) and non-Hodgkin's lymphoma (cancer that begins in the cells of the immune system); and certain types of leukemia (cancer of the white blood cells), including acute lymphoblastic leukemia (ALL) and acute myeloid leukemia (AML, ANLL). Doxorubicin is also used alone and in combination with other medications to treat certain types of thyroid cancer and certain types of soft tissue or bone sarcomas (cancer that forms in muscles and bones). It is also used to treat neuroblastoma (a cancer that begins in nerve cells and occurs mainly in children) and Wilms' tumor (a type of kidney cancer that occurs in children). Doxorubicin is in a class of medications called anthracyclines. It works by slowing or stopping the growth of cancer cells in your body."
+  },
+  {
+    "name": "dronabinol",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a607054.html",
+    "whyPrescribed": "Dronabinol is used to treat nausea and vomiting caused by chemotherapy in people who have already taken other medications to treat this type of nausea and vomiting without good results. Dronabinol is also used to treat loss of appetite and weight loss in people who have acquired immunodeficiency syndrome (AIDS). Dronabinol is in a class of medications called cannabinoids. It works by affecting the area of the brain that controls nausea, vomiting, and appetite."
+  },
+  {
+    "name": "duloxetine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a604030.html",
+    "whyPrescribed": "Duloxetine is used to treat depression and generalized anxiety disorder (GAD; excessive worry and tension that disrupts daily life). Duloxetine is also used to pain associated with diabetic neuropathy (damage to nerves that can develop in people who have diabetes) and fibromyalgia (a long-lasting condition that may cause pain, muscle stiffness and tenderness, tiredness, and difficulty falling asleep or staying asleep). It is also used to treat ongoing bone or muscle pain. Duloxetine is in a class of medications called selective serotonin and norepinephrine reuptake inhibitors (SNRIs). It works by increasing the amounts of certain natural substances in the brain."
+  },
+  {
+    "name": "epirubicin",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a603003.html",
+    "whyPrescribed": "Epirubicin is used in combination with other medications to treat breast cancer in patients who have had surgery to remove the tumor. Epirubicin is in a class of medications called anthracyclines. It works by slowing or stopping the growth of cancer cells in your body."
+  },
+  {
+    "name": "etoposide",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a684055.html",
+    "whyPrescribed": "Etoposide is used in combination with other medications to treat a certain type of lung cancer (small cell lung cancer; SCLC). Etoposide is in a class of medications known as podophyllotoxin derivatives. It works by slowing or stopping the growth of cancer cells in your body."
+  },
+  {
+    "name": "famotidine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a687011.html",
+    "whyPrescribed": "Prescription famotidine is used to treat ulcers (sores on the lining of the stomach or small intestine); gastroesophageal reflux disease (GERD, a condition in which backward flow of acid from the stomach causes heartburn and injury of the esophagus [tube that connects the mouth and stomach]); and conditions where the stomach produces too much acid, such as Zollinger-Ellison syndrome (tumors in the pancreas or small intestine that cause increased production of stomach acid). Over-the-counter famotidine is used to prevent and treat heartburn due to acid indigestion and sour stomach caused by eating or drinking certain foods or drinks. Famotidine is in a class of medications called H 2 blockers. It works by decreasing the amount of acid made in the stomach."
+  },
+  {
+    "name": "filgrastim",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a692033.html",
+    "whyPrescribed": "Filgrastim injection products (Granix, Neupogen, Nivestym, Releuko, Zarxio) are used to decrease the chance of infection in people who have non myeloid cancer (cancer that does not involve the bone marrow) and are receiving chemotherapy medications that may decrease the number of neutrophils (a type of blood cell needed to fight infection). Filgrastim injection products (Neupogen, Nivestym, Releuko, Zarxio) are also used to help increase the number of white blood cells, and decrease the length of time with fever in people with acute myeloid leukemia (AML; a type of cancer of the white blood cells) who are receiving treatment with chemotherapy medications. Filgrastim injection products (Neupogen, Nivestym, Releuko, Zarxio) are also used in people who are undergoing bone marrow transplants and in people who have severe chronic neutropenia (condition in which there are a low number of neutrophils in the blood). Filgrastim injection products (Neupogen, Nivestym, Zarxio) are also used to prepare the blood for leukapheresis (a treatment in which certain blood cells are removed from the body. Filgrastim injection (Neupogen) is also used to increase the chance of survival in people who have been exposed to harmful amounts of radiation, which can cause severe and life-threatening damage to your bone marrow. Filgrastim is in a class of medications called colony-stimulating factors. It works by helping the body make more neutrophils."
+  },
+  {
+    "name": "fluconazole",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a690002.html",
+    "whyPrescribed": "Fluconazole is used to treat fungal infections, including yeast infections of the vagina, mouth, throat, esophagus (tube leading from the mouth to the stomach), abdomen (area between the chest and waist), lungs, blood, and other organs. Fluconazole is also used to treat meningitis (infection of the membranes covering the brain and spine) caused by fungus. Fluconazole is also used to prevent yeast infections in patients who are likely to become infected because they are being treated with chemotherapy or radiation therapy before a bone marrow transplant (replacement of unhealthy spongy tissue inside the bones with healthy tissue). Fluconazole is in a class of antifungals called triazoles. It works by slowing the growth of fungi that cause infection."
+  },
+  {
+    "name": "folic acid",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682591.html",
+    "whyPrescribed": "Folic acid is used to treat or prevent folic acid deficiency. It is a B-complex vitamin needed by the body to manufacture red blood cells. A deficiency of this vitamin causes certain types of anemia (low red blood cell count)."
+  },
+  {
+    "name": "gabapentin",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a694007.html",
+    "whyPrescribed": "Gabapentin capsules, tablets, and oral solution are used along with other medications to help control certain types of seizures in people who have epilepsy. Gabapentin capsules, tablets, and oral solution are also used to relieve the pain of postherpetic neuralgia (PHN; the burning, stabbing pain or aches that may last for months or years after an attack of shingles). Gabapentin extended-release tablets (Horizant) are used to treat restless legs syndrome (RLS; a condition that causes discomfort in the legs and a strong urge to move the legs, especially at night and when sitting or lying down). Gabapentin is in a class of medications called anticonvulsants. Gabapentin treats seizures by decreasing abnormal excitement in the brain. Gabapentin relieves the pain of PHN by changing the way the body senses pain. It is not known exactly how gabapentin works to treat restless legs syndrome."
+  },
+  {
+    "name": "gemcitabine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a696019.html",
+    "whyPrescribed": "Gemcitabine is used in combination with carboplatin to treat ovarian cancer (cancer that begins in the female reproductive organs where eggs are formed) that returned at least 6 months after finishing a previous treatment. It also used in combination with paclitaxel (Abraxane ®, Taxol ® ) to treat breast cancer that has not improved or that has worsened after treatment with other medications. Gemcitabine is used in combination with cisplatin to treat a type of lung cancer (non-small cell lung cancer; NSCLC) that has spread to other parts of the body and cannot be treated with surgery. Gemcitabine is also used to treat pancreatic cancer that has spread to other parts of the body and has not improved or worsened after treatment with another medication. Gemcitabine is in a class of medications called antimetabolites. It works by slowing or stopping the growth of cancer cells in your body."
+  },
+  {
+    "name": "granisetron",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a601211.html",
+    "whyPrescribed": "Granisetron is used to prevent nausea and vomiting caused by cancer chemotherapy and radiation therapy. Granisetron is in a class of medications called 5-HT 3 receptor antagonists. It works by blocking serotonin, a natural substance in the body that causes nausea and vomiting."
+  },
+  {
+    "name": "hydrocodone",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a614045.html",
+    "whyPrescribed": "Hydrocodone is used to relieve severe pain. Hydrocodone is in a class of medications called opiate (narcotic) analgesics. It works by changing the way the brain and nervous system respond to pain. This monograph only includes information about the use of hydrocodone alone. If you are taking a hydrocodone combination product, be sure to read information about all the ingredients in the hydrocodone-combination monograph and ask your doctor or pharmacist for more information."
+  },
+  {
+    "name": "ibuprofen",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682159.html",
+    "whyPrescribed": "Prescription ibuprofen is used to relieve pain, tenderness, swelling, and stiffness caused by osteoarthritis (arthritis caused by a breakdown of the lining of the joints) and rheumatoid arthritis (arthritis caused by swelling of the lining of the joints). It is also used to relieve mild to moderate pain, including menstrual pain (pain that happens before or during a menstrual period). Nonprescription ibuprofen is used to reduce fever and to relieve minor aches and pain from headaches, muscle aches, arthritis, menstrual periods, the common cold, toothaches, and backaches. Ibuprofen is in a class of medications called NSAIDs. It works by stopping the body's production of a substance that causes pain, fever, and inflammation."
+  },
+  {
+    "name": "ifosfamide",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a695023.html",
+    "whyPrescribed": "Ifosfamide is used to treat certain types of cancer of the testicles. Ifosfamide is in a class of medications called alkylating agents. It works by slowing or stopping the growth of cancer cells in your body."
+  },
+  {
+    "name": "irinotecan",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a608043.html",
+    "whyPrescribed": "Irinotecan is used alone or in combination with other medications to treat colon or rectal cancer (cancer that begins in the large intestine). Irinotecan is in a class of antineoplastic medications called topoisomerase I inhibitors. It works by stopping the growth of cancer cells."
+  },
+  {
+    "name": "lactulose",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682338.html",
+    "whyPrescribed": "Lactulose is a synthetic sugar used to treat constipation. It is broken down in the colon into products that pull water out from the body and into the colon. This water softens stools. Lactulose is also used to reduce the amount of ammonia in the blood of patients with liver disease. It works by drawing ammonia from the blood into the colon where it is removed from the body. This medication is sometimes prescribed for other uses; ask your doctor or pharmacist for more information."
+  },
+  {
+    "name": "leucovorin",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682336.html",
+    "whyPrescribed": "Leucovorin is used to prevent harmful effects of methotrexate (a cancer chemotherapy medication) or to treat an overdose of methotrexate or similar medications. It is also used to treat people who have an inherited condition that prevents folate from reaching the brain. Leucovorin is in a class of medications called folic acid analogs. It works by protecting healthy cells from the effects of methotrexate or similar medications while allowing methotrexate to enter and kill cancer cells."
+  },
+  {
+    "name": "levofloxacin",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a697040.html",
+    "whyPrescribed": "Levofloxacin is used to treat certain infections caused by bacteria. Levofloxacin is also used to prevent anthrax (a serious infection that may be spread on purpose as part of a bioterror attack) in people who may have been exposed to anthrax germs in the air, and to treat and prevent plague (a serious infection that may be spread on purpose as part of a bioterror attack.) Levofloxacin is in a class of antibiotics called fluoroquinolones. It works by killing bacteria that cause infections. Antibiotics such as levofloxacin will not work for colds, flu, or other viral infections. Using antibiotics when they are not needed increases your risk of getting an infection later that resists antibiotic treatment."
+  },
+  {
+    "name": "lidocaine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a603026.html",
+    "whyPrescribed": "Prescription lidocaine transdermal (Dermalid, Lidoderm, Ztildo) is used to relieve the pain of post-herpetic neuralgia (PHN; burning, stabbing pains, or aches that may last for months or years after a shingles infection). Nonprescription (over-the-counter) lidocaine (Absorbine Jr, Aspercreme, Lidocare, Salonpas, others) is also available to relieve minor pain in shoulders, arms, neck and legs in adults and children 12 years of age and older. Lidocaine is in a class of medications called local anesthetics. It works by stopping nerves from sending pain signals."
+  },
+  {
+    "name": "lidoderm",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a603026.html",
+    "whyPrescribed": "Prescription lidocaine transdermal (Dermalid, Lidoderm, Ztildo) is used to relieve the pain of post-herpetic neuralgia (PHN; burning, stabbing pains, or aches that may last for months or years after a shingles infection). Nonprescription (over-the-counter) lidocaine (Absorbine Jr, Aspercreme, Lidocare, Salonpas, others) is also available to relieve minor pain in shoulders, arms, neck and legs in adults and children 12 years of age and older. Lidocaine is in a class of medications called local anesthetics. It works by stopping nerves from sending pain signals."
+  },
+  {
+    "name": "loperamide",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682280.html",
+    "whyPrescribed": "Nonprescription (over-the-counter) loperamide is used to control acute diarrhea (loose stools that come on suddenly and usually lasts less than 2 weeks), including travelers' diarrhea. Prescription loperamide is also used to control acute diarrhea and also ongoing diarrhea associated with inflammatory bowel disease (IBD; condition in which the lining of all or part of the intestine is swollen, irritated, or has sores). Prescription loperamide is also used to reduce the amount of fluid in people with ileostomies (surgery to create an opening for waste to leave the body through the abdomen). Loperamide is in a class of medications called antidiarrheal agents. It works by decreasing the flow of fluids and electrolytes into the bowel and by slowing down the movement of the bowel to decrease the number of bowel movements."
+  },
+  {
+    "name": "lorazepam",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682053.html",
+    "whyPrescribed": "Lorazepam is used to relieve anxiety and treat insomnia. Lorazepam is in a class of medications called benzodiazepines. It works by slowing activity in the brain to allow for relaxation."
+  },
+  {
+    "name": "mesna",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a613013.html",
+    "whyPrescribed": "Mesna is used to reduce the risk of hemorrhagic cystitis (a condition that causes inflammation of the bladder and can result in serious bleeding) in people who receive ifosfamide (a medication used for the treatment of cancer). Mesna is in a class of medications called cytoprotectants. It works by protecting the bladder against some of the harmful effects of certain chemotherapy medications."
+  },
+  {
+    "name": "methotrexate",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682019.html",
+    "whyPrescribed": "Methotrexate is used to treat severe psoriasis (a skin disease in which red, scaly patches form on some areas of the body). Methotrexate is also used to treat rheumatoid arthritis (RA; a condition in which the body attacks its own joints, causing pain, swelling, and loss of function). Methotrexate is also used in children to treat polyarticular juvenile idiopathic arthritis (PJIA; a type of childhood arthritis that affects five or more joints during the first six months of the condition, causing pain, swelling, and loss of function). Methotrexate is also used in combination with other chemotherapy medications to treat acute lymphoblastic leukemia (ALL; also called acute lymphoblastic leukemia and acute lymphatic leukemia; a type of cancer that begins in the white blood cells) and non-Hodgkin's lymphoma (NHL; a type of cancer that begins in a type of white blood cells that normally fights infection) that has returned or did not respond to other medications. and Methotrexate is also used alone or combination with other chemotherapy medications to treat mycosis fungoides, a type of cutaneous T-cell lymphoma ([CTCL], a group of cancers of the immune system that first appear as skin rashes). Methotrexate is in a class of medications called antimetabolites. Methotrexate treats cancer by slowing the growth of cancer cells. Methotrexate treats psoriasis by slowing the growth of skin cells to stop scales from forming. Methotrexate may treat rheumatoid arthritis and polyarticular juvenile idiopathic arthritis by decreasing the activity of the immune system."
+  },
+  {
+    "name": "metoclopramide",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a684035.html",
+    "whyPrescribed": "Metoclopramide is used to treat gastroesophageal reflux disease (GERD; condition in which backward flow of acid from the stomach causes heartburn and injury of the esophagus) and gastroparesis (slow stomach emptying). Metoclopramide is in a class of medications called prokinetic agents. It works by speeding the movement of food through the stomach and intestines."
+  },
+  {
+    "name": "morphine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682133.html",
+    "whyPrescribed": "Morphine is used to relieve severe pain. Morphine is in a class of medications called opiate (narcotic) analgesics. It works by changing the way the brain and nervous system respond to pain."
+  },
+  {
+    "name": "motrin",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682159.html",
+    "whyPrescribed": "Prescription ibuprofen is used to relieve pain, tenderness, swelling, and stiffness caused by osteoarthritis (arthritis caused by a breakdown of the lining of the joints) and rheumatoid arthritis (arthritis caused by swelling of the lining of the joints). It is also used to relieve mild to moderate pain, including menstrual pain (pain that happens before or during a menstrual period). Nonprescription ibuprofen is used to reduce fever and to relieve minor aches and pain from headaches, muscle aches, arthritis, menstrual periods, the common cold, toothaches, and backaches. Ibuprofen is in a class of medications called NSAIDs. It works by stopping the body's production of a substance that causes pain, fever, and inflammation."
+  },
+  {
+    "name": "neulasta",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a607058.html",
+    "whyPrescribed": "Pegfilgrastim injection products are used to reduce the chance of infection in people who have certain types of cancer and are receiving chemotherapy medications that may decrease the number of neutrophils (a type of blood cell needed to fight infection). Pegfilgrastim injectionis also used to increase the chance of survival in people who have been exposed to harmful amounts of radiation, which can cause severe and life-threatening damage to bone marrow. Pegfilgrastim is in a class of medications called colony stimulating factors. It works by helping the body make more neutrophils."
+  },
+  {
+    "name": "neupogen",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a692033.html",
+    "whyPrescribed": "Filgrastim injection products (Granix, Neupogen, Nivestym, Releuko, Zarxio) are used to decrease the chance of infection in people who have non myeloid cancer (cancer that does not involve the bone marrow) and are receiving chemotherapy medications that may decrease the number of neutrophils (a type of blood cell needed to fight infection). Filgrastim injection products (Neupogen, Nivestym, Releuko, Zarxio) are also used to help increase the number of white blood cells, and decrease the length of time with fever in people with acute myeloid leukemia (AML; a type of cancer of the white blood cells) who are receiving treatment with chemotherapy medications. Filgrastim injection products (Neupogen, Nivestym, Releuko, Zarxio) are also used in people who are undergoing bone marrow transplants and in people who have severe chronic neutropenia (condition in which there are a low number of neutrophils in the blood). Filgrastim injection products (Neupogen, Nivestym, Zarxio) are also used to prepare the blood for leukapheresis (a treatment in which certain blood cells are removed from the body. Filgrastim injection (Neupogen) is also used to increase the chance of survival in people who have been exposed to harmful amounts of radiation, which can cause severe and life-threatening damage to your bone marrow. Filgrastim is in a class of medications called colony-stimulating factors. It works by helping the body make more neutrophils."
+  },
+  {
+    "name": "neurontin",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a694007.html",
+    "whyPrescribed": "Gabapentin capsules, tablets, and oral solution are used along with other medications to help control certain types of seizures in people who have epilepsy. Gabapentin capsules, tablets, and oral solution are also used to relieve the pain of postherpetic neuralgia (PHN; the burning, stabbing pain or aches that may last for months or years after an attack of shingles). Gabapentin extended-release tablets (Horizant) are used to treat restless legs syndrome (RLS; a condition that causes discomfort in the legs and a strong urge to move the legs, especially at night and when sitting or lying down). Gabapentin is in a class of medications called anticonvulsants. Gabapentin treats seizures by decreasing abnormal excitement in the brain. Gabapentin relieves the pain of PHN by changing the way the body senses pain. It is not known exactly how gabapentin works to treat restless legs syndrome."
+  },
+  {
+    "name": "nivolumab",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a614056.html",
+    "whyPrescribed": "Nivolumab injection is used to treat a variety of cancers. Nivolumab is in a class of medications called monoclonal antibodies. It works by helping your immune system to slow or stop the growth of cancer cells."
+  },
+  {
+    "name": "omeprazole",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a693050.html",
+    "whyPrescribed": "Prescription omeprazole is used alone or with other medications to treat the symptoms of gastroesophageal reflux disease (GERD), a condition in which backward flow of acid from the stomach causes heartburn and possible injury of the esophagus (the tube between the throat and stomach) in adults and children 1 year of age and older. Prescription omeprazole is used to treat damage from GERD in adults and children 1 month of age and older. Prescription omeprazole is used to allow the esophagus to heal and prevent further damage to the esophagus in adults and children 1 year of age and older with GERD. Prescription omeprazole is also used to treat conditions in which the stomach produces too much acid such as Zollinger-Ellison syndrome in adults. Prescription omeprazole is also used to treat ulcers (sores in the lining of the stomach or intestine) and it is also used with other medications to treat and prevent the return of ulcers caused by a certain type of bacteria ( H. pylori ) in adults. Nonprescription (over-the-counter) omeprazole is used to treat frequent heartburn (heartburn that occurs at least 2 or more days a week) in adults. Omeprazole is in a class of medications called proton-pump inhibitors. It works by decreasing the amount of acid made in the stomach."
+  },
+  {
+    "name": "ondansetron",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a601209.html",
+    "whyPrescribed": "Ondansetron is used to prevent nausea and vomiting caused by cancer chemotherapy, radiation therapy, and surgery. Ondansetron is in a class of medications called serotonin 5-HT 3 receptor antagonists. It works by blocking the action of serotonin, a natural substance that may cause nausea and vomiting."
+  },
+  {
+    "name": "oxaliplatin",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a607035.html",
+    "whyPrescribed": "Oxaliplatin is used with other medications to treat advanced colon or rectal cancer (cancer that begins in the large intestine). Oxaliplatin is also used with other medications to prevent colon cancer from spreading in people who have had surgery to remove the tumor. Oxaliplatin is in a class of medications called platinum-containing antineoplastic agents. It works by killing cancer cells."
+  },
+  {
+    "name": "oxycodone",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682132.html",
+    "whyPrescribed": "Oxycodone is used to relieve severe pain. Oxycodone is in a class of medications called opiate (narcotic) analgesics. It works by changing the way the brain and nervous system respond to pain."
+  },
+  {
+    "name": "palonosetron",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a610002.html",
+    "whyPrescribed": "Palonosetron injection is used to prevent nausea and vomiting that may occur within 24 hours after receiving cancer chemotherapy or surgery. It is also used to prevent delayed nausea and vomiting that may occur several days after receiving certain chemotherapy medications. Palonosetron injection is in a class of medications called 5-HT 3 receptor antagonists. It works by blocking the action of serotonin, a natural substance that may cause nausea and vomiting."
+  },
+  {
+    "name": "pantoprazole",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a601246.html",
+    "whyPrescribed": "Pantoprazole is used to treat damage from gastroesophageal reflux disease (GERD), a condition in which backward flow of acid from the stomach causes heartburn and possible injury of the esophagus (the tube between the throat and stomach) in adults and children 5 years of age and older. Pantoprazole is used to allow the esophagus to heal and prevent further damage to the esophagus in adults with GERD. It is also used to treat conditions where the stomach produces too much acid, such as Zollinger-Ellison syndrome in adults. Pantoprazole is in a class of medications called proton-pump inhibitors. It works by decreasing the amount of acid made in the stomach."
+  },
+  {
+    "name": "paroxetine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a698032.html",
+    "whyPrescribed": "Paroxetine is used to treat depression, panic disorder (sudden, unexpected attacks of extreme fear and worry about these attacks), social anxiety disorder (extreme fear of interacting with others or performing in front of others that interferes with normal life), obsessive-compulsive disorder (bothersome thoughts that won't go away and the need to perform certain actions over and over), generalized anxiety disorder (GAD; excessive worrying that is difficult to control), and posttraumatic stress disorder (disturbing psychological symptoms that develop after a frightening experience). Paroxetine is also used to treat premenstrual dysphoric disorder (PMDD, physical and psychological symptoms that occur before the onset of the menstrual period each month) hot flashes (sudden feelings of warmth, especially in the face, neck, and chest) in women who are experiencing menopause (stage of life when menstrual periods become less frequent and stop and women may experience other symptoms and body changes). Paroxetine is in a class of medications called selective serotonin-reuptake inhibitors (SSRIs). It treats depression and other mental illnesses by increasing the amount of serotonin, a natural substance in the brain that helps maintain mental balance. There is not enough information available at this time to know how paroxetine works to treat hot flashes."
+  },
+  {
+    "name": "pegfilgrastim",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a607058.html",
+    "whyPrescribed": "Pegfilgrastim injection products are used to reduce the chance of infection in people who have certain types of cancer and are receiving chemotherapy medications that may decrease the number of neutrophils (a type of blood cell needed to fight infection). Pegfilgrastim injectionis also used to increase the chance of survival in people who have been exposed to harmful amounts of radiation, which can cause severe and life-threatening damage to bone marrow. Pegfilgrastim is in a class of medications called colony stimulating factors. It works by helping the body make more neutrophils."
+  },
+  {
+    "name": "pembrolizumab",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a614048.html",
+    "whyPrescribed": "Pembrolizumab injection is used alone or with other drugs to treat a variety of solid tumor, soft tissue and blood cancers. Pembrolizumab injection is in a class of medications called monoclonal antibodies. It works by helping your immune system to slow or stop the growth of cancer cells."
+  },
+  {
+    "name": "pemetrexed",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a607043.html",
+    "whyPrescribed": "Pemetrexed injection is used in combination with other chemotherapy medications as a first treatment for a certain type of non-small cell lung cancer (NSCLC) that has spread to nearby tissues or to other parts of the body. Pemetrexed injection is also used alone to treat NSCLC as ongoing treatment in people who have already received certain chemotherapy medications and whose cancer has not worsened and in people who could not be treated successfully with other chemotherapy medications. Pemetrexed injection is also in combination with another chemotherapy medication as a first treatment for malignant pleural mesothelioma (a type of cancer that affects the inside lining of the chest cavity) in people who cannot be treated with surgery. Pemetrexed is in a class of medications called antifolate antineoplastic agents. It works by blocking the action of a certain substance in the body that may help cancer cells multiply."
+  },
+  {
+    "name": "pepcid",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a687011.html",
+    "whyPrescribed": "Prescription famotidine is used to treat ulcers (sores on the lining of the stomach or small intestine); gastroesophageal reflux disease (GERD, a condition in which backward flow of acid from the stomach causes heartburn and injury of the esophagus [tube that connects the mouth and stomach]); and conditions where the stomach produces too much acid, such as Zollinger-Ellison syndrome (tumors in the pancreas or small intestine that cause increased production of stomach acid). Over-the-counter famotidine is used to prevent and treat heartburn due to acid indigestion and sour stomach caused by eating or drinking certain foods or drinks. Famotidine is in a class of medications called H 2 blockers. It works by decreasing the amount of acid made in the stomach."
+  },
+  {
+    "name": "pregabalin",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a605045.html",
+    "whyPrescribed": "Pregabalin capsules, oral solution (liquid), and extended-release (long-acting) tablets are used to relieve neuropathic pain (pain from damaged nerves) that can occur in your arms, hands, fingers, legs, feet, or toes if you have diabetes and postherpetic neuralgia (PHN; the burning, stabbing pain or aches that may last for months or years after an attack of shingles). Pregabalin capsules and oral solution are also used to relieve neuropathic pain that can occur after a spinal cord injury and to treat fibromyalgia (a long-lasting condition that may cause pain, muscle stiffness and tenderness, tiredness, and difficulty falling asleep or staying asleep). Pregabalin capsules and oral solution are used along with other medications to treat certain types of seizures in adults and children 1 month of age and older. Pregabalin is in a class of medications called anticonvulsants. It works by decreasing the number of pain signals that are sent out by damaged nerves in the body."
+  },
+  {
+    "name": "prilosec",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a693050.html",
+    "whyPrescribed": "Prescription omeprazole is used alone or with other medications to treat the symptoms of gastroesophageal reflux disease (GERD), a condition in which backward flow of acid from the stomach causes heartburn and possible injury of the esophagus (the tube between the throat and stomach) in adults and children 1 year of age and older. Prescription omeprazole is used to treat damage from GERD in adults and children 1 month of age and older. Prescription omeprazole is used to allow the esophagus to heal and prevent further damage to the esophagus in adults and children 1 year of age and older with GERD. Prescription omeprazole is also used to treat conditions in which the stomach produces too much acid such as Zollinger-Ellison syndrome in adults. Prescription omeprazole is also used to treat ulcers (sores in the lining of the stomach or intestine) and it is also used with other medications to treat and prevent the return of ulcers caused by a certain type of bacteria ( H. pylori ) in adults. Nonprescription (over-the-counter) omeprazole is used to treat frequent heartburn (heartburn that occurs at least 2 or more days a week) in adults. Omeprazole is in a class of medications called proton-pump inhibitors. It works by decreasing the amount of acid made in the stomach."
+  },
+  {
+    "name": "prochlorperazine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682116.html",
+    "whyPrescribed": "Prochlorperazine suppositories and tablets are used to control severe nausea and vomiting. Prochlorperazine tablets are also used to treat the symptoms of schizophrenia (a mental illness that causes disturbed or unusual thinking, loss of interest in life, and strong or inappropriate emotions). Prochlorperazine tablets are also used on a short-term basis to treat anxiety that could not be controlled by other medications. Prochlorperazine should not be used to treat any condition in children who are younger than 2 years old or who weigh less than 20 pounds (about 9 kilograms). Prochlorperazine is in a class of medications called conventional antipsychotics. It works by decreasing abnormal excitement in the brain."
+  },
+  {
+    "name": "promethazine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682284.html",
+    "whyPrescribed": "Promethazine is used to relieve the symptoms of allergic reactions such as allergic rhinitis (runny nose and watery eyes caused by allergy to pollen, mold or dust), allergic conjunctivitis (red, watery eyes caused by allergies), allergic skin reactions, and allergic reactions to blood or plasma products. Promethazine is used with other medications to treat anaphylaxis (sudden, severe allergic reactions) and the symptoms of the common cold such as sneezing, cough, and runny nose. Promethazine is also used to relax and sedate patients before and after surgery, during labor, and at other times. Promethazine is also used to prevent and control nausea and vomiting that may occur after surgery, and with other medications to help relieve pain after surgery. Promethazine is also used to prevent and treat motion sickness. Promethazine helps control symptoms, but will not treat the cause of the symptoms or speed recovery. Promethazine is in a class of medications called phenothiazines. It works by blocking the action of a certain natural substance in the body."
+  },
+  {
+    "name": "protonix",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a601246.html",
+    "whyPrescribed": "Pantoprazole is used to treat damage from gastroesophageal reflux disease (GERD), a condition in which backward flow of acid from the stomach causes heartburn and possible injury of the esophagus (the tube between the throat and stomach) in adults and children 5 years of age and older. Pantoprazole is used to allow the esophagus to heal and prevent further damage to the esophagus in adults with GERD. It is also used to treat conditions where the stomach produces too much acid, such as Zollinger-Ellison syndrome in adults. Pantoprazole is in a class of medications called proton-pump inhibitors. It works by decreasing the amount of acid made in the stomach."
+  },
+  {
+    "name": "rituximab",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a607038.html",
+    "whyPrescribed": "Rituximab injection products are used in adults alone or with other medications to treat various types of non-Hodgkin's lymphoma (NHL; a type of cancer that begins in a type of white blood cells that normally fights infection). Rituximab injection products are also used in adults with other medications to treat chronic lymphocytic leukemia (CLL; a type of cancer of the white blood cells). Rituximab injection products (Rituxan, Ruxience, Truxima) are also used in adults with methotrexate (Otrexup, Rasuvo, Xatmep, others) to treat the symptoms of rheumatoid arthritis (RA; a condition in which the body attacks its own joints, causing pain, swelling, and loss of function) in adults who have already been treated with a certain type of medication called a tumor necrosis factor (TNF) inhibitor. Rituximab injection products (Rituxan, Riabni, Ruxience, Truxima) are also used in adults and children 2 years of age and older along with other medications to treat granulomatosis with polyangiitis (Wegener's granulomatosis) and microscopic polyangiitis, which are conditions in which the body attacks its own veins and other blood vessels, which causes damage to organs, such as the heart and lungs. Rituximab injection (Rituxan) is used to treat pemphigus vulgaris (a condition that causes painful blisters on the skin and the lining the mouth, nose, throat and genitals). Rituximab injection products are in a class of medications called monoclonal antibodies. They treat the various types of NHL and CLL by killing cancer cells. Certain rituximab injection products also treat rheumatoid arthritis, granulomatosis with polyangiitis, microscopic polyangiitis, and pemphigus vulgaris by blocking the activity of the part of the immune system that may damage the joints, veins, and other blood vessels."
+  },
+  {
+    "name": "scopolamine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682509.html",
+    "whyPrescribed": "Scopolamine is used to prevent nausea and vomiting caused by motion sickness or medications used during surgery. Scopolamine is in a class of medications called antimuscarinics. It works by blocking the effects of a certain natural substance (acetylcholine) on the central nervous system."
+  },
+  {
+    "name": "senna",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a601112.html",
+    "whyPrescribed": "Senna is used on a short-term basis to treat constipation. It also is used to empty the bowels before surgery and certain medical procedures. Senna is in a class of medications called stimulant laxatives. It works by increasing activity of the intestines to cause a bowel movement."
+  },
+  {
+    "name": "senokot",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a601112.html",
+    "whyPrescribed": "Senna is used on a short-term basis to treat constipation. It also is used to empty the bowels before surgery and certain medical procedures. Senna is in a class of medications called stimulant laxatives. It works by increasing activity of the intestines to cause a bowel movement."
+  },
+  {
+    "name": "sertraline",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a697048.html",
+    "whyPrescribed": "Sertraline is used to treat depression, obsessive-compulsive disorder (bothersome thoughts that won't go away and the need to perform certain actions over and over), panic attacks (sudden, unexpected attacks of extreme fear and worry about these attacks), posttraumatic stress disorder (disturbing psychological symptoms that develop after a frightening experience), and social anxiety disorder (extreme fear of interacting with others or performing in front of others that interferes with normal life). It is also used to relieve the symptoms of premenstrual dysphoric disorder, (mood swings, irritability, bloating, and breast tenderness). Sertraline is in a class of antidepressants called selective serotonin reuptake inhibitors (SSRIs). It works by increasing the amounts of serotonin, a natural substance in the brain that helps maintain mental balance."
+  },
+  {
+    "name": "tramadol",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a695011.html",
+    "whyPrescribed": "Tramadol immediate-release tablets and oral solution are used as a short-term treatment to relieve severe pain (pain that begins suddenly, has a specific cause, and is expected to go away when the cause of the pain is healed) in people who are expected to need an opioid pain medication and who cannot be controlled by the use of alternative pain medications. Tramadol extended-release tablets and capsules are used to relieve severe and persistent pain in people who are expected to need an opioid pain medication to relieve pain around-the-clock for a long time and who cannot be treated with other pain medications. Tramadol extended-release tablets and capsules should not be used to treat mild or moderate pain, short-term pain, or pain that can be controlled by medication that is taken as needed. Tramadol is in a class of medications called opiate (narcotic) analgesics. It works by changing the way the brain and nervous system respond to pain."
+  },
+  {
+    "name": "trastuzumab",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a699019.html",
+    "whyPrescribed": "Trastuzumab injection is used to treat certain types of breast and stomach cancers. Trastuzumab is in a class of medications called monoclonal antibodies. It works by stopping the growth of cancer cells."
+  },
+  {
+    "name": "tylenol",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a681004.html",
+    "whyPrescribed": "Acetaminophen is used to relieve mild to moderate pain and to reduce fever. Acetaminophen is in a class of medications called analgesics (pain relievers) and antipyretics (fever reducers). It works by changing the way the body senses pain and by cooling the body."
+  },
+  {
+    "name": "tylenol liquid",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a681004.html",
+    "whyPrescribed": "Acetaminophen is used to relieve mild to moderate pain and to reduce fever. Acetaminophen is in a class of medications called analgesics (pain relievers) and antipyretics (fever reducers). It works by changing the way the body senses pain and by cooling the body."
+  },
+  {
+    "name": "valacyclovir",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a695010.html",
+    "whyPrescribed": "Valacyclovir is used to treat certain viral infections including: herpes labialis (cold sores); varicella infections including herpes zoster (shingles) and chicken pox; genital herpes (a sexually transmitted infection). It is in a class of medications called antivirals. It works by stopping the spread of the herpes virus in the body. Valacyclovir helps treat and control outbreaks of genital herpes but should be used with safe sexual practices. Valacyclovir will not cure genital herpes."
+  },
+  {
+    "name": "vincristine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682822.html",
+    "whyPrescribed": "Vincristine is used in combination with other chemotherapy drugs to treat certain types of leukemia (cancer of the white blood cells), including acute myeloid leukemia (AML, ANLL) and acute lymphoblastic leukemia (ALL), Hodgkin's lymphoma (Hodgkin's disease), and non-Hodgkin's lymphoma (types of cancer that begin in a type of white blood cells that normally fights infection). Vincristine is also used in combination with other chemotherapy drugs to treat Wilms tumor (a type of kidney cancer that occurs in children), neuroblastoma (a cancer that begins in nerve cells and occurs mainly in children), and rhabdomyosarcoma (cancer that forms in muscles in children). Vincristine is in a class of medications called vinca alkaloids. It works by slowing or stopping the growth of cancer cells in your body."
+  },
+  {
+    "name": "vinorelbine",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a695013.html",
+    "whyPrescribed": "Vinorelbine is used alone and in combination with other medications to treat non-small cell lung cancer (NSCLC) that has spread to nearby tissues or to other parts of the body. Vinorelbine is in a class of medications called vinca alkaloids. It works by slowing or stopping the growth of cancer cells in your body."
+  },
+  {
+    "name": "zofran",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a601209.html",
+    "whyPrescribed": "Ondansetron is used to prevent nausea and vomiting caused by cancer chemotherapy, radiation therapy, and surgery. Ondansetron is in a class of medications called serotonin 5-HT 3 receptor antagonists. It works by blocking the action of serotonin, a natural substance that may cause nausea and vomiting."
+  },
+  {
+    "name": "zyloprim",
+    "generic": "",
+    "url": "https://www.medlineplus.gov/druginfo/meds/a682673.html",
+    "whyPrescribed": "Allopurinol is used to treat gout (a type of arthritis in which uric acid, a naturally occurring substance in the body, builds up in the joints and causes sudden attacks of redness, swelling, pain, and heat in one or more joints). Allopurinol is also used to treat high levels of uric acid that builds up in the blood as tumors break down in people with certain types of cancer who are being treated with chemotherapy medications. It is also used to treat kidney stones that have come back in people who have high levels of uric acid in their urine. Allopurinol is in a class of medications called xanthine oxidase inhibitors. It works by reducing the production of uric acid in the body. High levels of uric acid may cause gout attacks or kidney stones. Allopurinol is used to prevent gout attacks, not to treat them once they occur."
+  }
+]
