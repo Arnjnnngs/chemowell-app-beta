@@ -39,7 +39,7 @@ vm.runInContext([
   // of when it runs.
   'let MISSED_TRACK_SINCE = new Date(2026, 0, 1).getTime();',
   fn('dayStart'), fn('nextDay'), fn('hourTs'), fn('entriesFor'), fn('nextChemoTs'),
-  fn('chemoDayList'), fn('chemoOffsetFor'), fn('dexActiveOn'), fn('dexWindowsForOffset'),
+  fn('chemoDayList'), fn('chemoOffsetFor'), fn('dexActiveOn'),
   // treatmentType() reads prefs; stubbed to the empty default so this suite exercises the
   // in-patient path only and does not become a test of the treatment-type settings.
   'function treatmentType() { return ""; }',
@@ -51,8 +51,13 @@ vm.runInContext([
   // refactor that adds a helper breaks it with a bare ReferenceError and nothing about the app being
   // wrong. Both v67 suites failed exactly that way. Keep this list in step with what the functions
   // above actually call.
-  fn('medWindowsFor'), fn('eveningWindowsFor'), fn('morningWindowsFor'),
-  fn('protonixMorningLogTs'), fn('protonixEveningLogTs'),
+  // app-v77 phase 2 DELETED dexWindowsForOffset, zofranBlockedOn, zofranBlockingDay,
+  // protonixMorningLogTs, protonixEveningLogTs, morningWindowsFor and eveningWindowsFor, and phase 3
+  // added a constant the migration reads. This harness lifts functions out of index.html by name, so
+  // every one of those is a bare "function not found" here -- the third time this file has had to be
+  // kept in step with a refactor, and none of the three was a defect in the app.
+  'const MED_CONFIG_VERSION = ' + (html.match(/const MED_CONFIG_VERSION = (\d+);/) || [0, 2])[1] + ';',
+  fn('medWindowsFor'), fn('linkedAnchorTs'), fn('linkedWindowsFor'),
   fn('isInpatientDay'), fn('inpatientCoversMoment'), fn('missedDosesFor'),
   'globalThis.__api = { medWindowsFor, missedDosesFor, inpatientCoversMoment, dayStart };'
 ].join('\n'), ctx);

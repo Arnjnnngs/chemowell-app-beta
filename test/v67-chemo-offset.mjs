@@ -30,8 +30,8 @@ vm.createContext(ctx);
 vm.runInContext([
   'let MISSED_TRACK_SINCE = new Date(2026, 0, 1).getTime();',
   fn('dayStart'), fn('nextDay'), fn('hourTs'), fn('entriesFor'), fn('nextChemoTs'),
-  fn('chemoDayList'), fn('chemoOffsetFor'), fn('chemoOffsetSinceLast'), fn('zofranBlockedOn'), fn('chemoDayFor'), fn('zofranBlockingDay'),
-  fn('treatmentDaysMax'), fn('clampTreatmentDays'), fn('treatmentActiveOn'), fn('dexActiveOn'), fn('dexWindowsForOffset'),
+  fn('chemoDayList'), fn('chemoOffsetFor'), fn('chemoOffsetSinceLast'), fn('chemoDayFor'),
+  fn('treatmentDaysMax'), fn('clampTreatmentDays'), fn('treatmentActiveOn'), fn('dexActiveOn'),
   'function treatmentType() { return ""; }',
   fn('isOtherTreatmentType'), fn('isPausedOn'), fn('treatmentOnlyBlocks'), fn('treatmentExcludedNow'),
   fn('hasTreatmentDate'), fn('treatmentActiveOn'), fn('medScheduledOn'), fn('inpatientEntries'), fn('inpatientPeriods'),
@@ -40,10 +40,18 @@ vm.runInContext([
   // refactor that adds a helper breaks it with a bare ReferenceError and nothing about the app being
   // wrong. Both v67 suites failed exactly that way. Keep this list in step with what the functions
   // above actually call.
-  fn('medWindowsFor'), fn('eveningWindowsFor'), fn('morningWindowsFor'),
-  fn('protonixMorningLogTs'), fn('protonixEveningLogTs'),
+  // app-v77 phase 2 DELETED dexWindowsForOffset, zofranBlockedOn, zofranBlockingDay,
+  // protonixMorningLogTs, protonixEveningLogTs, morningWindowsFor and eveningWindowsFor, and phase 3
+  // added a constant the migration reads. This harness lifts functions out of index.html by name, so
+  // every one of those is a bare "function not found" here -- the third time this file has had to be
+  // kept in step with a refactor, and none of the three was a defect in the app.
+  'const MED_CONFIG_VERSION = ' + (html.match(/const MED_CONFIG_VERSION = (\d+);/) || [0, 2])[1] + ';',
+  fn('medWindowsFor'), fn('linkedAnchorTs'), fn('linkedWindowsFor'),
+  fn('medChemoBlockedOn'), fn('medChemoBlockingDay'), fn('medChemoBlockSpanDays'),
+  (html.match(/const LEGACY_MED_RULES = \{[\s\S]*?\n\};/) || [''])[0],
+  fn('migrateLegacyMedRules'), fn('safeMedicationId'),
   fn('isInpatientDay'), fn('inpatientCoversMoment'), fn('missedDosesFor'),
-  'globalThis.__api = { medWindowsFor, missedDosesFor, chemoOffsetFor, chemoOffsetSinceLast, zofranBlockedOn, chemoDayFor, zofranBlockingDay, treatmentActiveOn, dexActiveOn, dexWindowsForOffset, chemoDayList, dayStart };'
+  'globalThis.__api = { medWindowsFor, medChemoBlockedOn, medChemoBlockingDay, migrateLegacyMedRules, missedDosesFor, chemoOffsetFor, chemoOffsetSinceLast, chemoDayFor, treatmentActiveOn, dexActiveOn, chemoDayList, dayStart };'
 ].join('\n'), ctx);
 const A = ctx.__api;
 
@@ -64,6 +72,27 @@ ctx.state.chemoDates = [
   { medId: 'chemo_date', ts: D(8, 24), loggedAt: 5 }   // duplicate, same calendar day
 ];
 
+// ---- app-v77/v78: the same behaviour, through the API that replaced those functions -------------
+// dexWindowsForOffset, zofranBlockedOn and zofranBlockingDay are deleted. What they DID is now a
+// property on the medication, applied by migrateLegacyMedRules and read by medWindowsFor /
+// medChemoBlockedOn / medChemoBlockingDay. The assertions below check BEHAVIOUR, and that behaviour
+// still matters, so they are expressed through the new API against a migrated medication rather
+// than deleted along with the function names.
+const DEX = A.migrateLegacyMedRules({ id: 'dexamethasone', type: 'win' });
+const ZOF = A.migrateLegacyMedRules({ id: 'zofran', type: 'gap' });
+// The old helper took an OFFSET; the new one takes a DAY. Find a day with that offset from the
+// fixture's own treatment dates rather than hardcoding one, so this keeps working if the fixture
+// changes.
+const dayWithOffset = (want) => {
+  for (let d = D(7, 1); d <= D(9, 30); d += 86400000) {
+    if (A.chemoOffsetFor(d) === want) return d;
+  }
+  throw new Error('no day in the fixture has offset ' + want);
+};
+A.dexWindowsForOffset = (offset) => A.medWindowsFor(DEX, dayWithOffset(offset));
+A.zofranBlockedOn = (dayTs) => A.medChemoBlockedOn(ZOF, dayTs);
+A.zofranBlockingDay = (dayTs) => A.medChemoBlockingDay(ZOF, dayTs);
+
 t('duplicate chemo dates collapse to one treatment day',
   A.chemoDayList().length === 4, A.chemoDayList().map(d => new Date(d).toLocaleDateString()).join(', '));
 t('4 Aug measures from the 3 Aug treatment, not from whatever was typed last',
@@ -77,8 +106,15 @@ t('the day after chemo expects a MORNING dose only',
 // THIS APP'S flag is `treatmentOnly`, not care-tracker's `chemoOnly` -- a general per-medication
 // setting rather than one medication's name hardcoded into the dose logic. The behaviour under
 // test is the same; only the flag differs.
-ctx.state.meds = [{ id: 'dexamethasone', name: 'Dexamethasone', alerts: true, treatmentOnly: true,
-  windows: [{ start: 8, end: 12, name: 'Morning' }, { start: 14, end: 18, name: 'Afternoon' }] }];
+// THROUGH THE MIGRATION, as the app does. This is a medication STORED by an older build -- a bare
+// legacy id and no properties -- and loadMedicationConfig migrates exactly this shape on load. Left
+// unmigrated it has no treatment-relative rule at all, so 4 Aug (the day after treatment) kept its
+// ordinary Afternoon window and the suite reported a missed Afternoon dose. That was the fixture
+// being stale, not the app: the two assertions below are precisely the ones app-v77 has to keep
+// true, and running them against a medication the app would never see in that state would have
+// tested nothing.
+ctx.state.meds = [A.migrateLegacyMedRules({ id: 'dexamethasone', name: 'Dexamethasone', alerts: true, treatmentOnly: true,
+  windows: [{ start: 8, end: 12, name: 'Morning' }, { start: 14, end: 18, name: 'Afternoon' }] })];
 
 // The dose she really logged on 4 Aug, at 10:30.
 ctx.state.entries = [{ id: 'd1', medId: 'dexamethasone', ts: D(8, 4) + 10.5 * 3600000, mg: 0 }];

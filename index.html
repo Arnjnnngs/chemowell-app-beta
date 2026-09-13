@@ -6086,6 +6086,7 @@ function parseScheduleWindows(text) {
 // Legacy ids from the original single-family app still key special-case logic (chemo lockouts,
 // linked windows, fixed ceilings). User-created meds must NEVER receive these ids, or a stranger's
 // "Zofran" would inherit another patient's regimen rules (audit P0-2).
+const RESERVED_LEGACY_MED_IDS = new Set(['zofran','tylenol']);
 function nextMedicationId(name, existingId) {
   const base = safeMedicationId(name, 'medication');
   if (existingId) return existingId;
@@ -6095,7 +6096,7 @@ function nextMedicationId(name, existingId) {
   // medication holding one of those ids would have inherited another patient's regimen. Phases 1
   // and 2 moved every one of those rules onto properties the medication owns, so an id is just an
   // id now. The only thing still refused is a collision with a medication that actually exists.
-  const taken = id => ids.has(id);
+  const taken = id => ids.has(id) || RESERVED_LEGACY_MED_IDS.has(id);
   if (!taken(base)) return base;
   let suffix = 2;
   while (taken(base + '-' + suffix)) suffix += 1;
