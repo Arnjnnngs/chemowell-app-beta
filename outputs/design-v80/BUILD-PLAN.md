@@ -16,9 +16,17 @@ timeline — see step 2.
 
 ## What ships, in order, each step independently revertable
 
-1. **Tokens first, nothing else.** The palette becomes named custom properties and the gradient is
-   demoted from the page background to the hero card only. No layout moves. This step alone is
-   visible and shippable, and it is the one that makes everything after it small.
+1. **Tokens first, nothing else — and MEASURED, it is a release of its own.** There is no palette
+   in this app today: there are **84 distinct hex colours used 1,132 times, plus 139 distinct
+   `rgba()` values used 449 times** — about **1,580 colour literals** written inline across the
+   render functions. So "demote the gradient and change the palette" is not one edit, it is
+   fifteen hundred, and doing it in the same release as a layout change would make every later
+   diff unreviewable and every regression impossible to bisect.
+   **Ship it as its own release that looks IDENTICAL.** Every literal becomes a token reference,
+   the rendered output is unchanged, and the proof is mechanical: screenshot every screen at 320,
+   360 and 390 before and after and require the images to match. A colour release whose own check
+   is "the pixels did not move" is the one kind of large refactor that can be verified completely.
+   Only then is step 5's "colour as meaning" a handful of token edits rather than a search.
 2. **The Today timeline.** Times down a left rail, doses taken checked and dimmed, the next one
    lifted. **It is derived entirely from `entriesFor()` and `medWindowsFor()`, both of which already
    exist and are already read by Home.** The temptation is to store a "scheduled dose" record so the
@@ -51,6 +59,14 @@ timeline — see step 2.
 - **Zero Day Auditor:** on the grounds of size, not of writing. The brief should say plainly that
   this release writes nothing, and ask it to prove that rather than take it.
 - **`python3 pm.py` / `release_check.sh`** before and after, as always.
+
+## Cost, stated (Rule 3)
+
+- **Step 1, the token extraction: L**, and it changes nothing a user can see. It is the price of
+  every step after it being S.
+- **Steps 2-8: M in total**, once step 1 has landed.
+- Done in the other order — layout first, colour literals still scattered — steps 2-8 are each L,
+  because every one of them has to hunt colours by hand through the function it is rewriting.
 
 ## Deliberately NOT in this release
 
