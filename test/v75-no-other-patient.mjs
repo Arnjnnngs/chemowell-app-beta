@@ -122,11 +122,21 @@ console.log('\n3. NO DOSE, CEILING OR SCHEDULE FROM ONE CARE PLAN');
     const close = raw.indexOf('\n};', open);
     let TABLE = null, liftError = '';
     try {
-      TABLE = new Function('return ' + raw.slice(open + 'const LEGACY_MED_RULES = '.length, close + 2))();
+      TABLE = new Function('return '
+        + raw.slice(open + 'const LEGACY_MED_RULES = '.length, close + 2))();
     } catch (e) { liftError = String(e && e.message); }
     // A suite that silently skipped when the lift failed would pass forever on a renamed table.
     t('the rule table was lifted and parsed as a real object',
       !!TABLE && typeof TABLE === 'object', liftError || typeof TABLE);
+    // NO CUSTOM PROTOTYPE. `__proto__:` inside an object literal SETS the prototype, and
+    // Object.keys does not see a prototype -- so an entire stranger entry hid from the key check
+    // and the walk while LEGACY_MED_RULES['warfarin'] resolved normally in the app. It is inert
+    // today only because migrateLegacyMedRules happens to use hasOwnProperty, and being the thing
+    // that stops it is this guard's job rather than luck's. Lifting into a null-prototype object
+    // would have hidden it just as thoroughly, from us instead of from them.
+    t('the rule table sets no prototype, so nothing can hide behind one',
+      !TABLE || Object.getPrototypeOf(TABLE) === Object.prototype,
+      TABLE ? JSON.stringify(Object.keys(Object.getPrototypeOf(TABLE) || {})) : 'no table');
     const entries = TABLE ? Object.keys(TABLE) : [];
 
     // The legacy ids, written out. A SWAP -- one removed, a stranger added -- fails as loudly as an
@@ -162,8 +172,8 @@ console.log('\n3. NO DOSE, CEILING OR SCHEDULE FROM ONE CARE PLAN');
     // The schedule fields are allowed but not UNLIMITED -- "allowed and uncapped" is how a complete
     // twice-daily regimen for a drug nobody asked for went in with every gate green.
     const sched = found.filter(f => /^(dayOffset|start|end|fromDayOffset|toDayOffset):/.test(f));
-    t('and the schedule numbers have not multiplied', sched.length <= 18,
-      sched.length + ' of at most 18');
+    t('and the schedule numbers have not multiplied', sched.length <= 9,
+      sched.length + ' of at most 9');
     const gaps = found.filter(f => /^(gapH|minGapH):/.test(f));
     t('and the two legacy spacing intervals have not multiplied', gaps.length <= 2,
       gaps.join(' | ') || 'none');

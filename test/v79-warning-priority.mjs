@@ -294,15 +294,21 @@ console.log('\n5. AND NOTHING THREW ALONG THE WAY');
   // afterLog runs inside a setTimeout, so a throw there is SILENT and the dose still saves -- which
   // is the exact hazard medInteractionsFor's own comment documents. This suite collected pageerror
   // from the first line and never read it, which every other browser suite here does.
-  // MATCH THE MESSAGE, NOT THE STACK. `String(e)` carries the whole stack, and index.html loads from
-  // cdn.jsdelivr.net -- so /cdn/i matched the stack of every error raised anywhere in app code, and
-  // /Capacitor/i swallowed the plugin-failure class that cost this repo app-v47 through app-v49.
-  // Only the first line is the message, and only two exact sandbox conditions are excused.
-  const real = errors.filter(e => {
-    const first = String(e).split('\n')[0];
-    return !/Failed to fetch dynamically imported module/i.test(first)
-        && !/^Error: Could not load Capacitor/i.test(first);
-  });
+  // NO EXEMPTIONS AT ALL, and the reasoning that produced them was wrong twice over.
+  //
+  // The first filter excused /Capacitor|cdn/i. The replacement claimed to fix it by matching only
+  // the first line, on the stated grounds that `String(e)` "carries the whole stack". IT DOES NOT:
+  // Error.prototype.toString() returns "name: message" and nothing else, so the split was a no-op
+  // and /cdn/i had never matched what the comment said it matched. That false premise went into a
+  // code comment AND the release note -- the exact failure this project hired the Voice for.
+  //
+  // And the narrowed version still swallowed the class it names. A broken plugin bundle throws
+  // "Could not load Capacitor plugin <X>", which is precisely what /^Error: Could not load
+  // Capacitor/i excuses -- the defect that sat live from app-v47 through app-v49.
+  //
+  // Measured in this sandbox: running the app with a pageerror listener produces NO page error at
+  // all. The exemptions bought nothing and cost the one class that matters, so there are none.
+  const real = errors.slice();
   t('no page error during any of the above', real.length === 0, real.join(' | '));
 }
 

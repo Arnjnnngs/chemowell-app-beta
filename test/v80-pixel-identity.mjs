@@ -35,7 +35,13 @@ const { chromium } = (() => {
 const argv = process.argv.slice(2);
 const MODE = argv.includes('--save') ? 'save' : 'check';
 const DIR = argv[argv.indexOf(MODE === 'save' ? '--save' : '--check') + 1];
-if (!DIR) { console.log('  FAIL  no directory given'); process.exit(1); }
+if (!DIR && !argv.includes('--save') && !argv.includes('--check')) {
+  console.log('  SKIP  this suite is a before/after comparison and takes a directory.');
+  console.log('        node test/v80-pixel-identity.mjs --save  <dir>   on the build BEFORE a refactor');
+  console.log('        node test/v80-pixel-identity.mjs --check <dir>   on the build after it');
+  process.exit(0);
+}
+if (!DIR) { console.log('  FAIL  ' + (MODE === 'save' ? '--save' : '--check') + ' given with no directory'); process.exit(1); }
 if (MODE === 'save') fs.mkdirSync(DIR, { recursive: true });
 else if (!fs.existsSync(DIR)) {
   // A baseline that is not there must FAIL, never be silently created -- a check that regenerates

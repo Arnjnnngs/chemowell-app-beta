@@ -103,7 +103,21 @@ const seeded = await page.evaluate(() => {
     // A THIRD MEMBER OF THE ACETAMINOPHEN GROUP, so the label has something to cap. With two
     // members the cap can never fire, which is why removing it left every check green.
     { id: 'apap-chew', name: 'Chewable', type: 'gap', gapH: 4, ceilingGroup: 'apap',
-      doses: [{ label: '160 mg', mg: 160 }], quickLog: true }
+      doses: [{ label: '160 mg', mg: 160 }], quickLog: true },
+    // A GROUP MEMBER WITH NO NAME, which is the one thing the placeholder fix exists to prevent and
+    // which no fixture exercised -- putting `.filter(Boolean)` back left both suites fully green.
+    // normalizeMedication writes 'Untitled medication' for an empty name, so this is how the
+    // placeholder gets a chance to reach a caregiver-facing label.
+    { id: 'ibu', name: 'Ibuprofen', type: 'gap', gapH: 6, ceilingGroup: 'ibu',
+      ceiling: true, ceilingMax: 1200, ceilingUnit: 'mg', homeCard: { kind: 'mg' },
+      doses: [{ label: '400 mg', mg: 400 }], quickLog: true },
+    { id: 'ibu-unnamed', name: '', type: 'gap', gapH: 6, ceilingGroup: 'ibu',
+      doses: [{ label: '200 mg', mg: 200 }], quickLog: true },
+    // A four-character unit. The `length <= 4` floor round 4 added was uncovered AND a net
+    // regression -- it printed "1 caps" -- so this fixture pins whichever floor stands.
+    { id: 'capsule', name: 'Capsule', type: 'gap', gapH: 6, homeCard: { kind: 'pills' },
+      ceiling: true, ceilingMax: 1, ceilingUnit: 'caps',
+      doses: [{ label: '1 cap', mg: 0, pills: 1 }], quickLog: true }
   ], archivedMeds: {} }));
   const ekey = Object.keys(localStorage).find(k => /entries/.test(k));
   return { ok: true, key, ekey };
@@ -145,7 +159,10 @@ console.log('\n2. LOG A DOSE, AND THE DAILY-TOTAL CARD APPEARS AND IS RIGHT');
       { id: 'e5', medId: 'lozenge', ts: now - 700000, dose: '1 lozenge', mg: 0, pills: 1 },
       { id: 'e6', medId: 'patch', ts: now - 600000, dose: '1 patch', mg: 0, pills: 1 },
       { id: 'e7', medId: 'infusion', ts: now - 500000, dose: '1 bolus', mg: 0, pills: 1 },
-      { id: 'e8', medId: 'apap-chew', ts: now - 400000, dose: '160 mg', mg: 160 }
+      { id: 'e8', medId: 'apap-chew', ts: now - 400000, dose: '160 mg', mg: 160 },
+      { id: 'e9', medId: 'ibu', ts: now - 300000, dose: '400 mg', mg: 400 },
+      { id: 'e11', medId: 'ibu-unnamed', ts: now - 250000, dose: '200 mg', mg: 200 },
+      { id: 'e10', medId: 'capsule', ts: now - 200000, dose: '1 cap', mg: 0, pills: 1 }
     ];
     localStorage.setItem(key || 'chemowell-app-p-p1-entries-v1', JSON.stringify(rows));
   });
@@ -183,6 +200,16 @@ console.log('\n2. LOG A DOSE, AND THE DAILY-TOTAL CARD APPEARS AND IS RIGHT');
     (txt.match(/\d+ \/ \d+ \w+/g) || []).join(' | '));
   // AND THE SCREEN READER GETS THE SAME SENTENCE. No suite in this repo had ever asserted an
   // aria-label, so half of every accessibility fix here has gone unread by any check.
+  // THE PLACEHOLDER MUST NOT REACH A LABEL A CAREGIVER READS. One member of the acetaminophen
+  // group has no name, so 'Untitled medication' is in state.meds and has every chance to be joined
+  // into the shared-total label.
+  const groupLabels = (txt.match(/^[^\n]*·\s*today[^\n]*$/gim) || []);
+  t('an unnamed medication is never joined into a shared-total label',
+    groupLabels.length > 0 && !groupLabels.some(l => /Untitled/i.test(l)),
+    groupLabels.join(' | ') || 'NO daily-total label found at all');
+  // A FOUR-LETTER UNIT, which the round-4 floor broke.
+  t('a four-letter unit is still singularised', /\b1 \/ 1 cap\b/.test(txt) && !/1 \/ 1 caps/.test(txt),
+    (txt.match(/1 \/ 1 \w+/g) || []).join(' | '));
   // A UNIT THE RULE MUST NOT TOUCH.
   t('a unit that only looks plural is left exactly as typed',
     /\b1 \/ 1 bolus\b/.test(txt) && !/\b1 \/ 1 bolu\b/.test(txt),

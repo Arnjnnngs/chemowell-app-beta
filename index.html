@@ -5274,10 +5274,14 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       // WHERE THE RULE IS NOT SAFE THE UNIT IS LEFT EXACTLY AS TYPED. `ceilingUnit` is free text,
       // so "2 feet" where "1 foot" was meant is a wording slip and "1 fee" is a different word.
       // The endings below were measured across 42 real units by the round-3 audit.
-      // -us, -is, -as: bolus, dosis, gas -- singular nouns that happen to end in s.
-      if (/(us|is|as)$/i.test(hcUnit)) return hcUnit;
-      // lens, and anything else short enough that dropping a letter leaves a stump.
-      if (hcUnit.length <= 4) return hcUnit;
+      // -us, -is, -as, -ns: bolus, dosis, gas, lens -- singular nouns that happen to end in s.
+      // `lens` is here rather than behind a length floor. Round 4 added `if (hcUnit.length <= 4)`
+      // to catch it, and that was a NET REGRESSION measured over real units: it rescues one word
+      // and breaks twelve. tabs, caps, pens, pads, cups, cans, bars, bags and rods all printed
+      // "1 tabs" under it, and every Spanish -a plural with them. The floor stays where it was.
+      if (/(us|is|as|ns)$/i.test(hcUnit)) return hcUnit;
+      // Not a bare one- or two-letter word, where dropping a letter leaves a stump.
+      if (hcUnit.length <= 2) return hcUnit;
       // suppositories -> suppository. The other common English plural.
       if (/[^aeiou]ies$/i.test(hcUnit)) return hcUnit.replace(/ies$/i, 'y');
       // patches -> patch, boxes -> box, glasses -> glass.
