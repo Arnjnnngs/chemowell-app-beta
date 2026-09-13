@@ -1,3 +1,6 @@
+AUDITED-COMMIT: f2307fd3d1f07022db499733cfc2065e44e9bf18
+VERDICT: DO NOT SHIP
+
 # ZERO DAY AUDIT — app-v79 ROUND 2 (delta audit of commit f2307fd, tree at dfadfca)
 
 **VERDICT: BLOCK**
