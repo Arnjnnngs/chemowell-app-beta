@@ -473,3 +473,40 @@ disclaimer promising general information about the drug.
 The header's plan to refresh the table to exact federal label wording carries the same risk in
 reverse: federal wording says "reduces fever". The suite's fever guard is what stops that refresh
 quietly undoing this release's safety decision.
+
+---
+
+## The MedlinePlus table: how to refresh it, and what to check when you do (app-v75)
+
+The 33 quoted descriptions in `tools/med-source-table.json` are **generated, not written**. Do not
+edit that file by hand: `t` is quoted verbatim from `u`, and editing the words turns the citation
+under them into a false one.
+
+**To refresh it:** push any commit to the branch `run/refresh-meds`. The workflow
+`.github/workflows/refresh-med-table.yml` fetches every drug in `tools/med-list.json` from
+MedlinePlus, applies the guards, runs `test/v75-table-builder.mjs`, and pushes the result to
+`chore/refresh-med-table` along with `tools/last-run/` — the fetch log, the raw pages, and
+`report.md`, which lists every sentence that was REJECTED and why. **Read report.md before pulling
+the table across.** It is the interesting half.
+
+There is a `workflow_dispatch` button too, but the assistant that maintains this repo cannot press
+it: dispatching needs an Actions:write permission its GitHub App does not have. The push trigger
+exists so nobody has to ask Aaron to press anything.
+
+**The warning at the top of this section applies with more force here, not less.** The paragraph
+above about fever and dosage forms was written about the hand-written table, where a person chose
+every word. These lines come from a machine reading a web page, so:
+
+- **A green run with an empty or shrunken table is the dangerous outcome, not a red one.** It has
+  happened: a host check rejected its own resolver's output, threw away all 46 pages, and the run
+  finished green having produced nothing. `test/v75-table-builder.mjs` section 12 now refuses a
+  table that is empty or has collapsed below 25 entries.
+- **Every guard is a ban except one.** The on-topic guard is a REQUIREMENT — the sentence must say
+  what the drug is used to do. It exists because MedlinePlus's real answer for dexamethasone
+  ("a corticosteroid, is similar to a natural hormone produced by your adrenal glands") passed all
+  six bans while answering a different question than the card asks.
+- **The count going UP is worth as much scrutiny as it going down.** More kept entries can mean
+  MedlinePlus improved its pages, or it can mean a guard stopped working.
+- **A sentence can be true, safe, and still wrong for this patient.** MedlinePlus answers for the
+  drug's primary indication, which is not always the reason a chemotherapy patient is taking it.
+  Read every new line against "why would SHE be on this?" before it ships.
