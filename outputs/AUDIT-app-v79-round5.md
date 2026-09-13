@@ -166,12 +166,40 @@ The skip is scoped to "no mode flag at all", so a mode flag with a missing argum
 and a missing baseline still fails rather than being regenerated. `run-all-tests.sh` invokes this
 suite bare, so **it is no longer red because of this suite.**
 
-**It is still red for pre-existing reasons**, both of them named in the runner's own header and
-neither anything to do with app-v79: `audit-v55` fails three Help-screen assertions (`A3`, `A6`,
-`B8`), and `audit-v55b` **cannot start at all** — it reads `/tmp/topics.js`, a path from a sandbox
-that no longer exists. I started a full run and it was still working through the browser suites at
-my time cap, so that is the state as far as it got, not a complete tally. `release_check.sh` does
-not call this runner, so it does not gate the release.
+**It is still red, and by a wide margin.** The full run completed after my first pass at this
+section: **PASS 32 · FAIL 13 · COULD-NOT-START 1**, exit 1. None of it is caused by `f5677f4`,
+and the detail matters because two of the thirteen are this release's own gates:
+
+    failing:      audit-v55 pm-v55 pm-v55b v52-fixes v55-fixes-shots v55-help
+                  v57-browser-notice v74-shipped-audit-probe v75-med-description-shots
+                  v76-empty-window-render v78-fence-removed v79-home-cards-render
+                  v79-warning-priority
+    cannot start: audit-v55b
+
+- **`v76-empty-window-render`, `v78-fence-removed`, `v79-home-cards-render` and
+  `v79-warning-priority` are NOT really red.** Re-run through the same script as a subset
+  (`./run-all-tests.sh v79 v78 v76`) they are **ALL GREEN — 13/13, 22/22, 20/20, 20/20, 14/14**,
+  and they are green run directly too. In the 48-suite run they exit non-zero without printing a
+  single `FAIL` line, which is a crash or a timeout, not an assertion — the signature of forty-odd
+  Chromium suites contending back to back in one sandbox. **Worth fixing in the runner**, because a
+  gate that is red for a reason everyone learns to explain away is the exact hazard that script's
+  own header is about; but it is not a property of this commit.
+- **`audit-v55b` cannot start** — it reads `/tmp/topics.js`, a path from a sandbox that no longer
+  exists. Named in the runner's own header. Pre-existing.
+- **`v74-shipped-audit-probe` is genuinely red, and pre-existing.** It fails identically on the
+  parent commit `6314bd7` (19/22 both times), so it is not this release. It is worth someone's
+  attention on its own: *"an empty name renders NO link"* is failing with
+  `https://medlineplus.gov/search/?query=Untitled%20medication` — the same `UNNAMED_MED`
+  placeholder as F-R4-3, reaching a third surface nobody has looked at — alongside an unencoded
+  `'` surviving into an href and a mutant the suite admits is *"weaker than claimed"*. Outside my
+  delta scope; flagged, not audited.
+- The rest (`audit-v55`, `pm-v55`, `pm-v55b`, `v52-fixes`, `v55-*`, `v57-browser-notice`,
+  `v75-med-description-shots`) are the long-standing Help-screen reds the runner's header already
+  documents.
+
+So F-R4-6's fix is correct and does what it claims — the pixel suite no longer contributes a red —
+but **it does not make `run-all-tests.sh` green**, and nothing in this release claimed it would.
+`release_check.sh` does not call this runner, so none of the above gates the release.
 
 ### Do the new fixtures weaken anything?
 
