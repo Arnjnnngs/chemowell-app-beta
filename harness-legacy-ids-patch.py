@@ -214,13 +214,218 @@ src = src.replace("    // 3-day block (chemo day + 2 following days, see zofranB
 src = src.replace("// dexWindowsForOffset never returns []. medWindowsFor CAN return [] -- a medication with",
                   "// a scheduled medication always had at least one. medWindowsFor CAN return [] -- a medication with")
 
+# ---- 3c. the Home daily-total cards: one renderer, driven by the medication -----------------------
+# Three near-identical blocks, each opening `if (usedRecently('tylenol'))`, `('imodium')`,
+# `('lidocaine')`, each with that drug's name typed into the label -- and TWO HARDCODED DOSE
+# CEILINGS, `const imoMax = 4` and `const lidoMax = 4`, which are one care plan's limits sitting in
+# a product every user shares. (The no-other-patient check did not catch those: it looks for
+# `ceilingMg` and for a drug name next to a number, and these are bare numbers on their own line.)
+#
+# Now: one renderer over whichever medications carry a homeCard, using that medication's own name,
+# its own configured daily limit, and the unit it was set up with. A medication with no configured
+# limit gets a total with no ceiling rather than somebody else's number.
+HOME_CARDS = """  // app-v77 phase 2: one renderer for every daily-total card. Was three copies keyed to three
+  // medication ids, with two hardcoded ceilings. A medication appears here because the caregiver
+  // gave it a homeCard, and it shows ITS name, ITS limit and ITS unit.
+  for (const hcMed of state.meds.filter(m => m && m.homeCard && !m.paused && usedRecently(m.id))) {
+    const kind = medHomeCardKind(hcMed);
+    const hcMax = medicationCeilingMax(hcMed) || 0;
+    const hcUsed = kind === 'mg'
+      ? (hcMed.ceilingGroup ? dailyGroupMg(hcMed) : dailyDoseMg(hcMed.id))
+      : (kind === 'ml' ? dailyVolumeMl(hcMed.id) : dailyPills(hcMed.id));
+    const hcUnit = kind === 'mg' ? 'mg' : (kind === 'ml' ? 'mL' : (hcMed.ceilingUnit || 'doses'));
+    const hcPct = hcMax > 0 ? Math.min(100, hcUsed / hcMax * 100) : 0;
+    const hcColor = hcMax > 0 && hcUsed >= hcMax ? '#C0453B' : hcPct >= 90 ? '#C0453B' : hcPct >= 60 ? '#9A6419' : '#BF4C1A';
+    const hcLeft = Math.max(0, hcMax - hcUsed);
+    parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '12px' } },
+        h('div', null,
+          h('div', { style: { ...TYPE.label, color: '#915E48' } }, hcMed.name + ' · today'),
+          // NO CEILING IS A REAL STATE, and it must not read as a limit of zero. A medication with
+          // no configured daily limit still gets its running total; it just has nothing to be
+          // "left" of.
+          h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } },
+            hcMax > 0 ? (hcLeft.toLocaleString() + ' ' + hcUnit + ' left before the daily limit') : 'No daily limit set')
+        ),
+        h('div', { className: 'mono', style: { fontSize: '20px', fontWeight: '600', letterSpacing: '-0.02em', whiteSpace: 'nowrap' } },
+          hcUsed.toLocaleString(),
+          h('span', { style: { color: '#7A6E76', fontSize: '13px', fontWeight: '400' } },
+            hcMax > 0 ? (' / ' + hcMax.toLocaleString() + ' ' + hcUnit) : (' ' + hcUnit))
+        )
+      ),
+      hcMax > 0 ? h('div', { role: 'img', 'aria-label': hcUsed.toLocaleString() + ' of ' + hcMax.toLocaleString() + ' ' + hcUnit + ' used today', style: { height: '12px', background: 'rgba(246,108,49,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px' } },
+        h('div', { style: { height: '100%', width: Math.round(hcPct) + '%', background: hcColor, borderRadius: '99px', transition: 'width .45s ease, background .45s ease' } })
+      ) : null
+    ));
+  }
+"""
+_cards_start = src.index("  // Acetaminophen meter (full width)")
+_cards_end = src.index("  // Temperature + Weight row (each card user-toggleable in Settings)")
+_removed_cards = src[_cards_start:_cards_end]
+for _needle in ["usedRecently('tylenol')", "usedRecently('imodium')", "usedRecently('lidocaine')", "imoMax = 4", "lidoMax = 4"]:
+    if _needle not in _removed_cards:
+        die('the Home daily-total card block is not shaped as expected (missing ' + _needle + ') -- nothing written')
+src = src[:_cards_start] + HOME_CARDS + src[_cards_end:]
+
+# the three counters those blocks declared, now computed per medication inside the loop
+for _dead in ["  const imoPills = dailyPills('imodium');\\n", "  const imoMax = 4;\\n",
+              "  const lidoApps = dailyPills('lidocaine');\\n", "  const lidoMax = 4;\\n"]:
+    if _dead in src:
+        src = src.replace(_dead, "", 1)
+
+# ---- 3d. afterLog: the generic branch already did all of this ------------------------------------
+# The iron/protonix branch is now the `interactions` property. The tylenol block duplicated what the
+# generic `else` branch below it already does -- dailyCeiling() has handled ceilingGroup and
+# rollingCeilingH for releases -- differing only in saying "Acetaminophen" instead of the
+# medication's own name, and in also checking the millilitre ceiling. So: delete both, and teach the
+# generic branch the volume check it was missing.
+_after_start = src.index("  if (entry.medId === 'iron' || entry.medId === 'protonix') {")
+_after_end = src.index("}\n\nasync function logMed(", _after_start)
+_removed_after = src[_after_start:_after_end]
+for _needle in ["Iron + Protonix timing", "Acetaminophen ceiling exceeded", "dailyCeiling(configuredMedication)"]:
+    if _needle not in _removed_after:
+        die('afterLog is not shaped as expected (missing ' + _needle + ') -- nothing written')
+AFTER = """  const configuredMedication = state.meds.find(med => med.id === entry.medId);
+  const configuredLimit = dailyCeiling(configuredMedication);
+  if (configuredLimit && configuredLimit.used > configuredLimit.max) {
+    setState({ warn: { tone: 'red', title: configuredMedication.name + ' daily limit exceeded', body: "Today's " + configuredMedication.name + ' total is ' + configuredLimit.used.toLocaleString() + ' ' + configuredLimit.unit + ', above the ' + configuredLimit.label + ' daily limit set for it. Check with the care team before logging more.' } });
+    return;
+  }
+  // app-v77 phase 2: the millilitre ceiling used to live inside a Tylenol-Liquid-shaped branch. It
+  // is a property (volumeCeilingMl) and dailyVolumeCeiling() was already generic; only the caller
+  // was not. A liquid can pass its mg limit and its volume limit independently, so both are checked.
+  const volumeLimit = dailyVolumeCeiling(configuredMedication);
+  if (volumeLimit && volumeLimit.used > volumeLimit.max) {
+    setState({ warn: { tone: 'red', title: configuredMedication.name + ' volume limit exceeded', body: "Today's " + configuredMedication.name + ' total is ' + volumeLimit.used + ' ' + volumeLimit.unit + ', above the ' + volumeLimit.label + ' daily limit set for it. Check with the care team before logging more.' } });
+  }
+"""
+src = src[:_after_start] + AFTER + src[_after_end:]
+
+# and the "Take all" path, which named one medication
+cut("""    setTimeout(() => { if (ids.includes('iron')) afterLog({ medId: 'iron', ts, id: 'pending' }); }, 500);""",
+    """    // app-v77 phase 2: was `if (ids.includes('iron'))`, so an interaction warning could only ever
+    // be raised by one specific medication being in the batch. Every medication just logged gets
+    // the same check any single log gets.
+    setTimeout(() => { ids.forEach(mid => afterLog({ medId: mid, ts, id: 'pending' })); }, 500);""",
+    'the Take-all interaction check')
+
+# ---- 3e. the history summaries ------------------------------------------------------------------
+cut("""    const tyDay = items.filter(e => e.medId === 'tylenol' && !e.missed).reduce((s, e) => s + (e.mg || 0), 0);""",
+    """    // app-v77 phase 2: was `e.medId === 'tylenol'`, summarised as "mg APAP" -- one drug's name in
+    // every history row of a product every user shares. Now: whichever medications the caregiver
+    // gave an mg daily-total card, each under its own name.
+    const hcMgMeds = state.meds.filter(m => m && m.homeCard && medHomeCardKind(m) === 'mg');
+    const tyDay = hcMgMeds.reduce((sum, m) => sum + items.filter(e => e.medId === m.id && !e.missed).reduce((s, e) => s + (e.mg || 0), 0), 0);""",
+    'the history mg summary')
+cut("""    const imoDay = items.filter(e => e.medId === 'imodium' && !e.missed).reduce((s, e) => s + (e.pills || 0), 0);
+    if (imoDay) summary += ' · ' + imoDay + ' Imodium';""",
+    """    // Same for the pill counters. Each names the medication it counts rather than one drug.
+    for (const m of state.meds.filter(x => x && x.homeCard && medHomeCardKind(x) === 'pills')) {
+      const n = items.filter(e => e.medId === m.id && !e.missed).reduce((s, e) => s + (e.pills || 0), 0);
+      if (n) summary += ' · ' + n + ' ' + m.name;
+    }""",
+    'the history pill summary')
+
+# ---- 3f. the linked windows: "opens two hours after ANOTHER medication was taken" ----------------
+# morningLinkedToProtonix / eveningLinkedToProtonix, and the two helpers that read one specific
+# medication's entries by id. The rule is generic and useful -- a medication whose window opens a
+# fixed time after another one was actually logged -- and it was welded to a drug name.
+LINKED = """// app-v77 phase 2: was morningWindowsFor/eveningWindowsFor + protonixMorningLogTs/
+// protonixEveningLogTs, each reading one specific medication's entries by id. The rule is generic:
+// this medication's window opens a fixed gap after ANOTHER medication was actually taken, in the
+// named half of the day. The medication says which one and how long via `linkedTo`.
+function linkedAnchorTs(med, d0) {
+  if (!med || !med.linkedTo || typeof med.linkedTo !== 'object') return null;
+  const fromH = med.linkedTo.half === 'evening' ? 12 : 0;
+  const toH = med.linkedTo.half === 'evening' ? 24 : 12;
+  const entry = entriesFor(med.linkedTo.medId)
+    .find(e => e.ts >= d0 + fromH * 3600000 && e.ts < d0 + toH * 3600000);
+  return entry ? entry.ts : null;
+}
+function linkedWindowsFor(med, d0) {
+  const anchor = linkedAnchorTs(med, d0);
+  if (anchor === null) return med.windows || [];
+  const gapH = Number(med.linkedTo.gapH);
+  const startH = (anchor + (Number.isFinite(gapH) ? gapH : 2) * 3600000 - d0) / 3600000;
+  // Past midnight: the window would have no room left today, so the medication keeps its own.
+  if (!(startH < 24)) return med.windows || [];
+  return [{ start: Math.max(0, startH), end: 24, name: med.linkedTo.half === 'evening' ? 'Night' : 'Morning' }];
+}
+"""
+# The four sit in file order protonixEveningLogTs, eveningWindowsFor, protonixMorningLogTs,
+# morningWindowsFor -- NOT the order they are named in. Slicing from the first name mentioned to the
+# last produced an empty range and a shape check that failed on nothing. Take the span from the
+# earliest of the four to the end of the latest.
+_lw_start = min(src.index("function protonixEveningLogTs(d0) {"), src.index("function eveningWindowsFor(med, d0) {"))
+_lw_last = max(src.index("function protonixMorningLogTs(d0) {"), src.index("function morningWindowsFor(med, d0) {"))
+_lw_end = src.index("\n}\n", _lw_last) + len("\n}\n")
+_removed_lw = src[_lw_start:_lw_end]
+for _needle in ["protonixMorningLogTs", "protonixEveningLogTs", "2 * 3600000"]:
+    if _needle not in _removed_lw:
+        die('the linked-window block is not shaped as expected (missing ' + _needle + ') -- nothing written')
+src = src[:_lw_start] + LINKED + src[_lw_end:]
+
+# status() picked the linked branch by flag; it picks it by property now.
+cut("""  const windows = (med.eveningLinkedToProtonix || med.morningLinkedToProtonix) && med.id !== 'dexamethasone'
+    ? (med.eveningLinkedToProtonix ? eveningWindowsFor(med, d0) : morningWindowsFor(med, d0))
+    : medWindowsFor(med, d0);""",
+    """  // A medication whose window follows another medication's actual dose keeps that at status()'s
+  // own call site, as it always has -- the missed-dose walk and the dose-progress ring never
+  // applied it, and folding it into medWindowsFor moved their windows by an hour (the phase 1
+  // audit's B5). The `med.id !== 'dexamethasone'` guard that used to sit here is gone with the id.
+  const windows = med.linkedTo ? linkedWindowsFor(med, d0) : medWindowsFor(med, d0);""",
+    "status()'s linked-window branch")
+
+# the flags become the property, on load
+cut("""  'imodium': { homeCard: { kind: 'pills' } }""",
+    """  'imodium': { homeCard: { kind: 'pills' } },
+  // Not an id-keyed entry: a MIGRATION OF THE OLD FLAGS. morningLinkedToProtonix and
+  // eveningLinkedToProtonix were booleans meaning "two hours after Protonix, in this half of the
+  // day". Whoever carried them keeps exactly that, now as data anyone can set for any pair.
+  '__flags__': true""",
+    'the migration table tail')
+cut("""  const rules = med && Object.prototype.hasOwnProperty.call(LEGACY_MED_RULES, med.id)
+    ? LEGACY_MED_RULES[med.id] : null;
+  if (!rules) return med;
+  const next = { ...med };""",
+    """  let next = med ? { ...med } : med;
+  // The old boolean flags, whatever medication carried them.
+  if (next && !next.linkedTo && (next.morningLinkedToProtonix || next.eveningLinkedToProtonix)) {
+    next.linkedTo = { medId: 'protonix', half: next.eveningLinkedToProtonix ? 'evening' : 'morning', gapH: 2 };
+  }
+  const rules = med && Object.prototype.hasOwnProperty.call(LEGACY_MED_RULES, med.id)
+    && LEGACY_MED_RULES[med.id] !== true ? LEGACY_MED_RULES[med.id] : null;
+  if (!rules) return next;""",
+    "migrateLegacyMedRules' body")
+
+# ---- 3g. the Home progress values render() computed from one drug ---------------------------------
+cut("""  const tylenolMedication = state.meds.find(med => med.id === 'tylenol');
+  const ceiling = medicationCeilingMax(tylenolMedication) || 0;
+  const mg = tylenolMg();
+  const pct = ceiling > 0 ? Math.min(100, mg / ceiling * 100) : 0;
+  const tyColor = mg >= ceiling ? '#C0453B' : pct >= 90 ? '#C0453B' : pct >= 60 ? '#9A6419' : '#BF4C1A';""",
+    """  // app-v77 phase 2: these four were computed from `state.meds.find(m => m.id === 'tylenol')` and
+  // threaded through renderContent and renderToday as positional arguments. The daily-total cards
+  // now compute their own values per medication, so nothing downstream reads them -- they are kept
+  // as zeroes only because the two render signatures still take them, and removing arguments from
+  // a call chain is a wider change than this release should make.
+  const ceiling = 0, mg = 0, pct = 0, tyColor = '#BF4C1A';""",
+    "render()'s Tylenol-derived progress values")
+
 # ---- 4. delete the helpers that existed only to serve those ids ---------------------------------
 # Nothing calls them now. Leaving a function named zofranBlockedOn in a shared product is the debt
 # this whole plan is about, even when it is dead.
 import re as _re
-for _name in ['dexWindowsForOffset', 'zofranBlockedOn', 'zofranBlockingDay']:
+for _name in ['dexWindowsForOffset', 'zofranBlockedOn', 'zofranBlockingDay',
+              'tylenolMg', 'protonixMorningLogTs', 'protonixEveningLogTs']:
     # COUNT CODE, NOT PROSE. An earlier version counted every textual occurrence and refused to
     # delete a function because the comments explaining WHY it was being deleted named it.
+    # ALREADY GONE IS FINE. protonixMorningLogTs and protonixEveningLogTs sit inside the block the
+    # linked-window rewrite above replaces wholesale, so by the time this loop reaches them there is
+    # nothing left to delete -- and a reference count of zero was being reported as "-1 places",
+    # which is the guard misreading its own success as a failure.
+    if ('\nfunction ' + _name + '(') not in src:
+        continue
     _code = _re.sub(r'(?m)^\s*//.*$', '', src)
     _code = _re.sub(r'/\*[\s\S]*?\*/', '', _code)
     _refs = len(_re.findall(r'\b' + _name + r'\b', _code))
@@ -246,5 +451,15 @@ for _name in ['dexWindowsForOffset', 'zofranBlockedOn', 'zofranBlockingDay']:
         die('refusing to delete a fragment of ' + _name + ': ' + repr(_removed[:60]) + ' ... ' + repr(_removed[-20:]))
     src = src[:_i] + src[_j:]
 
+# ---- 5. version ---------------------------------------------------------------------------------
+if src.count("const APP_VERSION = 'app-v76';") != 1:
+    die('APP_VERSION is not app-v76')
+sw = SW.read_text(encoding='utf-8')
+if "const CACHE = 'chemowell-app-v76-1';" not in sw:
+    die('sw.js CACHE is not at app-v76-1 -- nothing was written')
+src = src.replace("const APP_VERSION = 'app-v76';", "const APP_VERSION = 'app-v77';", 1)
+sw_next = sw.replace("const CACHE = 'chemowell-app-v76-1';", "const CACHE = 'chemowell-app-v77-1';", 1)
+
 HTML.write_text(src, encoding='utf-8')
-print('app-v77 phase 2 step 1: migration table in, four resolver fallbacks out')
+SW.write_text(sw_next, encoding='utf-8')
+print('app-v77 phase 2 applied: migration table in, every hardcoded branch out')

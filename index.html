@@ -1184,16 +1184,24 @@ const LEGACY_MED_RULES = {
   // Was: tylenolMg(), dailyPills('imodium'), and `e.medId === 'tylenol'` inside the report builder.
   'tylenol': { homeCard: { kind: 'mg' } },
   'tylenol-liquid': { homeCard: { kind: 'ml' } },
-  'imodium': { homeCard: { kind: 'pills' } }
+  'imodium': { homeCard: { kind: 'pills' } },
+  // Not an id-keyed entry: a MIGRATION OF THE OLD FLAGS. morningLinkedToProtonix and
+  // eveningLinkedToProtonix were booleans meaning "two hours after Protonix, in this half of the
+  // day". Whoever carried them keeps exactly that, now as data anyone can set for any pair.
+  '__flags__': true
 };
 // Applied ONCE, from loadMedicationConfig, and only to a config older than MED_CONFIG_VERSION.
 // A property the medication already carries is never overwritten: if someone has configured their
 // own rule, theirs wins over a table entry that only exists for historical reasons.
 function migrateLegacyMedRules(med) {
+  let next = med ? { ...med } : med;
+  // The old boolean flags, whatever medication carried them.
+  if (next && !next.linkedTo && (next.morningLinkedToProtonix || next.eveningLinkedToProtonix)) {
+    next.linkedTo = { medId: 'protonix', half: next.eveningLinkedToProtonix ? 'evening' : 'morning', gapH: 2 };
+  }
   const rules = med && Object.prototype.hasOwnProperty.call(LEGACY_MED_RULES, med.id)
-    ? LEGACY_MED_RULES[med.id] : null;
-  if (!rules) return med;
-  const next = { ...med };
+    && LEGACY_MED_RULES[med.id] !== true ? LEGACY_MED_RULES[med.id] : null;
+  if (!rules) return next;
   for (const key of Object.keys(rules)) {
     // `windows` is the one key a legacy medication always already has, and for dexamethasone the old
     // code IGNORED it entirely -- dexWindowsForOffset never looked at med.windows. So leaving the
@@ -1560,10 +1568,6 @@ function entryDoseLabel(e) {
     return label;
   }
   return e.dose;
-}
-function tylenolMg() {
-  const med = state.meds.find(m => m.id === 'tylenol');
-  return med && med.ceilingGroup ? dailyGroupMg(med) : dailyDoseMg('tylenol');
 }
 function dailyPills(medId) { const c = dayStart(state.now); return entriesFor(medId).filter(e => e.ts >= c).reduce((s, e) => s + (e.pills || 0), 0); }
 // v26: the Journal/History override badge used a flat 3-way ternary ('overLimit' / 'both' / else
@@ -1994,42 +1998,26 @@ function fmtDateLabel(ts) {
 
 // Protonix's evening (PM) dose log time for the given day, if logged yet — the second dose,
 // after its own Morning window (8am-12pm) has closed.
-function protonixEveningLogTs(d0) {
-  const es = entriesFor('protonix');
-  const entry = es.find(e => e.ts >= d0 + 12 * 3600000 && e.ts < d0 + 86400000);
+// app-v77 phase 2: was morningWindowsFor/eveningWindowsFor + protonixMorningLogTs/
+// protonixEveningLogTs, each reading one specific medication's entries by id. The rule is generic:
+// this medication's window opens a fixed gap after ANOTHER medication was actually taken, in the
+// named half of the day. The medication says which one and how long via `linkedTo`.
+function linkedAnchorTs(med, d0) {
+  if (!med || !med.linkedTo || typeof med.linkedTo !== 'object') return null;
+  const fromH = med.linkedTo.half === 'evening' ? 12 : 0;
+  const toH = med.linkedTo.half === 'evening' ? 24 : 12;
+  const entry = entriesFor(med.linkedTo.medId)
+    .find(e => e.ts >= d0 + fromH * 3600000 && e.ts < d0 + toH * 3600000);
   return entry ? entry.ts : null;
 }
-
-// Iron (and Compazine's own routine, unlinked) open at 10 PM by default, but if Protonix's evening
-// dose was logged, Iron instead opens 2 hours after that actual log time (so the two are spaced out).
-function eveningWindowsFor(med, d0) {
-  const pTs = protonixEveningLogTs(d0);
-  if (pTs) {
-    const startH = (pTs + 2 * 3600000 - d0) / 3600000;
-    if (startH < 24) return [{ start: Math.max(0, startH), end: 24, name: 'Night' }];
-  }
-  return med.windows; // default: 10 PM
-}
-
-// Protonix's morning (AM) dose log time for the given day, if logged yet — any entry logged
-// before its own Evening window opens (noon).
-function protonixMorningLogTs(d0) {
-  const es = entriesFor('protonix');
-  const entry = es.find(e => e.ts >= d0 && e.ts < d0 + 12 * 3600000);
-  return entry ? entry.ts : null;
-}
-
-// Buspirone/Paroxetine open at 10 AM by default (2h after Protonix's own default 8 AM dose time),
-// but if Protonix's actual morning dose was logged, they instead open 2 hours after that real log
-// time and stay open through end of day (mirrors eveningWindowsFor's pattern for Iron exactly:
-// Iron defaults to 10 PM, 2h after Protonix's default 8 PM evening time, then shifts the same way).
-function morningWindowsFor(med, d0) {
-  const pTs = protonixMorningLogTs(d0);
-  if (pTs) {
-    const startH = (pTs + 2 * 3600000 - d0) / 3600000;
-    if (startH < 24) return [{ start: Math.max(0, startH), end: 24, name: 'Morning' }];
-  }
-  return med.windows; // default: 10 AM–midnight
+function linkedWindowsFor(med, d0) {
+  const anchor = linkedAnchorTs(med, d0);
+  if (anchor === null) return med.windows || [];
+  const gapH = Number(med.linkedTo.gapH);
+  const startH = (anchor + (Number.isFinite(gapH) ? gapH : 2) * 3600000 - d0) / 3600000;
+  // Past midnight: the window would have no room left today, so the medication keeps its own.
+  if (!(startH < 24)) return med.windows || [];
+  return [{ start: Math.max(0, startH), end: 24, name: med.linkedTo.half === 'evening' ? 'Night' : 'Morning' }];
 }
 
 function status(med) {
@@ -2078,9 +2066,11 @@ function status(med) {
     return { locked: now < at, availableAt: at };
   }
   const d0 = dayStart(now), atH = (h) => d0 + h * 3600000;
-  const windows = (med.eveningLinkedToProtonix || med.morningLinkedToProtonix) && med.id !== 'dexamethasone'
-    ? (med.eveningLinkedToProtonix ? eveningWindowsFor(med, d0) : morningWindowsFor(med, d0))
-    : medWindowsFor(med, d0);
+  // A medication whose window follows another medication's actual dose keeps that at status()'s
+  // own call site, as it always has -- the missed-dose walk and the dose-progress ring never
+  // applied it, and folding it into medWindowsFor moved their windows by an hour (the phase 1
+  // audit's B5). The `med.id !== 'dexamethasone'` guard that used to sit here is gone with the id.
+  const windows = med.linkedTo ? linkedWindowsFor(med, d0) : medWindowsFor(med, d0);
   // v23: scheduled meds can now optionally carry a gapH minimum-gap lockout on top of their time
   // windows (Aaron-requested — "scheduled meds still could have gap timers"). This ORs in with the
   // window logic below: a window being open no longer guarantees "available" if the last dose was
@@ -2241,35 +2231,18 @@ function afterLog(entry) {
   // overwrite. Found by the phase 1 audit.
   const declared = medInteractionsFor(entry);
   if (declared.length) setState({ warn: declared[0] });
-  if (entry.medId === 'iron' || entry.medId === 'protonix') {
-    const other = entry.medId === 'iron' ? 'protonix' : 'iron';
-    const near = state.entries.find(e => e.medId === other && e.id !== entry.id && Math.abs(e.ts - entry.ts) <= twoH);
-    if (near) { setState({ warn: { tone: 'amber', title: 'Iron + Protonix timing', body: 'Iron and Protonix were logged within 2 hours of each other. Protonix (a PPI) lowers stomach acid, which can markedly reduce iron absorption. Aim to separate the two by at least 2 hours.' } }); return; }
+  const configuredMedication = state.meds.find(med => med.id === entry.medId);
+  const configuredLimit = dailyCeiling(configuredMedication);
+  if (configuredLimit && configuredLimit.used > configuredLimit.max) {
+    setState({ warn: { tone: 'red', title: configuredMedication.name + ' daily limit exceeded', body: "Today's " + configuredMedication.name + ' total is ' + configuredLimit.used.toLocaleString() + ' ' + configuredLimit.unit + ', above the ' + configuredLimit.label + ' daily limit set for it. Check with the care team before logging more.' } });
+    return;
   }
-  if (entry.medId === 'tylenol' || entry.medId === 'tylenol-liquid') {
-    const mg = tylenolMg();
-    const tylenol = state.meds.find(med => med.id === 'tylenol');
-    const limit = medicationCeilingMax(tylenol) || 0;
-    const mgOver = limit > 0 && mg > limit;
-    let volOver = false, vol = 0, liquidMed = null;
-    if (entry.medId === 'tylenol-liquid') {
-      liquidMed = state.meds.find(med => med.id === 'tylenol-liquid');
-      vol = dailyVolumeMl('tylenol-liquid');
-      volOver = !!(liquidMed && liquidMed.volumeCeilingMl && vol > liquidMed.volumeCeilingMl);
-    }
-    if (mgOver && volOver) {
-      setState({ warn: { tone: 'red', title: 'Acetaminophen ceiling exceeded', body: "Today's Tylenol total is " + mg.toLocaleString() + " mg (above the " + limit.toLocaleString() + " mg daily limit) and Tylenol Liquid volume is " + vol + " mL (above the " + liquidMed.volumeCeilingMl + " mL daily limit). Do not give more without contacting the care team." } });
-    } else if (mgOver) {
-      setState({ warn: { tone: 'red', title: 'Acetaminophen ceiling exceeded', body: "Today's Tylenol total is " + mg.toLocaleString() + " mg, above the " + limit.toLocaleString() + " mg daily limit. Do not give more without contacting the care team." } });
-    } else if (volOver) {
-      setState({ warn: { tone: 'red', title: 'Tylenol Liquid volume ceiling exceeded', body: "Today's Tylenol Liquid total is " + vol + " mL, above the " + liquidMed.volumeCeilingMl + " mL daily limit. Do not give more without contacting the care team." } });
-    }
-  } else {
-    const configuredMedication = state.meds.find(med => med.id === entry.medId);
-    const configuredLimit = dailyCeiling(configuredMedication);
-    if (configuredLimit && configuredLimit.used > configuredLimit.max) {
-      setState({ warn: { tone: 'red', title: configuredMedication.name + ' daily limit exceeded', body: "Today's " + configuredMedication.name + ' total is ' + configuredLimit.used + ' ' + configuredLimit.unit + ', above the ' + configuredLimit.label + ' daily limit. Do not give more without contacting the care team.' } });
-    }
+  // app-v77 phase 2: the millilitre ceiling used to live inside a Tylenol-Liquid-shaped branch. It
+  // is a property (volumeCeilingMl) and dailyVolumeCeiling() was already generic; only the caller
+  // was not. A liquid can pass its mg limit and its volume limit independently, so both are checked.
+  const volumeLimit = dailyVolumeCeiling(configuredMedication);
+  if (volumeLimit && volumeLimit.used > volumeLimit.max) {
+    setState({ warn: { tone: 'red', title: configuredMedication.name + ' volume limit exceeded', body: "Today's " + configuredMedication.name + ' total is ' + volumeLimit.used + ' ' + volumeLimit.unit + ', above the ' + volumeLimit.label + ' daily limit set for it. Check with the care team before logging more.' } });
   }
 }
 
@@ -2519,7 +2492,10 @@ async function confirmTimeAndLog() {
       await addEntryDB(en);
     }
     setToast(ids.length + ' meds logged at ' + fmtTime(ts));
-    setTimeout(() => { if (ids.includes('iron')) afterLog({ medId: 'iron', ts, id: 'pending' }); }, 500);
+    // app-v77 phase 2: was `if (ids.includes('iron'))`, so an interaction warning could only ever
+    // be raised by one specific medication being in the batch. Every medication just logged gets
+    // the same check any single log gets.
+    setTimeout(() => { ids.forEach(mid => afterLog({ medId: mid, ts, id: 'pending' })); }, 500);
   } else if (m.type === 'period') {
     // Retroactive Start(+Stop) logging for Cycle/In-Patient via the "+" control (v68 redesign).
     // Always writing a matched Start+End pair (instead of the old single-marker log) means the
@@ -4427,11 +4403,12 @@ function render() {
   const root = document.getElementById('root');
   if (state.prefsLoaded && !(CONFIG.patientName || '').trim()) { renderSetup(); return; }
   const now = state.now;
-  const tylenolMedication = state.meds.find(med => med.id === 'tylenol');
-  const ceiling = medicationCeilingMax(tylenolMedication) || 0;
-  const mg = tylenolMg();
-  const pct = ceiling > 0 ? Math.min(100, mg / ceiling * 100) : 0;
-  const tyColor = mg >= ceiling ? '#C0453B' : pct >= 90 ? '#C0453B' : pct >= 60 ? '#9A6419' : '#BF4C1A';
+  // app-v77 phase 2: these four were computed from `state.meds.find(m => m.id === 'tylenol')` and
+  // threaded through renderContent and renderToday as positional arguments. The daily-total cards
+  // now compute their own values per medication, so nothing downstream reads them -- they are kept
+  // as zeroes only because the two render signatures still take them, and removing arguments from
+  // a call chain is a wider change than this release should make.
+  const ceiling = 0, mg = 0, pct = 0, tyColor = '#BF4C1A';
   const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(120deg, #FFA6AE 0%, #FFC18B 55%, #FFE1B8 100%)', color: '#2A2127', paddingBottom: 'calc(90px + env(safe-area-inset-bottom))', position: 'relative' } },
     renderHeader(now),
     h('main', { style: { position: 'relative', zIndex: '1', maxWidth: '720px', margin: '0 auto', padding: '16px 16px 20px', display: 'flex', flexDirection: 'column', gap: '18px' } }, ...renderContent(now, mg, pct, tyColor, ceiling)),
@@ -5138,65 +5115,40 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   const lastWeight = latest('weight');
   const weightSubLabel = lastWeight ? ('Last reading ' + fmtTime(lastWeight.ts)) : 'No readings yet';
 
-  // Acetaminophen meter (full width) — shown only when Tylenol used in last 7 days
-  if (usedRecently('tylenol')) parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
-    h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '12px' } },
-      h('div', null,
-        h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Acetaminophen · today'),
-        h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } }, Math.max(0, ceiling - mg).toLocaleString() + ' mg left before ceiling')
+  // app-v77 phase 2: one renderer for every daily-total card. Was three copies keyed to three
+  // medication ids, with two hardcoded ceilings. A medication appears here because the caregiver
+  // gave it a homeCard, and it shows ITS name, ITS limit and ITS unit.
+  for (const hcMed of state.meds.filter(m => m && m.homeCard && !m.paused && usedRecently(m.id))) {
+    const kind = medHomeCardKind(hcMed);
+    const hcMax = medicationCeilingMax(hcMed) || 0;
+    const hcUsed = kind === 'mg'
+      ? (hcMed.ceilingGroup ? dailyGroupMg(hcMed) : dailyDoseMg(hcMed.id))
+      : (kind === 'ml' ? dailyVolumeMl(hcMed.id) : dailyPills(hcMed.id));
+    const hcUnit = kind === 'mg' ? 'mg' : (kind === 'ml' ? 'mL' : (hcMed.ceilingUnit || 'doses'));
+    const hcPct = hcMax > 0 ? Math.min(100, hcUsed / hcMax * 100) : 0;
+    const hcColor = hcMax > 0 && hcUsed >= hcMax ? '#C0453B' : hcPct >= 90 ? '#C0453B' : hcPct >= 60 ? '#9A6419' : '#BF4C1A';
+    const hcLeft = Math.max(0, hcMax - hcUsed);
+    parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '12px' } },
+        h('div', null,
+          h('div', { style: { ...TYPE.label, color: '#915E48' } }, hcMed.name + ' · today'),
+          // NO CEILING IS A REAL STATE, and it must not read as a limit of zero. A medication with
+          // no configured daily limit still gets its running total; it just has nothing to be
+          // "left" of.
+          h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } },
+            hcMax > 0 ? (hcLeft.toLocaleString() + ' ' + hcUnit + ' left before the daily limit') : 'No daily limit set')
+        ),
+        h('div', { className: 'mono', style: { fontSize: '20px', fontWeight: '600', letterSpacing: '-0.02em', whiteSpace: 'nowrap' } },
+          hcUsed.toLocaleString(),
+          h('span', { style: { color: '#7A6E76', fontSize: '13px', fontWeight: '400' } },
+            hcMax > 0 ? (' / ' + hcMax.toLocaleString() + ' ' + hcUnit) : (' ' + hcUnit))
+        )
       ),
-      h('div', { className: 'mono', style: { fontSize: '20px', fontWeight: '600', letterSpacing: '-0.02em', whiteSpace: 'nowrap' } },
-        mg.toLocaleString(),
-        h('span', { style: { color: '#7A6E76', fontSize: '13px', fontWeight: '400' } }, ' / ' + ceiling.toLocaleString() + ' mg')
-      )
-    ),
-    h('div', { role: 'img', 'aria-label': mg.toLocaleString() + ' of ' + ceiling.toLocaleString() + ' mg used today', style: { height: '12px', background: 'rgba(246,108,49,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px', border: '1px solid #E9D8D1' } },
-      h('div', { style: { height: '100%', width: Math.round(pct) + '%', background: tyColor, borderRadius: '99px', transition: 'width .45s ease, background .3s' } })
-    )
-  ));
-
-  // Imodium pill counter
-  const imoPills = dailyPills('imodium');
-  const imoMax = 4;
-  const imoPct = Math.min(100, imoPills / imoMax * 100);
-  const imoColor = imoPills >= imoMax ? '#C0453B' : imoPills >= 3 ? '#9A6419' : '#BF4C1A';
-  if (usedRecently('imodium')) parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
-    h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '12px' } },
-      h('div', null,
-        h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Imodium · today'),
-        h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } }, Math.max(0, imoMax - imoPills) + ' pill' + (Math.max(0, imoMax - imoPills) === 1 ? '' : 's') + ' left before limit')
-      ),
-      h('div', { className: 'mono', style: { fontSize: '20px', fontWeight: '600', letterSpacing: '-0.02em', whiteSpace: 'nowrap' } },
-        String(imoPills),
-        h('span', { style: { color: '#7A6E76', fontSize: '13px', fontWeight: '400' } }, ' / ' + imoMax + ' pills')
-      )
-    ),
-    h('div', { role: 'img', 'aria-label': imoPills + ' of ' + imoMax + ' pills used today', style: { height: '12px', background: 'rgba(246,108,49,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px', border: '1px solid #E9D8D1' } },
-      h('div', { style: { height: '100%', width: Math.round(imoPct) + '%', background: imoColor, borderRadius: '99px', transition: 'width .45s ease, background .3s' } })
-    )
-  ));
-
-  // Lidocaine application counter — shown only when used in last 7 days
-  const lidoApps = dailyPills('lidocaine');
-  const lidoMax = 4;
-  const lidoPct = Math.min(100, lidoApps / lidoMax * 100);
-  const lidoColor = lidoApps >= lidoMax ? '#C0453B' : lidoApps >= 3 ? '#9A6419' : '#BF4C1A';
-  if (usedRecently('lidocaine')) parts.push(h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '18px', padding: '16px 17px', boxShadow: '0 4px 24px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
-    h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '12px' } },
-      h('div', null,
-        h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Lidocaine · today'),
-        h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } }, Math.max(0, lidoMax - lidoApps) + ' application' + (Math.max(0, lidoMax - lidoApps) === 1 ? '' : 's') + ' left before limit')
-      ),
-      h('div', { className: 'mono', style: { fontSize: '20px', fontWeight: '600', letterSpacing: '-0.02em', whiteSpace: 'nowrap' } },
-        String(lidoApps),
-        h('span', { style: { color: '#7A6E76', fontSize: '13px', fontWeight: '400' } }, ' / ' + lidoMax)
-      )
-    ),
-    h('div', { role: 'img', 'aria-label': lidoApps + ' of ' + lidoMax + ' applications used today', style: { height: '12px', background: 'rgba(246,108,49,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px', border: '1px solid #E9D8D1' } },
-      h('div', { style: { height: '100%', width: Math.round(lidoPct) + '%', background: lidoColor, borderRadius: '99px', transition: 'width .45s ease, background .3s' } })
-    )
-  ));
-
+      hcMax > 0 ? h('div', { role: 'img', 'aria-label': hcUsed.toLocaleString() + ' of ' + hcMax.toLocaleString() + ' ' + hcUnit + ' used today', style: { height: '12px', background: 'rgba(246,108,49,0.10)', borderRadius: '99px', overflow: 'hidden', marginTop: '12px' } },
+        h('div', { style: { height: '100%', width: Math.round(hcPct) + '%', background: hcColor, borderRadius: '99px', transition: 'width .45s ease, background .45s ease' } })
+      ) : null
+    ));
+  }
   // Temperature + Weight row (each card user-toggleable in Settings)
   if (homePref('showTemperature') || homePref('showWeight')) parts.push(h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: '12px' } },
     // Temperature
@@ -7428,7 +7380,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v76';
+const APP_VERSION = 'app-v77';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -9344,7 +9296,11 @@ function renderHistory(now) {
   const allHistoryDays = Object.keys(dmap).map(k => +k).sort((a, b) => b - a).map(k => {
     const missed = missedDosesFor(k, now);
     const items = [...dmap[k], ...missed].sort((a, b) => a.ts - b.ts);
-    const tyDay = items.filter(e => e.medId === 'tylenol' && !e.missed).reduce((s, e) => s + (e.mg || 0), 0);
+    // app-v77 phase 2: was `e.medId === 'tylenol'`, summarised as "mg APAP" -- one drug's name in
+    // every history row of a product every user shares. Now: whichever medications the caregiver
+    // gave an mg daily-total card, each under its own name.
+    const hcMgMeds = state.meds.filter(m => m && m.homeCard && medHomeCardKind(m) === 'mg');
+    const tyDay = hcMgMeds.reduce((sum, m) => sum + items.filter(e => e.medId === m.id && !e.missed).reduce((s, e) => s + (e.mg || 0), 0), 0);
     const doses = items.filter(e => e.medId !== 'temp' && e.medId !== 'weight' && e.medId !== 'cycle_start' && e.medId !== 'cycle_end' && !e.missed && !e.skipped).length;
     const temps = items.filter(e => e.medId === 'temp').length;
     const weights = items.filter(e => e.medId === 'weight').length;
@@ -9359,8 +9315,11 @@ function renderHistory(now) {
     if (temps) summary += ' · ' + temps + ' temp' + (temps === 1 ? '' : 's');
     if (weights) summary += ' · ' + weights + ' wt';
     if (tyDay) summary += ' · ' + tyDay.toLocaleString() + ' mg APAP';
-    const imoDay = items.filter(e => e.medId === 'imodium' && !e.missed).reduce((s, e) => s + (e.pills || 0), 0);
-    if (imoDay) summary += ' · ' + imoDay + ' Imodium';
+    // Same for the pill counters. Each names the medication it counts rather than one drug.
+    for (const m of state.meds.filter(x => x && x.homeCard && medHomeCardKind(x) === 'pills')) {
+      const n = items.filter(e => e.medId === m.id && !e.missed).reduce((s, e) => s + (e.pills || 0), 0);
+      if (n) summary += ' · ' + n + ' ' + m.name;
+    }
     if (missed.length) summary += ' · ' + missed.length + ' MISSED';
     return { key: k, label, summary, items, missedCount: missed.length };
   });

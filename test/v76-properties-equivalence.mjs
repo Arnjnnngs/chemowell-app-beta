@@ -42,10 +42,8 @@ const SRC = [
   grab(/function medChemoBlockedOn\(med, dayTs\) \{[\s\S]*?\n\}/, 'medChemoBlockedOn'),
   grab(/function medChemoBlockingDay\(med, dayTs\) \{[\s\S]*?\n\}/, 'medChemoBlockingDay'),
   grab(/function medChemoBlockSpanDays\(med\) \{[\s\S]*?\n\}/, 'medChemoBlockSpanDays'),
-  grab(/function protonixMorningLogTs\([\s\S]*?\n\}/, 'protonixMorningLogTs'),
-  grab(/function protonixEveningLogTs\([\s\S]*?\n\}/, 'protonixEveningLogTs'),
-  grab(/function morningWindowsFor\([\s\S]*?\n\}/, 'morningWindowsFor'),
-  grab(/function eveningWindowsFor\([\s\S]*?\n\}/, 'eveningWindowsFor')
+  grab(/function linkedAnchorTs\([\s\S]*?\n\}/, 'linkedAnchorTs'),
+  grab(/function linkedWindowsFor\([\s\S]*?\n\}/, 'linkedWindowsFor')
 ].join('\n');
 
 // Two treatment dates three weeks apart, so offsets repeat and a block can span a boundary.
@@ -75,7 +73,7 @@ function world(dates) {
   return new Function(prelude + '\n' + body +
     '\nreturn { dayStart, chemoOffsetFor,' +
     ' medWindowsFor, medChemoBlockedOn, medChemoBlockingDay, medChemoBlockSpanDays,' +
-    ' morningWindowsFor, eveningWindowsFor, state };')();
+    ' linkedWindowsFor, state };')();
 }
 const W = world();
 const NO_DATES = world([]);   // a device with no treatment date on record: every new user, and anyone who used Clear
@@ -184,10 +182,13 @@ console.log('\n4C. THE PROTONIX-LINKED BRANCHES BELONG TO status(), NOT TO THE R
   const d0 = W.dayStart(T0);
   W.state.entries.length = 0;
   W.state.entries.push({ id: 'e1', medId: 'protonix', ts: d0 + 19 * 3600000 });
-  const linked = { id: 'some-evening-med', eveningLinkedToProtonix: true,
+  // app-v77 phase 2: the booleans became a `linkedTo` property and the two id-reading helpers became
+  // linkedWindowsFor. The rule under test is unchanged and so is the thing that must stay true:
+  // medWindowsFor does NOT apply it, because two of the three call sites it replaced never did.
+  const linked = { id: 'some-evening-med', linkedTo: { medId: 'protonix', half: 'evening', gapH: 2 },
     windows: [{ start: 22, end: 24, name: 'Night' }] };
   const viaResolver = W.medWindowsFor(linked, d0);
-  const viaHelper = W.eveningWindowsFor(linked, d0);
+  const viaHelper = W.linkedWindowsFor(linked, d0);
   t('the linked helper really does move the window, so this check has teeth',
     JSON.stringify(viaHelper) !== JSON.stringify(linked.windows),
     'helper: ' + JSON.stringify(viaHelper));

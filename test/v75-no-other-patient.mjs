@@ -138,9 +138,16 @@ console.log('\n4. THE RATCHET: BEHAVIOUR KEYED TO ONE PERSON\'S PRESCRIPTION');
   // the phase 1 audit. Also catches .includes() and a switch case on one of these ids.
   const idRe = () => new RegExp(
     "(?:\\w+\\.(?:med)?[Ii]d\\s*===?\\s*|\\.includes\\(\\s*|case\\s+)['\"](" + LEGACY_IDS.join('|') + ")['\"]", 'g');
-  let rest = html, inside = 0;
+  // COUNT CODE, NOT PROSE -- the same correction the phase 2 patch's delete-guard needed. Phase 2's
+  // migration table documents each rule by quoting the branch it replaced ("Was: `med.id ===
+  // 'dexamethasone' ? ...`"), and the ratchet counted those quotations as live references. It
+  // reported the debt going UP while five branches were being deleted. A comment describing removed
+  // code is not behaviour; stripping comments here is a fix, not a loophole, and the definitions
+  // themselves are code and still counted.
+  const code = html.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  let rest = code, inside = 0;
   for (const r of RESOLVERS) {
-    const m = html.match(new RegExp('function ' + r + '\\([^)]*\\) \\{[\\s\\S]*?\\n\\}'));
+    const m = code.match(new RegExp('function ' + r + '\\([^)]*\\) \\{[\\s\\S]*?\\n\\}'));
     if (m) { rest = rest.replace(m[0], ''); inside += (m[0].match(idRe()) || []).length; }
   }
   const direct = (rest.match(idRe()) || []).map(x => x);
@@ -158,7 +165,15 @@ console.log('\n4. THE RATCHET: BEHAVIOUR KEYED TO ONE PERSON\'S PRESCRIPTION');
   // 20 -> 16 outside, 0 -> 5 inside. Phase 1 moved four scattered branches into named resolvers and
   // the wider regex then found three more that had always been invisible. Lower these as the phases
   // land; NEVER raise them.
-  const CEILING = { outside: 16, inside: 5, helpers: 6 };
+  // ZERO. app-v77 phase 2 landed: no place in the app asks which medication this is, no resolver
+  // carries a legacy fallback, and every helper that existed to serve one patient's prescription is
+  // deleted. 20 / 0 / 6 at app-v75; 16 / 5 / 6 at app-v76; 0 / 0 / 0 here.
+  //
+  // The rules themselves are not gone -- they are in LEGACY_MED_RULES, a migration table that runs
+  // once per device against a config older than version 2 and is excluded from this count by name.
+  // That table is what phase 3 can delete once nobody is still carrying an unmigrated config.
+  // NEVER raise these.
+  const CEILING = { outside: 0, inside: 0, helpers: 0 };
 
   t('no NEW place in the app knows one patient\'s medication', direct.length <= CEILING.outside,
     direct.length + ' outside the resolvers, ceiling ' + CEILING.outside);
