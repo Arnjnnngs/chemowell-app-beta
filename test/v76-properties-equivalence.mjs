@@ -37,9 +37,6 @@ const SRC = [
   grab(/function dayStart\([\s\S]*?\n\}/, 'dayStart'),
   grab(/function chemoDayList\(\)[\s\S]*?\n\}/, 'chemoDayList'),
   grab(/function chemoOffsetFor\([\s\S]*?\n\}/, 'chemoOffsetFor'),
-  grab(/function dexWindowsForOffset\([^\n]*\n?/, 'dexWindowsForOffset'),
-  grab(/function zofranBlockedOn\([\s\S]*?\n\}/, 'zofranBlockedOn'),
-  grab(/function zofranBlockingDay\([\s\S]*?\n\}/, 'zofranBlockingDay'),
   grab(/function safeMedicationId\([\s\S]*?\n\}/, 'safeMedicationId'),
   grab(/function medWindowsFor\(med, dayTs\) \{[\s\S]*?\n\}/, 'medWindowsFor'),
   grab(/function medChemoBlockedOn\(med, dayTs\) \{[\s\S]*?\n\}/, 'medChemoBlockedOn'),
@@ -76,7 +73,7 @@ function world(dates) {
   // so the simulation controls the dates. chemoOffsetFor is the real one.
   const body = SRC.replace(/function chemoDayList\(\)[\s\S]*?\n\}/, '');
   return new Function(prelude + '\n' + body +
-    '\nreturn { dayStart, chemoOffsetFor, dexWindowsForOffset, zofranBlockedOn, zofranBlockingDay,' +
+    '\nreturn { dayStart, chemoOffsetFor,' +
     ' medWindowsFor, medChemoBlockedOn, medChemoBlockingDay, medChemoBlockSpanDays,' +
     ' morningWindowsFor, eveningWindowsFor, state };')();
 }
@@ -86,51 +83,15 @@ const NO_DATES = world([]);   // a device with no treatment date on record: ever
 console.log('\n1. THE RESOLVERS LOAD AND RUN OUT OF THE SHIPPED FILE');
 t('every function this test needs was found in index.html', true, Object.keys(W).join(', '));
 
-console.log('\n2. WITH NO PROPERTIES SET, THE NEW PATH IS THE OLD PATH  (every hour of a full cycle)');
-{
-  // The two medications that carry hardcoded behaviour today, exactly as stored.
-  const dex = { id: 'dexamethasone', windows: [{ start: 8, end: 12, name: 'Morning' }] };
-  const zof = { id: 'zofran', windows: [] };
-  const plain = { id: 'something-else', windows: [{ start: 9, end: 11, name: 'Morning' }] };
+// SECTION 2 IS GONE, AND ON PURPOSE. It compared the resolver against dexWindowsForOffset and
+// zofranBlockedOn -- the legacy branches -- and app-v77 phase 2 DELETED those functions. The
+// comparison it made now happens between two real releases in v77-legacy-migration-equivalence.mjs,
+// which loads the committed app-v76 file and the current one and requires them to agree about a
+// migrated medication, hour by hour. That is strictly stronger than two functions agreeing inside
+// one file, which is what this section was.
 
-  let winMismatch = 0, blockMismatch = 0, dayMismatch = 0, checks = 0;
-  // A full cycle plus a week either side, every hour.
-  for (let ts = T0 - 7 * DAY; ts <= T0 + 28 * DAY; ts += 3600000) {
-    const d0 = W.dayStart(ts);
-    checks++;
-    // windows: old path vs resolver
-    const oldDex = W.dexWindowsForOffset(W.chemoOffsetFor(d0));
-    const newDex = W.medWindowsFor(dex, d0);
-    if (JSON.stringify(oldDex) !== JSON.stringify(newDex)) winMismatch++;
-    const newPlain = W.medWindowsFor(plain, d0);
-    if (JSON.stringify(plain.windows) !== JSON.stringify(newPlain)) winMismatch++;
-    // block: old path vs resolver
-    if (W.zofranBlockedOn(ts) !== W.medChemoBlockedOn(zof, ts)) blockMismatch++;
-    if (W.medChemoBlockedOn(plain, ts) !== false) blockMismatch++;
-    if (W.zofranBlockingDay(ts) !== W.medChemoBlockingDay(zof, ts)) dayMismatch++;
-  }
-  t('windows agree on every hour of the cycle', winMismatch === 0, winMismatch + ' of ' + checks + ' hours differ');
-  t('the treatment-date block agrees on every hour', blockMismatch === 0, blockMismatch + ' differ');
-  t('and so does WHICH day is blocking', dayMismatch === 0, dayMismatch + ' differ');
-  t('the block still runs three days, as it did', W.medChemoBlockSpanDays({ id: 'zofran' }) === 3,
-    String(W.medChemoBlockSpanDays({ id: 'zofran' })));
-  t('this actually exercised a real span', checks > 800, checks + ' hours simulated');
-}
-
-console.log('\n3. FALSIFIED: BREAK THE RESOLVER AND THE SIMULATION MUST NOTICE');
-{
-  // A simulation that agrees with itself proves nothing. Feed the resolver a medication whose
-  // property says something DIFFERENT from the legacy branch and require a disagreement.
-  const zofButShorter = { id: 'zofran', chemoBlock: { fromDayOffset: 0, toDayOffset: 0 } };
-  let differed = 0;
-  for (let ts = T0; ts <= T0 + 5 * DAY; ts += 3600000) {
-    if (W.zofranBlockedOn(ts) !== W.medChemoBlockedOn(zofButShorter, ts)) differed++;
-  }
-  t('a property that disagrees with the legacy branch IS detected', differed > 0,
-    differed + ' hours differ, as they must');
-  t('and the span follows the property, not the hardcoded 3',
-    W.medChemoBlockSpanDays(zofButShorter) === 1, String(W.medChemoBlockSpanDays(zofButShorter)));
-}
+// SECTION 3 MOVED with section 2, for the same reason: its falsification compared against
+// zofranBlockedOn. v77's suite carries a falsification of the same shape against the real app-v76.
 
 console.log('\n4. THE PROPERTIES DO WHAT THEY SAY  (the behaviour phase 2 will migrate onto)');
 {
@@ -155,8 +116,8 @@ console.log('\n4. THE PROPERTIES DO WHAT THEY SAY  (the behaviour phase 2 will m
   // NOT med.windows. "These windows depend on the treatment date" must not quietly become an
   // everyday schedule on a day the medication does not name -- that would hand a steroid an
   // every-single-day window, which is the opposite of the rule.
-  t('on an unrelated day it gets NONE, never its plain windows',
-    farAway.length === 0, JSON.stringify(farAway));
+  t('on an unrelated day it falls through to its plain windows (phase 2 semantic)',
+    farAway.length === 1 && farAway[0].name === 'Never used', JSON.stringify(farAway));
   t('and the windows come back sorted by start time',
     onDay[0].start < onDay[1].start, JSON.stringify(onDay.map(w => w.start)));
 
@@ -179,8 +140,28 @@ console.log('\n4B. THE CHECKS THE AUDIT FOUND COULD NOT FAIL');
   const noDates = NO_DATES.medWindowsFor({ id: 'x',
     chemoRelativeWindows: [{ dayOffset: 0, start: 8, end: 12, name: 'M' }],
     windows: [{ start: 6, end: 7, name: 'Plain' }] }, T0);
-  t('with NO treatment date on record it returns NONE, never its plain windows',
-    Array.isArray(noDates) && noDates.length === 0, JSON.stringify(noDates));
+  // And the override still wins on a day it DOES name -- without this, "falls through" would pass
+  // just as well on a property the app ignores entirely.
+  const onNamedDay = W.medWindowsFor({ id: 'x',
+    chemoRelativeWindows: [{ dayOffset: 0, start: 8, end: 12, name: 'M' }],
+    windows: [{ start: 6, end: 7, name: 'Plain' }] }, T0);
+  t('but on a day it DOES name, the override wins',
+    onNamedDay.length === 1 && onNamedDay[0].name === 'M', JSON.stringify(onNamedDay));
+  // THIS ASSERTION IS THE OPPOSITE OF WHAT IT SAID IN PHASE 1, AND PHASE 2 IS WHY.
+  // Phase 1 made chemoRelativeWindows REPLACE the medication's windows, so a day the medication did
+  // not name meant no window at all. The phase 1 audit endorsed that: "these windows depend on the
+  // treatment date" must not silently become an everyday schedule. Sound about a hypothetical --
+  // and the real regimen contradicts it. The one medication in this app with treatment-relative
+  // windows had BOTH windows every single day, including on a device with no treatment date, and a
+  // narrower one only the day AFTER treatment. Encoding phase 1's semantic into the migration was
+  // wrong on 697 of 841 simulated hours, which the two-release comparison caught.
+  // So the property is an OVERRIDE for the offsets it names, and every other day falls through to
+  // med.windows. Whether a medication applies near treatment at all is what treatmentMode and
+  // treatmentOnly already decide, generically -- this property shapes the windows, that one gates
+  // them, and that is the cleaner split.
+  t('with NO treatment date on record it falls through to its plain windows',
+    Array.isArray(noDates) && noDates.length === 1 && noDates[0].name === 'Plain',
+    JSON.stringify(noDates));
 
   // (b) UNSORTED INPUT. The old fixture was already in order, so deleting the sort changed nothing
   // and the check passed against a mutant.

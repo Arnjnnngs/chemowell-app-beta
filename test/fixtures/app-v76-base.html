@@ -1144,66 +1144,6 @@ function normHomeCard(raw) {
   const kind = ['mg', 'pills', 'ml'].includes(raw.kind) ? raw.kind : null;
   return kind ? { kind } : undefined;
 }
-// ---- app-v77 PHASE 2: THE LAST PLACE THESE THIRTEEN NAMES APPEAR --------------------------------
-// A MIGRATION TABLE, NOT LOGIC. Every behaviour below used to be an `if (med.id === '...')` branch
-// somewhere in this file, applying one specific patient's regimen to anyone whose medication happened
-// to carry that id. They are now properties the medication owns, and this table exists only to move
-// the rules onto medications that already had the ids before the properties existed -- a restored
-// backup, a sync from an older build. It runs ONCE per device.
-//
-// IT IS GATED ON THE STORED CONFIG VERSION, AND THAT IS THE POINT. Phase 3 deletes
-// RESERVED_LEGACY_MED_IDS so a customer can name their medication Zofran and get the id `zofran`.
-// If this keyed off the id alone, that customer would inherit another patient's three-day post-chemo
-// block -- the exact defect this plan exists to remove, reintroduced by its own migration.
-const MED_CONFIG_VERSION = 2;
-const LEGACY_MED_RULES = {
-  // 8am-12pm and 2pm-6pm on the day before and the day of treatment; mornings only the day after.
-  // Was: `med.id === 'dexamethasone' ? dexWindowsForOffset(chemoOffsetFor(d0)) : med.windows`.
-  // READ THE OLD LINE BEFORE BELIEVING THE OBVIOUS MIGRATION:
-  //   dexWindowsForOffset(offset) => offset === 1 ? [8-12] : [8-12, 14-18]
-  // That is EVERY DAY gets both windows -- including days nowhere near a treatment date, and
-  // including a device with no treatment date at all -- except the day AFTER treatment, which gets
-  // mornings only. Whether the medication applies on a given day is a separate question that
-  // treatmentMode/treatmentOnly already answers generically.
-  // The first version of this table wrote windows for offsets -1, 0 and +1 and nothing else, which
-  // read like a sensible steroid taper and was wrong on 697 of 841 simulated hours. The two-release
-  // comparison caught it; nothing else would have.
-  'dexamethasone': {
-    windows: [{ start: 8, end: 12, name: 'Morning' }, { start: 14, end: 18, name: 'Afternoon' }],
-    chemoRelativeWindows: [{ dayOffset: 1, start: 8, end: 12, name: 'Morning' }]
-  },
-  // Not loggable on the treatment day or the two days after. Was: zofranBlockedOn/zofranBlockingDay.
-  'zofran': { chemoBlock: { fromDayOffset: 0, toDayOffset: 2 } },
-  // Was: the `entry.medId === 'iron' || entry.medId === 'protonix'` branch in afterLog, with its
-  // copy inline. Declared on both sides, because either one being logged should raise it.
-  'iron': { interactions: [{ withMedId: 'protonix', minGapH: 2, title: 'Iron + Protonix timing',
-    body: 'Iron and Protonix were logged within 2 hours of each other. A PPI lowers stomach acid, which can markedly reduce iron absorption. Check with the care team about spacing them further apart.' }] },
-  'protonix': { interactions: [{ withMedId: 'iron', minGapH: 2, title: 'Iron + Protonix timing',
-    body: 'Iron and Protonix were logged within 2 hours of each other. A PPI lowers stomach acid, which can markedly reduce iron absorption. Check with the care team about spacing them further apart.' }] },
-  // Which daily-total card this medication gets on Home, and which unit its history summary counts.
-  // Was: tylenolMg(), dailyPills('imodium'), and `e.medId === 'tylenol'` inside the report builder.
-  'tylenol': { homeCard: { kind: 'mg' } },
-  'tylenol-liquid': { homeCard: { kind: 'ml' } },
-  'imodium': { homeCard: { kind: 'pills' } }
-};
-// Applied ONCE, from loadMedicationConfig, and only to a config older than MED_CONFIG_VERSION.
-// A property the medication already carries is never overwritten: if someone has configured their
-// own rule, theirs wins over a table entry that only exists for historical reasons.
-function migrateLegacyMedRules(med) {
-  const rules = med && Object.prototype.hasOwnProperty.call(LEGACY_MED_RULES, med.id)
-    ? LEGACY_MED_RULES[med.id] : null;
-  if (!rules) return med;
-  const next = { ...med };
-  for (const key of Object.keys(rules)) {
-    // `windows` is the one key a legacy medication always already has, and for dexamethasone the old
-    // code IGNORED it entirely -- dexWindowsForOffset never looked at med.windows. So leaving the
-    // stored value in place would change behaviour for the one medication this entry exists for.
-    // Every other key is only written when absent, so a rule the user configured themselves wins.
-    const replace = (key === 'windows');
-    if (replace || next[key] === undefined) next[key] = JSON.parse(JSON.stringify(rules[key]));
-  }
-  return next;
-}
 function normalizeMedication(raw, index) {
   const original = raw || {};
   const id = safeMedicationId(original.id, original.name || ('medication-' + (index + 1)));
@@ -1418,16 +1358,7 @@ function loadMedicationConfig() {
     // an empty meds array is valid data, not corruption, and must still carry its archivedMeds through.
     if (!saved || !Array.isArray(saved.meds)) return fallback;
     const archivedMeds = normalizeArchivedMeds(saved.archivedMeds);
-    // app-v77 phase 2: move the legacy ids' behaviour onto properties, ONCE. `saved.version` is
-    // stamped by persistMedicationConfig; anything written before this release is 1 or absent.
-    // After the next save the ids carry no meaning at all.
-    const needsLegacyMigration = !(Number(saved.version) >= MED_CONFIG_VERSION);
-    const migrated = needsLegacyMigration ? saved.meds.map(migrateLegacyMedRules) : saved.meds;
-    const meds = mergeMissingDefaultMeds(migrated.map(backfillDefaultMedFlags).map(normalizeMedication).map(migrateSenokotV37), archivedMeds);
-    // Persist immediately so the migration is genuinely one-shot. Without this it would re-run on
-    // every load, which is harmless today and becomes the phase 3 defect the moment a customer is
-    // allowed to name their medication Zofran.
-    if (needsLegacyMigration) persistMedicationConfig(meds, archivedMeds);
+    const meds = mergeMissingDefaultMeds(saved.meds.map(backfillDefaultMedFlags).map(normalizeMedication).map(migrateSenokotV37), archivedMeds);
     return { meds, archivedMeds };
   } catch (error) {
     console.warn('Medication configuration could not be loaded:', error);
@@ -1438,7 +1369,7 @@ function loadMedicationConfig() {
 function persistMedicationConfig(meds, archivedMeds) {
   try {
     if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(MED_CONFIG_STORAGE_KEY, JSON.stringify({ version: MED_CONFIG_VERSION, meds, archivedMeds }));
+    localStorage.setItem(MED_CONFIG_STORAGE_KEY, JSON.stringify({ version: 1, meds, archivedMeds }));
   } catch (error) {
     console.warn('Medication configuration could not be saved:', error);
     setToast('Medication changes are active for this session but could not be saved on this device.');
@@ -1799,6 +1730,15 @@ function chemoDayFor(dayTs) {
 }
 // The treatment day actually holding Zofran shut -- the latest one whose 0..+2 block covers this
 // day, which with two treatments close together is not necessarily the nearest.
+function zofranBlockingDay(dayTs) {
+  const d0 = dayStart(dayTs);
+  let best = null;
+  chemoDayList().forEach(d => {
+    const o = Math.round((d0 - d) / 86400000);
+    if (o >= 0 && o <= 2 && (best === null || d > best)) best = d;
+  });
+  return best;
+}
 // v20: "excluded near treatment day" — the inverse of treatmentMode:'only'. Reuses treatmentActiveOn's
 // day-window math unchanged; only the caller's interpretation of "active" flips (only = available
 // exactly then, excluded = unavailable exactly then).
@@ -1840,6 +1780,14 @@ function isPausedOn(med, dayTs) {
 // of this file incorrectly "fixed" this to a 2-day block based on stale documentation elsewhere in
 // this repo; reverted in v67. See BETA_README.md's v67 changelog entry.
 // Blocked on any treatment day and the two days after it -- every treatment, not one.
+function zofranBlockedOn(dayTs) {
+  const d0 = dayStart(dayTs);
+  return chemoDayList().some(d => {
+    const o = Math.round((d0 - d) / 86400000);
+    return o >= 0 && o <= 2;
+  });
+}
+function dexWindowsForOffset(offset) { return offset === 1 ? [{ start: 8, end: 12, name: 'Morning' }] : [{ start: 8, end: 12, name: 'Morning' }, { start: 14, end: 18, name: 'Afternoon' }]; }
 
 // Missed-dose tracking starts the day the app was first opened on this device — a fresh
 // install must never flag "missed" doses for days before the app existed. installedAt is
@@ -2106,7 +2054,7 @@ function status(med) {
   const first = tomorrowWindows[0];
   // AN EMPTY WINDOW LIST MUST NOT THROW. In app-v75 this could not happen: normalizeMedication
   // guarantees a 'win' medication at least one window, so med.windows was never empty and
-  // a scheduled medication always had at least one. medWindowsFor CAN return [] -- a medication with
+  // dexWindowsForOffset never returns []. medWindowsFor CAN return [] -- a medication with
   // chemoRelativeWindows on a device with no treatment date on record, which is the default state
   // of every new user and of anyone who used Clear. `first.start` then threw inside status(), which
   // is called unguarded from the Home medication cards and from Meds, and Meds is the only place
@@ -2136,14 +2084,16 @@ function medWindowsFor(med, dayTs) {
   // normaliser is one import path away from being wrong.
   if (med && Array.isArray(med.chemoRelativeWindows) && med.chemoRelativeWindows.length) {
     const offset = chemoOffsetFor(d0);
-    const override = offset === null ? [] : med.chemoRelativeWindows
+    // No treatment date, or today is not one of the offsets this medication names: it has no window
+    // today. Falling back to med.windows here would silently give it an everyday schedule, which is
+    // the opposite of what "these windows depend on the treatment date" means.
+    if (offset === null) return [];
+    return med.chemoRelativeWindows
       .filter(w => w.dayOffset === offset)
       .map(w => ({ start: w.start, end: w.end, name: w.name }))
       .sort((a, b) => a.start - b.start);
-    // An OVERRIDE for the offsets this medication names. Every other day -- and a device with no
-    // treatment date on record -- falls through to its ordinary windows.
-    if (override.length) return override;
   }
+  if (med && med.id === 'dexamethasone') return dexWindowsForOffset(chemoOffsetFor(d0));
   // THE PROTONIX-LINKED BRANCHES ARE DELIBERATELY NOT HERE, and putting them here was a real
   // behaviour change hiding inside a patch whose entire claim is that it changes nothing.
   // status() had them; the missed-dose walk and the dose-progress ring did NOT -- their line was
@@ -2160,6 +2110,7 @@ function medWindowsFor(med, dayTs) {
 // Is this medication blocked by a treatment-date rule on this day?
 function medChemoBlockedOn(med, dayTs) {
   if (med && med.chemoBlock && typeof med.chemoBlock === 'object') return medChemoBlockingDay(med, dayTs) !== null;
+  if (med && med.id === 'zofran') return zofranBlockedOn(dayTs);
   return false;
 }
 // WHICH treatment day is doing the blocking -- needed to say when it opens again, and it must be the
@@ -2178,6 +2129,7 @@ function medChemoBlockingDay(med, dayTs) {
     });
     return best;
   }
+  if (med && med.id === 'zofran') return zofranBlockingDay(dayTs);
   return null;
 }
 // How long the block runs, in days after the blocking treatment day -- so the caller can say when it
@@ -2185,6 +2137,7 @@ function medChemoBlockingDay(med, dayTs) {
 function medChemoBlockSpanDays(med) {
   if (med && med.chemoBlock && typeof med.chemoBlock === 'object'
       && Number.isFinite(Number(med.chemoBlock.toDayOffset))) return Number(med.chemoBlock.toDayOffset) + 1;
+  if (med && med.id === 'zofran') return 3;
   return 0;
 }
 
@@ -4973,11 +4926,8 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     // Supportive, not red-alert (item 7): day 0 is attention tone, every other covered day is info
     const cTone = chemoOffNow === 0 ? NOTICE_TONES.attention : NOTICE_TONES.info;
     // Legacy regimen chips only appear if those exact meds exist in THIS profile's list
-    // Whichever medications the CAREGIVER has given a treatment-relative rule -- not a list of
-    // drug names written into the app. A medication with no such rule produces no chip.
-    const chemoWindowMeds = state.meds.filter(m => !m.paused && Array.isArray(m.chemoRelativeWindows)
-      && medWindowsFor(m, now).length);
-    const chemoBlockedMeds = state.meds.filter(m => !m.paused && m.chemoBlock && medChemoBlockedOn(m, now));
+    const dexDueToday = dexActiveOn(now) && state.meds.some(m => m.id === 'dexamethasone');
+    const zofranRestrictedToday = zofranBlockedOn(now) && state.meds.some(m => m.id === 'zofran');
     parts.push(h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderLeft: '4px solid ' + cTone.accent, borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 2px 10px rgba(203,122,87,0.10)' } },
       h('div', { style: { display: 'flex', gap: '12px', alignItems: 'flex-start' } },
         h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: cTone.chipBg, color: cTone.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '13px' } }, 'Rx'),
@@ -4986,18 +4936,15 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
           h('div', { style: { ...TYPE.caption, color: '#554A52' } }, cBody)
         )
       ),
-      (chemoWindowMeds.length || chemoBlockedMeds.length) ? h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } },
-        ...chemoWindowMeds.map(m => h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '7px', background: 'rgba(15,157,87,0.10)', border: '1px solid rgba(15,157,87,0.25)', borderRadius: '11px', padding: '6px 11px' } },
-          h('span', { style: { flexShrink: '0', width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(15,157,87,0.15)', color: '#0C7F57', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800' } }, '\u2713'),
-          // The medication's OWN name and its OWN window times. "Dexamethasone Due - 8 AM & 2 PM"
-          // was three hardcoded facts about one patient in a product every user shares.
-          h('span', { style: { fontSize: '13px', fontWeight: '700', color: '#0C7F57', letterSpacing: '0.01em' } },
-            m.name + ' due \u2014 ' + medWindowsFor(m, now).map(w => formatHour(w.start)).join(' & '))
-        )),
-        ...chemoBlockedMeds.map(m => h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '7px', background: 'rgba(192,69,59,0.10)', border: '1px solid rgba(192,69,59,0.25)', borderRadius: '11px', padding: '6px 11px' } },
-          h('span', { style: { flexShrink: '0', width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(192,69,59,0.15)', color: '#A5443C', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800' } }, '!'),
-          h('span', { style: { fontSize: '13px', fontWeight: '700', color: '#A5443C', letterSpacing: '0.01em' } }, m.name + ' \u2014 restricted')
-        ))
+      (dexDueToday || zofranRestrictedToday) ? h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } },
+        dexDueToday ? h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '7px', background: 'rgba(15,157,87,0.10)', border: '1px solid rgba(15,157,87,0.25)', borderRadius: '11px', padding: '8px 13px' } },
+          h('span', { style: { flexShrink: '0', width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(15,157,87,0.15)', color: '#0C7F57', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '12px' } }, '\u2713'),
+          h('span', { style: { fontSize: '13px', fontWeight: '700', color: '#0C7F57', letterSpacing: '0.01em' } }, 'Dexamethasone Due — ' + (chemoOffNow === 1 ? '8 AM only' : '8 AM & 2 PM'))
+        ) : null,
+        zofranRestrictedToday ? h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '7px', background: 'rgba(192,69,59,0.10)', border: '1px solid rgba(192,69,59,0.25)', borderRadius: '11px', padding: '8px 13px' } },
+          h('span', { style: { flexShrink: '0', width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(192,69,59,0.15)', color: '#A5443C', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '12px' } }, '\u2715'),
+          h('span', { style: { fontSize: '13px', fontWeight: '700', color: '#A5443C', letterSpacing: '0.01em' } }, 'Zofran — Restricted')
+        ) : null
       ) : null
     ));
   }
