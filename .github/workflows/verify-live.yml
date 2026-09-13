@@ -1,0 +1,65 @@
+# Confirm what is ACTUALLY live, from a machine that can reach it.
+#
+# WHY THIS EXISTS. The deploy checklist says "verify on the live site", and this sandbox has no
+# outbound network -- ten attempts to read the deployed APP_VERSION after shipping app-v75 all came
+# back unreachable. So "verified live" has been resting on either Aaron opening it on his phone or
+# on nobody checking. GitHub's runners can reach it; use them, the same way the medication table's
+# fetch does.
+#
+# The failure this guards is specific and has happened here: app-v40 shipped repeatedly with index.html
+# changed and sw.js's CACHE constant unchanged, so every installed copy kept serving the old shell --
+# no error, no warning, just an owner seeing no updates all day. release_check.sh blocks that case
+# before a push; this catches the other half, where the push happened and the deploy did not.
+name: Verify what is live
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the versions this commit expects
+        id: expect
+        run: |
+          set -euo pipefail
+          APP=$(grep -o "const APP_VERSION = '[^']*'" index.html | head -1 | sed "s/.*'\(.*\)'/\1/")
+          CACHE=$(grep -o "const CACHE = '[^']*'" sw.js | head -1 | sed "s/.*'\(.*\)'/\1/")
+          echo "app=$APP"   >> "$GITHUB_OUTPUT"
+          echo "cache=$CACHE" >> "$GITHUB_OUTPUT"
+          echo "This commit expects APP_VERSION=$APP and CACHE=$CACHE"
+
+      - name: Wait for Pages, then read the live files
+        run: |
+          set -uo pipefail
+          BASE="https://arnjnnngs.github.io/chemowell-app-beta"
+          WANT_APP='${{ steps.expect.outputs.app }}'
+          WANT_CACHE='${{ steps.expect.outputs.cache }}'
+          # Pages lags the commit. Checking too early reads the old build and looks like a failure,
+          # which is exactly how a real failure gets dismissed as "just the lag". Poll instead.
+          for i in $(seq 1 20); do
+            LIVE_APP=$(curl -fsSL --max-time 25 "$BASE/index.html?cb=$RANDOM$i" 2>/dev/null | grep -o "const APP_VERSION = '[^']*'" | head -1 | sed "s/.*'\(.*\)'/\1/" || true)
+            LIVE_CACHE=$(curl -fsSL --max-time 25 "$BASE/sw.js?cb=$RANDOM$i" 2>/dev/null | grep -o "const CACHE = '[^']*'" | head -1 | sed "s/.*'\(.*\)'/\1/" || true)
+            echo "attempt $i: live APP_VERSION=${LIVE_APP:-unreachable} CACHE=${LIVE_CACHE:-unreachable}"
+            if [ "$LIVE_APP" = "$WANT_APP" ] && [ "$LIVE_CACHE" = "$WANT_CACHE" ]; then
+              echo "LIVE AND CORRECT: $LIVE_APP / $LIVE_CACHE"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo ""
+          echo "::error::After 10 minutes the live site does not match this commit."
+          echo "Expected APP_VERSION=$WANT_APP CACHE=$WANT_CACHE"
+          echo "Got      APP_VERSION=${LIVE_APP:-unreachable} CACHE=${LIVE_CACHE:-unreachable}"
+          echo ""
+          echo "If APP_VERSION matches but CACHE does not, every ALREADY-INSTALLED copy of the app"
+          echo "will keep serving the old shell indefinitely -- the app-v40 failure, which cost a"
+          echo "full day of the owner seeing no updates at all despite several successful pushes."
+          exit 1

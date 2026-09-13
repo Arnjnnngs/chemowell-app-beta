@@ -624,6 +624,33 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
   echo "     $PM_REPORT"
 fi
 
+# ---- ONE PATIENT MUST NOT BE IN A PRODUCT EVERYONE USES -----------------------------------------
+# Added 2026-09-13. Aaron found the medication disclaimer -- the one place this app gives safety
+# guidance about medication -- reading "Follow her care team", where "her" is one specific person
+# whose own app is a sibling of this one. He had given the same directive on 2026-08-19.
+#
+# There WAS a check for this and it passed green all day: it looked for her NAME. The leak is never
+# a name. test/v75-no-other-patient.mjs checks the four shapes it actually takes -- the name, a
+# gendered pronoun in any user-facing string, a dose or ceiling from one care plan, and behaviour
+# keyed to a medication id (a ratchet). This runs it HERE, because a suite that runs when somebody
+# remembers is the same as no suite. It BLOCKS the release, unlike the session hook, which only
+# reports: by the time a release is being cut there is no excuse left.
+if [ -f "test/v75-no-other-patient.mjs" ]; then
+  if node test/v75-no-other-patient.mjs >/tmp/rc-no-other-patient.log 2>&1; then
+    echo "ℹ️  No-other-patient check: clean."
+  else
+    echo "❌ RELEASE CHECK FAILED: one specific patient has leaked into this product."
+    sed -n '/FAIL/p' /tmp/rc-no-other-patient.log | head -12 | sed 's/^/   /'
+    echo "   Full output: /tmp/rc-no-other-patient.log -- Rule 0 in CLAUDE.md explains each shape."
+    FAIL=1
+  fi
+else
+  echo "❌ RELEASE CHECK FAILED: test/v75-no-other-patient.mjs is missing."
+  echo "   It is the only mechanical guard against one patient's app leaking into this product."
+  echo "   Deleting it is not a way to pass this gate."
+  FAIL=1
+fi
+
 if [ "$FAIL" -eq 1 ]; then
   exit 1
 fi
