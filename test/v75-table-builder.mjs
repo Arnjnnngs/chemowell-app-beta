@@ -11,7 +11,7 @@
 // invented to trip it proves nothing about the sentences it will really meet.
 //
 // Run:  node test/v75-table-builder.mjs
-import { buildTable, guardFailure, firstSentence, tidy, GUARDS, MAX_LEN } from '../tools/build-med-table.mjs';
+import { buildTable, guardFailure, firstSentence, tidy, whySection, GUARDS, MAX_LEN } from '../tools/build-med-table.mjs';
 
 let pass = 0, fail = 0;
 const t = (name, cond, detail) => {
@@ -47,7 +47,8 @@ console.log('\n2. EVERY GUARD FIRES ON PROSE OF THE KIND MEDLINEPLUS ACTUALLY WR
     ['a schedule or a dose unit',                 'Used to prevent nausea, taken daily.'],
     ['a dosage form or route',                    'Used to numb an area of skin before a needle is inserted.'],
     ['an instruction to the reader',              'Used to treat heartburn; do not take it with other acid reducers.'],
-    ['longer than ' + MAX_LEN + ' characters',    'Used to treat ' + 'a very long list of conditions '.repeat(8)]
+    ['a run-on from a bulleted page',             'Used to treat allergy symptoms: sneezing runny nose itching of the throat Diphenhydramine is also used for sleeplessness.'],
+    ['longer than ' + MAX_LEN + ' characters',    'Used to treat ' + 'a very long list of conditions '.repeat(30)]
   ];
   for (const [why, sentence] of cases) {
     const got = guardFailure(sentence);
@@ -145,6 +146,57 @@ console.log('\n7. THE PIECES THAT SHAPE THE SENTENCE');
   t('and the result always starts with a capital',
     /^[A-Z]/.test(tidy('ondansetron is used to prevent nausea.', 'Zofran', 'Ondansetron')),
     tidy('ondansetron is used to prevent nausea.', 'Zofran', 'Ondansetron'));
+}
+
+console.log('\n9. A BULLETED ANSWER BECOMES PROSE, NOT A RUN-ON  (app-v75)');
+{
+  // Real shape of a MedlinePlus page whose answer is a list. Before app-v75 the tags were stripped
+  // first, so the items ran together with nothing between them and the "first sentence" carried on
+  // past the end of the list into the paragraph after it. Two drugs were dropped for being too long
+  // when what was actually wrong was that they had lost their punctuation.
+  const html = '<h2>Why is this medication prescribed?</h2>' +
+    '<p>Valacyclovir is used to treat certain viral infections including:</p>' +
+    '<ul><li>herpes labialis (cold sores)</li>' +
+    '<li>varicella infections including shingles</li>' +
+    '<li>genital herpes</li></ul>' +
+    '<p>It is in a class of medications called antivirals.</p>' +
+    '<h2>How should this medicine be used?</h2><p>Comes as a tablet.</p>';
+  const why = whySection(html);
+  t('the list items are separated, not glued together', /cold sores\); varicella/.test(why), why);
+  t('the list is closed with a full stop, so the sentence ends where the list ends',
+    /genital herpes\.\s*It is in a class/.test(why), why);
+  t('the section after the heading is not included', !/Comes as a tablet/.test(why), why);
+  const one = tidy(firstSentence(why), 'Valacyclovir', 'Valacyclovir');
+  t('so the first sentence is just the list, and it passes every guard',
+    guardFailure(one) === null, one + '  [' + one.length + ' chars]  guard: ' + guardFailure(one));
+  t('and it is a sentence a person can read', /^Used to treat certain viral infections including: herpes labialis/.test(one), one);
+
+  // FALSIFICATION. Feed the same content with the separators already missing -- the exact string the
+  // old extractor produced -- and the run-on guard must reject it. A backstop that cannot fire is
+  // the thing this project has been burned by more than any other.
+  const glued = 'Used to treat certain viral infections including: herpes labialis (cold sores) varicella infections including shingles genital herpes It is in a class of antivirals.';
+  t('FALSIFIED: with the separators removed, the run-on guard rejects it',
+    guardFailure(glued) === 'a run-on from a bulleted page', String(guardFailure(glued)));
+}
+
+console.log('\n10. LENGTH IS A SANITY CEILING NOW, NOT A CARD WIDTH  (app-v75)');
+{
+  // The card clamps to two lines and opens on tap, so a long true sentence costs nothing on screen.
+  // Deleting the data to make the card tidy is what the old 150-character rule did: it threw away 14
+  // medications whose only fault was that MedlinePlus answered them thoroughly.
+  const ibuprofen = 'Prescription ibuprofen is used to relieve pain, tenderness, swelling, and stiffness caused by osteoarthritis (arthritis caused by a breakdown of the lining of the joints) and rheumatoid arthritis (arthritis caused by swelling of the lining of the joints).';
+  t('a real 255-character MedlinePlus answer is kept', guardFailure(ibuprofen) === null,
+    String(guardFailure(ibuprofen)) + '  [' + ibuprofen.length + ' chars]');
+  t('it would have been rejected under the old 150 rule', ibuprofen.length > 150, ibuprofen.length + ' chars');
+
+  // FALSIFICATION. The ceiling still has to catch a runaway extraction -- a page whose markup changed
+  // and whose whole body came back as one "sentence". Without this the guard is decoration.
+  const runaway = 'Used to treat ' + 'conditions of many different kinds affecting many parts of the body '.repeat(12);
+  t('FALSIFIED: a runaway extraction is still caught',
+    guardFailure(runaway) === 'longer than ' + MAX_LEN + ' characters',
+    String(guardFailure(runaway)) + '  [' + runaway.length + ' chars]');
+  t('and the ceiling sits above every real answer seen so far, below a whole page',
+    MAX_LEN > 600 && MAX_LEN < 2000, 'MAX_LEN=' + MAX_LEN);
 }
 
 console.log('\n8. AN EMPTY OR BROKEN INPUT PRODUCES AN EMPTY TABLE, NOT A CRASH');

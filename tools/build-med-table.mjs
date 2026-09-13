@@ -24,6 +24,12 @@
 // the rules by cutting words off it is how a dose ends up on a screen with its number removed and its
 // meaning intact. The app keeps its own hand-written line for that drug instead.
 //
+// TRIMMING AND CLAMPING ARE NOT THE SAME THING, and app-v75 turns on the difference. Trimming edits
+// the DATA: it cuts words off a sentence and then presents what is left as the whole sentence, which
+// is how "not for fever" becomes "for fever". Clamping is a DISPLAY choice: the whole sentence is in
+// the app, the card shows the first two lines of it with an ellipsis that says plainly there is more,
+// and a tap shows all of it. Nothing here trims. The card clamps.
+//
 // Usage:
 //   node tools/build-med-table.mjs --in pages.json --out med-source-table.json [--report report.md]
 //
@@ -33,7 +39,16 @@
 import fs from 'node:fs';
 
 // ---- THE GUARDS. Every one was paid for by an audit block on this project. ----------------------
-export const MAX_LEN = 150;
+// A SANITY CEILING, NOT A CARD WIDTH. This was 150 and it was the wrong rule in the wrong place.
+// At 150 the table kept 20 of 46 medications; 14 of the 26 rejections were length alone, and the
+// sentences being thrown away were good ones -- ibuprofen's real answer is 255 characters and says
+// exactly what a caregiver wants to know. Dropping to 120 to make cards tidier would have kept 18.
+//
+// The mistake was letting a DISPLAY problem (a card is narrow) delete DATA. The card now shows two
+// clamped lines and the whole sentence opens on tap, so length costs nothing on screen. What stays
+// here is a ceiling high enough that a runaway extraction -- a whole page slurped into one "sentence"
+// because a page's markup changed -- is still caught and reported rather than baked in.
+export const MAX_LEN = 700;
 export const GUARDS = [
   // NO NUMBERS AT ALL, in any script. \p{Nd} rather than a hand-kept list of ranges -- an earlier
   // version listed Arabic and Devanagari by hand and missed Thai and fullwidth.
@@ -65,8 +80,82 @@ export function guardFailure(text) {
   const t = String(text || '').trim();
   if (!t) return 'empty';
   if (t.length > MAX_LEN) return 'longer than ' + MAX_LEN + ' characters';
+  // A RUN-ON FROM A BULLETED PAGE. Some MedlinePlus answers are written as a list, and when the list
+  // items lose their separators the result is a sentence-shaped string that is not a sentence:
+  //   "sneezing runny nose red, itchy, watery eyes itching of the nose or throat Diphenhydramine..."
+  // The extractor now punctuates the items, so this should never fire -- which is exactly why it is
+  // here. The extractor's fix depends on markup that MedlinePlus can change at any time, and the
+  // failure is silent: the text still passes every other guard and still reads like English at a
+  // glance. This catches the shape instead: a lower-case word running straight into a capitalised
+  // one with no punctuation between them is a joint where a block boundary was lost.
+  if (/[a-z,)\]]\s+[A-Z][a-z]+\s+(?:is|are|was|were|can|may|also)\b/.test(t)) {
+    return 'a run-on from a bulleted page';
+  }
   for (const g of GUARDS) if (g.re.test(t)) return g.name;
   return null;
+}
+
+// ---- pulling the section out of a page ----------------------------------------------------------
+// MOVED HERE FROM fetch-medlineplus.mjs (app-v75). This is pure string work with no network in it,
+// and it was living in the one file a suite can never import -- the fetcher self-executes on load.
+// So the bug below (list items run together into nonsense) shipped unnoticed through a full run.
+// The rule this file was built on is that everything testable lives on the testable side; the
+// extractor was the one piece that had quietly been left on the wrong side of that line.
+// Everything is taken from THAT section only: the rest of the page is dosing and storage, which the
+// guards would reject anyway and which has no business on a medication card.
+export function whySection(html) {
+  const s = String(html || '');
+  // THE PHRASE APPEARS TWICE, and the first one is the wrong one. Every MedlinePlus drug page opens
+  // with its own table of contents -- a list of links reading "Why is this medication prescribed?
+  // How should this medicine be used? Other uses for this medicine ..." -- and the real section is
+  // further down. Slicing from the FIRST occurrence caught a few words of navigation and stopped at
+  // the next heading name, which is why 46 pages that downloaded perfectly reported "no section
+  // found".
+  // Rather than guess at markup that can change, take EVERY occurrence, cut each one at the next
+  // section heading, and keep the longest. The navigation slice is a handful of characters; the real
+  // one is a paragraph. This stays right if they restructure the page.
+  const starts = [];
+  const re = /Why is this medication prescribed\?/gi;
+  let m;
+  while ((m = re.exec(s)) !== null) starts.push(m.index);
+  if (!starts.length) return '';
+  let best = '';
+  for (const start of starts) {
+    const rest = s.slice(start);
+    const end = rest.search(/How should this medicine be used\?|Other uses for this medicine|What special precautions/i);
+    const block = end > 0 ? rest.slice(0, end) : rest.slice(0, 4000);
+    const text = block
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      // PUNCTUATE THE BLOCKS BEFORE STRIPPING THE TAGS. MedlinePlus writes the answer for several
+      // drugs as a bulleted list, and <li> carries no punctuation of its own -- so stripping tags
+      // first ran the items together into one unreadable run-on. Real output from the first run:
+      //   "allergy and cold symptoms: sneezing runny nose red, itchy, watery eyes itching of the
+      //    nose or throat Diphenhydramine is also used to treat insomnia"
+      // Two separate harms in one line: it reads as nonsense, and because no item ends in a full
+      // stop the "first sentence" ran past the end of the list and swallowed the paragraph after
+      // it. Those sentences then failed the length ceiling and the drug was dropped -- so a
+      // formatting bug was being reported as "MedlinePlus has no short answer for this drug".
+      // Items are joined with '; ' and the list closed with '.', which is how the same content
+      // reads when a person writes it as prose.
+      .replace(/<\/li>\s*<li[^>]*>/gi, '; ')
+      .replace(/<\/li>/gi, '. ')
+      .replace(/<\/(?:p|ul|ol|h[1-6])>/gi, '. ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&rsquo;/g, "'")
+      .replace(/&quot;|&ldquo;|&rdquo;/g, '"').replace(/&[a-z]+;/gi, ' ')
+      .replace(/Why is this medication prescribed\?/i, '')
+      .replace(/\s+/g, ' ')
+      // Tidy the punctuation the step above introduces: a block that already ended in '.', ':' or
+      // ';' must not gain a second one, and an empty block must not leave a bare '.' behind.
+      .replace(/\s+([.;:,])/g, '$1')
+      .replace(/([.;:])[.;]+/g, '$1')
+      .replace(/([:;])\s*\./g, '$1')
+      .replace(/^[.;:\s]+/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (text.length > best.length) best = text;
+  }
+  return best;
 }
 
 // ---- turning a page into one sentence -----------------------------------------------------------

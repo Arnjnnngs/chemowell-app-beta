@@ -16,6 +16,7 @@
 //
 // Usage:  node tools/fetch-medlineplus.mjs --list tools/med-list.json --out pages.json
 import fs from 'node:fs';
+import { whySection } from './build-med-table.mjs';
 
 const argv = process.argv.slice(2);
 const arg = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : null; };
@@ -23,41 +24,6 @@ const UA = 'ChemoWell-table-builder (https://github.com/Arnjnnngs/chemowell-app-
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // "Why is this medication prescribed?" is the section written for patients rather than clinicians.
-// Everything is taken from THAT section only: the rest of the page is dosing and storage, which the
-// guards would reject anyway and which has no business on a medication card.
-function whySection(html) {
-  const s = String(html || '');
-  // THE PHRASE APPEARS TWICE, and the first one is the wrong one. Every MedlinePlus drug page opens
-  // with its own table of contents -- a list of links reading "Why is this medication prescribed?
-  // How should this medicine be used? Other uses for this medicine ..." -- and the real section is
-  // further down. Slicing from the FIRST occurrence caught a few words of navigation and stopped at
-  // the next heading name, which is why 46 pages that downloaded perfectly reported "no section
-  // found".
-  // Rather than guess at markup that can change, take EVERY occurrence, cut each one at the next
-  // section heading, and keep the longest. The navigation slice is a handful of characters; the real
-  // one is a paragraph. This stays right if they restructure the page.
-  const starts = [];
-  const re = /Why is this medication prescribed\?/gi;
-  let m;
-  while ((m = re.exec(s)) !== null) starts.push(m.index);
-  if (!starts.length) return '';
-  let best = '';
-  for (const start of starts) {
-    const rest = s.slice(start);
-    const end = rest.search(/How should this medicine be used\?|Other uses for this medicine|What special precautions/i);
-    const block = end > 0 ? rest.slice(0, end) : rest.slice(0, 4000);
-    const text = block
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&rsquo;/g, "'")
-      .replace(/&quot;|&ldquo;|&rdquo;/g, '"').replace(/&[a-z]+;/gi, ' ')
-      .replace(/Why is this medication prescribed\?/i, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (text.length > best.length) best = text;
-  }
-  return best;
-}
 
 
 // ---- FINDING THE PAGES -------------------------------------------------------------------------
