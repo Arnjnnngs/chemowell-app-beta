@@ -70,8 +70,18 @@ jobs:
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           set -euo pipefail
+          # THE GENERATED FILES ARE MOVED ASIDE FIRST. `git checkout -B` refuses to switch branches
+          # over a dirty working tree, and the two paths this job exists to produce are exactly what
+          # is dirty -- so the job did all its work, passed every guard, and then died on its own
+          # last line without publishing anything. Copy out, switch with -f, copy back.
+          mkdir -p /tmp/out
+          cp tools/med-source-table.json /tmp/out/
+          cp -r tools/last-run /tmp/out/
           git fetch origin main
-          git checkout -B chore/refresh-med-table origin/main
+          git checkout -f -B chore/refresh-med-table origin/main
+          mkdir -p tools
+          cp /tmp/out/med-source-table.json tools/
+          rm -rf tools/last-run && cp -r /tmp/out/last-run tools/
           git add tools/med-source-table.json tools/last-run
           if git diff --cached --quiet; then
             echo "the table and the run notes are identical to main -- nothing to push"

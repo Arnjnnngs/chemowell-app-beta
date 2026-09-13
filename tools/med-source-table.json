@@ -7,10 +7,6 @@
     "t": "Used to treat symptoms of depression.",
     "u": "https://www.medlineplus.gov/druginfo/meds/a682388.html"
   },
-  "bisacodyl": {
-    "t": "Used on a short-term basis to treat constipation.",
-    "u": "https://www.medlineplus.gov/druginfo/meds/a601027.html"
-  },
   "buspirone": {
     "t": "Used to treat anxiety.",
     "u": "https://www.medlineplus.gov/druginfo/meds/a688005.html"
@@ -52,7 +48,7 @@
     "u": "https://www.medlineplus.gov/druginfo/meds/a684055.html"
   },
   "famotidine": {
-    "t": "Prescription famotidine is used to treat ulcers (sores on the lining of the stomach or small intestine); gastroesophageal reflux disease (GERD, a condition in which backward flow of acid from the stomach causes heartburn and injury of the esophagus [tube that connects the mouth and stomach]); and conditions where the stomach produces too much acid, such as Zollinger-Ellison syndrome (tumors in the pancreas or small intestine that cause increased production of stomach acid).",
+    "t": "Used to treat ulcers (sores on the lining of the stomach or small intestine); gastroesophageal reflux disease (GERD, a condition in which backward flow of acid from the stomach causes heartburn and injury of the esophagus [tube that connects the mouth and stomach]); and conditions where the stomach produces too much acid, such as Zollinger-Ellison syndrome (tumors in the pancreas or small intestine that cause increased production of stomach acid).",
     "u": "https://www.medlineplus.gov/druginfo/meds/a687011.html"
   },
   "fluconazole": {
@@ -72,7 +68,7 @@
     "u": "https://www.medlineplus.gov/druginfo/meds/a614045.html"
   },
   "ibuprofen": {
-    "t": "Prescription ibuprofen is used to relieve pain, tenderness, swelling, and stiffness caused by osteoarthritis (arthritis caused by a breakdown of the lining of the joints) and rheumatoid arthritis (arthritis caused by swelling of the lining of the joints).",
+    "t": "Used to relieve pain, tenderness, swelling, and stiffness caused by osteoarthritis (arthritis caused by a breakdown of the lining of the joints) and rheumatoid arthritis (arthritis caused by swelling of the lining of the joints).",
     "u": "https://www.medlineplus.gov/druginfo/meds/a682159.html"
   },
   "lactulose": {
@@ -118,10 +114,6 @@
   "promethazine": {
     "t": "Used to relieve the symptoms of allergic reactions such as allergic rhinitis (runny nose and watery eyes caused by allergy to pollen, mold or dust), allergic conjunctivitis (red, watery eyes caused by allergies), allergic skin reactions, and allergic reactions to blood or plasma products.",
     "u": "https://www.medlineplus.gov/druginfo/meds/a682284.html"
-  },
-  "senna": {
-    "t": "Used on a short-term basis to treat constipation.",
-    "u": "https://www.medlineplus.gov/druginfo/meds/a601112.html"
   },
   "sertraline": {
     "t": "Used to treat depression, obsessive-compulsive disorder (bothersome thoughts that won't go away and the need to perform certain actions over and over), panic attacks (sudden, unexpected attacks of extreme fear and worry about these attacks), posttraumatic stress disorder (disturbing psychological symptoms that develop after a frightening experience), and social anxiety disorder (extreme fear of interacting with others or performing in front of others that interferes with normal life).",
