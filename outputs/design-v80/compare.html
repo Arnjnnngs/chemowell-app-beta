@@ -1,0 +1,59 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;background:#F4F1EE;font:400 15px/1.5 'Liberation Sans',Arial,sans-serif;color:#1E1613;padding:34px}
+h1{font-size:27px;margin:0 0 5px;letter-spacing:-.02em}
+.lede{color:#6B5A52;margin:0 0 30px;max-width:1180px;font-size:15.5px}
+.pair{display:flex;gap:26px;align-items:flex-start;margin-bottom:38px;flex-wrap:wrap}
+.col{width:310px}
+.col img{width:100%;border-radius:20px;display:block;box-shadow:0 14px 34px -14px rgba(0,0,0,.4)}
+.tag{font:700 11px/1 'Liberation Sans',Arial;letter-spacing:.13em;text-transform:uppercase;margin:0 0 9px;padding:6px 10px;border-radius:7px;display:inline-block}
+.now{background:#EFE7E2;color:#7A6A62}.new{background:#C2532A;color:#fff}
+.notes{flex:1;min-width:290px;max-width:420px;background:#fff;border:1px solid #E9E0DA;border-radius:16px;padding:20px 22px}
+.notes h3{margin:0 0 12px;font-size:17px}
+.notes li{margin-bottom:11px;font-size:14.2px;color:#3A2C26;line-height:1.5}
+.notes b{color:#A8441F}
+hr{border:0;border-top:1px solid #E3D9D2;margin:0 0 30px}
+h2{font-size:21px;margin:0 0 16px;letter-spacing:-.01em}
+</style></head><body>
+<h1>ChemoWell — where it is, and where it should be</h1>
+<p class="lede">Left is the app as it ships today. Right is the proposed direction. The reference point is the category leader: Medisafe's home screen is a <b>timeline of what is due when</b>, and ChemoWell's is a stack of data-entry forms. That is the structural gap; the colour and the type are downstream of it.</p>
+
+<h2>Home</h2>
+<div class="pair">
+  <div class="col"><div class="tag now">Today</div><img src="b-home.png"></div>
+  <div class="col"><div class="tag new">Proposed</div><img src="redesign-home.png"></div>
+  <div class="notes"><h3>What changed and why</h3><ul>
+    <li><b>It answers the question first.</b> Today the screen opens on three boxes asking for numbers. The proposal opens with the next dose, the time, and one button — and a ring showing 4 of 7 doses done.</li>
+    <li><b>A real timeline.</b> Time on the left rail, taken doses checked and dimmed, the next one lifted. This is the pattern the category leader uses and it is the right one.</li>
+    <li><b>Vitals become readings, not forms.</b> Three compact tiles showing the last value and when. Tap to log.</li>
+    <li><b>Colour finally means something.</b> Today the orange "Log" buttons and a genuine overdose warning are the same colour, so a warning has no colour left to be. Terracotta = action, green = done, red = a limit. Only one thing on the screen is red.</li>
+    <li><b>The header drops from about 320px to 56px.</b> The name, the date and the BETA strip were taking a fifth of the phone before any content.</li>
+    <li><b>The gradient is demoted.</b> It survives inside the hero card, where it is a brand cue, instead of sitting behind every white card and flattening the hierarchy.</li>
+  </ul></div>
+</div>
+<hr>
+
+<h2>Meds</h2>
+<div class="pair">
+  <div class="col"><div class="tag now">Today — no medications added</div><img src="b-meds.png"></div>
+  <div class="col"><div class="tag new">Proposed</div><img src="redesign-meds.png"></div>
+  <div class="col"><div class="tag new">Proposed — empty</div><img src="redesign-meds-empty.png"></div>
+  <div class="notes"><h3>What changed and why</h3><ul>
+    <li><b>A real defect, not a style problem.</b> With no medications added, today's Meds screen is roughly a thousand pixels of blank gradient. No message, no illustration, nothing to tap. It is the first screen a brand-new user reaches.</li>
+    <li><b>Each medication shows its state.</b> A ceiling shows as a bar with how much is left. A cycle medication is labelled as one. A paused one recedes rather than disappearing.</li>
+    <li><b>The MedlinePlus line earns its place</b>, and says plainly whether the sentence came from MedlinePlus or was written by the app.</li>
+  </ul></div>
+</div>
+<hr>
+
+<h2>Reports</h2>
+<div class="pair">
+  <div class="col"><div class="tag now">Today</div><img src="b-reports.png"></div>
+  <div class="col"><div class="tag new">Proposed</div><img src="redesign-reports.png"></div>
+  <div class="notes"><h3>What changed and why</h3><ul>
+    <li><b>Two numbers first</b> — doses taken and doses missed — because those are what a caregiver is asked at an appointment.</li>
+    <li><b>Charts get an axis.</b> A trend line with no days under it is a decoration.</li>
+    <li><b>The temperature chart carries the line that matters</b>, 100.4 °F, with a sentence saying what it is. A number is only useful next to the threshold it is being judged against.</li>
+    <li><b>Caught while drawing it:</b> the first version put the 100.2 °F peak <i>above</i> the 100.4 line. The picture said "call the team" while the caption said the opposite — and the picture is what gets read at 2am.</li>
+  </ul></div>
+</div>
+</body></html>

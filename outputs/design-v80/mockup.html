@@ -1,0 +1,347 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ChemoWell — redesign</title>
+<style>
+:root{
+  /* GROUND. Warm near-white, not a gradient. The gradient is demoted to the hero only, so it
+     becomes an accent instead of the thing every card has to fight for contrast against. */
+  --ground:#FBF7F4; --card:#FFFFFF; --line:#EFE6E0;
+  --ink:#1E1613; --ink2:#6B5A52; --ink3:#9C8A81;
+  /* COLOUR AS MEANING. Terracotta is ACTION only. Today it is also every plain Log button, which
+     is why a real warning has no colour left to be. */
+  --act:#C2532A; --act-d:#9E3F1C; --act-soft:#FDEEE7;
+  --ok:#1F7A5A; --ok-soft:#E6F4EE;
+  --due:#B5760A; --due-soft:#FDF3E0;
+  --stop:#B3261E; --stop-soft:#FCEAE9;
+  --r:18px; --r-lg:24px;
+  --sh:0 1px 2px rgba(30,22,19,.04), 0 8px 24px -12px rgba(30,22,19,.10);
+  --sh-lg:0 2px 4px rgba(30,22,19,.05), 0 20px 40px -20px rgba(30,22,19,.22);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#C9BEB7;font:400 16px/1.45 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;color:var(--ink);
+  display:flex;gap:28px;padding:28px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+.phone{width:390px;height:844px;background:var(--ground);border-radius:38px;overflow:hidden;position:relative;
+  box-shadow:0 30px 70px -20px rgba(0,0,0,.45);display:flex;flex-direction:column}
+.scroll{flex:1;overflow:hidden;position:relative}
+.pad{padding:0 18px 110px}
+
+/* ---- HEADER. Was ~320px of branding, title, date and a BETA strip before any content. Now one
+       56px row: identity left, the two things a caregiver reaches for on the right. ---- */
+.hdr{display:flex;align-items:center;gap:10px;padding:14px 18px 10px;background:var(--ground)}
+.mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(145deg,#E4693B,#C2532A);
+  display:grid;place-items:center;color:#fff;font-size:15px;box-shadow:0 2px 6px rgba(194,83,42,.34)}
+.wordmark{font:700 17px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;letter-spacing:-.02em}
+.hdr .sp{flex:1}
+.icnbtn{width:36px;height:36px;border-radius:11px;border:1px solid var(--line);background:var(--card);
+  display:grid;place-items:center;color:var(--ink2);font-size:15px}
+
+/* ---- THE HERO. Home's whole job in one card: what is due, and one tap to do it. The three vital
+       forms that used to open the screen are now a 3-up row of LAST READINGS below it. ---- */
+.hero{margin:6px 0 16px;border-radius:var(--r-lg);padding:20px;color:#fff;position:relative;overflow:hidden;
+  background:linear-gradient(152deg,#E4693B 0%,#C2532A 48%,#8E3618 100%);box-shadow:var(--sh-lg)}
+.hero::after{content:'';position:absolute;right:-56px;top:-70px;width:210px;height:210px;border-radius:50%;
+  background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.24),rgba(255,255,255,0) 68%)}
+.hero .kicker{padding-right:78px;font:600 12px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;letter-spacing:.10em;text-transform:uppercase;opacity:.8}
+.hero .when{font:700 13px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;margin-top:12px;opacity:.92;display:flex;align-items:center;gap:6px}
+.hero h1{margin:5px 84px 0 0;font:700 30px/1.1 -apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;letter-spacing:-.01em}
+.hero .sub{margin-top:4px;font-size:14.5px;opacity:.88;padding-right:78px}
+.hero .acts{display:flex;gap:9px;margin-top:17px;position:relative}
+.btn{border:0;border-radius:13px;font:600 15.5px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;padding:14px 18px;display:inline-flex;
+  align-items:center;justify-content:center;gap:7px}
+.btn-w{background:#fff;color:var(--act-d);flex:1;box-shadow:0 3px 10px rgba(0,0,0,.16)}
+.btn-g{background:rgba(255,255,255,.17);color:#fff;border:1px solid rgba(255,255,255,.36)}
+/* the ring: today's doses, the number a caregiver actually wants at a glance */
+.ring{position:absolute;right:18px;top:18px;width:66px;height:66px}
+.ring svg{transform:rotate(-90deg)}
+.ring .lbl{position:absolute;inset:0;display:grid;place-items:center;text-align:center;line-height:1}
+.ring .lbl b{font:700 19px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;letter-spacing:-.02em}
+.ring .lbl span{font:600 9.5px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;letter-spacing:.07em;opacity:.82;text-transform:uppercase;display:block;margin-top:3px}
+
+/* ---- VITALS. Three tiles showing the LAST READING, not three input forms. Tap opens a sheet. ---- */
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:18px}
+.tile{min-height:0}
+.tile .a{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px 11px;box-shadow:var(--sh)}
+.tile .t{font:600 11px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--ink3)}
+.tile .v{font:700 24px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;letter-spacing:-.03em;margin-top:8px;font-variant-numeric:tabular-nums}
+.tile .v small{font:600 12px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;color:var(--ink3);margin-left:1px}
+.tile .a{font:500 11.5px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;color:var(--ink3);margin-top:6px}
+.tile.none .v{color:var(--ink3)}
+.tile.none .a{color:var(--act);font-weight:600}
+
+/* ---- SECTIONS ---- */
+.sec{display:flex;align-items:baseline;justify-content:space-between;margin:0 2px 10px}
+.sec h2{margin:0;font:700 19px/1.2 -apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;letter-spacing:-.01em}
+.sec a{font:600 13.5px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;color:var(--act);text-decoration:none}
+
+/* ---- THE TIMELINE. The category leader's home screen is a timeline of what is due when. This
+       app's was a stack of forms. Time on the rail, state in the dot, next one lifted. ---- */
+.rail{position:relative;padding-left:82px}
+.rail::before{content:'';position:absolute;left:64px;top:12px;bottom:16px;width:2px;background:var(--line);border-radius:2px}
+.ev{position:relative;margin-bottom:9px}
+.ev .time{position:absolute;left:-82px;top:16px;width:52px;text-align:right;white-space:nowrap;font:600 12px/1.2 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;
+  color:var(--ink3);font-variant-numeric:tabular-nums}
+.ev .dot{position:absolute;left:-24px;top:17px;width:13px;height:13px;border-radius:50%;
+  background:var(--card);border:2.5px solid var(--line)}
+.ev .row{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px;
+  display:flex;align-items:center;gap:11px;box-shadow:var(--sh)}
+.ev .nm{flex:1;min-width:0}
+.ev .nm b{display:block;font:600 15.5px/1.25 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif}
+.ev .nm span{display:block;font:400 13px/1.3 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;color:var(--ink2);margin-top:2px}
+.ev .pill{border:0;border-radius:11px;font:600 13.5px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;padding:11px 14px;background:var(--act);color:#fff;white-space:nowrap}
+.ev.done .dot{background:var(--ok);border-color:var(--ok)}
+.ev.done .row{background:#FCFAF9;box-shadow:none}
+.ev.done .nm b{color:var(--ink2)}
+.ev.done .chk{width:26px;height:26px;border-radius:50%;background:var(--ok-soft);color:var(--ok);
+  display:grid;place-items:center;font-size:13px;font-weight:700}
+.ev.now .dot{background:var(--act);border-color:var(--act);box-shadow:0 0 0 4px var(--act-soft)}
+.ev.now .row{border-color:#F0C8B4;box-shadow:var(--sh-lg)}
+.ev.later .row{background:transparent;box-shadow:none;border-style:dashed}
+.ev.later .nm b{color:var(--ink2)}
+.ev.later .pill{background:var(--act-soft);color:var(--act-d)}
+/* THE POINT OF COLOUR AS MEANING: a ceiling warning is the only red thing on the screen. */
+.ev.stop .dot{background:var(--stop);border-color:var(--stop)}
+.ev.stop .row{background:var(--stop-soft);border-color:#F3C9C6}
+.ev.stop .pill{background:#fff;color:var(--stop);border:1px solid #F0BDB9}
+.ev.stop .row{flex-wrap:wrap}
+.ev.stop .nm{flex:1 0 100%}
+.ev.stop .pill{flex:1 0 100%;margin-top:11px;padding:13px}
+.warnline{display:flex;gap:7px;align-items:flex-start;margin-top:9px;font:500 12.5px/1.35 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;color:#8E201A}
+
+/* ---- BOTTOM NAV. Filled icon + weight change on active, not a tint chip and a dot. ---- */
+.nav{position:absolute;left:0;right:0;bottom:0;background:rgba(255,255,255,.94);backdrop-filter:blur(18px);
+  border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);padding:9px 6px 24px}
+.nav div{display:grid;place-items:center;gap:5px;color:var(--ink3);font:500 10.5px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif}
+.nav div.on{color:var(--act);font-weight:700}
+.nav .g{width:24px;height:24px;display:grid;place-items:center;font-size:19px}
+
+/* ---- MEDS ---- */
+.med{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:9px;box-shadow:var(--sh)}
+.med .top{display:flex;align-items:center;gap:11px}
+.med .ic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:17px;flex:none}
+.med .nm{flex:1;min-width:0}
+.med .nm b{display:block;font:600 16px/1.25 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif}
+.med .nm span{display:block;font:400 13px/1.3 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;color:var(--ink2);margin-top:2px}
+.tag{font:600 11px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;padding:6px 9px;border-radius:8px;letter-spacing:.02em;white-space:nowrap}
+.med .why{margin-top:11px;padding-top:11px;border-top:1px solid var(--line);font:400 13.5px/1.4 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;color:var(--ink2)}
+.med .why em{font-style:normal;color:var(--ink3);font-size:12px;display:block;margin-top:5px}
+.bar{height:7px;border-radius:4px;background:var(--line);margin-top:10px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:4px}
+.meta{display:flex;justify-content:space-between;font:500 12px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;color:var(--ink3);margin-top:7px;font-variant-numeric:tabular-nums}
+
+/* ---- THE EMPTY STATE THAT DOES NOT EXIST TODAY ---- */
+.empty{text-align:center;padding:40px 22px;background:var(--card);border:1px solid var(--line);
+  border-radius:var(--r-lg);box-shadow:var(--sh);margin-top:8px}
+.empty .art{width:78px;height:78px;border-radius:24px;margin:0 auto 16px;display:grid;place-items:center;
+  font-size:33px;background:linear-gradient(150deg,var(--act-soft),#FCF3EC);border:1px solid #F6DCCF}
+.empty h3{margin:0 0 7px;font:700 20px/1.25 -apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif}
+.empty p{margin:0 0 18px;font-size:14.5px;color:var(--ink2);line-height:1.5}
+.empty .btn{background:var(--act);color:#fff;width:100%;box-shadow:0 6px 16px -6px rgba(194,83,42,.6)}
+
+/* ---- REPORTS ---- */
+.stat{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:15px;box-shadow:var(--sh)}
+.stat .t{font:600 11.5px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--ink3)}
+.stat .v{font:700 31px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;letter-spacing:-.03em;margin-top:9px;font-variant-numeric:tabular-nums}
+.stat .d{font:500 12.5px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;margin-top:7px;color:var(--ok)}
+.stat .d.flat{color:var(--ink3)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:16px}
+.chart{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:15px;box-shadow:var(--sh);margin-bottom:9px}
+.chart h4{margin:0;font:600 15px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif}
+.axis{display:flex;justify-content:space-between;margin-top:7px;font:500 11px/1 inherit;color:var(--ink3)}
+.chart .cap{font:400 12.5px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;color:var(--ink3);margin-top:4px}
+.cap-title{font:700 12px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#7A6A62;
+  margin:0 0 9px;text-align:center}
+.wrap{display:flex;flex-direction:column;align-items:center}
+</style></head><body>
+
+<!-- ============================ HOME ============================ -->
+<div class="wrap"><p class="cap-title">Home</p><div class="phone">
+  <div class="hdr">
+    <div class="mark">✚</div><div class="wordmark">ChemoWell</div>
+    <div class="sp"></div>
+    <div class="icnbtn">🔔</div><div class="icnbtn">☰</div>
+  </div>
+  <div class="scroll"><div class="pad">
+
+    <div class="hero">
+      <div class="ring">
+        <svg width="66" height="66"><circle cx="33" cy="33" r="27" stroke="rgba(255,255,255,.25)" stroke-width="6" fill="none"/>
+        <circle cx="33" cy="33" r="27" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round"
+          stroke-dasharray="169.6" stroke-dashoffset="72"/></svg>
+        <div class="lbl"><div><b>4/7</b><span>doses</span></div></div>
+      </div>
+      <div class="kicker">Up next</div>
+      <h1>Ondansetron</h1>
+      <div class="sub">8 mg · with food · due in 35 min</div>
+      <div class="when">◷ 2:00 PM</div>
+      <div class="acts">
+        <button class="btn btn-w">Log this dose</button>
+        <button class="btn btn-g">Snooze</button>
+      </div>
+    </div>
+
+    <div class="tiles">
+      <div class="tile"><div class="t">Temp</div><div class="v">99.1<small>°F</small></div><div class="a">9:00 AM</div></div>
+      <div class="tile"><div class="t">Weight</div><div class="v">148<small>lb</small></div><div class="a">Yesterday</div></div>
+      <div class="tile none"><div class="t">BP</div><div class="v">—</div><div class="a">Add</div></div>
+    </div>
+
+    <div class="sec"><h2>Today</h2><a>Full log →</a></div>
+    <div class="rail">
+      <div class="ev done"><div class="time">8:10 AM</div><div class="dot"></div>
+        <div class="row"><div class="nm"><b>Dexamethasone</b><span>4 mg · taken</span></div><div class="chk">✓</div></div></div>
+      <div class="ev done"><div class="time">8:15 AM</div><div class="dot"></div>
+        <div class="row"><div class="nm"><b>Acetaminophen</b><span>500 mg · taken</span></div><div class="chk">✓</div></div></div>
+      <div class="ev now"><div class="time">2:00 PM</div><div class="dot"></div>
+        <div class="row"><div class="nm"><b>Ondansetron</b><span>8 mg · due in 35 min</span></div>
+          <button class="pill">Log</button></div></div>
+      <div class="ev stop"><div class="time">3:00 PM</div><div class="dot"></div>
+        <div class="row"><div class="nm"><b>Acetaminophen</b><span>500 mg</span>
+            <div class="warnline"><span>▲</span><span>2,500 of 3,000 mg today. One more dose reaches the limit.</span></div></div>
+          <button class="pill">Log anyway</button></div></div>
+      <div class="ev later"><div class="time">6:00 PM</div><div class="dot"></div>
+        <div class="row"><div class="nm"><b>Dexamethasone</b><span>4 mg</span></div><button class="pill">Log</button></div></div>
+      <div class="ev later"><div class="time">10:00 PM</div><div class="dot"></div>
+        <div class="row"><div class="nm"><b>Evening meds</b><span>3 medications</span></div><button class="pill">Take all</button></div></div>
+    </div>
+
+  </div></div>
+  <div class="nav">
+    <div class="on"><div class="g">⌂</div>Home</div><div><div class="g">◎</div>Meds</div>
+    <div><div class="g">◔</div>Reports</div><div><div class="g">⊞</div>In-Patient</div><div><div class="g">◇</div>Symptoms</div>
+  </div>
+</div></div>
+
+<!-- ============================ MEDS ============================ -->
+<div class="wrap"><p class="cap-title">Meds</p><div class="phone">
+  <div class="hdr">
+    <div class="mark">✚</div><div class="wordmark">ChemoWell</div><div class="sp"></div>
+    <div class="icnbtn">🔍</div><div class="icnbtn">＋</div>
+  </div>
+  <div class="scroll"><div class="pad">
+    <div class="sec" style="margin-top:4px"><h2>Medications</h2><a>Archived →</a></div>
+
+    <div class="med">
+      <div class="top">
+        <div class="ic" style="background:var(--act-soft);color:var(--act-d)">◉</div>
+        <div class="nm"><b>Acetaminophen</b><span>500 mg · as needed, 4 h apart</span></div>
+        <div class="tag" style="background:var(--due-soft);color:var(--due)">2,500 / 3,000 mg</div>
+      </div>
+      <div class="bar"><i style="width:83%;background:linear-gradient(90deg,#E0A23C,#C57F14)"></i></div>
+      <div class="meta"><span>4 doses today</span><span>500 mg left</span></div>
+      <div class="why">Relieves mild to moderate pain and reduces fever.
+        <em>Source: MedlinePlus · tap to read the full entry</em></div>
+    </div>
+
+    <div class="med">
+      <div class="top">
+        <div class="ic" style="background:var(--ok-soft);color:var(--ok)">◉</div>
+        <div class="nm"><b>Ondansetron</b><span>8 mg · 8:00 AM, 2:00 PM, 8:00 PM</span></div>
+        <div class="tag" style="background:var(--ok-soft);color:var(--ok)">On track</div>
+      </div>
+      <div class="why">Prevents nausea and vomiting caused by cancer treatment.
+        <em>Source: MedlinePlus · tap to read the full entry</em></div>
+    </div>
+
+    <div class="med">
+      <div class="top">
+        <div class="ic" style="background:#EFF1FB;color:#4C57A8">◉</div>
+        <div class="nm"><b>Dexamethasone</b><span>4 mg · treatment day + 2</span></div>
+        <div class="tag" style="background:#EFF1FB;color:#4C57A8">Cycle</div>
+      </div>
+      <div class="why">Reduces swelling and helps with nausea.
+        <em>Written by this app · tap to look it up on MedlinePlus</em></div>
+    </div>
+
+    <div class="med" style="opacity:.62">
+      <div class="top">
+        <div class="ic" style="background:#F3EFED;color:var(--ink3)">❚❚</div>
+        <div class="nm"><b>Iron</b><span>Paused since Sep 9</span></div>
+        <div class="tag" style="background:#F3EFED;color:var(--ink2)">Paused</div>
+      </div>
+    </div>
+  </div></div>
+  <div class="nav">
+    <div><div class="g">⌂</div>Home</div><div class="on"><div class="g">◎</div>Meds</div>
+    <div><div class="g">◔</div>Reports</div><div><div class="g">⊞</div>In-Patient</div><div><div class="g">◇</div>Symptoms</div>
+  </div>
+</div></div>
+
+<!-- ============================ MEDS, EMPTY ============================ -->
+<div class="wrap"><p class="cap-title">Meds — empty</p><div class="phone">
+  <div class="hdr">
+    <div class="mark">✚</div><div class="wordmark">ChemoWell</div><div class="sp"></div>
+    <div class="icnbtn">🔍</div><div class="icnbtn">＋</div>
+  </div>
+  <div class="scroll"><div class="pad">
+    <div class="sec" style="margin-top:4px"><h2>Medications</h2></div>
+    <div class="empty">
+      <div class="art">◉</div>
+      <h3>Nothing here yet</h3>
+      <p>Add the first medication and ChemoWell starts tracking its doses, its schedule, and the daily limits that keep it safe.</p>
+      <button class="btn">＋ Add a medication</button>
+    </div>
+    <div class="empty" style="padding:22px 20px;margin-top:10px;text-align:left">
+      <h3 style="font-size:16px;margin-bottom:5px">Coming from a paper list?</h3>
+      <p style="margin:0;font-size:13.5px">Add them one at a time — name, dose and when it is taken is enough to start. Everything else can wait.</p>
+    </div>
+  </div></div>
+  <div class="nav">
+    <div><div class="g">⌂</div>Home</div><div class="on"><div class="g">◎</div>Meds</div>
+    <div><div class="g">◔</div>Reports</div><div><div class="g">⊞</div>In-Patient</div><div><div class="g">◇</div>Symptoms</div>
+  </div>
+</div></div>
+
+<!-- ============================ REPORTS ============================ -->
+<div class="wrap"><p class="cap-title">Reports</p><div class="phone">
+  <div class="hdr">
+    <div class="mark">✚</div><div class="wordmark">ChemoWell</div><div class="sp"></div>
+    <div class="icnbtn">⤓</div><div class="icnbtn">☰</div>
+  </div>
+  <div class="scroll"><div class="pad">
+    <div class="sec" style="margin-top:4px"><h2>Last 7 days</h2><a>Change →</a></div>
+    <div class="g2">
+      <div class="stat"><div class="t">Doses taken</div><div class="v">46<span style="font:600 15px -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;color:var(--ink3)">/49</span></div><div class="d">94% on time</div></div>
+      <div class="stat"><div class="t">Missed</div><div class="v">3</div><div class="d flat">2 on Sep 10</div></div>
+    </div>
+    <div class="chart">
+      <h4>Weight</h4><div class="cap">148 lb · down 2 lb since Sep 6</div>
+      <svg width="100%" height="74" viewBox="0 0 320 74" preserveAspectRatio="none" style="margin-top:10px">
+        <defs><linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#C2532A" stop-opacity=".20"/><stop offset="100%" stop-color="#C2532A" stop-opacity="0"/></linearGradient></defs>
+        <path d="M0,20 L53,26 L107,22 L160,35 L213,42 L267,39 L320,50 L320,74 L0,74 Z" fill="url(#wg)"/>
+        <path d="M0,20 L53,26 L107,22 L160,35 L213,42 L267,39 L320,50" fill="none" stroke="#C2532A" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="320" cy="50" r="4.5" fill="#C2532A" stroke="#fff" stroke-width="2.5"/>
+      </svg>
+      <div class="axis"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+    </div>
+    <div class="chart">
+      <h4>Temperature</h4><div class="cap">Highest 100.2 °F on Sep 11</div>
+      <svg width="100%" height="74" viewBox="0 0 320 74" preserveAspectRatio="none" style="margin-top:10px">
+        <line x1="0" y1="24" x2="320" y2="24" stroke="#F0D7D4" stroke-width="1.5" stroke-dasharray="4 4"/>
+        <path d="M0,52 L53,48 L107,44 L160,29 L213,40 L267,50 L320,46" fill="none" stroke="#B5760A" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="160" cy="29" r="4.5" fill="#B5760A" stroke="#fff" stroke-width="2.5"/>
+      </svg>
+      <div class="axis"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+      <div style="font:500 11.5px -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,'Liberation Sans',Arial,sans-serif;color:var(--ink3);margin-top:8px">Dashed line marks 100.4 °F, the level most care teams ask to be called about.</div>
+    </div>
+    <div class="chart">
+      <h4>Symptoms</h4><div class="cap">Nausea logged on 4 of 7 days</div>
+      <div style="display:flex;gap:5px;margin-top:12px;align-items:flex-end;height:56px">
+        <i style="flex:1;height:40%;background:var(--act-soft);border-radius:5px"></i>
+        <i style="flex:1;height:70%;background:#F2C4AC;border-radius:5px"></i>
+        <i style="flex:1;height:100%;background:var(--act);border-radius:5px"></i>
+        <i style="flex:1;height:55%;background:#F2C4AC;border-radius:5px"></i>
+        <i style="flex:1;height:25%;background:var(--act-soft);border-radius:5px"></i>
+        <i style="flex:1;height:15%;background:var(--act-soft);border-radius:5px"></i>
+        <i style="flex:1;height:35%;background:var(--act-soft);border-radius:5px"></i>
+      </div>
+      <div class="axis"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+    </div>
+  </div></div>
+  <div class="nav">
+    <div><div class="g">⌂</div>Home</div><div><div class="g">◎</div>Meds</div>
+    <div class="on"><div class="g">◔</div>Reports</div><div><div class="g">⊞</div>In-Patient</div><div><div class="g">◇</div>Symptoms</div>
+  </div>
+</div></div>
+
+</body></html>
