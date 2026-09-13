@@ -27,19 +27,38 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // guards would reject anyway and which has no business on a medication card.
 function whySection(html) {
   const s = String(html || '');
-  const start = s.search(/Why is this medication prescribed\?/i);
-  if (start < 0) return '';
-  const rest = s.slice(start);
-  const end = rest.search(/How should this medicine be used\?|Other uses for this medicine/i);
-  const block = end > 0 ? rest.slice(0, end) : rest.slice(0, 4000);
-  return block
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&rsquo;/g, "'")
-    .replace(/&quot;|&ldquo;|&rdquo;/g, '"').replace(/&[a-z]+;/gi, ' ')
-    .replace(/Why is this medication prescribed\?/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  // THE PHRASE APPEARS TWICE, and the first one is the wrong one. Every MedlinePlus drug page opens
+  // with its own table of contents -- a list of links reading "Why is this medication prescribed?
+  // How should this medicine be used? Other uses for this medicine ..." -- and the real section is
+  // further down. Slicing from the FIRST occurrence caught a few words of navigation and stopped at
+  // the next heading name, which is why 46 pages that downloaded perfectly reported "no section
+  // found".
+  // Rather than guess at markup that can change, take EVERY occurrence, cut each one at the next
+  // section heading, and keep the longest. The navigation slice is a handful of characters; the real
+  // one is a paragraph. This stays right if they restructure the page.
+  const starts = [];
+  const re = /Why is this medication prescribed\?/gi;
+  let m;
+  while ((m = re.exec(s)) !== null) starts.push(m.index);
+  if (!starts.length) return '';
+  let best = '';
+  for (const start of starts) {
+    const rest = s.slice(start);
+    const end = rest.search(/How should this medicine be used\?|Other uses for this medicine|What special precautions/i);
+    const block = end > 0 ? rest.slice(0, end) : rest.slice(0, 4000);
+    const text = block
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&rsquo;/g, "'")
+      .replace(/&quot;|&ldquo;|&rdquo;/g, '"').replace(/&[a-z]+;/gi, ' ')
+      .replace(/Why is this medication prescribed\?/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (text.length > best.length) best = text;
+  }
+  return best;
 }
+
 
 // ---- FINDING THE PAGES -------------------------------------------------------------------------
 // The seed list names medications, not URLs, because the app's own table is a list of names. The A-Z
@@ -130,6 +149,10 @@ const out = [];
 const failures = [];
 for (const entry of list) {
   const url = String(entry.url || '');
+  // Two different things were both reported as "not a MedlinePlus url": a name the A-Z index does
+  // not carry, and a url that is genuinely wrong. They need different answers, so they say different
+  // things.
+  if (!url) { failures.push({ name: entry.name, why: 'no page on MedlinePlus under that exact name' }); continue; }
   if (!/^https:\/\/(www\.)?medlineplus\.gov\//i.test(url)) { failures.push({ name: entry.name, why: 'not a MedlinePlus url' }); continue; }
   try {
     const res = await fetch(url, { headers: { 'User-Agent': UA } });
