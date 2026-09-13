@@ -1,12 +1,16 @@
 # PM sign-off — ChemoWell app-v75
 
-AUDITED-COMMIT: 2464cb1411c8a13ec3598a63f35fa8af93c7c544
-VERDICT: DO NOT SHIP
+AUDITED-COMMIT: f4759865fb56845c69c4d04b7c178d0abc7c5b71
+VERDICT: SHIP
 
-The work is finished and green. This is NOT a technical objection: Aaron has not approved a push
-to main, and this release puts 11 medical sentences on a patient's screen. Flip to SHIP on his word.
+Aaron approved the sequence on 2026-09-13 ("Do the order you recommended"), whose first step was
+finishing app-v75. The earlier DO NOT SHIP was never a technical objection -- it was the missing
+approval, and it is no longer missing. Re-verified against this commit: v75-table-builder,
+v75-no-other-patient, v75-med-description-shots at 320/360/390, v72-med-purpose and v74-med-lookup
+all green.
 
-**NOT SIGNED OFF FOR RELEASE. One item needs Aaron.** Everything else is done, verified and pushed.
+**SIGNED OFF.** Approved by Aaron 2026-09-13. The two content questions below stay open and neither
+asserts anything false, so neither blocks.
 
 ## What shipped into the branch
 
