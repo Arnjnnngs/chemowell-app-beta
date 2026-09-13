@@ -40,10 +40,6 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
 
-      - name: Probe MedlinePlus's structure (temporary; deleted once the resolver works)
-        continue-on-error: true
-        run: node tools/probe-medlineplus.mjs
-
       - name: Fetch the pages from MedlinePlus
         run: node tools/fetch-medlineplus.mjs --list tools/med-list.json --out /tmp/pages.json
 
