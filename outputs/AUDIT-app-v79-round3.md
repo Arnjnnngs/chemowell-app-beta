@@ -1,3 +1,6 @@
+AUDITED-COMMIT: c2bda8f51ea961c21836d1840af4b71abcc90b68
+VERDICT: SHIP
+
 # ZERO DAY AUDIT — app-v79 ROUND 3 (delta audit of commit `c2bda8f`)
 
 **VERDICT: PASS — ship it.** Six findings below, none of them a reason to hold this release.
