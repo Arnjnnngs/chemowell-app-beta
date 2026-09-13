@@ -34,6 +34,8 @@ something that already knows the answers and asks nobody anything.
 | `test/v75-med-description-shots.mjs` (320 / 360 / 390) | all pass |
 | `test/v72-med-purpose.mjs` | 64/64 (was 61/62) |
 | `test/v74-med-lookup.mjs` | 32/32 (was 30/31) |
+| `test/v75-no-other-patient.mjs` (new) | 17/17, falsified four ways |
+| whole repo, `./run-all-tests.sh` | **32 pass / 5 fail / 1 cannot start** — every failure pre-existing on app-v74 |
 | Zero Day Audit | **BLOCK ×2**, both cleared — `outputs/AUDIT-app-v75.md` |
 | `./release_check.sh` | blocked until this file and the audit existed |
 
@@ -68,11 +70,23 @@ person might still not want them:
 
 ## Standing after this release
 
+**A gate now exists for the shape the leak actually takes.** `test/v75-no-other-patient.mjs`: the
+name in every shipped file (not just `index.html`), a gendered pronoun in any user-facing string
+parsed out of the file, a dose or ceiling from one care plan, and the hardcoded rules as a **ratchet
+pinned at 17 references and 6 helpers**. A new one fails immediately; removing one requires lowering
+the ceiling, which is also checked, so the count cannot drift down and hide the debt. The previous
+guard looked for a NAME and passed green all day while the medication disclaimer read "Follow her
+care team".
+
 **The hardcoded medication rules are still in the file** — the Zofran post-chemo block, the
 dexamethasone tile, Iron + Protonix, the Tylenol ceiling copy. Verified unreachable for a real user
 by running the app (a new "Zofran" gets id `zofran-2`), but the fence is the only thing holding.
 Removing them is a behaviour change and needs its own release. This is the remaining half of Aaron's
-"no hard coding for medication including treatment or diagnosis".
+"no hard coding for medication including treatment or diagnosis", and **it is the second time he has
+given that directive** -- `HARDCODED_MEDS_PLAN.md` records the first, on 2026-08-19, with a complete
+five-phase plan of which none has been done. That is the actual root cause of the leak, not wording:
+ChemoWell is a fork of one person's app that was never finished into a product. **Phases 1-3 are the
+fix and they are waiting on Aaron's go.**
 
 **Coverage is 85 of 113 pages, not 113.** 46 → 68 with dosage forms allowed for, 68 → 85 once brand
 names were read off the pages themselves. The last 28 are drugs MedlinePlus does not carry under any
