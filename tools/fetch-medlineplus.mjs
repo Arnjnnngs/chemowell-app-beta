@@ -130,7 +130,7 @@ const out = [];
 const failures = [];
 for (const entry of list) {
   const url = String(entry.url || '');
-  if (!/^https:\/\/medlineplus\.gov\//i.test(url)) { failures.push({ name: entry.name, why: 'not a MedlinePlus url' }); continue; }
+  if (!/^https:\/\/(www\.)?medlineplus\.gov\//i.test(url)) { failures.push({ name: entry.name, why: 'not a MedlinePlus url' }); continue; }
   try {
     const res = await fetch(url, { headers: { 'User-Agent': UA } });
     if (!res.ok) { failures.push({ name: entry.name, why: 'HTTP ' + res.status }); await sleep(1000); continue; }
