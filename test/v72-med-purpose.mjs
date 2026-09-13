@@ -264,8 +264,33 @@ console.log('\n2. The Meds screen — recognised by brand, by generic, and not a
   await goMeds();
   const discNone = await page.evaluate(() => document.querySelectorAll('[data-med-disclaimer]').length);
   const linesNone = await page.evaluate(() => document.querySelectorAll('[data-med-purpose]').length);
-  t('with NO medication recognised, there are no lines and no disclaimer either',
-    linesNone === 0 && discNone === 0, 'lines=' + linesNone + ' disclaimer=' + discNone);
+  const linksNone = await page.evaluate(() => document.querySelectorAll('[data-med-source]').length);
+  t('with NO medication recognised, no description line is invented', linesNone === 0, 'lines=' + linesNone);
+  // THE DISCLAIMER RULE CHANGED IN app-v74 AND THIS ASSERTION HAD NOT. It used to demand no
+  // disclaimer here, on the reasoning that a notice above a list with no lines under it is noise.
+  // That was right when a description was the only thing the notice covered. Since app-v74 every
+  // medication also carries a "Look it up on MedlinePlus" link, whether or not the app has a line
+  // for it, and the notice is the only place that says what tapping it does -- that the site will
+  // see which medication was looked up, and that nothing is sent unless you tap. Suppressing it
+  // here would hide that from exactly the caregiver most likely to tap: the one whose medication
+  // the app does not recognise. So the rule is now "a notice whenever there is something it
+  // explains", which is what is asserted, rather than the notice being loosened away.
+  t('but the notice IS there, because the lookup link is', discNone === 1 && linksNone === 1,
+    'disclaimer=' + discNone + ' links=' + linksNone);
+  // AND THE CASE THE OLD ASSERTION WAS REALLY PROTECTING, which must not be lost with it: with no
+  // medications at all there is no link and no line, so there is nothing for the notice to explain
+  // and it must not print. Without this the check above could be satisfied by a notice that is
+  // simply always on.
+  await page.evaluate((k) => {
+    const raw = JSON.parse(localStorage.getItem(k) || '{}');
+    raw.meds = [];
+    localStorage.setItem(k, JSON.stringify(raw));
+  }, MED_KEY);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1800);
+  await goMeds();
+  const discEmpty = await page.evaluate(() => document.querySelectorAll('[data-med-disclaimer]').length);
+  t('with NO medications at all, the notice does not print', discEmpty === 0, 'disclaimer=' + discEmpty);
   // restore the fixture for the sections that follow
   await page.evaluate(([k, meds]) => {
     const raw = JSON.parse(localStorage.getItem(k) || '{}');

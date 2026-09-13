@@ -169,10 +169,19 @@ console.log('\n3. THE LINK NEVER CLAIMS TO BE A SOURCE');
     const el = document.querySelector('[data-med-disclaimer]');
     return el ? (el.innerText || '').trim() : null;
   });
-  t('the disclaimer says the descriptions are written here', !!disclaimer && /written here/i.test(disclaimer),
-    disclaimer ? disclaimer.slice(0, 90) : '(none)');
-  t('and does NOT claim they came from MedlinePlus',
-    !!disclaimer && !/came from MedlinePlus|from MedlinePlus, /i.test(disclaimer), '');
+  // app-v75 CHANGED WHAT IS TRUE HERE, so this pair changed with it rather than being deleted.
+  // In app-v74 every description was written in this repo and the disclaimer said exactly that. Now
+  // some are quoted verbatim from MedlinePlus and some are still this app's own, so a notice
+  // claiming either one alone would be false -- which is the whole defect class this suite exists
+  // for. It has to say BOTH, and the check now fails if it drops either half.
+  t('the disclaimer still says some descriptions are written here',
+    !!disclaimer && /written here/i.test(disclaimer), disclaimer ? disclaimer.slice(0, 110) : '(none)');
+  t('and now also says the rest are quoted from MedlinePlus, because they are',
+    !!disclaimer && /quoted from MedlinePlus/i.test(disclaimer), disclaimer ? disclaimer.slice(0, 110) : '(none)');
+  // The line that has NOT changed: a medication whose description this app wrote must never carry a
+  // citation. Zofran has a hand-written line, so its link stays a search.
+  t('and a medication the app describes itself still gets a lookup, never a citation',
+    !!a && /look it up/i.test(a.text) && !/read it on/i.test(a.text), a ? a.text : '');
 }
 
 console.log('\n4. IT OPENS SAFELY, and it can be tapped');
