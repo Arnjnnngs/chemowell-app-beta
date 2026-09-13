@@ -1,6 +1,6 @@
 # Zero Day Audit — ChemoWell app-v76 (HARDCODED_MEDS_PLAN phase 1)
 
-AUDITED-COMMIT: 0cc25f3cca1897fb66e35ee6c48ae9bfa614dbc6
+AUDITED-COMMIT: ad1f94b94e574b40bce814108c5fac2f9e43cbeb
 VERDICT: SHIP
 
 The audit returned **BLOCK** with six blockers and three minors. Every one is fixed and re-verified;
