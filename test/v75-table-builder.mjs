@@ -11,7 +11,7 @@
 // invented to trip it proves nothing about the sentences it will really meet.
 //
 // Run:  node test/v75-table-builder.mjs
-import { buildTable, guardFailure, firstSentence, tidy, whySection, GUARDS, MAX_LEN } from '../tools/build-med-table.mjs';
+import { buildTable, guardFailure, firstSentence, tidy, whySection, stripFormWords, addFormAliases, brandNames, GUARDS, MAX_LEN } from '../tools/build-med-table.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -329,6 +329,56 @@ console.log('\n13. WHERE THE TWO TABLES DISAGREE, THE APP\'S OWN LINE WINS  (the
     console.log('        the ' + collide.length + ' medications where the app keeps its own line:');
     console.log('        ' + collide.join(', '));
   }
+}
+
+console.log('\n14. FINDING THE PAGE AT ALL  (Aaron: "if there are 60 in, 60 should come back")');
+{
+  // 67 of 113 came back "no page on MedlinePlus under that exact name", including carboplatin,
+  // cisplatin, paclitaxel, docetaxel, gemcitabine, vincristine and fluorouracil. All of those have
+  // MedlinePlus pages. The resolver demanded an exact match against the A-Z index and MedlinePlus
+  // files a drug under its FORM. That was a bug being reported as missing coverage.
+  t('a dosage form after the name is not a different drug',
+    stripFormWords('Carboplatin Injection') === 'carboplatin', stripFormWords('Carboplatin Injection'));
+  t('and neither is a route', stripFormWords('Scopolamine Transdermal Patch') === 'scopolamine',
+    stripFormWords('Scopolamine Transdermal Patch'));
+  t('several stack', stripFormWords('Morphine Oral Solution') === 'morphine', stripFormWords('Morphine Oral Solution'));
+  // THE REASON THE EXACT-MATCH RULE EXISTED, and it has to survive the loosening.
+  t('BUT A COMBINATION PRODUCT IS a different drug, and must not collapse',
+    stripFormWords('Ibuprofen and Famotidine') === 'ibuprofen and famotidine',
+    stripFormWords('Ibuprofen and Famotidine'));
+
+  const map = new Map([
+    ['carboplatin injection', 'u-carbo'],
+    ['fluorouracil injection', 'u-fu-iv'],
+    ['fluorouracil topical', 'u-fu-skin'],
+    ['ibuprofen', 'u-ibu'],
+    ['ibuprofen and famotidine', 'u-combo']
+  ]);
+  const r = addFormAliases(map);
+  t('a name that reduces to exactly one page is resolved', map.get('carboplatin') === 'u-carbo', String(map.get('carboplatin')));
+  // AN AMBIGUOUS NAME IS NOT GUESSED AT. Fluorouracil is a chemotherapy infusion AND a skin cream
+  // for keratoses. Picking one and citing it would be exactly the guesswork this build exists to
+  // avoid, and the two are in no way interchangeable.
+  t('a name that reduces to TWO pages is left unresolved, not guessed',
+    map.get('fluorouracil') === undefined && r.ambiguous.some(x => /fluorouracil/.test(x)),
+    r.ambiguous.join(', '));
+  t('and the run says which ones it declined to guess at', r.ambiguous.length === 1, r.ambiguous.join(', '));
+  t('a page that already owns its exact name is not overwritten', map.get('ibuprofen') === 'u-ibu', String(map.get('ibuprofen')));
+
+  // BRAND NAMES COME OFF THE PAGES, not out of a table written here -- a hand-written brand-to-
+  // generic mapping is a medical claim this repo would be making, and it rots as brands change.
+  const page = '<h2>Brand names</h2><ul><li>Zofran&reg;</li><li>Zuplenz&reg;</li></ul>' +
+    '<h2>Brand names of combination products</h2><ul><li>Percocet&reg; (containing Acetaminophen, Oxycodone)</li></ul>' +
+    '<p>Last Revised - 01/15/2024</p>';
+  const brands = brandNames(page);
+  t('a brand is read off the page that claims it', brands.includes('zofran'), brands.join(', '));
+  t('and so is a second one', brands.includes('zuplenz'), brands.join(', '));
+  t('the page\'s own prose is not mistaken for a brand',
+    !brands.some(b => /last revised|containing|brand/.test(b)), brands.join(', '));
+  t('nothing with a digit in it is taken as a brand, because that is a strength',
+    !brands.some(b => /\d/.test(b)), brands.join(', '));
+  t('an empty or junk page yields no brands',
+    brandNames('').length === 0 && brandNames('<p>nothing here</p>').length === 0, '');
 }
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed' + (fail ? '  <-- FAIL' : ''));

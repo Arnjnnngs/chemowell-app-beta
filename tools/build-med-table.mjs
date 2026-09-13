@@ -108,6 +108,109 @@ export function guardFailure(text) {
   return null;
 }
 
+// ---- matching a name we hold against a name MedlinePlus uses -------------------------------------
+// WHY THIS EXISTS. The first resolver demanded an EXACT match against the A-Z index, and 67 of 113
+// medications came back "no page on MedlinePlus under that exact name" -- including carboplatin,
+// cisplatin, paclitaxel, docetaxel, gemcitabine, vincristine and fluorouracil. Every one of those
+// has a MedlinePlus page. Aaron read the count and said what should have been obvious from it: if
+// there are 60 in, 60 should come back. He was right, and it was this function's absence.
+//
+// MedlinePlus files a drug under its FORM: "Carboplatin Injection", "Scopolamine Transdermal Patch".
+// The exact-match rule was there for a real reason -- "Ibuprofen" must never resolve to "Ibuprofen
+// and Famotidine", which is a different drug -- and that reason survives here. What is added is one
+// narrow allowance: the same name with a dosage form or route after it is the same drug.
+
+// Trailing words that name a FORM or a ROUTE rather than a different medication. A combining word
+// like "and" is deliberately absent: "Ibuprofen and Famotidine" must never collapse to "Ibuprofen".
+const FORM_WORDS = ['injection', 'injectable', 'intravenous', 'oral', 'orally', 'topical', 'transdermal',
+  'patch', 'patches', 'ophthalmic', 'otic', 'nasal', 'intranasal', 'rectal', 'vaginal', 'inhalation',
+  'inhaled', 'solution', 'oral solution', 'tablet', 'tablets', 'capsule', 'capsules', 'suspension',
+  'syrup', 'spray', 'cream', 'ointment', 'gel', 'lotion', 'foam', 'suppository', 'suppositories',
+  'sublingual', 'buccal', 'subcutaneous', 'intramuscular', 'implant', 'powder', 'granules', 'lozenge',
+  'lozenges', 'liquid', 'elixir', 'enema', 'drops', 'eye drops', 'ear drops', 'kit'];
+
+// "Carboplatin Injection" -> "carboplatin". Returns the same string when there is no form word, so
+// a caller can compare the result against the raw name to tell whether anything was stripped.
+export function stripFormWords(label) {
+  let t = String(label || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const w of FORM_WORDS) {
+      if (t.length > w.length + 1 && t.endsWith(' ' + w)) {
+        t = t.slice(0, -(w.length + 1)).trim();
+        changed = true;
+      }
+    }
+  }
+  return t;
+}
+
+// AN AMBIGUOUS ALIAS IS NOT REGISTERED AT ALL. "Fluorouracil Injection" and "Fluorouracil Topical"
+// are two different pages describing two different things, and picking one would be exactly the
+// guesswork this whole build exists to avoid -- a chemotherapy infusion and a skin cream for
+// keratoses are not interchangeable, and the sentence would be cited as if it were.
+// So: a stripped name is added only when exactly one page reduces to it. The rest are returned as
+// `ambiguous` so the run can say out loud which drugs it declined to guess at.
+export function addFormAliases(map) {
+  const candidates = new Map();
+  for (const [label, url] of map) {
+    const short = stripFormWords(label);
+    if (!short || short === label) continue;
+    if (map.has(short)) continue;               // a real page already owns that exact name
+    if (!candidates.has(short)) candidates.set(short, new Set());
+    candidates.get(short).add(url);
+  }
+  const added = [];
+  const ambiguous = [];
+  for (const [short, urls] of candidates) {
+    if (urls.size === 1) { map.set(short, [...urls][0]); added.push(short); }
+    else ambiguous.push(short + ' (' + urls.size + ' pages)');
+  }
+  return { added, ambiguous };
+}
+
+// ---- brand names, taken from MedlinePlus rather than from a list written here --------------------
+// Zofran, Advil, Compazine, Prilosec, Phenergan: MedlinePlus indexes by generic name, so every brand
+// on our list resolved to nothing. The obvious fix is a brand->generic table in this repo, and it is
+// the wrong one: that is a hand-written medical mapping, which is the thing Aaron has twice now said
+// he does not want, and it would rot silently as brands change.
+// Every MedlinePlus drug page already lists its own brand names. So the brands come from the same
+// source as the sentences, and a brand resolves to the page that claims it.
+export function brandNames(html) {
+  const s = String(html || '');
+  const out = [];
+  // Both headings appear; "Brand names of combination products" is deliberately INCLUDED, because a
+  // combination product's page is the right page for that brand -- it is the one that describes both
+  // ingredients. What must never happen is a combination BRAND resolving to a single-ingredient page.
+  const re = /Brand names?(?: of combination products)?\s*:?/gi;
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    const rest = s.slice(m.index + m[0].length);
+    // Stop at the next section. These pages put brand lists just before the disclaimer block.
+    const end = rest.search(/Brand names|Other names|Last Revised|Why is this|How should|American Society|Disclaimer|<\/(?:ul|div|section)>/i);
+    const block = end > 0 ? rest.slice(0, end) : rest.slice(0, 3000);
+    const text = block
+      .replace(/<\/li>\s*<li[^>]*>/gi, '|')
+      .replace(/<\/li>/gi, '|')
+      .replace(/<[^>]+>/g, '|')
+      .replace(/&[a-z]+;/gi, ' ')
+      .replace(/[®™]/g, '');
+    for (const raw of text.split(/[|,;]/)) {
+      const t = raw.replace(/\s+/g, ' ').trim();
+      // A brand is a short proper noun. Anything with a sentence in it is the page's prose, not a
+      // brand, and anything with a digit is a strength ("Tylenol 500") rather than a product name.
+      if (!t || t.length > 40 || /\d/.test(t)) continue;
+      if (!/^[A-Za-z][A-Za-z .'-]*$/.test(t)) continue;
+      if (/\b(and|the|of|for|is|are|in|with|see|also|more|information|names?|products?)\b/i.test(t)) continue;
+      if (t.split(' ').length > 3) continue;
+      out.push(t.toLowerCase());
+    }
+  }
+  return [...new Set(out)];
+}
+
 // ---- pulling the section out of a page ----------------------------------------------------------
 // MOVED HERE FROM fetch-medlineplus.mjs (app-v75). This is pure string work with no network in it,
 // and it was living in the one file a suite can never import -- the fetcher self-executes on load.

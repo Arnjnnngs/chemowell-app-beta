@@ -16,7 +16,7 @@
 //
 // Usage:  node tools/fetch-medlineplus.mjs --list tools/med-list.json --out pages.json
 import fs from 'node:fs';
-import { whySection } from './build-med-table.mjs';
+import { whySection, addFormAliases, brandNames, stripFormWords } from './build-med-table.mjs';
 
 const argv = process.argv.slice(2);
 const arg = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : null; };
@@ -93,11 +93,56 @@ async function resolveUrls(entries) {
   console.log('  ' + map.size + ' medication name(s) known to MedlinePlus');
   let resolved = 0;
   const unresolved = [];
+  // PASS 1 -- exact match. "Ibuprofen" must never resolve to "Ibuprofen and Famotidine".
   for (const e of need) {
     const key = String(e.name || '').trim().toLowerCase();
-    // EXACT match only: "Ibuprofen" must not resolve to "Ibuprofen and Famotidine".
     const hit = map.get(key);
     if (hit) { e.url = hit; resolved++; } else { unresolved.push(e.name); }
+  }
+  // PASS 2 -- the same name with a FORM after it. MedlinePlus files carboplatin as "Carboplatin
+  // Injection", and demanding an exact match threw away most of the chemotherapy drugs on the list.
+  // An alias is registered only where exactly one page reduces to it; where two do (fluorouracil is
+  // both an infusion and a skin cream) neither is, and the run says so rather than picking one.
+  if (unresolved.length) {
+    const alias = addFormAliases(map);
+    console.log('  ' + alias.added.length + ' name(s) matched once a dosage form was allowed for');
+    if (alias.ambiguous.length) {
+      console.log('  DECLINED to guess between pages for: ' + alias.ambiguous.join(', '));
+    }
+    const still = [];
+    for (const name of unresolved) {
+      const e = need.find(x => x.name === name && !x.url);
+      const hit = e && map.get(String(e.name || '').trim().toLowerCase());
+      if (hit) { e.url = hit; resolved++; } else still.push(name);
+    }
+    unresolved.length = 0; unresolved.push(...still);
+  }
+  // PASS 3 -- BRAND NAMES, READ OFF THE PAGES THEMSELVES. Every brand on the list (Zofran, Advil,
+  // Compazine, Prilosec, Phenergan) resolved to nothing, because MedlinePlus indexes by generic. The
+  // obvious fix is a brand->generic table written in this repo; it is the wrong one, because that is
+  // a hand-written medical mapping and it rots as brands change. Each MedlinePlus page lists its own
+  // brand names, so the brands come from the same source as the sentences do.
+  // Only pages we were already going to fetch are read here -- this adds no extra requests beyond
+  // the ones the run makes anyway, and stops the moment everything has resolved.
+  if (unresolved.length) {
+    const pages = [...new Set(entries.filter(e => e.url).map(e => e.url))];
+    const brand = new Map();
+    for (const url of pages) {
+      if (!unresolved.length) break;
+      const res = await getHtml(url);
+      await sleep(400);
+      if (!res) continue;
+      for (const b of brandNames(res.html)) if (!brand.has(b) && !map.has(b)) brand.set(b, url);
+      const still = [];
+      for (const name of unresolved) {
+        const key = String(name || '').trim().toLowerCase();
+        const hit = brand.get(key) || brand.get(stripFormWords(key));
+        const e = entries.find(x => x.name === name && !x.url);
+        if (e && hit) { e.url = hit; resolved++; } else still.push(name);
+      }
+      unresolved.length = 0; unresolved.push(...still);
+    }
+    console.log('  ' + brand.size + ' brand name(s) read off the pages themselves');
   }
   return { resolved, unresolved };
 }
