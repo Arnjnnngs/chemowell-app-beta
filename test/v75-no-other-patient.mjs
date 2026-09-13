@@ -118,31 +118,50 @@ console.log('\n4. THE RATCHET: BEHAVIOUR KEYED TO ONE PERSON\'S PRESCRIPTION');
   const LEGACY_IDS = ['dexamethasone', 'zofran', 'protonix', 'tylenol', 'tylenol-liquid', 'iron',
     'compazine', 'buspirone', 'paroxetine', 'morphine', 'senokot', 'imodium', 'lidocaine'];
   const html = (files.find(f => f.name === 'index.html') || { raw: '' }).raw;
-  // Only where an ID drives BEHAVIOUR -- a comparison against med.id or entry.medId. The
-  // RESERVED_LEGACY_MED_IDS list itself is the fence, not the problem, and is excluded by shape.
-  const re = new RegExp('(?:med|entry|m)\\.(?:med)?[Ii]d\\s*===\\s*[\'"](' + LEGACY_IDS.join('|') + ')[\'"]', 'g');
-  const direct = [...html.matchAll(re)].map(m => m[1]);
-  // and the helpers that exist only to serve them
+
+  // TWO NUMBERS, NOT ONE, SINCE app-v76 PHASE 1. The single count went UP -- 17 to 21 -- when phase 1
+  // landed, and the ratchet was right to refuse it: the phase adds resolvers that hold the legacy
+  // branch as a fallback, so the ids are still in the file. But they are no longer SCATTERED, which
+  // is the thing that actually matters. Collapsing both into one number would have forced a choice
+  // between raising a ceiling that says NEVER RAISE, and pretending the fallbacks are not there.
+  //
+  //   OUTSIDE  -- places in the app that know one specific patient's medication. This is the real
+  //               debt. Phase 1: 17 -> 13. Phase 2 drives it to 0.
+  //   INSIDE   -- the migration scaffold's fallbacks, all in named resolvers. Phase 2 deletes them.
+  //
+  // Both can only go down, and both are checked for staleness, so neither can drift quietly.
+  const RESOLVERS = ['medWindowsFor', 'medChemoBlockedOn', 'medChemoBlockingDay',
+    'medChemoBlockSpanDays', 'medInteractionsFor', 'medHomeCardKind'];
+  const idRe = () => new RegExp("(?:med|entry|m)\\.(?:med)?[Ii]d\\s*===\\s*['\"](" + LEGACY_IDS.join('|') + ")['\"]", 'g');
+  let rest = html, inside = 0;
+  for (const r of RESOLVERS) {
+    const m = html.match(new RegExp('function ' + r + '\\([^)]*\\) \\{[\\s\\S]*?\\n\\}'));
+    if (m) { rest = rest.replace(m[0], ''); inside += (m[0].match(idRe()) || []).length; }
+  }
+  const direct = (rest.match(idRe()) || []).map(x => x);
   const HELPERS = ['zofranBlockedOn', 'zofranBlockingDay', 'dexWindowsForOffset',
     'protonixMorningLogTs', 'protonixEveningLogTs', 'morningLinkedToProtonix',
     'eveningLinkedToProtonix', 'tylenolMg'];
   const helpers = HELPERS.filter(h => new RegExp('function\\s+' + h + '\\b').test(html));
 
-  // Lower these as the plan's phases land. NEVER raise them.
   // MEASURED, NOT GUESSED. The first version of this file estimated these and was wrong in both
   // directions -- which would have let five new references in while claiming three helpers had been
   // removed that never existed. A ratchet pinned to a guess is not a ratchet.
-  const CEILING = { direct: 17, helpers: 6 };
+  // Lower these as the phases land. NEVER raise them.
+  const CEILING = { outside: 13, inside: 8, helpers: 6 };
 
-  t('no NEW behaviour keyed to a legacy medication id', direct.length <= CEILING.direct,
-    direct.length + ' reference(s), ceiling ' + CEILING.direct + ' -- ' + [...new Set(direct)].join(', '));
+  t('no NEW place in the app knows one patient\'s medication', direct.length <= CEILING.outside,
+    direct.length + ' outside the resolvers, ceiling ' + CEILING.outside);
+  t('and the migration scaffold is not growing', inside <= CEILING.inside,
+    inside + ' fallbacks inside resolvers, ceiling ' + CEILING.inside);
   t('no NEW helper that exists only for one patient\'s regimen', helpers.length <= CEILING.helpers,
     helpers.length + ' helper(s), ceiling ' + CEILING.helpers + ' -- ' + helpers.join(', '));
   // THE RATCHET'S OTHER HALF. Without this the ceiling never moves: someone deletes a branch, the
   // check still passes at the old number, and the debt is invisible again.
-  t('and the ceiling is not stale -- lower it when a phase lands',
-    direct.length === CEILING.direct && helpers.length === CEILING.helpers,
-    'found ' + direct.length + '/' + helpers.length + ', pinned at ' + CEILING.direct + '/' + CEILING.helpers);
+  t('and no ceiling is stale -- lower it when a phase lands',
+    direct.length === CEILING.outside && inside === CEILING.inside && helpers.length === CEILING.helpers,
+    'found ' + direct.length + '/' + inside + '/' + helpers.length +
+    ', pinned at ' + CEILING.outside + '/' + CEILING.inside + '/' + CEILING.helpers);
 
   // The fence has to stay until the refactor removes what it is fencing.
   t('and RESERVED_LEGACY_MED_IDS still fences every one of them, since they are still here',

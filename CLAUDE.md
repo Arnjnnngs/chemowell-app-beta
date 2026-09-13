@@ -32,15 +32,27 @@ directory that would apply to all three repos at once.
    never asked anyone's gender for this purpose.
 3. **A dose, ceiling or schedule from one care plan.** `CONFIG.ceilingMg = 2500` sat here for months.
    Nothing read it, which is the only reason it was harmless.
-4. **Behaviour keyed to a medication id.** The big one. Seventeen branches on `med.id === 'zofran'`
-   and the like still drive a post-chemo block, dexamethasone windows, an Iron+Protonix warning and
-   a Tylenol ceiling. `RESERVED_LEGACY_MED_IDS` FORBIDS users from creating medications with those
-   thirteen names, so a stranger's "Zofran" becomes `zofran-2` and inherits nothing. **The app knows
-   its own logic is unsafe for strangers and fences users out of it rather than fixing it.**
+4. **Behaviour keyed to a medication id.** The big one. Branches on `med.id === 'zofran'` and the
+   like drive a post-chemo block, dexamethasone windows, an Iron+Protonix warning and a Tylenol
+   ceiling. `RESERVED_LEGACY_MED_IDS` FORBIDS users from creating medications with those thirteen
+   names, so a stranger's "Zofran" becomes `zofran-2` and inherits nothing. **The app knows its own
+   logic is unsafe for strangers and fences users out of it rather than fixing it.**
 
-**`test/v75-no-other-patient.mjs` checks all four** and pins #4 as a ratchet at 17 references and 6
-helpers. A new one fails immediately; removing one requires lowering the number, which is also
-checked. Run it before every release. It is not a substitute for `HARDCODED_MEDS_PLAN.md` phases
+   **app-v76 phase 1 (`HARDCODED_MEDS_PLAN.md`) is the start of the real fix.** Five medication
+   properties — `chemoRelativeWindows`, `chemoBlock`, `linkedTo`, `interactions`, `homeCard` — now
+   express those behaviours as data, and every call site goes through a resolver that reads the
+   property and falls back to the legacy branch. **It changes no behaviour**: on today's data every
+   property is absent, and `test/v76-properties-equivalence.mjs` simulates a full treatment cycle
+   hour by hour, old path against new, and requires zero differences. Phase 2 migrates the thirteen
+   ids onto properties and deletes the fallbacks; phase 3 deletes the fence.
+
+**`test/v75-no-other-patient.mjs` checks all four**, and `release_check.sh` runs it so a release
+cannot skip it. It pins #4 as a ratchet on **three** numbers: places in the app that know one
+patient's medication (13), fallbacks inside the migration resolvers (8), and legacy helpers (6).
+The split exists because the single count went UP when phase 1 landed and the ratchet was right to
+refuse it — the ids are still in the file, but they are no longer scattered, which is the thing that
+matters. A new one fails immediately; removing one requires lowering the number, which is also
+checked, so the debt cannot drift quietly downward either. It is not a substitute for `HARDCODED_MEDS_PLAN.md` phases
 1-3, which are the actual fix.
 
 ### Medical content

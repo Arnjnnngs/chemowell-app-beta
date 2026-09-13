@@ -129,3 +129,62 @@ Therefore, non-negotiable for every phase:
 
 **Not started.** This document is the plan the owner asked for, not a change. Nothing in either
 app has been modified by it beyond the name scrub described in section 0.
+
+---
+
+## PHASE 1 — LANDED, app-v76 (2026-09-13)
+
+Aaron, 2026-09-13: *"I don't care if all the code need rewritten for chemowell."* Then, approving
+the sequence: *"Do the order you recommended."* This is the first of the five phases above, three
+and a half weeks after the plan was written and never started.
+
+**Patch:** `harness-med-properties-patch.py` (app-v75 → app-v76).
+**Proof:** `test/v76-properties-equivalence.mjs`, 24/24.
+
+### What landed
+
+Five properties, normalised in `normalizeMedication` so a malformed one cannot reach a render:
+
+| property | replaces |
+|---|---|
+| `chemoRelativeWindows: [{dayOffset, start, end, name}]` | `med.id === 'dexamethasone' ? dexWindowsForOffset(...)` |
+| `chemoBlock: {fromDayOffset, toDayOffset}` | `zofranBlockedOn` / `zofranBlockingDay` |
+| `linkedTo: {medId, half}` | `morningLinkedToProtonix` / `eveningLinkedToProtonix` |
+| `interactions: [{withMedId, minGapH, title, body}]` | the `entry.medId === 'iron' \|\| 'protonix'` branch |
+| `homeCard: {kind}` | `usedRecently('tylenol')`, `dailyPills('imodium')`, `tylenolMg()` |
+
+Six resolvers — `medWindowsFor`, `medChemoBlockedOn`, `medChemoBlockingDay`, `medChemoBlockSpanDays`,
+`medInteractionsFor`, `medHomeCardKind` — read the property first and fall through to the exact
+legacy branch. **No behaviour changed.** Scattered call sites went 17 → 13; the 8 fallbacks now sit
+inside named resolvers where phase 2 deletes them in one place.
+
+### What phase 1 cost, and what it found
+
+**Two real defects, both in work that looked finished.**
+
+1. **The patch nearly deleted 180 lines of `index.html`.** The anchor for the `status()` window
+   ternary was a two-space-indented prefix matched with `str.index` — and the missed-dose walk's
+   four-space line *contains* that prefix at offset 2, so it matched line 1773 instead of 1955 and
+   the slice that followed removed everything between. Nothing detected it except a count check that
+   happened to run afterwards and happened to be looking at one of the deleted lines. **Anchor on a
+   full exact string and assert `count() == 1` before cutting.** A prefix anchor plus `index()` is a
+   silent deletion waiting for the day the validation below it is less lucky.
+
+2. **`medWindowsFor` trusted its normaliser.** `chemoRelativeWindows: "not an array"` threw inside
+   the Meds list render, and because the medication persists, every later render threw too — the
+   Meds screen comes up with no cards at all, and it is the only place edit and delete live.
+   `normalizeMedication` strips that value, but a medication can reach a render without passing
+   through it: a future import, a hand-edited `localStorage`, an archive restored from an older
+   build. Found by the equivalence suite's hostile-value section, which exists for exactly this.
+   **Every resolver validates its own input.**
+
+### What phase 2 must do
+
+Express each of the thirteen legacy ids as properties, delete the fallback halves, and prove
+equivalence the way phase 1 did — simulate a full cycle, old path against new, require zero
+differences. Then `zofranBlockedOn`, `zofranBlockingDay`, `dexWindowsForOffset`,
+`protonixMorningLogTs`, `protonixEveningLogTs` and `tylenolMg` are deleted, and the ratchet in
+`test/v75-no-other-patient.mjs` drops to 0 / 0 / 0.
+
+**Do not start phase 2 without re-reading section 3 above.** A mistake in this engine does not crash;
+it shows up as a dose that was never prompted for.
