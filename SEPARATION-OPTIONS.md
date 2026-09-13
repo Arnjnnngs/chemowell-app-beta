@@ -129,6 +129,34 @@ started in the same breath as shipping app-v75.
 **Sequence:** finish app-v75 (it is green and waiting on a ship decision) → B and C, which are hours
 → D phase by phase, each with equivalence proofs and its own audit.
 
+## FOUND WHILE DOING THIS: "ChemoWell" names two different things
+
+Porting the session guard to `chemowell-beta` surfaced something bigger than any option above.
+
+**`chemowell-beta` is not a ChemoWell product. It is `care-tracker`'s staging copy.** Its own
+`index.html` says so: `TEST_MODE = true`, writes to `caretracker_test_entries`,
+`patientName: 'Brandi'` hardcoded, and `<title>Brandi's Meds / Vitals Historical</title>`. Her name
+is in it five times and belongs there.
+
+So the three repos are really:
+
+| repo | what it actually is |
+|---|---|
+| `care-tracker` | her live app |
+| `chemowell-beta` | **her app's staging copy**, wearing a ChemoWell name |
+| `chemowell-app-beta` | **the product** — seeded from that staging copy at v71 |
+
+**This is the root of the whole problem.** The product was forked from one patient's staging
+environment, and the name "ChemoWell" was applied to both, so every session has had to work out from
+context which kind of repo it is in. Today I got it wrong in the most direct way possible: I added a
+"this is a product, scrub the patient" rule to the staging repo, reasoning from its name alone. Had
+that gone further it would have scrubbed the test bed whose entire job is to mirror production
+exactly.
+
+**Recommendation: rename `chemowell-beta` to `care-tracker-staging`.** It costs a repo rename and a
+handful of doc references. Until then, both repos carry a Rule 0 and a session hook saying which
+kind they are, and the staging one tells the reader to check `TEST_MODE` before believing the name.
+
 ## What this does not fix, stated plainly
 
 - **Features shaped by one clinical case.** The paracentesis screen exists because of one patient's
