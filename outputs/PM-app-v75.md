@@ -1,5 +1,11 @@
 # PM sign-off — ChemoWell app-v75
 
+AUDITED-COMMIT: 2464cb1411c8a13ec3598a63f35fa8af93c7c544
+VERDICT: DO NOT SHIP
+
+The work is finished and green. This is NOT a technical objection: Aaron has not approved a push
+to main, and this release puts 11 medical sentences on a patient's screen. Flip to SHIP on his word.
+
 **NOT SIGNED OFF FOR RELEASE. One item needs Aaron.** Everything else is done, verified and pushed.
 
 ## What shipped into the branch

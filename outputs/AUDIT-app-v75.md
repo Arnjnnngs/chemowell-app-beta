@@ -1,5 +1,11 @@
 # Zero Day Audit — ChemoWell app-v75
 
+AUDITED-COMMIT: 2464cb1411c8a13ec3598a63f35fa8af93c7c544
+VERDICT: SHIP
+
+Both passes returned BLOCK; every finding is fixed and re-verified, and the fixes are what this
+verdict is on. Two content questions are named as Aaron's call and neither asserts anything false.
+
 Two independent agent passes. **Both returned BLOCK.** Every finding below was fixed before this
 file was written; nothing here is outstanding except the item marked AARON'S CALL.
 
