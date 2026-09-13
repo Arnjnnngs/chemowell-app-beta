@@ -51,6 +51,8 @@ console.log('\n2. EVERY GUARD FIRES ON PROSE OF THE KIND MEDLINEPLUS ACTUALLY WR
     ['a schedule or a dose unit',                 'Used to prevent nausea, taken daily.'],
     ['a dosage form or route',                    'Used to numb an area of skin before a needle is inserted.'],
     ['an instruction to the reader',              'Used to treat heartburn; do not take it with other acid reducers.'],
+    ['a stigmatised indication a reader would attach to the patient',
+                                                  'Used to treat certain viral infections including cold sores, shingles, and genital herpes (a sexually transmitted disease).'],
     ['not actually a description of what it is for',
                                                   'Dexamethasone, a corticosteroid, is similar to a natural hormone produced by your adrenal glands.'],
     ['a run-on from a bulleted page',             'Used to treat allergy symptoms: sneezing runny nose itching of the throat Diphenhydramine is also used for sleeplessness.'],
@@ -62,7 +64,7 @@ console.log('\n2. EVERY GUARD FIRES ON PROSE OF THE KIND MEDLINEPLUS ACTUALLY WR
   }
   t('and lets a good sentence through', guardFailure('Used to prevent nausea and vomiting.') === null,
     String(guardFailure('Used to prevent nausea and vomiting.')));
-  t('every guard in the list was exercised above', GUARDS.length === 7, GUARDS.length + ' guards');
+  t('every guard in the list was exercised above', GUARDS.length === 8, GUARDS.length + ' guards');
 }
 
 console.log('\n3. A REJECTED SENTENCE IS DROPPED, NEVER TRIMMED TO FIT');
@@ -161,26 +163,26 @@ console.log('\n9. A BULLETED ANSWER BECOMES PROSE, NOT A RUN-ON  (app-v75)');
   // past the end of the list into the paragraph after it. Two drugs were dropped for being too long
   // when what was actually wrong was that they had lost their punctuation.
   const html = '<h2>Why is this medication prescribed?</h2>' +
-    '<p>Valacyclovir is used to treat certain viral infections including:</p>' +
-    '<ul><li>herpes labialis (cold sores)</li>' +
-    '<li>varicella infections including shingles</li>' +
-    '<li>genital herpes</li></ul>' +
-    '<p>It is in a class of medications called antivirals.</p>' +
+    '<p>Diphenhydramine is used to treat allergy and cold symptoms:</p>' +
+    '<ul><li>sneezing</li>' +
+    '<li>runny nose</li>' +
+    '<li>itching of the nose or throat</li></ul>' +
+    '<p>It is in a class of medications called antihistamines.</p>' +
     '<h2>How should this medicine be used?</h2><p>Comes as a tablet.</p>';
   const why = whySection(html);
-  t('the list items are separated, not glued together', /cold sores\); varicella/.test(why), why);
+  t('the list items are separated, not glued together', /sneezing; runny nose/.test(why), why);
   t('the list is closed with a full stop, so the sentence ends where the list ends',
-    /genital herpes\.\s*It is in a class/.test(why), why);
+    /throat\.\s*It is in a class/.test(why), why);
   t('the section after the heading is not included', !/Comes as a tablet/.test(why), why);
-  const one = tidy(firstSentence(why), 'Valacyclovir', 'Valacyclovir');
+  const one = tidy(firstSentence(why), 'Diphenhydramine', 'Diphenhydramine');
   t('so the first sentence is just the list, and it passes every guard',
     guardFailure(one) === null, one + '  [' + one.length + ' chars]  guard: ' + guardFailure(one));
-  t('and it is a sentence a person can read', /^Used to treat certain viral infections including: herpes labialis/.test(one), one);
+  t('and it is a sentence a person can read', /^Used to treat allergy and cold symptoms: sneezing; runny nose/.test(one), one);
 
   // FALSIFICATION. Feed the same content with the separators already missing -- the exact string the
   // old extractor produced -- and the run-on guard must reject it. A backstop that cannot fire is
   // the thing this project has been burned by more than any other.
-  const glued = 'Used to treat certain viral infections including: herpes labialis (cold sores) varicella infections including shingles genital herpes It is in a class of antivirals.';
+  const glued = 'Used to treat allergy and cold symptoms: sneezing runny nose itching of the nose or throat It is in a class of antihistamines.';
   t('FALSIFIED: with the separators removed, the run-on guard rejects it',
     guardFailure(glued) === 'a run-on from a bulleted page', String(guardFailure(glued)));
 }
@@ -273,6 +275,29 @@ console.log('\n12. THE TABLE THAT IS ACTUALLY COMMITTED  (app-v75)');
     t('every committed sentence carries a real MedlinePlus page', badUrl.length === 0, badUrl.join(', '));
   }
 }
+// Loads the real functions out of index.html and runs them. Reading the source and comparing string
+// positions is what let a dead check look alive; this executes what ships.
+function shippedDescribe(html) {
+  const grab = (re, what) => {
+    const m = html.match(re);
+    if (!m) throw new Error('could not find ' + what + ' in index.html');
+    return m[0];
+  };
+  const src = [
+    grab(/const MED_PURPOSE = \{[\s\S]*?\n\};/, 'MED_PURPOSE'),
+    grab(/const MED_SOURCE_TABLE = \{[\s\S]*?\n\};/, 'MED_SOURCE_TABLE'),
+    grab(/function medPurposeKey\(text\) \{[\s\S]*?\n\}/, 'medPurposeKey'),
+    grab(/function medSourceEntry\(name\) \{[\s\S]*?\n\}/, 'medSourceEntry'),
+    grab(/function medSourceFor\(med\) \{[\s\S]*?\n\}/, 'medSourceFor'),
+    grab(/function purposeLookup\(key\) \{[\s\S]*?\n\}/, 'purposeLookup'),
+    grab(/const MED_SOURCE = \{[\s\S]*?\n\};/, 'MED_SOURCE'),
+    grab(/function describeMed\(med\) \{[\s\S]*?\n\}/, 'describeMed'),
+    grab(/function purposeOf\(med\) \{[\s\S]*?\n\}/, 'purposeOf'),
+    grab(/function purposeSourceLink\(med\) \{[\s\S]*?\n\}/, 'purposeSourceLink')
+  ].join('\n');
+  return new Function(src + '\nreturn { purposeOf, purposeSourceLink, describeMed };')();
+}
+
 // The app's key normaliser, duplicated here on purpose: the generator and the app must agree on how
 // a name becomes a key, and a shared helper would hide a disagreement rather than catch one. If this
 // ever drifts from index.html's medPurposeKey, every lookup silently returns nothing.
@@ -302,12 +327,32 @@ console.log('\n13. WHERE THE TWO TABLES DISAGREE, THE APP\'S OWN LINE WINS  (the
     const own = (0, eval)('(' + m[1] + ')');
     const table = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'tools', 'med-source-table.json'), 'utf8'));
     const collide = Object.keys(table).filter(k => Object.prototype.hasOwnProperty.call(own, k));
-    // The ordering rule, applied here exactly as describeMed applies it in the app.
-    const overridden = collide.filter(k => own[k] !== own[k]); // never: kept explicit for the reader
     t('the two tables really do overlap, so this check has something to check',
       collide.length > 0, collide.length + ' medications are in both');
-    t('and for every one of them the app\'s own line is what would show',
-      overridden.length === 0, overridden.join(', '));
+
+    // THIS CHECK COULD NOT FAIL, AND IT WAS THE ONE WRITTEN TO CATCH THE BLOCK.
+    // It read `collide.filter(k => own[k] !== own[k])`, which is false for every non-NaN value on
+    // earth, so the list was always empty and the assertion always green. The delta audit restored
+    // the blocked ordering into describeMed and watched this line print PASS. That is the literal
+    // `|| true` class -- a check that cannot fail is worse than no check, because it is counted.
+    //
+    // What it does now: RUN the shipped functions against every overlapping key and compare the
+    // text that actually comes back. Behaviour, not a position in a string.
+    const app = shippedDescribe(html);
+    const wrong = [];
+    for (const k of collide) {
+      const got = app.purposeOf({ name: k, sub: '', purpose: '' });
+      if (got !== own[k]) wrong.push(k + ': got ' + JSON.stringify(String(got).slice(0, 40)));
+    }
+    t('and running the shipped code, every one of them returns THIS APP\'S line',
+      wrong.length === 0, wrong.join(' | '));
+    // The citation follows the text: a hand-written line must never carry one.
+    const cited = collide.filter(k => {
+      const link = app.purposeSourceLink({ name: k, sub: '', purpose: '' });
+      return link && link.quoted;
+    });
+    t('and none of them carries a citation, because the words are not MedlinePlus\'s',
+      cited.length === 0, cited.join(', '));
 
     // The real assertion: read the ORDER out of the shipped source rather than restating it here.
     // A test that re-implements the rule it is testing passes when both copies are wrong together.

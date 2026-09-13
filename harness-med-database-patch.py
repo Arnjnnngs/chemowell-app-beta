@@ -42,20 +42,29 @@ WHAT IT APPENDS: nothing. No new stored field, no new record shape, no migration
 and its citation are looked up from a constant at render time, by name, exactly as the hand-written
 table already was.
 WHAT IT DELETES: nothing.
-HOW IT TIE-BREAKS: what the caregiver typed wins over everything, always. Then the MedlinePlus
-sentence, if there is one for that name or generic. Then this app's own hand-written line. Then
-nothing at all -- never an empty label under a medication nobody has described.
+HOW IT TIE-BREAKS: what the caregiver typed wins over everything, always. Then THIS APP'S OWN
+hand-written line. Then the MedlinePlus sentence, for a medication the app has never had a line for.
+Then nothing at all -- never an empty label under a medication nobody has described.
 
-WHY MEDLINEPLUS BEATS THE HAND-WRITTEN LINE, having lost to it in app-v74's plan: the citation. A
-link under a sentence written in this repo saying "Read it on MedlinePlus" is a false citation, and
-this project has been refused for that class of defect more than any other. Text and page now travel
-together as one record or neither ships, so the link says "Read it on MedlinePlus" only where the
-words above it came from that exact page. Where they did not, the link stays app-v74's honest
-"Look it up on MedlinePlus", pointing at a search.
+THAT ORDER IS THE WHOLE OF THIS RELEASE'S AUDIT BLOCK, AND THIS PARAGRAPH USED TO ARGUE FOR THE
+OPPOSITE. The first build put MedlinePlus above the hand-written line, reasoning that it is the only
+text that can honestly carry a citation. That solved a citation problem by making the medicine worse.
+MedlinePlus answers for a drug's PRIMARY APPROVED INDICATION, which is very often not why a
+chemotherapy patient is taking it. Thirteen hand-written lines were overridden and six badly. The one
+that settles it: promethazine's card read "Settles nausea and vomiting... It causes drowsiness", and
+MedlinePlus's first sentence is about allergic rhinitis and itchy eyes. Clamped to two lines at 2am,
+with the patient vomiting, that card reads "her allergy medicine" -- and the sedation warning was
+gone too. Percocet lost the acetaminophen warning that is the entire reason its entry exists.
 
-NO NEW OVERLAY, so no new scroll-lock case (Rule 5.5). The expand grows the card in place. A modal
-for reading one sentence would have added a fifth full-screen surface, its own focus trap and its own
-back-gesture question, to save nothing.
+This docstring is the release record, and a later session reading the old version of it would have
+restored the blocked behaviour believing that was the intent. The delta audit caught it still saying
+the wrong thing after the code had been fixed. If the code and this paragraph ever disagree again,
+THIS PARAGRAPH IS THE ONE THAT IS WRONG -- test/v75-table-builder.mjs section 13 runs the shipped
+functions and will say so.
+
+The citation follows the TEXT, not the medication: describeMed returns the words and their page
+together, so "Read it on MedlinePlus" cannot appear over a hand-written line or over something the
+caregiver typed.
 """
 import re, sys, pathlib, json
 
@@ -330,6 +339,30 @@ new_disc = ("'Some of these descriptions are quoted from ' + MED_SOURCE.label + 
             "opens ' + MED_SOURCE.label + ' in your browser, and that site will see which medication you looked "
             "up. Nothing is sent unless you tap.'")
 src = src.replace(old_disc, new_disc, 1)
+
+# --- 5b. the FAQ that this release made untrue ----------------------------------------------------
+# THE MEDS-SCREEN DISCLAIMER WAS UPDATED AND THE FAQ WAS NOT. Found by the delta audit. The entry is
+# "Side effects -- hair loss, sickness, tiredness: is this normal?", and its keyword list includes
+# "what does it do", "safe to take" and "interaction" -- so it is where the app steers exactly the
+# caregiver who is asking about a drug. Both of these sentences became false the moment this release
+# baked descriptions in, and the app's four-in-a-row record of shipping untrue copy is the reason
+# there is a role whose whole job is reading what the caregiver reads.
+#
+# The point of both sentences survives, because it was never really about whether the app holds any
+# drug text: it is that the app knows nothing about THIS person's treatment and must not be waited
+# on. That is still true and is now said directly, instead of resting on a claim that is not.
+FAQ_EDITS = [
+    ("It holds no information about any drug, has no idea what is normal for this person's treatment",
+     "It can show a short, general description of what a medication is usually for, but it knows "
+     "nothing about this person's treatment, has no idea what is normal for them"),
+    ("note: \"ChemoWell is a record-keeping tool, not a source of medical information.",
+     "note: \"ChemoWell is a record-keeping tool. The medication descriptions it shows are general "
+     "information, not advice about this person's care."),
+]
+for old_f, new_f in FAQ_EDITS:
+    if src.count(old_f) != 1:
+        die('a FAQ sentence this release made untrue is not where it was: ' + old_f[:60])
+    src = src.replace(old_f, new_f, 1)
 
 # --- 6. version -----------------------------------------------------------------------------------
 if src.count("const APP_VERSION = 'app-v74';") != 1:

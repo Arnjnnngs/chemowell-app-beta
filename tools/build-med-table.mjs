@@ -84,6 +84,16 @@ export const GUARDS = [
   // it was ON TOPIC.
   { name: 'not actually a description of what it is for', require: true,
     re: /\b(?:used\s+(?:to|for|in|as|on|alone|with|along)|prevents|treats|relieves|eases|settles|reduces)\b/i },
+  // NO STIGMATISED INDICATION. A description is read by whoever is holding the phone, and this app
+  // exports. MedlinePlus's real sentence for acyclovir and valacyclovir names "genital herpes (a
+  // sexually transmitted disease)" -- true of the drug, and both are routinely given as shingles or
+  // cold-sore prophylaxis to someone whose immune system is down from chemotherapy. The card would
+  // attach an STD to a patient who does not have one, in front of family, on a screen that gets
+  // printed for a clinic. Being arithmetically true is not the test; what a reader concludes is.
+  // Found by the app-v75 delta audit. The drug keeps its lookup link, so the page is a tap away for
+  // anyone who wants the full answer -- what is refused is putting it on the card unasked.
+  { name: 'a stigmatised indication a reader would attach to the patient',
+    re: /\b(sexually transmitted|venereal|genital herpes|hiv|aids\b|substance (?:use|abuse)|alcohol(?:ism| dependence| use disorder)|opioid (?:use disorder|dependence|addiction)|addiction|withdrawal syndrome)\b/i },
   // NO INSTRUCTION TO THE READER. A description says what a medication is for; the moment it says
   // what to do it is advice, and this app does not give advice.
   { name: 'an instruction to the reader', re: /\b(you should|do not|don't|never take|always take|call your doctor|tell your doctor|ask your doctor|stop taking|keep taking)\b/i }
