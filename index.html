@@ -1152,7 +1152,7 @@ function normHomeCard(raw) {
 // backup, a sync from an older build. It runs ONCE per device.
 //
 // IT IS GATED ON THE STORED CONFIG VERSION, AND THAT IS THE POINT. Phase 3 deletes
-// RESERVED_LEGACY_MED_IDS so a customer can name their medication Zofran and get the id `zofran`.
+// the fence so a customer can name their medication Zofran and get the id `zofran` (done, app-v78).
 // If this keyed off the id alone, that customer would inherit another patient's three-day post-chemo
 // block -- the exact defect this plan exists to remove, reintroduced by its own migration.
 const MED_CONFIG_VERSION = 2;
@@ -1194,6 +1194,12 @@ const LEGACY_MED_RULES = {
 // A property the medication already carries is never overwritten: if someone has configured their
 // own rule, theirs wins over a table entry that only exists for historical reasons.
 function migrateLegacyMedRules(med) {
+  // GATE 2 (app-v78). The config-version gate is a property of the FILE, and a file can be replaced:
+  // restoring a version-1 backup onto this release runs the migration again -- over a medication the
+  // customer created, possibly with the id `zofran`, which is a thing that can exist now the fence
+  // is down. A medication created from app-v78 onward carries schemaV; one that predates the
+  // properties cannot. So the stamp, not the id, decides.
+  if (med && Number(med.schemaV) >= MED_CONFIG_VERSION) return med;
   let next = med ? { ...med } : med;
   // The old boolean flags, whatever medication carried them.
   if (next && !next.linkedTo && (next.morningLinkedToProtonix || next.eveningLinkedToProtonix)) {
@@ -1248,6 +1254,10 @@ function normalizeMedication(raw, index) {
     groupedEvening: typeof original.groupedEvening === 'boolean' ? original.groupedEvening : DEFAULT_EVENING_IDS.includes(id),
     groupedMorning: typeof original.groupedMorning === 'boolean' ? original.groupedMorning : DEFAULT_MORNING_IDS.includes(id),
     groupedAfternoon: !!original.groupedAfternoon,
+    // app-v78: carried through explicitly rather than relying on `...original`, because this is the
+    // flag that stops a customer's own medication being handed another patient's regimen by a
+    // restored backup. A field that matters that much is not left to a spread.
+    ...(Number(original.schemaV) > 0 ? { schemaV: Number(original.schemaV) } : {}),
     // v16 migration: chemoOnly (fixed +-1 day window, "Chemo-day only") -> treatmentOnly with a
     // per-medication configurable day range. A device with an existing chemoOnly:true medication and
     // no explicit day fields keeps behaving identically (+-1) until the user edits it.
@@ -1729,7 +1739,7 @@ function chemoOffsetFor(dayTs) {
 function dexActiveOn(dayTs) { const o = chemoOffsetFor(dayTs); return o !== null && o >= -1 && o <= 1; }
 // Generic version of dexActiveOn for the per-medication "treatment day" toggle (v16). dexActiveOn's
 // hardcoded -1..+1 window only ever applied to the legacy 'dexamethasone' id, which no user-created
-// medication can ever take (see RESERVED_LEGACY_MED_IDS) -- so every real medication that turned the
+// medication could ever take while the fence existed -- so every real medication that turned the
 // toggle on silently inherited that fixed window regardless of its actual regimen. treatmentDaysBefore
 // /After are per-medication (editable in the med editor, default 1/1 = today's old fixed behavior).
 // v52 (audit H-2). "Is there a treatment date to compare against at all?" -- deliberately separate
@@ -6076,12 +6086,16 @@ function parseScheduleWindows(text) {
 // Legacy ids from the original single-family app still key special-case logic (chemo lockouts,
 // linked windows, fixed ceilings). User-created meds must NEVER receive these ids, or a stranger's
 // "Zofran" would inherit another patient's regimen rules (audit P0-2).
-const RESERVED_LEGACY_MED_IDS = new Set(['dexamethasone', 'zofran', 'protonix', 'tylenol', 'tylenol-liquid', 'iron', 'compazine', 'buspirone', 'paroxetine', 'morphine', 'senokot', 'imodium', 'lidocaine']);
 function nextMedicationId(name, existingId) {
   const base = safeMedicationId(name, 'medication');
   if (existingId) return existingId;
   const ids = new Set(state.meds.map(med => med.id));
-  const taken = id => ids.has(id) || RESERVED_LEGACY_MED_IDS.has(id);
+  // THE FENCE IS GONE (app-v78). This used to also refuse thirteen real drug names, so a customer
+  // typing "Zofran" got `zofran-2` and a customer typing "Tylenol" got `tylenol-2` -- because a
+  // medication holding one of those ids would have inherited another patient's regimen. Phases 1
+  // and 2 moved every one of those rules onto properties the medication owns, so an id is just an
+  // id now. The only thing still refused is a collision with a medication that actually exists.
+  const taken = id => ids.has(id);
   if (!taken(base)) return base;
   let suffix = 2;
   while (taken(base + '-' + suffix)) suffix += 1;
@@ -6173,6 +6187,9 @@ function saveMedicationEditor() {
   }
   const original = editor.sourceId ? state.meds.find(med => med.id === editor.sourceId) : null;
   const id = nextMedicationId(name, editor.sourceId);
+  // app-v78: stamps this medication as postdating the properties, so the legacy migration can never
+  // reach it however old the config file around it claims to be. See migrateLegacyMedRules.
+  const schemaV = MED_CONFIG_VERSION;
   // v20 restart (audit P1-1): when ADDING a brand-new medication (not editing an existing one) whose
   // freshly-derived id happens to match a previously-deleted medication's archived entry, restore that
   // entry's pausePeriods so re-adding "Ibuprofen" after deleting it doesn't erase the memory of which
@@ -6184,6 +6201,7 @@ function saveMedicationEditor() {
   const candidate = {
     ...(original || {}),
     id,
+    schemaV,
     name,
     sub: String(form.sub || '').trim(),
     purpose: String(form.purpose || '').trim(),
@@ -7380,7 +7398,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v77';
+const APP_VERSION = 'app-v78';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -9931,8 +9949,8 @@ function sendNotif(title, body, tag) {
 
 // Generic per-medication dose reminders (v16). Reminders used to fire on a hardcoded clock schedule
 // for five hardcoded legacy medication ids (protonix/iron/compazine/buspirone/paroxetine) — ids no
-// real user-created medication can ever have (RESERVED_LEGACY_MED_IDS exists specifically to stop a
-// new medication from inheriting another patient's rules), so every branch was unreachable dead code
+// real user-created medication could have while the fence existed (app-v78 removed it, by which
+// point nothing keyed off those ids at all), so every branch was unreachable dead code
 // for every real install: there was no way to get a reminder for a medication you actually added. This
 // replaces that with a med-agnostic reminder driven by the exact same source of truth the passive
 // missed-dose banner already uses (missedDosesFor): a medication's own `windows` (from the "Schedule

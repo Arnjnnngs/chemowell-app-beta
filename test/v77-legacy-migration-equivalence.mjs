@@ -52,6 +52,11 @@ function worldFrom(htmlPath, label) {
     grab(/function medChemoBlockedOn\(med, dayTs\) \{[\s\S]*?\n\}/, 'medChemoBlockedOn'),
     grab(/function medChemoBlockingDay\(med, dayTs\) \{[\s\S]*?\n\}/, 'medChemoBlockingDay'),
     grab(/function medChemoBlockSpanDays\(med\) \{[\s\S]*?\n\}/, 'medChemoBlockSpanDays'),
+    // app-v78 added a per-medication stamp gate inside migrateLegacyMedRules, which reads
+    // MED_CONFIG_VERSION. Lifting the function without its constant threw a bare ReferenceError --
+    // the same class that broke the two v67 harnesses when phase 1 added a helper. Keep this list in
+    // step with what the lifted functions actually reference.
+    optional(/const MED_CONFIG_VERSION = \d+;/),
     optional(/const LEGACY_MED_RULES = \{[\s\S]*?\n\};/),
     optional(/function migrateLegacyMedRules\([\s\S]*?\n\}/)
   ].filter(Boolean);
@@ -163,6 +168,25 @@ console.log('\n4. THE MIGRATION IS ONE-SHOT AND NEVER OVERWRITES A REAL CHOICE')
     try { NEW.migrate(hostile); } catch (e) { threw = String(e && e.message || e); }
     t('survives ' + JSON.stringify(hostile), threw === null, threw || '');
   }
+}
+
+console.log('\n5. THE app-v78 STAMP: A CUSTOMER\'S OWN MEDICATION IS NEVER MIGRATED');
+{
+  // The fence is gone, so `zofran` is an id a customer can now hold. The config-version gate is a
+  // property of the FILE and a file can be replaced -- restoring a pre-phase-2 backup runs the
+  // migration again. The stamp is a property of the MEDICATION and is what actually protects them.
+  const theirs = { id: 'zofran', name: 'Zofran', schemaV: 2 };
+  const out = NEW.migrate(theirs);
+  t('a stamped medication comes back untouched', out.chemoBlock === undefined, JSON.stringify(out));
+  // And the other direction, which matters just as much: too eager a gate means someone restoring a
+  // genuinely old backup silently loses their regimen.
+  const old = NEW.migrate({ id: 'zofran', name: 'Zofran' });
+  t('an unstamped one is still migrated', !!old.chemoBlock && old.chemoBlock.toDayOffset === 2,
+    JSON.stringify(old.chemoBlock));
+  t('a stamp below the current version does not count',
+    !!NEW.migrate({ id: 'zofran', schemaV: 1 }).chemoBlock, '');
+  t('and neither does a junk stamp',
+    !!NEW.migrate({ id: 'zofran', schemaV: 'yes' }).chemoBlock, '');
 }
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed' + (fail ? '  <-- FAIL' : ''));

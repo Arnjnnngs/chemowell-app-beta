@@ -188,11 +188,22 @@ console.log('\n4. THE RATCHET: BEHAVIOUR KEYED TO ONE PERSON\'S PRESCRIPTION');
     'found ' + direct.length + '/' + inside + '/' + helpers.length +
     ', pinned at ' + CEILING.outside + '/' + CEILING.inside + '/' + CEILING.helpers);
 
-  // The fence has to stay until the refactor removes what it is fencing.
-  t('and RESERVED_LEGACY_MED_IDS still fences every one of them, since they are still here',
-    LEGACY_IDS.every(id => new RegExp("'" + id + "'").test(
-      (html.match(/const RESERVED_LEGACY_MED_IDS = new Set\(\[[\s\S]*?\]\)/) || [''])[0])),
-    '');
+  // THE FENCE IS GONE (app-v78), AND THIS CHECK INVERTED WITH IT.
+  // It used to assert that RESERVED_LEGACY_MED_IDS still listed all thirteen names, because the
+  // hardcoded branches were still there and the fence was the only thing keeping a stranger's
+  // medication away from them. Phases 1 and 2 moved every rule onto properties and phase 3 deleted
+  // the fence, so a customer can now name their medication Zofran and get the id `zofran`.
+  //
+  // Asserting its ABSENCE matters as much as asserting its presence did: bringing it back would
+  // mean thirteen real drug names are unusable again, and it would do so silently.
+  t('the fence is gone, so a customer can use their medication\'s real name',
+    !/RESERVED_LEGACY_MED_IDS/.test(html), 'RESERVED_LEGACY_MED_IDS is back in the file');
+  // And the reason it is safe for it to be gone: the migration is gated on a per-medication stamp,
+  // not on the id. Without this, deleting the fence and deleting the stamp would both pass.
+  t('and the legacy migration is gated on a per-medication stamp, not on the id',
+    /Number\(med\.schemaV\) >= MED_CONFIG_VERSION/.test(code), '');
+  t('which the medication editor writes on every medication it creates',
+    /const schemaV = MED_CONFIG_VERSION;/.test(code), '');
 }
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed' + (fail ? '  <-- FAIL' : ''));
