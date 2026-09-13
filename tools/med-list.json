@@ -2,331 +2,679 @@
   {
     "name": "acetaminophen",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "acyclovir",
+    "generic": "",
+    "url": "",
+    "why": "blood counts and infection risk \u2014 the reason for most unscheduled hospital trips"
   },
   {
     "name": "advil",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "allopurinol",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "amitriptyline",
+    "generic": "",
+    "url": "",
+    "why": "nerve pain and mouth sores, the two side effects patients report most"
+  },
+  {
+    "name": "aprepitant",
+    "generic": "",
+    "url": "",
+    "why": "anti-nausea beyond the two it knows \u2014 the most-asked-about class in chemo"
   },
   {
     "name": "ativan",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "benadryl",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "bevacizumab",
+    "generic": "",
+    "url": "",
+    "why": "targeted and immunotherapy \u2014 increasingly what people are actually on"
+  },
+  {
+    "name": "bisacodyl",
+    "generic": "",
+    "url": "",
+    "why": "the bowel end of it, which the app already asks about daily"
   },
   {
     "name": "buspar",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "buspirone",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "capecitabine",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
+  },
+  {
+    "name": "carboplatin",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
+  },
+  {
+    "name": "ciprofloxacin",
+    "generic": "",
+    "url": "",
+    "why": "blood counts and infection risk \u2014 the reason for most unscheduled hospital trips"
+  },
+  {
+    "name": "cisplatin",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
   },
   {
     "name": "colace",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "compazine",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "cyanocobalamin",
+    "generic": "",
+    "url": "",
+    "why": "protective and rescue drugs given with chemotherapy"
+  },
+  {
+    "name": "cyclophosphamide",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
+  },
+  {
+    "name": "cytarabine",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
+  },
+  {
+    "name": "darbepoetin alfa",
+    "generic": "",
+    "url": "",
+    "why": "blood counts and infection risk \u2014 the reason for most unscheduled hospital trips"
   },
   {
     "name": "decadron",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "dexamethasone",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "dicyclomine",
+    "generic": "",
+    "url": "",
+    "why": "the bowel end of it, which the app already asks about daily"
   },
   {
     "name": "diphenhydramine",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "docetaxel",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
   },
   {
     "name": "docusate",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "doxorubicin",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
+  },
+  {
+    "name": "dronabinol",
+    "generic": "",
+    "url": "",
+    "why": "anti-nausea beyond the two it knows \u2014 the most-asked-about class in chemo"
+  },
+  {
+    "name": "duloxetine",
+    "generic": "",
+    "url": "",
+    "why": "nerve pain and mouth sores, the two side effects patients report most"
+  },
+  {
+    "name": "epirubicin",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
+  },
+  {
+    "name": "epoetin alfa",
+    "generic": "",
+    "url": "",
+    "why": "blood counts and infection risk \u2014 the reason for most unscheduled hospital trips"
+  },
+  {
+    "name": "etoposide",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
   },
   {
     "name": "famotidine",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "ferrous sulfate",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "filgrastim",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "fluconazole",
+    "generic": "",
+    "url": "",
+    "why": "blood counts and infection risk \u2014 the reason for most unscheduled hospital trips"
+  },
+  {
+    "name": "fluorouracil",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
+  },
+  {
+    "name": "folic acid",
+    "generic": "",
+    "url": "",
+    "why": "protective and rescue drugs given with chemotherapy"
   },
   {
     "name": "gabapentin",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "gemcitabine",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
+  },
+  {
+    "name": "granisetron",
+    "generic": "",
+    "url": "",
+    "why": "anti-nausea beyond the two it knows \u2014 the most-asked-about class in chemo"
   },
   {
     "name": "hydrocodone",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "ibuprofen",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "ifosfamide",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
   },
   {
     "name": "imodium",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "irinotecan",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
   },
   {
     "name": "iron",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "lactulose",
+    "generic": "",
+    "url": "",
+    "why": "the bowel end of it, which the app already asks about daily"
+  },
+  {
+    "name": "leucovorin",
+    "generic": "",
+    "url": "",
+    "why": "protective and rescue drugs given with chemotherapy"
+  },
+  {
+    "name": "levofloxacin",
+    "generic": "",
+    "url": "",
+    "why": "blood counts and infection risk \u2014 the reason for most unscheduled hospital trips"
   },
   {
     "name": "lidocaine",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "lidoderm",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "loperamide",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "lorazepam",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "mesna",
+    "generic": "",
+    "url": "",
+    "why": "protective and rescue drugs given with chemotherapy"
+  },
+  {
+    "name": "methotrexate",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
   },
   {
     "name": "metoclopramide",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "miralax",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "morphine",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "motrin",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "ms contin",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "neulasta",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "neupogen",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "neurontin",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "nivolumab",
+    "generic": "",
+    "url": "",
+    "why": "targeted and immunotherapy \u2014 increasingly what people are actually on"
   },
   {
     "name": "norco",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "omeprazole",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "ondansetron",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "oxaliplatin",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
   },
   {
     "name": "oxycodone",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "oxycontin",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "paclitaxel",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
+  },
+  {
+    "name": "palonosetron",
+    "generic": "",
+    "url": "",
+    "why": "anti-nausea beyond the two it knows \u2014 the most-asked-about class in chemo"
   },
   {
     "name": "pantoprazole",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "paracetamol",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "paroxetine",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "paxil",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "pegfilgrastim",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "pembrolizumab",
+    "generic": "",
+    "url": "",
+    "why": "targeted and immunotherapy \u2014 increasingly what people are actually on"
+  },
+  {
+    "name": "pemetrexed",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
   },
   {
     "name": "pepcid",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "percocet",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "phenergan",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "polyethylene glycol",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "pregabalin",
+    "generic": "",
+    "url": "",
+    "why": "nerve pain and mouth sores, the two side effects patients report most"
   },
   {
     "name": "prilosec",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "prochlorperazine",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "promethazine",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "protonix",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "reglan",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "rituximab",
+    "generic": "",
+    "url": "",
+    "why": "targeted and immunotherapy \u2014 increasingly what people are actually on"
   },
   {
     "name": "roxicodone",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "scopolamine",
+    "generic": "",
+    "url": "",
+    "why": "anti-nausea beyond the two it knows \u2014 the most-asked-about class in chemo"
   },
   {
     "name": "senna",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "sennosides",
+    "generic": "",
+    "url": "",
+    "why": "the bowel end of it, which the app already asks about daily"
   },
   {
     "name": "senokot",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "sertraline",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "tramadol",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "trastuzumab",
+    "generic": "",
+    "url": "",
+    "why": "targeted and immunotherapy \u2014 increasingly what people are actually on"
   },
   {
     "name": "tylenol",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "tylenol liquid",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "tylenol pm",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "ultram",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "valacyclovir",
+    "generic": "",
+    "url": "",
+    "why": "blood counts and infection risk \u2014 the reason for most unscheduled hospital trips"
   },
   {
     "name": "vicodin",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
+  },
+  {
+    "name": "vincristine",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
+  },
+  {
+    "name": "vinorelbine",
+    "generic": "",
+    "url": "",
+    "why": "chemotherapy agents \u2014 the category the app is named after and does not cover at all"
   },
   {
     "name": "xylocaine",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "zofran",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "zoloft",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   },
   {
     "name": "zyloprim",
     "generic": "",
-    "url": ""
+    "url": "",
+    "why": "already described in the app"
   }
 ]

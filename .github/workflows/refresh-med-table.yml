@@ -10,10 +10,14 @@
 # would not allow through, and why.
 name: Refresh medication table
 
+# ON DEMAND ONLY, until Aaron has seen one run and said otherwise. Nothing about this should
+# start happening on its own before a person has watched it happen once -- the fetching half has
+# never been executed anywhere, and the first run is where we learn whether it works at all.
+# The monthly schedule is written below and commented out, ready to switch on in one edit.
 on:
-  schedule:
-    - cron: '0 6 1 * *'   # the 1st of each month; drug pages change slowly
-  workflow_dispatch: {}    # and on demand, from the Actions tab
+  workflow_dispatch: {}
+  # schedule:
+  #   - cron: '0 6 1 * *'   # the 1st of each month; drug pages change slowly
 
 permissions:
   contents: write
