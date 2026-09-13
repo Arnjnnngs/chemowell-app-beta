@@ -51,6 +51,8 @@ console.log('\n2. EVERY GUARD FIRES ON PROSE OF THE KIND MEDLINEPLUS ACTUALLY WR
     ['a schedule or a dose unit',                 'Used to prevent nausea, taken daily.'],
     ['a dosage form or route',                    'Used to numb an area of skin before a needle is inserted.'],
     ['an instruction to the reader',              'Used to treat heartburn; do not take it with other acid reducers.'],
+    ['a named diagnosis the patient may not have',
+                                                  'Used alone or in combination with other medications to treat cancer of the ovaries.'],
     ['a stigmatised indication a reader would attach to the patient',
                                                   'Used to treat certain viral infections including cold sores, shingles, and genital herpes (a sexually transmitted disease).'],
     ['not actually a description of what it is for',
@@ -64,7 +66,7 @@ console.log('\n2. EVERY GUARD FIRES ON PROSE OF THE KIND MEDLINEPLUS ACTUALLY WR
   }
   t('and lets a good sentence through', guardFailure('Used to prevent nausea and vomiting.') === null,
     String(guardFailure('Used to prevent nausea and vomiting.')));
-  t('every guard in the list was exercised above', GUARDS.length === 8, GUARDS.length + ' guards');
+  t('every guard in the list was exercised above', GUARDS.length === 9, GUARDS.length + ' guards');
 }
 
 console.log('\n3. A REJECTED SENTENCE IS DROPPED, NEVER TRIMMED TO FIT');

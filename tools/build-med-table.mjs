@@ -84,6 +84,30 @@ export const GUARDS = [
   // it was ON TOPIC.
   { name: 'not actually a description of what it is for', require: true,
     re: /\b(?:used\s+(?:to|for|in|as|on|alone|with|along)|prevents|treats|relieves|eases|settles|reduces)\b/i },
+  // NO NAMED DIAGNOSIS. THIS IS THE BIGGEST ONE AND IT IS THE HARDEST TO SEE, because every
+  // sentence it rejects is true of the drug and comes verbatim from a federal source.
+  // MedlinePlus answers "what is this drug approved for?". A medication card answers "what is this
+  // person taking?" -- and printing the first under the second turns a fact about a molecule into a
+  // claim about a patient. Read on her own phone:
+  //   carboplatin  -> "cancer of the ovaries"        (she has breast cancer)
+  //   ifosfamide   -> "cancer of the testicles"      (she is a woman)
+  //   epirubicin   -> "breast cancer in patients who have had surgery to remove the tumor"
+  //                                                   (asserts a surgery she may not have had)
+  //   oxaliplatin  -> "ADVANCED colon or rectal cancer"  (asserts a stage, which is a prognosis)
+  // Carboplatin is standard in lung, breast, head-and-neck and bladder disease; ifosfamide in
+  // sarcoma and lymphoma. The card would be confidently wrong about the single most sensitive fact
+  // in the app, on a screen that gets exported and handed to family.
+  //
+  // Aaron, 2026-09-13: no hardcoded treatment or diagnosis in this app -- and, separately, no
+  // guesswork, it comes from the source. Both point here. Declining to print a sentence is not
+  // guessing: the drug keeps its "Look it up on MedlinePlus" link, so the whole page is one tap
+  // away for anyone who wants it. What is refused is the app asserting a diagnosis unasked.
+  //
+  // Bare "cancer" is deliberately NOT banned. "used to prevent nausea and vomiting caused by cancer
+  // chemotherapy" is the single most relevant sentence in a chemotherapy app and names no disease
+  // the patient might not have -- the app already knows she is having chemotherapy, she told it.
+  { name: 'a named diagnosis the patient may not have',
+    re: /\b(cancers? of the|ovarian|testicular|leukemias?|lymphomas?|myeloma|sarcomas?|carcinoma|melanoma|mesothelioma|glioma|glioblastoma|neuroblastoma|(?:small|non-small)[ -]cell|breast cancer|colon cancer|colorectal|rectal cancer|bladder cancer|prostate cancer|pancreatic cancer|gastric cancer|stomach cancer|esophageal|cervical cancer|endometrial|ovaries|testicles|advanced|metastatic|stage [0-9IV]|malignan)\b/i },
   // NO STIGMATISED INDICATION. A description is read by whoever is holding the phone, and this app
   // exports. MedlinePlus's real sentence for acyclovir and valacyclovir names "genital herpes (a
   // sexually transmitted disease)" -- true of the drug, and both are routinely given as shingles or
