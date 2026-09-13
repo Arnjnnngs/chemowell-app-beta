@@ -186,13 +186,15 @@ console.log('\n4. WHY THE CRASH IS NOW STRUCTURALLY IMPOSSIBLE -- AND THE CHECK 
   // the app expects one dose from this medication and Home reads `0/1`; without it the medication
   // has nothing to be due and drops out of the count entirely, silently, with no error and a card
   // that looks completely normal. That is the actual harm, and it is the thing to assert on.
-  // Read from <header>, not <main>: the day's dose progress is rendered in the app header beside the
-  // date, which is outside the element sections 1-3 read. innerText, never textContent -- in a
-  // single-file app textContent carries the source of the app itself and any string matches.
   const ring = await page.evaluate(() => {
-    const h = document.querySelector('header') || document.body;
-    const m = (h.innerText || '').match(/\b\d+\s*\/\s*\d+\b/);
-    return m ? m[0].replace(/\s+/g, '') : '(no dose count in the header)';
+    const hero = document.querySelector('[data-home="up-next"] [aria-label*="scheduled doses logged today"]');
+    if (hero) {
+      const m = (hero.getAttribute('aria-label') || '').match(/(\d+)\s+of\s+(\d+)/);
+      if (m) return m[1] + '/' + m[2];
+    }
+    const hd = document.querySelector('header') || document.body;
+    const m2 = (hd.innerText || '').match(/\b\d+\s*\/\s*\d+\b/);
+    return m2 ? m2[0].replace(/\s+/g, '') : '(no dose count anywhere on screen)';
   });
   t('the app gives it a window back, so it still counts toward the day', ring === '0/1', ring);
   t('and its Quick Log card is on Home', /Steroid X/.test(named),

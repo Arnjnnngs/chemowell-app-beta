@@ -1538,7 +1538,7 @@ function restoreView() {
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
+let state = { medFlash: null, entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -2027,6 +2027,28 @@ function missedDosesFor(dayTs, now) {
 // changes. Same population missedDosesFor iterates minus the `alerts` filter: window-scheduled
 // meds only (gap/as-needed meds have no "scheduled today" denominator). Skipped entries count as
 // handled; taken is capped at the number of windows so extra logs never overflow the ring.
+// Take the caregiver to the card that can actually log the dose. NOT a second logging path: one
+// control that writes a dose is all this app should ever have, and the card below already carries
+// the ceiling check, the gap check and the override flow. A focus ring is set so the destination is
+// obvious to a screen reader and to anyone who cannot see the scroll happen.
+function scrollToMedCard(medId) {
+  // Two shapes, because a grouped medication has no card of its own: its own card first, then the
+  // group card that contains it. CSS.escape is not assumed -- the id is sanitised the same way the
+  // group attribute is written, so the two always agree.
+  const safe = String(medId).replace(/[^A-Za-z0-9_-]/g, '');
+  const el = document.querySelector('[data-med-card="' + safe + '"]')
+    || document.querySelector('[data-med-card-' + safe + ']');
+  if (!el) return;
+  try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { el.scrollIntoView(); }
+  // THE HIGHLIGHT LIVES IN STATE, NOT ON THE NODE. The first version set tabindex, focus and an
+  // inline boxShadow directly on the element -- and this app re-renders on a one-second tick, so
+  // every one of them was wiped within a second. On a phone the ring would have flashed and
+  // vanished, and the caregiver would land on a card with nothing marking it. Caught by the suite
+  // asserting the landing rather than the scroll.
+  setState({ medFlash: safe });
+  setTimeout(() => { if (state.medFlash === safe) setState({ medFlash: null }); }, 1800);
+}
+
 function doseProgressToday(now) {
   const d0 = dayStart(now);
   let scheduled = 0, taken = 0;
@@ -3830,6 +3852,44 @@ function renderTestingControls() {
   )];
 }
 
+// WHAT IS DUE NEXT. Read-only: every input here is something Home already computes on each render.
+//
+// "Next" means the soonest of: a scheduled medication whose window is open right now, and a
+// scheduled medication whose window opens later today. A medication that is paused, not scheduled
+// today, blocked around a treatment day, or already logged in its current window is not next --
+// status() answers all four and is the single place that decides, so this cannot drift from what the
+// cards below say.
+//
+// AS-NEEDED MEDICATIONS ARE DELIBERATELY EXCLUDED. A painkiller available every four hours is not
+// "due" at any time -- it is available -- and putting one in a card headed "Up next" would tell a
+// caregiver to give a dose nobody asked for. Only medications with windows can be late for anything,
+// which is the same line `doseProgressToday` and the missed-dose walk already draw.
+function nextDueDose(now) {
+  const d0 = dayStart(now);
+  let best = null;
+  for (const med of state.meds) {
+    if (!med) continue;
+    if (!(med.windows && med.windows.length)) continue;      // as-needed: available, never due
+    if (!medScheduledOn(med, now)) continue;
+    if (treatmentOnlyBlocks(med, now) || treatmentExcludedNow(med, now)) continue;
+    const st = status(med);
+    // st.paused covers med.paused -- status() returns it on its first line -- so there is no
+    // separate check for it above. Verified by deleting one and watching nothing change.
+    if (st.paused || st.chemoBlock || st.courseComplete || st.noWindowToday) continue;
+    // Open right now beats anything later, and among open ones the first in list order wins -- the
+    // same order the cards are drawn in, so the hero always names a card the caregiver can see.
+    if (!st.locked) {
+      if (!best || !best.openNow) best = { med, st, openNow: true, at: now };
+      continue;
+    }
+    if (!Number.isFinite(st.availableAt)) continue;
+    if (st.availableAt < now) continue;                      // in the past: it is missed, not next
+    if (st.availableAt >= nextDay(d0)) continue;             // tomorrow is not "up next" today
+    if (!best || (!best.openNow && st.availableAt < best.at)) best = { med, st, openNow: false, at: st.availableAt };
+  }
+  return best;
+}
+
 // Dose-progress ring (item 11): 44px SVG built as an innerHTML string, matching the existing
 // lockSVG / weight-chart string pattern. Hidden entirely when nothing is scheduled today.
 function doseRing(now) {
@@ -3873,7 +3933,7 @@ function renderHeader(now) {
         h('div', { style: { ...TYPE.caption, color: '#7A6E76', fontWeight: '600', marginTop: '2px' } }, dateLabel)
       ),
       h('div', { style: { textAlign: 'right', flexShrink: '0', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' } },
-        doseRing(now)
+        state.view === 'home' ? null : doseRing(now)
       )
     ),
     TEST_MODE ? h('div', { style: { maxWidth: '720px', margin: '8px auto 0' } }, ...renderTestingControls()) : null,
@@ -3997,10 +4057,15 @@ function renderDrawer() {
 // of scattering them across the individual Quick Log cards. Used for the Protonix-linked meds
 // (Buspirone/Paroxetine in the morning, Iron/Compazine in the evening).
 function renderGroupedMedsCard(title, meds, now) {
+  // The scroll hook for every medication in the group, since none of them has a card of its own.
+  // Set on the section rather than per row: the row is what the caregiver taps, the card is what
+  // they need to be looking at, and landing mid-list with the heading off-screen is disorienting.
+  const groupHook = {};
+  meds.forEach(m => { if (m && m.id) groupHook['data-med-card-' + String(m.id).replace(/[^A-Za-z0-9_-]/g, '')] = 'group'; });
   // v20: paused and treatment-window-hidden meds are excluded from "due"/"Take all" the same way
   // medCards' upstream filter already excludes them for standalone Quick Log cards.
   const dueMeds = meds.filter(m => { if (m.paused) return false; if (treatmentOnlyBlocks(m, now)) return false; if (treatmentExcludedNow(m, now)) return false; if (!medScheduledOn(m, now)) return false; const s = status(m); return !s.locked; });
-  return h('section', { style: { overflowWrap: 'anywhere' } },
+  return h('section', { ...groupHook, style: { overflowWrap: 'anywhere' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
       h('div', { style: { ...TYPE.label, color: '#915E48' } }, title),
       // 'Take all' was hidden for the whole of a stay, left behind when the Restricted tiles
@@ -5255,6 +5320,79 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   const lastWeight = latest('weight');
   const weightSubLabel = lastWeight ? ('Last reading ' + fmtTime(lastWeight.ts)) : 'No readings yet';
 
+  // UP NEXT -- the first thing on Home, above the boxes that ask for a number.
+  //
+  // It is one card, not a screen: the medication, the dose, when, and one control that takes the
+  // caregiver to the real logging card. Nothing here logs anything (see the write model in
+  // harness-v80-up-next.py) and nothing here is stored.
+  {
+    const nx = nextDueDose(now);
+    const prog = doseProgressToday(now);
+    if (nx) {
+      const mins = Math.max(0, Math.round((nx.at - now) / 60000));
+      const whenWords = nx.openNow
+        ? 'Due now'
+        : mins < 60
+          ? ('Due in ' + mins + ' minute' + (mins === 1 ? '' : 's'))
+          : ('Due at ' + fmtTime(nx.at));
+      // The dose, only where the medication actually carries one. "500 mg" is useful; an empty
+      // separator where a dose would be is the app showing its own plumbing.
+      const firstDose = nx.med.doses && nx.med.doses.length ? nx.med.doses[0].label : null;
+      const sub = [firstDose, nx.med.sub || null].filter(Boolean).join(' · ');
+      const ringPct = prog.scheduled > 0 ? Math.min(100, Math.round(prog.taken / prog.scheduled * 100)) : 0;
+      parts.push(h('section', {
+        'data-home': 'up-next',
+        style: {
+          position: 'relative', overflow: 'hidden', borderRadius: '20px', padding: '18px 18px 16px',
+          color: '#FFFFFF',
+          background: 'linear-gradient(152deg, #E4693B 0%, #BF4C1A 52%, #8B3C1B 100%)',
+          boxShadow: '0 10px 30px -12px rgba(139,60,27,0.55), 0 1px 2px rgba(139,60,27,0.20)'
+        }
+      },
+        // 14px of gap and a 56px ring, measured at 320: at 12/62 the medication name and the ring
+        // were two pixels apart on the narrowest phone this app supports.
+        h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '14px' } },
+          h('div', { style: { flex: '1', minWidth: '0' } },
+            h('div', { style: { ...TYPE.label, color: 'rgba(255,255,255,0.82)' } }, 'Up next'),
+            // overflowWrap, not ellipsis: a medication name is the one string on this card that must
+            // never be trimmed, because it is what the caregiver is about to act on.
+            h('div', { style: { fontSize: '23px', fontWeight: '800', letterSpacing: '-0.02em', lineHeight: '1.15', marginTop: '3px', overflowWrap: 'anywhere' } }, nx.med.name),
+            sub ? h('div', { style: { fontSize: '14px', fontWeight: '500', color: 'rgba(255,255,255,0.88)', marginTop: '4px' } }, sub) : null,
+            h('div', { style: { fontSize: '13.5px', fontWeight: '700', color: 'rgba(255,255,255,0.95)', marginTop: '7px' } },
+              whenWords + (nx.st.windowName ? ' · ' + nx.st.windowName : ''))
+          ),
+          prog.scheduled > 0 ? h('div', {
+            role: 'img',
+            'aria-label': prog.taken + ' of ' + prog.scheduled + ' scheduled doses logged today',
+            style: { flexShrink: '0', width: '56px', height: '56px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', lineHeight: '1',
+              background: 'conic-gradient(#FFFFFF ' + ringPct + '%, rgba(255,255,255,0.26) 0)' }
+          },
+            h('div', { style: { width: '45px', height: '45px', borderRadius: '50%', background: 'rgba(155,60,25,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '2px' } },
+              h('div', { style: { fontSize: '14px', fontWeight: '800', letterSpacing: '-0.02em' } }, prog.taken + '/' + prog.scheduled),
+              h('div', { style: { fontSize: '8px', fontWeight: '700', letterSpacing: '0.07em', color: 'rgba(255,255,255,0.8)' } }, 'DOSES')
+            )
+          ) : null
+        ),
+        h('button', {
+          onClick: () => scrollToMedCard(nx.med.id),
+          style: { marginTop: '15px', width: '100%', minHeight: '48px', borderRadius: '14px', border: '0', background: '#FFFFFF', color: '#9E3F1C', fontSize: '16px', fontWeight: '800', boxShadow: '0 3px 10px rgba(0,0,0,0.16)' }
+        }, nx.openNow ? 'Go to ' + nx.med.name : 'Show me the card')
+      ));
+    } else if (prog.scheduled > 0 && prog.taken >= prog.scheduled) {
+      // ALL DONE IS A STATE WORTH SHOWING. Without this the card simply vanishes once the last dose
+      // is logged, and a screen that answers "what is due next" by disappearing looks broken at the
+      // exact moment it should feel finished.
+      parts.push(h('section', { 'data-home': 'up-next', style: { borderRadius: '20px', padding: '16px 18px', background: '#E9F6F0', border: '1px solid #BFE3D5', display: 'flex', alignItems: 'center', gap: '13px' } },
+        h('div', { style: { flexShrink: '0', width: '38px', height: '38px', borderRadius: '50%', background: '#0F9D6B', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '19px', fontWeight: '800' } }, '\u2713'),
+        h('div', { style: { minWidth: '0' } },
+          h('div', { style: { fontSize: '16px', fontWeight: '800', color: '#0A5A40' } }, 'All scheduled doses are in'),
+          h('div', { style: { fontSize: '13.5px', fontWeight: '500', color: '#2E6B55', marginTop: '2px' } },
+            'Nothing else is scheduled today. As-needed medications are still available below.')
+        )
+      ));
+    }
+  }
+
   // app-v77 phase 2: one renderer for every daily-total card. Was three copies keyed to three
   // medication ids, with two hardcoded ceilings. A medication appears here because the caregiver
   // gave it a homeCard, and it shows ITS name, ITS limit and ITS unit.
@@ -5650,7 +5788,9 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       );
     }
 
-    return h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', ...(st.chemoBlock ? { borderLeft: '4px solid #C0453B' } : {}), borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '6px', boxShadow: '0 3px 14px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
+    const medHook = String(med.id).replace(/[^A-Za-z0-9_-]/g, '');
+    const flashed = state.medFlash === medHook;
+    return h('div', { 'data-med-card': medHook, 'data-flash': flashed ? 'on' : null, style: { background: '#FFFFFF', border: '1px solid #E9D8D1', ...(st.chemoBlock ? { borderLeft: '4px solid #C0453B' } : {}), borderRadius: '16px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '6px', transition: 'box-shadow .25s ease', boxShadow: flashed ? '0 0 0 3px rgba(191,76,26,0.55), 0 3px 14px rgba(203,122,87,0.10)' : '0 3px 14px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
       // Header row
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' } },
         h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '4px', minWidth: '0', flex: '1', flexWrap: 'wrap' } },
@@ -7567,7 +7707,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v79';
+const APP_VERSION = 'app-v80';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
