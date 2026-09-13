@@ -45,6 +45,33 @@ what the last leak looked like.
 One line: `Object.getOwnPropertySymbols`. Inert today by language semantics rather than by luck,
 which is a better reason than the `__proto__` case had.
 
+## 4b. `v74-shipped-audit-probe` is genuinely red, and the placeholder reaches a THIRD surface
+
+Pre-existing — identical on the parent commit, so not app-v79 — and verified directly rather than
+taken from the report. Three failures, 19/22:
+
+1. **An empty medication name produces a MedlinePlus search for a drug that does not exist:**
+   `medlineplus.gov/search/?query=Untitled%20medication`. That is the same `'Untitled medication'`
+   placeholder as item 2 above, on a **third** surface nobody had looked at — and this one sends a
+   caregiver to a federal drug-lookup site to read about nothing. The suite's own name for what it
+   wants is right: *an empty name renders NO link.*
+
+2. **An unencoded apostrophe survives into the href:**
+   `query=Zo'fran'%20onclick%3D'alert(1)`. `encodeURIComponent` does not encode `'`. Nothing
+   executes today — the "no markup injected" and "no javascript: URL" checks both pass — but a raw
+   quote character inside an attribute is one templating change away from mattering, and it is on
+   the one surface in this app that builds a URL out of text a user typed.
+
+3. **A mutant the suite itself reports as toothless:** *"MUTANT: and at least one name escapes
+   medlineplus.gov entirely | (none -- check is weaker than claimed)."* A check that says so about
+   itself is the clearest possible instance of the thing this release was blocked for twice.
+
+**The pattern across items 2, 4b and the app-v79 findings is one thing, not three:** a single
+placeholder string, written by `normalizeMedication` for a missing name, leaks into every surface
+that composes a label out of medication names — the Home card, the red ceiling banner, and now an
+outbound URL. The fix is not three patches. It is one decision about what an unnamed medication
+renders as, applied everywhere a name is *composed* rather than *displayed*.
+
 ## 5. THE CI GATE ON `main` HAS BEEN RED SINCE BEFORE THIS RELEASE, AND IT IS THE IMPORTANT ONE
 
 `.github/workflows/verify-live.yml` runs `release_check.sh` against whatever is on `main`, from a
