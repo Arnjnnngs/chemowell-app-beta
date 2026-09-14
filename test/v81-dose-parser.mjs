@@ -294,7 +294,32 @@ const TABLE = [
   { in: '5/325 mg x 2',        out: [{ label: '5/325 mg x 2', mg: 325, pills: 0 }],        why: 'and a bare multiplier says nothing about what is being counted' },
   // AND THE AMOUNT STILL COUNTS WHEN THE NEXT WORD SAYS WHAT IT IS. That is the whole distinction,
   // so both halves of it are pinned.
-  { in: '7.5/325 mg 1-2 tabs', out: [{ label: '7.5/325 mg 1-2 tabs', mg: 325, pills: 2 }], why: 'the noun follows the upper bound — the cautious direction on a ceiling' },
+  // THE RANGE EXCEPTION IS GONE. Round 10 counted this as 2 and its commit claimed that "matches
+  // what the app already does for a bare 1-2 tablets". It does not — a bare `1-2 tabs` counts 1.
+  // A factor of two on the same ceiling, decided by whether a strength happened to precede it. It
+  // counts nothing now and the card says so, which is an answer the app can defend.
+  { in: '7.5/325 mg 1-2 tabs', out: [{ label: '7.5/325 mg 1-2 tabs', mg: 325, pills: 0 }], why: 'a range past a strength is not a number the app can pick' },
+
+  // A DAILY MAXIMUM IS WRITTEN WITH EXACTLY THE WORD THE WHITELIST LOOKS FOR, which is why the word
+  // list was never the answer. Every one of these counted its maximum as a dose: with a six-a-day
+  // limit the card read "over limit" before anything was given, NOTHING was disclosed — a dose
+  // carrying a count is by definition not an uncountable one — and the only way to give the
+  // medicine was the red override, which stamps every dose over-limit in the record.
+  //
+  // What separates "2 tablets" from "max 8 tabs daily" is not the noun; it is that one sits against
+  // the strength and the other is inside a sentence about when to give it. So nobody had to list
+  // `max`, `up to`, `no more than` or `#` — they are all "something in between".
+  { in: '5/325 mg q4-6h prn max 8 tabs daily',  out: [{ label: '5/325 mg q4-6h prn max 8 tabs daily', mg: 325, pills: 0 }],  why: 'A MAXIMUM IS NOT A DOSE, however it is spelled' },
+  { in: '5/325 mg q6h max 8 tabs/day',          out: [{ label: '5/325 mg q6h max 8 tabs/day', mg: 325, pills: 0 }],          why: 'the short form of the same thing' },
+  { in: '5/325 mg up to 6 tabs per day',        out: [{ label: '5/325 mg up to 6 tabs per day', mg: 325, pills: 0 }],        why: 'and the plain-English form' },
+  { in: '5/325 mg no more than 12 tablets in 24 hours', out: [{ label: '5/325 mg no more than 12 tablets in 24 hours', mg: 325, pills: 0 }], why: 'and the long one' },
+  { in: '5/325 mg #30 tablets',                 out: [{ label: '5/325 mg #30 tablets', mg: 325, pills: 0 }],                 why: 'a quantity dispensed, with the noun attached' },
+  // AND THE AMOUNT STILL COUNTS WHEN IT SITS AGAINST THE STRENGTH. Both halves pinned, because the
+  // rule is a position and not a vocabulary.
+  { in: '5/325 mg 2 tablets every 6 hours',     out: [{ label: '5/325 mg 2 tablets every 6 hours', mg: 325, pills: 2 }],     why: 'a real amount with a schedule after it' },
+  { in: '80/12.5 mg 1 tablet daily',            out: [{ label: '80/12.5 mg 1 tablet daily', mg: 12.5, pills: 1 }],           why: 'a real combination product written the ordinary way' },
+  // CAPITALS ARE THE NORM ON A PRINTED LABEL. This lost its count while "1 tablet" kept it.
+  { in: '5/325 mg 1 Tablet',                    out: [{ label: '5/325 mg 1 Tablet', mg: 325, pills: 1 }],                    why: 'the whitelist is case-insensitive now' },
   { in: '5/325 mg (2 capsules)', out: [{ label: '5/325 mg (2 capsules)', mg: 325, pills: 2 }], why: 'a different countable noun' },
   { in: '5/325 mg 1 patch',    out: [{ label: '5/325 mg 1 patch', mg: 325, pills: 1 }],    why: 'and another' },
   // A WORD THAT MERELY STARTS LIKE ONE OF THEM IS NOT ONE OF THEM. Without a word boundary on the
@@ -883,6 +908,22 @@ console.log('\n3f. A DOSE THE APP CANNOT COUNT IS SAID OUT LOUD, WHERE THE DOSE 
     await seedAndOpenHome([ok]);
     t('an ordinary grouped medication says nothing',
       (await page.evaluate(() => document.querySelectorAll('[data-uncounted]').length)) === 0);
+  }
+
+  // THE FULL SIG LINE, ON THE REAL SCREEN. The round-9 audit's block was invisible in a parser table
+  // for the same reason round 8's was: the harm is that a count set from the MAXIMUM makes
+  // doseBlocked true at zero doses, so the ordinary Log button never appears and the only route is
+  // the red override — which stamps every dose over-limit in the history handed to a nurse.
+  {
+    await seedAndOpenHome([combo({ ceilingMax: 6,
+      doses: [{ label: '5/325 mg q4-6h prn max 8 tabs daily', mg: 325 }] })]);
+    const plain = await page.getByRole('button', { name: /^5\/325 mg q4-6h prn max 8 tabs daily$/ }).count();
+    const over = await page.getByRole('button', { name: /over limit/i }).count();
+    t('a full sig line offers an ordinary Log button', plain > 0, 'plain: ' + plain);
+    t('and is NOT locked behind the override at zero doses logged', over === 0, 'override: ' + over);
+    const n = await noticeText();
+    t('and the limit it cannot count is disclosed rather than silently applied',
+      !!n && /max 8 tabs daily/.test(n), JSON.stringify(n));
   }
 
   // THE SIG LINE OFF THE BOTTLE, ON THE REAL SCREEN. The round-8 audit's block was not visible in a

@@ -1295,20 +1295,36 @@ function numberIsInRatio(text, index, length) {
 // the record stamped as an over-limit override.
 // Blacklisting `q`, `h`, `#` and `max` would close those five shapes and leave the next sig
 // abbreviation nobody thought of. Saying what a countable thing IS closes the class.
-const COUNTABLE_NOUN = /^\s*\(?\s*(tab|tabs|tablet|tablets|cap|caps|capsule|capsules|pill|pills|patch|patches|spray|sprays|drop|drops|puff|puffs|lozenge|lozenges|application|applications|dose|doses|ml|mL|millilitre|millilitres|milliliter|milliliters)\b/;
+// CASE-INSENSITIVE, because a capital is the norm on a printed label: "1 Tablet" lost its count
+// while "1 tablet" kept it. `ml|mL` being the only pair that was spelled both ways is the tell that
+// case was thought about once and missed everywhere else.
+const COUNTABLE_NOUN = /^\s*\(?\s*(tab|tabs|tablet|tablets|cap|caps|capsule|capsules|pill|pills|patch|patches|spray|sprays|drop|drops|puff|puffs|lozenge|lozenges|application|applications|dose|doses|ml|millilitre|millilitres|milliliter|milliliters)\b/i;
+// NOTHING BUT THE STRENGTH'S OWN UNIT, WHITESPACE AND BRACKETS MAY STAND BETWEEN THEM.
+//
+// The word list was never going to be the answer, and the round-9 audit proved it: a daily MAXIMUM
+// is written with exactly the word the list looks for. "5/325 mg max 8 tabs daily" counted eight
+// tablets; so did "up to 6 tabs per day", "no more than 12 tablets in 24 hours" and "#30 tablets".
+// With a six-a-day limit the card was locked before a dose was given, and nothing was disclosed --
+// a dose carrying a count is by definition not an uncountable one.
+//
+// What separates "5/325 mg 2 tablets" from "5/325 mg max 8 tabs daily" is not the noun. It is that
+// in the first, the count sits directly against the strength; in the second there is a sentence in
+// between saying when and how often. So the test is POSITIONAL, and `max`, `up to`, `no more than`,
+// `#` and `q4-6h prn` never had to be listed -- they are all "something in between".
+const ONLY_UNIT_AND_BRACKETS = /^\s*[A-Za-z%]*(?:\/[A-Za-z%]+)?\s*[([]?\s*$/;
 function firstCountableNumber(text) {
   const re = /(\d*\.?\d+)/g;
-  let m, sawRatio = false;
+  let m, ratioEnd = -1;
   while ((m = re.exec(text)) !== null) {
-    if (numberIsInRatio(text, m.index, m[0].length)) { sawRatio = true; continue; }
-    // BEFORE ANY RATIO, NOTHING CHANGES. A leading number has counted as the amount since v45, at
-    // Aaron's request, because "1 patch" and "2 sprays" are how people write a dose and the field's
-    // own example does not contain any of the words above.
-    if (!sawRatio) return Number(m[1]);
-    // AFTER ONE, the next word has to say what is being counted. An interval, a quantity dispensed
-    // and a maximum are not amounts, so they are not counted -- and the card then says the limit is
-    // not being applied, which is true and is the honest answer.
-    if (COUNTABLE_NOUN.test(text.slice(m.index + m[0].length))) return Number(m[1]);
+    if (numberIsInRatio(text, m.index, m[0].length)) { ratioEnd = m.index + m[0].length; continue; }
+    // BEFORE ANY STRENGTH THE APP COULD NOT READ, NOTHING CHANGES. A leading number has counted as
+    // the amount since v45, at Aaron's request, because "1 patch" and "2 sprays" are how people
+    // write a dose and the field's own example contains none of the words above.
+    if (ratioEnd < 0) return Number(m[1]);
+    // AFTER ONE: the next word must say what is being counted, AND the number must sit against the
+    // strength rather than inside a sentence about when to give it.
+    if (COUNTABLE_NOUN.test(text.slice(m.index + m[0].length))
+      && ONLY_UNIT_AND_BRACKETS.test(text.slice(ratioEnd, m.index))) return Number(m[1]);
   }
   return null;
 }

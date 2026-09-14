@@ -1,0 +1,32 @@
+OK M50 the positional test is dropped -- a maximum counts as a dose again (the round-9 BLOCK)
+      RED: "7.5/325 mg 1-2 tabs" → 7.5/325 mg 1-2 tabs [325mg / 0]
+      RED: "5/325 mg q4-6h prn max 8 tabs daily" → 5/325 mg q4-6h prn max 8 tabs daily [325mg / 0]
+      RED: "5/325 mg q6h max 8 tabs/day" → 5/325 mg q6h max 8 tabs/day [325mg / 0]
+      RED: "5/325 mg up to 6 tabs per day" → 5/325 mg up to 6 tabs per day [325mg / 0]
+      ... and 5 more
+
+OK M51 the positional test allows any text between -- same harm, loosened differently
+      RED: "7.5/325 mg 1-2 tabs" → 7.5/325 mg 1-2 tabs [325mg / 0]
+      RED: "5/325 mg q4-6h prn max 8 tabs daily" → 5/325 mg q4-6h prn max 8 tabs daily [325mg / 0]
+      RED: "5/325 mg q6h max 8 tabs/day" → 5/325 mg q6h max 8 tabs/day [325mg / 0]
+      RED: "5/325 mg up to 6 tabs per day" → 5/325 mg up to 6 tabs per day [325mg / 0]
+      ... and 5 more
+
+OK M52 the positional test allows nothing at all -- a real amount loses its count
+      RED: "5/325 mg (1 tablet)" → 5/325 mg (1 tablet) [325mg / 1]
+      RED: "5/325 mg 2 tablets" → 5/325 mg 2 tablets [325mg / 2]
+      RED: "1/10 tablet (2 tabs)" → 1/10 tablet (2 tabs) [0mg / 2]
+      RED: "5/325 mg 2 tablets every 6 hours" → 5/325 mg 2 tablets every 6 hours [325mg / 2]
+      ... and 4 more
+
+OK M53 the noun whitelist loses its case-insensitive flag (a capital label loses its count)
+      RED: "5/325 mg 1 Tablet" → 5/325 mg 1 Tablet [325mg / 1]
+
+OK M54 ratioEnd stops advancing, so the gap is measured from the wrong place
+      RED: "5/325 mg (1 tablet)" → 5/325 mg (1 tablet) [325mg / 1]
+      RED: "5/325 mg 2 tablets" → 5/325 mg 2 tablets [325mg / 2]
+      RED: "1/10 tablet (2 tabs)" → 1/10 tablet (2 tabs) [0mg / 2]
+      RED: "5/325 mg 2 tablets every 6 hours" → 5/325 mg 2 tablets every 6 hours [325mg / 2]
+      ... and 4 more
+
+restored; ALL MUTANTS DIED
