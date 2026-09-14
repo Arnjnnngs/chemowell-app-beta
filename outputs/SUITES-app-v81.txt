@@ -31,6 +31,9 @@
 === test/v81-purpose-hint.mjs ===
 
 32/32 checks passed
+=== test/v82-back-button.mjs ===
+
+15/15 passing
 === test/v81-dose-parser.mjs ===
 
-203/203 passing
+227/227 passing

@@ -320,6 +320,27 @@ const TABLE = [
   { in: '80/12.5 mg 1 tablet daily',            out: [{ label: '80/12.5 mg 1 tablet daily', mg: 12.5, pills: 1 }],           why: 'a real combination product written the ordinary way' },
   // CAPITALS ARE THE NORM ON A PRINTED LABEL. This lost its count while "1 tablet" kept it.
   { in: '5/325 mg 1 Tablet',                    out: [{ label: '5/325 mg 1 Tablet', mg: 325, pills: 1 }],                    why: 'the whitelist is case-insensitive now' },
+
+  // A LABEL PUTS PUNCTUATION BETWEEN THE STRENGTH AND THE COUNT, and rejecting it cost a real count
+  // for no reason anyone would defend. Found by the first LOOSENING mutants ever written for this
+  // parser: every mutant across five rounds had pushed the rule back towards its old behaviour and
+  // asked whether the tightening held, and none asked what the tightening now admits.
+  { in: '5/325 mg - 1 tablet',  out: [{ label: '5/325 mg - 1 tablet', mg: 325, pills: 1 }],  why: 'a dash is a separator, not a sentence' },
+  { in: '5/325 mg: 2 tabs',     out: [{ label: '5/325 mg: 2 tabs', mg: 325, pills: 2 }],     why: 'and so is a colon' },
+  { in: '5/325 mg. 2 tablets',  out: [{ label: '5/325 mg. 2 tablets', mg: 325, pills: 2 }],  why: 'and a full stop' },
+  // AND THE SEPARATOR DOES NOT OPEN THE DOOR THE PREVIOUS ROUNDS CLOSED. One word may still stand
+  // between the strength and the count, and `max` is a word.
+  { in: '5/325 mg - max 8 tabs daily', out: [{ label: '5/325 mg - max 8 tabs daily', mg: 325, pills: 0 }], why: 'a separator before a maximum is still a maximum' },
+  { in: '5/325 mg: up to 6 tabs',      out: [{ label: '5/325 mg: up to 6 tabs', mg: 325, pills: 0 }],      why: 'same' },
+  // TWO WORDS IN BETWEEN IS STILL TOO MANY. A loosening mutant that allowed a second one survived a
+  // 209-check board, so the limit of one is pinned rather than assumed.
+  { in: '5/325 mg tabs 8',             out: [{ label: '5/325 mg tabs 8', mg: 325, pills: 0 }],             why: 'exactly one word may stand between the strength and the count' },
+  // UNITS DELIBERATELY OFF THE WHITELIST. A mutant adding them survived unseen. These lose their
+  // count after a strength the app cannot read — and the card says so, which is the honest answer.
+  // Widening the list is a decision somebody makes, not a drift: these rows make it fail first.
+  { in: '5/325 mg 2 tsp',              out: [{ label: '5/325 mg 2 tsp', mg: 325, pills: 0 }],              why: 'a teaspoon is not on the list, and that is deliberate' },
+  { in: '5/325 mg 1 vial',             out: [{ label: '5/325 mg 1 vial', mg: 325, pills: 0 }],             why: 'nor a vial' },
+  { in: '5/325 mg 8 units',            out: [{ label: '5/325 mg 8 units', mg: 325, pills: 0 }],            why: 'nor units — the storage has nowhere to put one yet' },
   { in: '5/325 mg (2 capsules)', out: [{ label: '5/325 mg (2 capsules)', mg: 325, pills: 2 }], why: 'a different countable noun' },
   { in: '5/325 mg 1 patch',    out: [{ label: '5/325 mg 1 patch', mg: 325, pills: 1 }],    why: 'and another' },
   // A WORD THAT MERELY STARTS LIKE ONE OF THEM IS NOT ONE OF THEM. Without a word boundary on the
@@ -1011,6 +1032,44 @@ console.log('\n3f. A DOSE THE APP CANNOT COUNT IS SAID OUT LOUD, WHERE THE DOSE 
     fit.found && fit.left >= 8 && fit.right <= 312, JSON.stringify(fit));
   await page.setViewportSize({ width: 390, height: 900 });
   await page.waitForTimeout(400);
+}
+
+// ---------------------------------------------------------------------------------------------
+// SECTION 3g -- THREE STRINGS THE APP CANNOT RESOLVE, PINNED RATHER THAN GUESSED AT.
+//
+// The round-10 audit measured these and did NOT block on them, and it was right not to: on 20 of 25
+// representative written amounts this build is safer than what is live, and on these three a
+// caregiver is worse off by ONE PRESS, at a daily limit of five or more.
+//
+// WHY THERE IS NO FIX HERE, and that is the finding. "5/325 mg 30 tablets" is a quantity dispensed;
+// "5/325 mg 2 tablets" is a dose. Nothing in the grammar separates them -- only the size of the
+// number, which is a guess. The obvious rule, "a count followed by a period is a rate", counts
+// "80/12.5 mg 1 tablet daily" as a rate too, and that is a real once-daily dose on a real
+// combination product. **Every one of rounds 8 through 11 was a guess about prose that the next
+// audit found a string for.** A fourth guess to win back one press is the same move again.
+//
+// So these are pinned at their measured values. If a later change moves any of them, that is a
+// decision somebody is making rather than a drift, and this comment says what the decision costs.
+// The real answer is a structured amount field -- see outputs/DECISION-dose-amounts.md.
+// ---------------------------------------------------------------------------------------------
+console.log('\n3g. AMBIGUOUS BY NATURE — PINNED, NOT GUESSED AT');
+{
+  const known = [
+    ['5/325 mg 30 tablets', 30, 'a quantity dispensed reads exactly like a dose of thirty'],
+    ['5/325 mg 8 tabs/24h', 8, 'a daily total reads exactly like a dose of eight'],
+    ['5/325 mg 12 tablets in 24 hours', 12, 'and so does the long form'],
+  ];
+  for (const [input, count, why] of known) {
+    const got = arr(await parse(input))[0] || {};
+    t('"' + input + '" counts ' + count + ' — KNOWN, and the app cannot tell it from a dose (' + why + ')',
+      got.pills === count, JSON.stringify(got));
+  }
+  // AND THE ONES THAT LOOK THE SAME AND REALLY ARE DOSES. Pinned beside them, because any rule
+  // written to catch the three above will catch these unless it is measured against them.
+  for (const [input, count] of [['5/325 mg 2 tablets', 2], ['80/12.5 mg 1 tablet daily', 1], ['5/325 mg 1 tablet every 6 hours', 1]]) {
+    const got = arr(await parse(input))[0] || {};
+    t('"' + input + '" counts ' + count + ' — a real dose, and must stay one', got.pills === count, JSON.stringify(got));
+  }
 }
 
 console.log('\n4. DELIBERATELY UNCHANGED, AND PINNED SO IT CANNOT DRIFT QUIETLY');

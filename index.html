@@ -1311,7 +1311,16 @@ const COUNTABLE_NOUN = /^\s*\(?\s*(tab|tabs|tablet|tablets|cap|caps|capsule|caps
 // in the first, the count sits directly against the strength; in the second there is a sentence in
 // between saying when and how often. So the test is POSITIONAL, and `max`, `up to`, `no more than`,
 // `#` and `q4-6h prn` never had to be listed -- they are all "something in between".
-const ONLY_UNIT_AND_BRACKETS = /^\s*[A-Za-z%]*(?:\/[A-Za-z%]+)?\s*[([]?\s*$/;
+// A DASH OR A COLON IS HOW A LABEL SEPARATES THE STRENGTH FROM THE COUNT, and rejecting them cost
+// a real count for no reason anyone would defend: "5/325 mg - 1 tablet" is the same dose as
+// "5/325 mg 1 tablet". Found by a LOOSENING mutant -- the first ones ever written for this parser.
+// Every mutant across the previous five rounds pushed the rule back towards its old behaviour and
+// asked whether the tightening held; none asked what the tightening now admits, and three of six
+// loosenings turned out to be invisible to a 209-check board.
+// Still exactly ONE word may stand between them, so "5/325 mg - max 8 tabs" is refused as before.
+// LABEL_SEPARATOR: the punctuation a printed label puts between a strength and a count.
+const LABEL_SEPARATOR = '[\\s:;.\\-\\u2013\\u2014]*';
+const ONLY_UNIT_AND_BRACKETS = new RegExp('^' + LABEL_SEPARATOR + '[A-Za-z%]*(?:\\/[A-Za-z%]+)?' + LABEL_SEPARATOR + '[([]?\\s*$');
 function firstCountableNumber(text) {
   const re = /(\d*\.?\d+)/g;
   let m, ratioEnd = -1;
@@ -1698,6 +1707,71 @@ let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
 let pendingEntries = null;
+
+// ---- THE PHONE'S OWN BACK BUTTON -------------------------------------------------------------
+// Ordered INNERMOST FIRST. Each layer says how to tell it is open and how to close it, and closing
+// it must be exactly what the layer's own Cancel/close control does -- if the two ever disagree,
+// Back becomes a second way to leave a screen that leaves different state behind.
+//
+// `label` is for the suite and for anyone reading a failure: it names the layer in the words a
+// caregiver would use.
+const BACK_LAYERS = [
+  // 1. CONFIRMATIONS FIRST. These sit on top of whatever armed them, so Back must disarm the
+  //    confirmation and leave that thing open -- not close both.
+  { key: 'confirmDeleteMed', label: 'the delete-medication confirmation', open: () => state.confirmDeleteMed != null, close: () => setState({ confirmDeleteMed: null }) },
+  { key: 'confirmRestoreMed', label: 'the bring-back confirmation', open: () => state.confirmRestoreMed != null, close: () => setState({ confirmRestoreMed: null }) },
+  { key: 'confirmDeleteProfile', label: 'the delete-profile confirmation', open: () => state.confirmDeleteProfile != null, close: () => setState({ confirmDeleteProfile: null }) },
+  { key: 'confirmDeleteAppt', label: 'the delete-appointment confirmation', open: () => state.confirmDeleteAppt != null, close: () => setState({ confirmDeleteAppt: null }) },
+  { key: 'confirmDeleteNote', label: 'the delete-note confirmation', open: () => state.confirmDeleteNote != null, close: () => setState({ confirmDeleteNote: null }) },
+  { key: 'confirmRemove', label: 'the remove-entry confirmation', open: () => state.confirmRemove != null, close: () => setState({ confirmRemove: null }) },
+  { key: 'confirmRemovePara', label: 'the remove-paracentesis confirmation', open: () => state.confirmRemovePara != null, close: () => setState({ confirmRemovePara: null }) },
+  { key: 'confirmClearChemo', label: 'the clear-treatment-date confirmation', open: () => !!state.confirmClearChemo, close: () => setState({ confirmClearChemo: false }) },
+  { key: 'override', label: 'the over-limit override', open: () => state.override != null, close: () => setState({ override: null }) },
+  // 2. MODALS AND SHEETS.
+  { key: 'timeModal', label: 'the confirm-the-time sheet', open: () => state.timeModal != null, close: () => setState({ timeModal: null }) },
+  { key: 'apptModal', label: 'the appointment sheet', open: () => state.apptModal != null, close: () => setState({ apptModal: null }) },
+  { key: 'noteModal', label: 'the note sheet', open: () => state.noteModal != null, close: () => setState({ noteModal: null }) },
+  { key: 'checkinModal', label: 'the check-in sheet', open: () => state.checkinModal != null, close: () => setState({ checkinModal: null }) },
+  { key: 'infoModal', label: 'the information pop-up', open: () => state.infoModal != null, close: () => setState({ infoModal: null }) },
+  { key: 'bkNotice', label: 'the backup notice', open: () => state.bkNotice != null, close: () => setState({ bkNotice: null }) },
+  { key: 'eraseAllModalOpen', label: 'the erase-everything warning', open: () => !!state.eraseAllModalOpen, close: () => setState({ eraseAllModalOpen: false }) },
+  { key: 'upgradeOpen', label: 'the upgrade sheet', open: () => !!state.upgradeOpen, close: () => setState({ upgradeOpen: false }) },
+  { key: 'addingProfile', label: 'the add-profile sheet', open: () => !!state.addingProfile, close: () => setState({ addingProfile: false }) },
+  { key: 'chemoCalOpen', label: 'the treatment-date calendar', open: () => !!state.chemoCalOpen, close: () => setState({ chemoCalOpen: false }) },
+  { key: 'tourStep', label: 'the guided tour', open: () => state.tourStep != null, close: () => setState({ tourStep: null }) },
+  // 3. FULL-SCREEN EDITORS AND PANELS.
+  { key: 'medEditor', label: 'the medication editor', open: () => state.medEditor != null, close: () => setState({ medEditor: null, confirmDeleteMed: null }) },
+  { key: 'help', label: 'an open help topic', open: () => !!(state.help && (state.help.topic || state.help.cat)), close: () => setState({ help: state.help && state.help.topic ? { cat: state.help.cat, topic: null } : { cat: null, topic: null } }) },
+  { key: 'drawerOpen', label: 'the menu drawer', open: () => !!state.drawerOpen, close: () => setState({ drawerOpen: false }) }
+];
+// EVERY KEY THE REGISTRY COVERS, for the suite's completeness check. Exported on the debug hook
+// beside the others rather than duplicated into the test, so the two cannot drift apart.
+function backLayerKeys() { return BACK_LAYERS.map(l => l.key); }
+// Returns what it dismissed, or null if there was nothing left to dismiss on this screen.
+function handleBackPress() {
+  for (let i = 0; i < BACK_LAYERS.length; i++) {
+    if (BACK_LAYERS[i].open()) { BACK_LAYERS[i].close(); return BACK_LAYERS[i].key; }
+  }
+  // A tab that is not Home goes to Home. This is the "at least go to the previous page" Aaron asked
+  // for, and Home is the honest answer for a tab bar: the tabs are siblings, not a trail, so there
+  // is no previous page to return to other than the one the app opens on.
+  if (state.view !== 'home') { setState({ view: 'home' }); persistView('home'); return 'view'; }
+  return null;
+}
+// ONE HISTORY ENTRY, PUSHED ONCE AND RE-PUSHED AFTER EVERY BACK THE APP HANDLES. The same mechanism
+// in a browser tab, in the installed PWA and inside the Capacitor WebView -- Capacitor's own default
+// Back walks history and only leaves at the root, so an entry to walk is all it needs. No new plugin
+// and no new script tag, which matters on a file that has already been bitten twice by CDN bundles.
+function armBackButton() {
+  if (typeof window === 'undefined' || !window.history || !window.addEventListener) return;
+  try { history.pushState({ cwBack: 1 }, ''); } catch (e) { return; }
+  window.addEventListener('popstate', () => {
+    const handled = handleBackPress();
+    // Re-arm ONLY when the app handled it. When there is nothing left to dismiss the entry is not
+    // replaced, so a second Back leaves the app exactly as the phone expects it to.
+    if (handled) { try { history.pushState({ cwBack: 1 }, ''); } catch (e) {} }
+  });
+}
 
 function setState(patch) {
   Object.assign(state, patch);
@@ -6921,6 +6995,13 @@ function parseDoseOptions(text) {
 // wrong.
 if (typeof window !== 'undefined') {
   window.__doseTest = { parseDoseOptions, normaliseDoseNumber, splitDoseOptions };
+  // The back-button registry, for the completeness check in test/v82-back-button.mjs. Exported
+  // rather than copied into the suite, so a new layer cannot be added to one and not the other.
+  // `stateKeys` is what makes the completeness check real. Without it the suite's "every
+  // dismissible thing has a Back rule" assertion had nothing to compare against and PASSED on the
+  // absence — a check that reports green loudest when it cannot see anything, which is the exact
+  // class this file has been caught on four times.
+  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state) };
 }
 
 // What the caregiver will actually get, shown only when the app changed what they wrote. Compared
@@ -11354,6 +11435,10 @@ function notifPlanSignature(plan) { return plan.map(notifPayloadKey).join(','); 
 // Function declarations are hoisted within their module, so this can sit right next to the functions
 // it exposes regardless of definition order elsewhere in the file.
 if (typeof window !== 'undefined') {
+  // ARMED HERE, not during module init: pushState is harmless that early but the popstate handler
+  // calls setState, and `state` is not initialised at the top of this file. loadMedicationConfig
+  // learned that the expensive way -- see the TREATMENT_DAYS_MAX comment.
+  armBackButton();
   // app-v79: the warning path, for test/v79-warning-priority.mjs. See the note above __syncTest.
   window.__warnTest = {
     afterLog,

@@ -1,0 +1,22 @@
+!! L1 the gap may also contain a comma, colon or dash (a pharmacy separator) -- anchor not unique (0), NOT APPLIED
+
+!! L2 the gap may contain TWO unit words (so "mg tabs 8" would count) -- anchor not unique (0), NOT APPLIED
+
+OK        L3 the noun list gains the units deliberately left off it (tsp, vial, unit, supp)
+              RED: "5/325 mg 2 tsp" → 5/325 mg 2 tsp [325mg / 0]
+              RED: "5/325 mg 1 vial" → 5/325 mg 1 vial [325mg / 0]
+              RED: "5/325 mg 8 units" → 5/325 mg 8 units [325mg / 0]
+
+OK        L4 a number before any ratio is counted even when a ratio follows it later
+              RED: "5/325 mg q6h" → 5/325 mg q6h [325mg / 0]
+              RED: "10/325 mg q8h" → 10/325 mg q8h [325mg / 0]
+              RED: "5/325 mg q4-6h" → 5/325 mg q4-6h [325mg / 0]
+
+!! L5 the ratio test accepts a colon as well as a slash (1:1000 becomes a ratio) -- anchor not unique (0), NOT APPLIED
+
+OK        L6 the fraction denominator list is widened to every denominator
+              RED: "5/325 mg" → 5/325 mg [325mg / 0]
+              RED: "10/325 mg" → 10/325 mg [325mg / 0]
+              RED: "1/10 tablet" → 1/10 tablet [0mg / 0]
+
+restored. 0 loosening(s) the board cannot see:
