@@ -1,6 +1,6 @@
 # HANDOFF.md — start here in a brand-new chat
 
-Written 2026-08-08, last refreshed 2026-09-13 at app-v79. If you're a fresh Claude session and Aaron just
+Written 2026-08-08, last refreshed 2026-09-14 at app-v80. If you're a fresh Claude session and Aaron just
 pointed you at this repo, read this file first — it tells you what order to read everything else
 in, what's actually true right now, and what to do next. Nothing here should be taken on faith;
 every claim below is backed by a file in this repo, cite it back to Aaron if he asks.
@@ -60,7 +60,7 @@ authoritative version; follow TEAM.md where the two differ, and read its "Proces
 
 ## What's actually true right now (verify before trusting, this can go stale)
 
-- Live build: https://arnjnnngs.github.io/chemowell-app-beta/ — currently `app-v79`. The
+- Live build: https://arnjnnngs.github.io/chemowell-app-beta/ — currently `app-v80`. The
   version line in this file has been stale before; `README.md`'s version history is the record,
   and `PUBLISHED.json` is what `release_check.sh` compares against.
 - Native Android debug APK: auto-built by `.github/workflows/android-build.yml` on every push
