@@ -85,9 +85,16 @@ const gapMed = (m) => Object.assign({ type: 'gap', gapH: 4, schemaV: 2, quickLog
 section('1. THE MEDS CARD SAYS WHAT HAS HAPPENED, NOT ONLY WHAT THE RULES ARE');
 {
   const now = Date.now();
+  // THE FIXTURE CARRIES YESTERDAY, AND THAT IS THE POINT. Without an older dose, "count only
+  // today's" and "count every dose ever" give the same answer, so the check below cannot tell them
+  // apart -- and it did not: a mutant that deleted the day filter entirely passed 45/45. Two
+  // separate checks in this suite have now survived a mutant for the same reason, which is that
+  // a fixture without the case is a check about nothing.
   const p = await open({
     meds: [gapMed({ id: 'm1', name: 'TestMed', ceiling: true, ceilingMax: 3000 })],
     entries: [
+      { id: 'old1', medId: 'm1', dose: '500 mg', mg: 500, pills: 1, ts: now - 30 * HOUR },
+      { id: 'old2', medId: 'm1', dose: '500 mg', mg: 500, pills: 1, ts: now - 52 * HOUR },
       { id: 'a', medId: 'm1', dose: '500 mg', mg: 500, pills: 1, ts: now - 6 * HOUR },
       { id: 'b', medId: 'm1', dose: '500 mg', mg: 500, pills: 1, ts: now - 5 * HOUR }
     ]
@@ -100,6 +107,8 @@ section('1. THE MEDS CARD SAYS WHAT HAS HAPPENED, NOT ONLY WHAT THE RULES ARE');
   t('and when the last one was', /last at \d/.test(today), today);
   const bar = await p.locator('[data-med-ceiling]').innerText();
   t('and a ceiling bar reading used of max', /1,000 \/ 3,000 mg/.test(bar), bar.replace(/\n/g, ' | '));
+  t('and the bar counts TODAY only -- yesterday\'s doses are not in it either',
+    !/2,000 \/ 3,000|1,500 \/ 3,000/.test(bar), bar.replace(/\n/g, ' | '));
   t('and how much is left, not just how much is gone', /2,000 mg left/.test(bar), bar.replace(/\n/g, ' | '));
   await p.close();
 }
