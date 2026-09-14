@@ -219,6 +219,122 @@ console.log('\n4b. A GROUPED MEDICATION IS MARKED TOO, NOT JUST A STANDALONE CAR
   t('and tapping the hero marks the card that holds it', marked > 0, marked + ' marked');
 }
 
+console.log('\n4c. THE BUTTON STILL WORKS WITH THE QUICK LOG SECTION COLLAPSED');
+{
+  // ONE TAP ON HOME REACHED A DEAD CONTROL. The "Quick log" header is a collapse chevron: tap it
+  // and every standalone card leaves the page while the hero stays, still naming the medication and
+  // still offering to take you to it. The button then did nothing at all -- no scroll, no mark, no
+  // message -- and the collapse is remembered for the rest of the session.
+  await setup([win({ id: 'collapsed', name: 'CollapsedTarget', windows: openWin })], []);
+  await page.locator('[data-tour="quick-log"]').first().click();
+  await page.waitForTimeout(700);
+  const cardsGone = await page.evaluate(() => document.querySelectorAll('[data-med-card]').length);
+  t('collapsing Quick log really does take the cards off the page', cardsGone === 0, cardsGone + ' card(s)');
+  const btn = page.locator('[data-home="up-next"] button');
+  t('the hero and its button are still there', await btn.count() === 1, String(await btn.count()));
+  await btn.first().click();
+  await page.waitForTimeout(900);
+  const landed = await page.evaluate(() => {
+    const el = document.querySelector('[data-flash="on"]');
+    return el ? el.getAttribute('data-med-card') : null;
+  });
+  t('tapping it opens the section and marks the card', landed === 'collapsed', String(landed));
+}
+
+console.log('\n4d. ONE CARD LIGHTS UP, NOT EVERY CARD THAT HOLDS THE MEDICATION');
+{
+  // A medication placed in two rounds lit both sections, and one with its own card plus a group lit
+  // both of those. Two glowing cards for one tap, only one of which is where the page went.
+  // A PLAIN STANDALONE CARD RIDES ALONG, and it is not decoration: the null-attribute check at the
+  // bottom of this section needs an UNFLASHED card to exist. Without one the page has no standalone
+  // cards at all, the check passes on an empty query, and the h() trap it exists to catch walks
+  // straight through it -- which is what happened the first time it was written.
+  await setup([
+    win({ id: 'twogroups', name: 'TwoGroups', windows: openWin,
+      quickLog: false, groupedMorning: true, groupedEvening: true }),
+    win({ id: 'plaincard', name: 'PlainCard', windows: laterWin })
+  ], []);
+  const sections = await page.evaluate(() => document.querySelectorAll('[data-med-card-twogroups]').length);
+  t('the medication really is in two group cards', sections === 2, sections + ' group(s)');
+  const btn = page.locator('[data-home="up-next"] button');
+  if (await btn.count()) { await btn.first().click(); await page.waitForTimeout(900); }
+  const marked = await page.evaluate(() => document.querySelectorAll('[data-flash="on"]').length);
+  t('and exactly one of them is marked', marked === 1, marked + ' marked');
+  // The h() null-attribute trap, asserted rather than assumed: `{'data-flash': x ? 'on' : null}`
+  // writes the literal string "null", and every selector in this suite reads "on", so the trap
+  // would come back unnoticed. This release already re-introduced it once.
+  const cards = await page.evaluate(() => document.querySelectorAll('[data-med-card]').length);
+  t('an unflashed standalone card is on the page for the next check to look at', cards >= 1, cards + ' card(s)');
+  const nulls = await page.evaluate(() => document.querySelectorAll('[data-flash="null"]').length);
+  t('and no card carries the literal attribute value "null"', nulls === 0, nulls + ' found');
+}
+
+console.log('\n4e. A LONG MEDICATION NAME DOES NOT TURN THE BUTTON INTO A PARAGRAPH');
+{
+  // The 3-line clamp was added to stop a long name growing the card until its only control sat
+  // under the fixed tab bar. It clamped the TITLE while the button below printed all 105 characters
+  // over five lines -- so the button, at 95px, became what drove the card's height.
+  const LONG = 'Hydroxyprogesterone Caproate Extended Release Suspension For Intramuscular Use Prefilled Syringe Kit';
+  await setup([win({ id: 'longname', name: LONG, windows: openWin })], []);
+  const btn = page.locator('[data-home="up-next"] button');
+  const label = (await btn.first().innerText()).trim();
+  t('the button falls back to a generic label', label === 'Show me the card', label);
+  const box = await btn.first().boundingBox();
+  t('and it is one line high', !!box && box.height <= 60, box ? Math.round(box.height) + 'px' : 'no box');
+  await btn.first().click();
+  await page.waitForTimeout(900);
+  const landed = await page.evaluate(() => {
+    const el = document.querySelector('[data-flash="on"]');
+    return el ? el.getAttribute('data-med-card') : null;
+  });
+  t('and it still goes where it says it goes', landed === 'longname', String(landed));
+}
+
+console.log('\n4f. THE DAY’S DOSE FIGURE NEVER LEAVES HOME');
+{
+  // THE HEADER RING IS SUPPRESSED ON HOME ONLY WHEN THE HERO IS SHOWING IT INSTEAD. Get that
+  // condition wrong -- suppress it whenever the view is Home -- and on a day where a window closed
+  // unlogged there is no hero, no all-done card and no ring: the day's dose count disappears from
+  // the app entirely. Every other fixture in this suite has the hero on screen, where the right
+  // answer and the wrong one look identical.
+  const closedWin = [{ start: 6, end: 8, name: 'Earlier' }];
+  const txt = await setup([win({ id: 'missedone', name: 'MissedOne', windows: closedWin })], []);
+  t('nothing is due, so there is no hero', txt === null, String(txt));
+  const rings = await page.evaluate(() =>
+    [...document.querySelectorAll('[role="img"][aria-label*="scheduled doses logged today"]')]
+      .map(e => e.getAttribute('aria-label')));
+  t('and the day’s dose figure is still on Home', rings.length === 1, JSON.stringify(rings));
+  t('and it says none of the day’s one dose is logged',
+    /^0 of 1 /.test(rings[0] || ''), JSON.stringify(rings));
+}
+
+console.log('\n4g. A PASTED NAME WITH NO SPACES IN IT DOES NOT PUSH HOME SIDEWAYS AT 320px');
+{
+  // THE MISSED-DOSE BANNER HAS NEVER WRAPPED A MEDICATION NAME. Its text column is `flex: 1` with
+  // no `minWidth: 0`, so a flex item refuses to shrink below its own min-content, and one unbroken
+  // 62-character name takes Home past the width of the phone and carries the bottom tabs off the
+  // side -- including the tab the caregiver needs to reach the card. Found in the sibling app's
+  // staging copy, which has the same banner from the same ancestor, by a suite this repo does not
+  // have; checked here rather than assumed, and the same fix applied.
+  const LONG = 'HydroxyprogesteroneCaproateExtendedReleaseSuspensionIntramuscular Kit';
+  const closedWin = [{ start: 6, end: 8, name: 'Earlier' }];
+  await setup([win({ id: 'pasted', name: LONG, windows: closedWin })], []);
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.waitForTimeout(1200);
+  const m = await page.evaluate(() => ({
+    // THE RULER IS THE WIDTH THIS TEST SET, never window.innerWidth -- under mobile emulation
+    // innerWidth grows with the content and a broken page measures as clean.
+    doc: document.documentElement.scrollWidth,
+    nav: (document.querySelector('nav') || { scrollWidth: -1 }).scrollWidth,
+    banner: [...document.querySelectorAll('div')].some(d => /closed with no dose logged/.test(d.innerText || ''))
+  }));
+  t('the missed-dose banner naming the pasted medication is on screen', m.banner === true, JSON.stringify(m));
+  t('Home does not scroll sideways at 320px', m.doc <= 320, 'page=' + m.doc + 'px');
+  t('and every bottom tab is still reachable', m.nav > 0 && m.nav <= 320, 'nav=' + m.nav + 'px');
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.waitForTimeout(600);
+}
+
 console.log('\n5. ONE PROGRESS FIGURE ON HOME, NOT TWO');
 {
   const rings = await page.evaluate(() =>

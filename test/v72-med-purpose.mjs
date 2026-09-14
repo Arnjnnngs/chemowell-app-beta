@@ -637,7 +637,12 @@ console.log('\nTyped text — it survives a reload, and nothing a caregiver past
   const decls = [
     ['the medication card on Meds', /return h\('article', \{ style: \{[^\n]*overflowWrap: 'anywhere'/],
     ['the quick-log cards on Home', /minmax\(260px,1fr\)\)'[^\n]*overflowWrap: 'anywhere'/],
-    ['the grouped-medications card', /h\('section', \{ style: \{ overflowWrap: 'anywhere' \} \}/]
+    // ANCHORED TO THE FUNCTION, NOT TO THE PUNCTUATION AROUND IT. This was pinned to the exact
+    // literal `h('section', { style: { overflowWrap: 'anywhere' } }`, and app-v80 went red on it
+    // by adding a scroll-target attribute and a transition to the same element -- the wrapping
+    // rule never moved. A check should assert the behaviour, not where it was drawn last week;
+    // this repo has now been bitten by that shape twice in two releases.
+    ['the grouped-medications card', /function renderGroupedMedsCard[\s\S]{0,4000}?return h\('section', \{[^\n]*overflowWrap: 'anywhere'/]
   ];
   for (const [what, re] of decls)
     t('the wrapping rule is still on ' + what, re.test(rawHtml), '');

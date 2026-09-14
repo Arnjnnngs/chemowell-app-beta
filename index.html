@@ -2037,8 +2037,14 @@ function scrollToMedCard(medId) {
   // group card that contains it. CSS.escape is not assumed -- the id is sanitised the same way the
   // group attribute is written, so the two always agree.
   const safe = String(medId).replace(/[^A-Za-z0-9_-]/g, '');
-  const el = document.querySelector('[data-med-card="' + safe + '"]')
+  const find = () => document.querySelector('[data-med-card="' + safe + '"]')
     || document.querySelector('[data-med-card-' + safe + ']');
+  let el = find();
+  // THE SECTION MAY BE COLLAPSED, and the card is then not on the page at all. Home's "Quick log"
+  // header is a chevron: one tap removes every standalone card, the collapse is remembered for the
+  // session, and this button silently did nothing from then on. Open the section and look again --
+  // setState re-renders synchronously, so the element exists by the next line.
+  if (!el && state.quickLogOpen === false) { setState({ quickLogOpen: true }); el = find(); }
   if (!el) return;
   try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { el.scrollIntoView(); }
   // THE HIGHLIGHT LIVES IN STATE, NOT ON THE NODE. The first version set tabindex, focus and an
@@ -2048,9 +2054,14 @@ function scrollToMedCard(medId) {
   // asserting the landing rather than the scroll.
   // THE PREVIOUS TIMER IS CANCELLED. Without this, tapping the same button twice inside 1.8s let
   // the first tap's timer clear the second tap's mark, and the control looked broken.
+  // ONE CARD LIGHTS UP, THE ONE THE SCROLL LANDED ON. Keyed on the medication id alone, a
+  // medication placed in two groups lit both sections and a medication with its own card AND a
+  // group lit both of those -- two glowing cards for one tap, only one of which is where the page
+  // actually went. The chosen element names itself, and the render matches on that.
   clearTimeout(medFlashTimer);
-  setState({ medFlash: safe });
-  medFlashTimer = setTimeout(() => { if (state.medFlash === safe) setState({ medFlash: null }); }, 1800);
+  const grp = el.getAttribute && el.getAttribute('data-med-group');
+  setState({ medFlash: { id: safe, group: grp || null } });
+  medFlashTimer = setTimeout(() => { if (state.medFlash && state.medFlash.id === safe) setState({ medFlash: null }); }, 1800);
 }
 
 // True exactly when Home is already showing the day's dose count, which is the only condition
@@ -3882,6 +3893,11 @@ function medHasReachableCard(med) {
   return !!(med && (med.quickLog || med.groupedMorning || med.groupedAfternoon || med.groupedEvening));
 }
 
+// NOT QUITE THE MISSED-DOSE WALK'S POPULATION, and the difference is deliberate. The walk filters
+// on `alerts` and windows; this adds `medHasReachableCard`, so a "managed only" medication is still
+// flagged as missed in History and still counted in the day's denominator, but is never NAMED here
+// -- naming it would offer a button with nowhere to go. Three populations exist: flagged as missed,
+// counted in the ring, and named by the hero. This is the third.
 function nextDueDose(now) {
   const d0 = dayStart(now);
   let best = null;
@@ -4093,13 +4109,16 @@ function renderGroupedMedsCard(title, meds, now) {
   // The scroll hook for every medication in the group, since none of them has a card of its own.
   // Set on the section rather than per row: the row is what the caregiver taps, the card is what
   // they need to be looking at, and landing mid-list with the heading off-screen is disorienting.
-  const groupHook = {};
+  // The group names itself so scrollToMedCard can say WHICH section it landed on -- see the note
+  // there about two cards lighting up for one tap.
+  const groupKey = String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const groupHook = { 'data-med-group': groupKey };
   let groupFlashed = false;
   meds.forEach(m => {
     if (!m || !m.id) return;
     const k = String(m.id).replace(/[^A-Za-z0-9_-]/g, '');
     groupHook['data-med-card-' + k] = 'group';
-    if (state.medFlash === k) groupFlashed = true;
+    if (state.medFlash && state.medFlash.id === k && state.medFlash.group === groupKey) groupFlashed = true;
   });
   // THE GROUP CARD LIGHTS UP TOO. It scrolled correctly and never showed the mark, because the mark
   // was rendered only on standalone cards -- so for the morning and evening rounds, which are the
@@ -5161,13 +5180,13 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     const mdTone = NOTICE_TONES.urgent;
     parts.push(h('div', { onClick: goToHistoryTop, role: 'button', tabindex: '0', 'aria-label': 'Review ' + bannerItems.length + ' missed dose' + (bannerItems.length > 1 ? 's' : '') + ' from today', onKeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); goToHistoryTop(); } }, style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderLeft: '4px solid ' + mdTone.accent, borderRadius: '14px', padding: '14px 16px', display: 'flex', gap: '12px', alignItems: 'flex-start', boxShadow: '0 2px 10px rgba(203,122,87,0.10)', cursor: 'pointer' } },
       h('span', { style: { flexShrink: '0', width: '32px', height: '32px', borderRadius: '10px', background: mdTone.chipBg, color: mdTone.chipFg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '15px' } }, '!'),
-      h('div', { style: { flex: '1' } },
+      h('div', { style: { flex: '1', minWidth: '0' } },
         h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '4px' } },
           h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127' } }, 'Missed dose' + (bannerItems.length > 1 ? 's' : '')),
           h('button', { onClick: (ev) => { ev.stopPropagation(); clearMissedDoses(); }, 'data-missed-clear': 'true', style: { flexShrink: '0', minHeight: '44px', padding: '0 14px', borderRadius: '99px', background: 'transparent', border: '1px solid #F2BEA8', color: '#A83D0F', fontSize: '13px', fontWeight: '700' } }, 'Clear')
         ),
         // One line per miss (item 8) — med name in ink, details in secondary
-        ...bannerItems.map(m => h('div', { style: { ...TYPE.caption, color: '#554A52' } },
+        ...bannerItems.map(m => h('div', { style: { ...TYPE.caption, color: '#554A52', overflowWrap: 'anywhere' } },
           m.when + ': ',
           h('span', { style: { fontWeight: '700', color: '#2A2127' } }, nameOf(m.medId)),
           ' — ' + m.windowName + ' window (' + fmtTime(m.ts) + ') closed with no dose logged'))
@@ -5396,16 +5415,17 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         style: {
           position: 'relative', overflow: 'hidden', borderRadius: '20px', padding: '18px 18px 16px',
           color: '#FFFFFF',
-          background: 'linear-gradient(152deg, #E4693B 0%, #BF4C1A 52%, #8B3C1B 100%)',
-          boxShadow: '0 10px 30px -12px rgba(139,60,27,0.55), 0 1px 2px rgba(139,60,27,0.20)'
+          background: 'linear-gradient(152deg, #C44E1C 0%, #A8401A 52%, #7E3418 100%)',
+          boxShadow: '0 10px 30px -12px rgba(126,52,24,0.55), 0 1px 2px rgba(126,52,24,0.20)'
         }
       },
         // 14px of gap and a 56px ring, measured at 320: at 12/62 the medication name and the ring
         // were two pixels apart on the narrowest phone this app supports.
         h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '14px' } },
           h('div', { style: { flex: '1', minWidth: '0' } },
-            // 0.82 white on this gradient measured 2.69:1. Full white clears 4.5:1 and the label is
-            // small and uppercase, which is where contrast matters most.
+            // MEASURED, NOT ASSERTED. 0.82 white on the original gradient was 2.69:1; full white on
+            // it was 3.29:1, and the release note claiming 4.5 was simply wrong. 12px bold is small
+            // text, so AA wants 4.5 -- full white on the darkened first stop is 4.71:1.
             h('div', { style: { ...TYPE.label, color: '#FFFFFF' } }, 'Up next'),
             // overflowWrap, not ellipsis: a medication name is the one string on this card that must
             // never be trimmed, because it is what the caregiver is about to act on.
@@ -5414,8 +5434,8 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
             // place: the control needed to fix the problem is the one carried off-screen. The full
             // name is on the card the button goes to.
             h('div', { style: { fontSize: '23px', fontWeight: '800', letterSpacing: '-0.02em', lineHeight: '1.15', marginTop: '3px', overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: '3', WebkitBoxOrient: 'vertical', overflow: 'hidden' } }, nx.med.name),
-            sub ? h('div', { style: { fontSize: '14px', fontWeight: '500', color: 'rgba(255,255,255,0.88)', marginTop: '4px' } }, sub) : null,
-            h('div', { style: { fontSize: '13.5px', fontWeight: '700', color: 'rgba(255,255,255,0.95)', marginTop: '7px' } },
+            sub ? h('div', { style: { fontSize: '14px', fontWeight: '500', color: '#FFFFFF', marginTop: '4px' } }, sub) : null,
+            h('div', { style: { fontSize: '13.5px', fontWeight: '700', color: '#FFFFFF', marginTop: '7px' } },
               whenWords + (nx.st.windowName ? ' · ' + nx.st.windowName : ''))
           ),
           prog.scheduled > 0 ? h('div', {
@@ -5426,14 +5446,18 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
           },
             h('div', { style: { width: '45px', height: '45px', borderRadius: '50%', background: 'rgba(155,60,25,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '2px' } },
               h('div', { style: { fontSize: '14px', fontWeight: '800', letterSpacing: '-0.02em' } }, prog.taken + '/' + prog.scheduled),
-              h('div', { style: { fontSize: '8px', fontWeight: '700', letterSpacing: '0.07em', color: 'rgba(255,255,255,0.8)' } }, 'DOSES')
+              h('div', { style: { fontSize: '9px', fontWeight: '700', letterSpacing: '0.07em', color: '#FFFFFF' } }, 'DOSES')
             )
           ) : null
         ),
+        // THE BUTTON IS ONE LINE, ALWAYS. `'Go to ' + name` printed a 105-character pasted name
+        // over five lines, and at 320 the button -- 95px of it -- was what drove the card's height,
+        // not the title the clamp was added to control. A long name gets the generic label instead;
+        // the name itself is on the card the button goes to, in full.
         h('button', {
           onClick: () => scrollToMedCard(nx.med.id),
-          style: { marginTop: '15px', width: '100%', minHeight: '48px', borderRadius: '14px', border: '0', background: '#FFFFFF', color: '#9E3F1C', fontSize: '16px', fontWeight: '800', boxShadow: '0 3px 10px rgba(0,0,0,0.16)' }
-        }, nx.openNow ? 'Go to ' + nx.med.name : 'Show me the card')
+          style: { marginTop: '15px', width: '100%', minHeight: '48px', padding: '0 14px', borderRadius: '14px', border: '0', background: '#FFFFFF', color: '#8E3818', fontSize: '16px', fontWeight: '800', boxShadow: '0 3px 10px rgba(0,0,0,0.16)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+        }, (nx.openNow && String(nx.med.name).length <= 22) ? ('Go to ' + nx.med.name) : 'Show me the card')
       ));
     } else if (prog.scheduled > 0 && prog.taken >= prog.scheduled) {
       // ALL DONE IS A STATE WORTH SHOWING. Without this the card simply vanishes once the last dose
@@ -5846,7 +5870,8 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     }
 
     const medHook = String(med.id).replace(/[^A-Za-z0-9_-]/g, '');
-    const flashed = state.medFlash === medHook;
+    // A standalone card is never the landing place when the scroll went to a group.
+    const flashed = !!(state.medFlash && state.medFlash.id === medHook && !state.medFlash.group);
     // NOT `'data-flash': flashed ? 'on' : null` -- h() writes the string "null" as an attribute
     // value, so every unflashed card carried data-flash="null". A fresh instance of the trap this
     // file warns about twice, added by the release that quotes the warning.

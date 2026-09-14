@@ -40,6 +40,22 @@ const ctx = await browser.newContext({ viewport: { width: 390, height: 900 } });
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
+// THE CLOCK IS FROZEN AT 10:00, AND WITHOUT IT THIS SUITE GOES RED AFTER MIDNIGHT.
+// The fixture puts 3,020 mg of acetaminophen on the day "90 minutes ago" so the group ceiling is
+// already crossed. Run at 00:30, ninety minutes ago is YESTERDAY, the day's total is zero, no red
+// is ever raised, and eight checks fail on a build with nothing wrong with it. Measured: this suite
+// reported 6/14 on app-v79, app-v80 round 1 and app-v80 round 2 alike, at one in the morning, hours
+// after the PM had run it at 14/14 -- so the same wall-clock dependency that made a sibling suite
+// go VACUOUS makes this one cry wolf. Both are the same defect: a fixture whose meaning depends on
+// when it is run. Every timestamp below is built from FROZEN, and Date.now() inside the page is
+// frozen too, so the app and the fixture agree on what "today" means.
+const FROZEN = (() => { const d = new Date(); d.setHours(10, 0, 0, 0); return d.getTime(); })();
+await page.addInitScript((frozen) => {
+  const R = Date;
+  const D = function (...a) { return a.length ? new R(...a) : new R(frozen); };
+  D.now = () => frozen; D.parse = R.parse; D.UTC = R.UTC; D.prototype = R.prototype;
+  window.Date = D;
+}, FROZEN);
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(1600);
 await page.fill('input[placeholder="Enter patient name"]', 'Preview');

@@ -24,9 +24,28 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
+      # FULL HISTORY, NOT A SHALLOW CLONE. PUBLISHED.json records the commit the last release went
+      # live at, and release_check.sh measures the service-worker cache bump against it. On the
+      # default depth-1 checkout that commit does not exist on the runner, so the gate printed
+      # "no usable PUBLISHED.json record, falling back to origin/main" and measured against the
+      # wrong baseline -- which is the exact fallback PUBLISHED.json exists to replace.
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
+
+      # A BROWSER, BECAUSE THE GATE RUNS A BROWSER SUITE. release_check.sh runs
+      # test/v76-empty-window-render.mjs, which imports Playwright -- and the runner had Node and
+      # no browser, so that import threw and the whole gate exited 1 on EVERY push since it was
+      # added. A gate that is always red says nothing: the release that skipped the chain and the
+      # release that passed it look identical from outside. Pinned to the same version the suites
+      # are written against, and installed with --no-save so the app's own package.json does not
+      # grow a test dependency the Android build would then have to install.
+      - name: Install the browser the release gate's suites need
+        run: |
+          set -euo pipefail
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
 
       # ---- THE QUALITY CHAIN, CHECKED FROM OUTSIDE THE PERSON IT CONSTRAINS -----------------------
       # Added 2026-09-13, immediately after I broke it. CLAUDE.md rule 6 says the order is
