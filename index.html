@@ -1235,6 +1235,31 @@ const LEGACY_MED_RULES = {
 // parser keeps its old numbers and the history stays true to what was believed at the time; from
 // here on the button and the total agree.
 const DOSE_SCHEMA_VERSION = 1;
+// THESE CONSTANTS LIVE HERE, ABOVE THE MIGRATION, AND NOT BESIDE THE PARSER THAT READS THEM.
+// `loadMedicationConfig()` runs during module initialisation and calls migrateDoseLabels, which
+// calls parseDoseOptions -- so every constant the parser touches has to be initialised BEFORE this
+// point, not where the parser is written. Declared down there they sit in the temporal dead zone,
+// the parser throws, loadMedicationConfig's try/catch swallows it, and the caregiver's entire
+// medication list is replaced by the empty fallback with nothing on screen to say why.
+// **That is not hypothetical: it shipped once already on this file** -- see the TREATMENT_DAYS_MAX
+// comment further down, which is the same defect with a different constant. Function declarations
+// hoist completely, so the parser itself can stay where it reads best.
+const DOSE_FRACTIONS = { '\u00bd': 0.5, '\u00bc': 0.25, '\u00be': 0.75, '\u2153': 1 / 3, '\u2154': 2 / 3 };
+// WHICH DENOMINATORS EVALUATE, AND WHAT HAPPENS TO THE REST -- written down because the round-4
+// audit was right that nothing said it anywhere. These six are the ones a person writes by hand on
+// a pill: halves, thirds, quarters, fifths, sixths, eighths. A denominator outside the list is NOT
+// evaluated, and UNEVALUATED_RATIO below then makes sure the app counts NOTHING rather than
+// counting the numerator -- so `1/10 tablet` is not silently a whole tablet. That pairing is the
+// point: widening this list and removing that guard are the same decision, and neither is safe
+// alone.
+const DOSE_FRACTION_DENOMS = [2, 3, 4, 5, 6, 8];
+// A SLASH STILL BETWEEN TWO DIGITS AFTER EVALUATION MEANS THE APP DID NOT UNDERSTAND IT. That is
+// every combination strength (`5/325 mg`, `875/125 mg`, `300/30/10`), every improper ratio
+// (`25/2`, `11/2`) and every fraction over a denominator not on the list above (`1/10`, `1/16`).
+// The app must not then take the leading number as an amount: a single oxycodone/paracetamol
+// tablet was weighing FIVE tablets, so a four-a-day ceiling read "over limit" with nothing logged.
+// `5 mg/mL` and `100 mg/m2` are deliberately unaffected -- neither has a digit on both sides.
+const UNEVALUATED_RATIO = /\d\s*\/\s*\d/;
 function migrateDoseLabels(med) {
   if (!med || Number(med.doseSchemaV) >= DOSE_SCHEMA_VERSION) return med;
   const next = { ...med, doseSchemaV: DOSE_SCHEMA_VERSION };
@@ -1345,10 +1370,13 @@ function normalizeMedication(raw, index) {
     ...(Number(original.schemaV) > 0 ? { schemaV: Number(original.schemaV) } : {}),
     // app-v81: the dose-label migration's own stamp. This function is a WHITELIST -- it rebuilds a
     // medication field by field -- so a key it does not name is dropped.
-    // WHAT THIS LINE ACTUALLY DOES, corrected after falsifying it: NOTHING TODAY. migrateDoseLabels
-    // runs AFTER this function in loadMedicationConfig's chain, so it sets the stamp on this
-    // function's OUTPUT and the stamp reaches the disk either way -- removing this line leaves every
-    // measurable behaviour identical, which a mutant proved rather than a reading of it. It is kept
+    // WHAT THIS LINE ACTUALLY DOES, corrected twice. migrateDoseLabels runs AFTER this function in
+    // loadMedicationConfig's chain, so it sets the stamp on this function's OUTPUT and the stamp
+    // reaches the disk either way. Removing this line changes NOTHING THE SUITE CAN SEE, because the
+    // migration is idempotent -- a mutant proved that much. It does NOT leave every behaviour
+    // identical, and the round-4 audit caught this comment claiming so and then describing the
+    // difference four lines further down: without the line the migration re-walks every medication
+    // on every load, forever, and nothing measures it. It is kept
     // as the guard for a REORDER: put migrateDoseLabels ahead of normalizeMedication and without
     // this line the stamp is silently eaten, the migration re-walks every medication on every load
     // forever, and nothing anywhere fails. The one-shot property is really carried by
@@ -6609,7 +6637,6 @@ function updateMedicationForm(field, value, rerender) {
 //     untrusted limit gets overridden out of habit until the day it was right.
 // The VALUE is never altered: only the way it is written, and only where the way it is written is
 // on a published list of things that get misread.
-const DOSE_FRACTIONS = { '\u00bd': 0.5, '\u00bc': 0.25, '\u00be': 0.75, '\u2153': 1 / 3, '\u2154': 2 / 3 };
 // A SLASH IS ONLY A FRACTION WHEN IT IS ONE, and the round-3 audit blocked this release to say so.
 // The first version read any two integers around a slash as a division, so `5/325 mg` -- how
 // oxycodone/paracetamol is written on the bottle -- became 0.015 mg, and a 3,000 mg paracetamol
@@ -6619,7 +6646,6 @@ const DOSE_FRACTIONS = { '\u00bd': 0.5, '\u00bc': 0.25, '\u00be': 0.75, '\u2153'
 // fraction (smaller over larger) with a denominator people actually write by hand.
 // Everything else is left exactly as typed, which is what the app did before and is the only
 // honest answer to a string whose meaning it does not know.
-const DOSE_FRACTION_DENOMS = [2, 3, 4, 5, 6, 8];
 function doseFractionValue(a, b) {
   const n = Number(a), d = Number(b);
   if (!d || !isFinite(n) || !isFinite(d)) return null;
@@ -6682,8 +6708,11 @@ function splitDoseOptions(text) {
 function parseDoseOptions(text) {
   return splitDoseOptions(text).map(raw => {
     const label = normaliseDoseNumber(raw);
-    // COUNTED FROM THE UNROUNDED FORM, SHOWN FROM THE ROUNDED ONE. See `precise` above: reading the
-    // number back out of the displayed label is what made three thirds add up to 0.999.
+    // COUNTED FROM THE EVALUATED FORM, SHOWN FROM WHAT WAS TYPED. See `precise` above.
+    // THIS SAID "unrounded ... rounded" UNTIL THE ROUND-4 AUDIT READ IT: the same commit that wrote
+    // it had deleted the rounding, so the sentence described a build that no longer existed. The
+    // split is evaluated-versus-verbatim. Reading the number back out of the displayed label is
+    // what made three thirds of a tablet add up to 0.999.
     const countable = normaliseDoseNumber(raw, true).replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
     const mgMatch = countable.match(/(\d*\.?\d+)\s*mg\b/i);
     // v45 (Aaron-reported live bug): this used to require one specific word right after the number
@@ -6709,7 +6738,10 @@ function parseDoseOptions(text) {
     // caregiver should see what they typed.
     const numMatch = countable.match(/(\d*\.?\d+)/);
     const dose = { label, mg: mgMatch ? Number(mgMatch[1]) : 0 };
-    if (numMatch) dose.pills = Number(numMatch[1]);
+    // NO COUNT AT ALL when the amount is a ratio the app did not evaluate. Leaving `pills` off is
+    // the same thing it already does for "as directed": the daily limit in pills refuses to arm and
+    // the editor's own amber line says why, which is honest. Inventing a number is not.
+    if (numMatch && !UNEVALUATED_RATIO.test(countable)) dose.pills = Number(numMatch[1]);
     return dose;
   });
 }
@@ -6741,7 +6773,11 @@ function dosesRewrittenNotice(form) {
       h('strong', { style: { fontWeight: '700' } }, 'Will be saved as: '),
       shown,
       h('div', { style: { fontSize: '12.5px', marginTop: '2px', color: '#7A5C50' } },
-        'Amounts are written the way a pharmacy writes them, so they cannot be misread. Change the box above if this is not what you meant.')));
+        // "so they cannot be misread" WAS HERE AND IS GONE. The round-4 audit was right: it is an
+        // absolute claim about how a person reads, made by an app, on a screen that had just been
+        // shown to get a number wrong -- and Rule 2.7 forbids promising a fix that has not been
+        // confirmed, let alone one that cannot be. This says what happened and stops.
+        'A leading zero is added and a trailing zero removed, because .5 and 1.0 are the two amounts most often read wrong. Change the box above if this is not what you meant.')));
 }
 // v38 (Aaron-requested): whether Dosage options actually carries an amount in the currently-picked
 // Limit unit -- pulled out of dailyLimitPreview so it can gate the Daily limit input itself (see
@@ -7056,8 +7092,16 @@ function restoreMedicationConfig(id) {
   if (state.confirmRestoreMed !== id) { setState({ confirmRestoreMed: id }); return; }
   let med = null;
   const hadConfig = !!entry.config;
-  if (hadConfig) med = normalizeMedication(JSON.parse(JSON.stringify(entry.config)));
-  else med = normalizeMedication({ id: id, name: entry.name || id, sub: entry.sub || '' });
+  // THROUGH THE SAME MIGRATIONS AS THE LOAD PATH. Restoring an archived medication is the SECOND
+  // door into state.meds and it used to bypass migrateDoseLabels entirely -- so a medication
+  // archived under an older release came back with its old dose numbers, was written straight to
+  // disk that way, and Home showed it over its limit before anything had been logged. It healed on
+  // the next full app load, which is no mitigation at all: in the meantime the card is falsely
+  // locked, the only way past it records a dose ten times too large, and a backup taken in that
+  // window carries the wrong configuration forward. The toast below says "is back, with its doses
+  // and rules" -- the app asserting the doses are right while restoring the wrong ones.
+  if (hadConfig) med = migrateDoseLabels(normalizeMedication(JSON.parse(JSON.stringify(entry.config))));
+  else med = migrateDoseLabels(normalizeMedication({ id: id, name: entry.name || id, sub: entry.sub || '' }));
   med.id = id;
   // REMINDERS COME BACK AS THEY WERE. What is suppressed is the SPAN IT WAS AWAY -- from the day it
   // left the list to today -- and nothing outside it. The first version switched reminders off

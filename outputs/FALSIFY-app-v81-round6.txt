@@ -1,0 +1,35 @@
+OK M20 the restore path skips the migration again (the audit BLOCK 1, put back)
+      RED: Bring back writes a MIGRATED medication to disk, not the archived one
+      RED: no medication anywhere on the list is unmigrated, and there is one to check
+
+OK M21 a ratio the app did not evaluate invents a count again (one Percocet = 5 tablets)
+      RED: "5/325 mg" → 5/325 mg [325mg / 0]
+      RED: "10/325 mg" → 10/325 mg [325mg / 0]
+      RED: "7.5/325 mg" → 7.5/325 mg [325mg / 0]
+      RED: "80/12.5 mg" → 80/12.5 mg [12.5mg / 0]
+      RED: "300/30/10" → 300/30/10 [0mg / 0]
+      ... and 4 more
+
+OK M22 the ratio guard is too greedy and eats a concentration (5 mg/mL loses its count)
+      RED: "5 mg/mL" → 5 mg/mL [5mg / 5]
+      RED: "100 mg/m2" → 100 mg/m2 [100mg / 100]
+
+OK M23 a denominator not on the list evaluates anyway (1/10 becomes 0.1, silently)
+      RED: "5/325 mg" → 5/325 mg [325mg / 0]
+      RED: "10/325 mg" → 10/325 mg [325mg / 0]
+      RED: "1/10 tablet" → 1/10 tablet [0mg / 0]
+      RED: "1/16 tablet" → 1/16 tablet [0mg / 0]
+
+OK M24 the constants go back below the startup path (the temporal dead zone, again)
+      RED: Daily limit unlocks for ".5 mg"
+      RED: the medication saved with one dose option
+      RED: the label is written as 0.5 mg, not .5 mg
+      RED: the COUNTED milligrams are 0.5, not 5
+      RED: the daily limit saved as 2 mg
+      ... and 86 more
+
+OK M25 the notice promises the amount cannot be misread again
+      RED: and it does not promise the amount cannot be misread
+      RED: it says what it actually did instead
+
+restored; ALL MUTANTS DIED

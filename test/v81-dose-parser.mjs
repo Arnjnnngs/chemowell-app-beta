@@ -187,9 +187,24 @@ t('a second dose is still offered, because 1.5 mg of the allowance is left',
 // ---------------------------------------------------------------------------------------------
 console.log('\n2. EVERY WRITTEN FORM ON THE ISMP LIST, THROUGH THE SHIPPING PARSER');
 
-const hookOk = await page.evaluate(() => typeof (window.__doseTest || {}).parseDoseOptions === 'function');
+// Unwraps the {threw} shape into an empty array so a single-value reader below reports a miss
+// rather than silently measuring a property of an Error.
+const arr = (r) => (Array.isArray(r) ? r : []);
+const hookOk = await page.evaluate(() => typeof (window.__doseTest || {}).parseDoseOptions === 'function').catch(() => false);
 t('the parser is reachable for measurement', hookOk);
-const parse = (text) => page.evaluate((s) => window.__doseTest.parseDoseOptions(s), text);
+// A THROW IS A FINDING, NOT AN EXIT. This used to be a bare page.evaluate, so a mutant that broke
+// the parser outright (a constant back in the temporal dead zone, say) made every call reject and
+// killed the suite mid-run -- after printing some of its reds but before printing the rest or its
+// total. That is the third helper in this file to need the same lesson: a suite exists for the case
+// where the app is broken, so it has to survive the app being broken. The error comes back as a
+// value, every row that depended on it goes red with the message attached, and the board finishes.
+const parse = async (text) => {
+  try {
+    return await page.evaluate((s) => window.__doseTest.parseDoseOptions(s), text);
+  } catch (e) {
+    return { threw: String(e && e.message ? e.message : e).split('\n')[0] };
+  }
+};
 
 // label: what the caregiver reads. mg / pills: what the app counts. Both are asserted on every row,
 // because getting one right while the other is wrong IS the defect.
@@ -221,13 +236,22 @@ const TABLE = [
   // three-hundred-and-twenty-fifths and stored 0.015 mg -- a paracetamol ceiling of 3,000 mg
   // reached after two hundred thousand tablets. The parser must leave a slash alone unless it is a
   // proper fraction over a denominator people actually write.
-  { in: '5/325 mg',     out: [{ label: '5/325 mg',   mg: 325,  pills: 5 }],    why: 'BLOCK 1: a combination strength read as a fraction' },
-  { in: '10/325 mg',    out: [{ label: '10/325 mg',  mg: 325,  pills: 10 }],   why: 'BLOCK 1: the other common strength of the same product' },
-  { in: '7.5/325 mg',   out: [{ label: '7.5/325 mg', mg: 325,  pills: 7.5 }],  why: 'BLOCK 1: survived by accident before; must survive on purpose now' },
-  { in: '80/12.5 mg',   out: [{ label: '80/12.5 mg', mg: 12.5, pills: 80 }],   why: 'BLOCK 1: a decimal on the other side' },
-  { in: '300/30/10',    out: [{ label: '300/30/10',  mg: 0,    pills: 300 }],  why: 'BLOCK 1: three components; the first fix printed "10/10"' },
-  { in: '25/2 mg',      out: [{ label: '25/2 mg',    mg: 2,    pills: 25 }],   why: 'BLOCK 1: improper — 25/2 is not twelve and a half of anything the app can know' },
-  { in: '11/2 tabs',    out: [{ label: '11/2 tabs',  mg: 0,    pills: 11 }],   why: 'BLOCK 1: eleven halves or one and a half? The app must not guess' },
+  { in: '5/325 mg',     out: [{ label: '5/325 mg',   mg: 325,  pills: 0 }],    why: 'BLOCK 1 + round-4 BLOCK 2: the strength is kept, and NO tablet count is invented from it' },
+  { in: '10/325 mg',    out: [{ label: '10/325 mg',  mg: 325,  pills: 0 }],    why: 'BLOCK 1: the other common strength of the same product' },
+  { in: '7.5/325 mg',   out: [{ label: '7.5/325 mg', mg: 325,  pills: 0 }],    why: 'BLOCK 1: survived by accident before; must survive on purpose now' },
+  { in: '80/12.5 mg',   out: [{ label: '80/12.5 mg', mg: 12.5, pills: 0 }],    why: 'BLOCK 1: a decimal on the other side' },
+  { in: '300/30/10',    out: [{ label: '300/30/10',  mg: 0,    pills: 0 }],    why: 'BLOCK 1: three components; the first fix printed "10/10"' },
+  { in: '25/2 mg',      out: [{ label: '25/2 mg',    mg: 2,    pills: 0 }],    why: 'BLOCK 1: improper — 25/2 is not twelve and a half of anything the app can know' },
+  { in: '11/2 tabs',    out: [{ label: '11/2 tabs',  mg: 0,    pills: 0 }],    why: 'BLOCK 1: eleven halves or one and a half? The app must not guess — so it counts nothing' },
+  // THE DENOMINATOR WHITELIST, MEASURED RATHER THAN LEFT AS AN UNDOCUMENTED EDGE. An eighth of a
+  // tablet evaluates; a tenth does not, because 10 is not a denominator people write on a pill. The
+  // round-4 audit was right that two amounts written the same way must not differ by ten times in
+  // silence — so a rejected denominator now counts NOTHING rather than counting the numerator, and
+  // this row is what stops that drifting back.
+  { in: '1/8 tablet',   out: [{ label: '1/8 tablet', mg: 0, pills: 0.125 }],    why: 'an eighth is on the list and evaluates' },
+  { in: '1/10 tablet',  out: [{ label: '1/10 tablet', mg: 0, pills: 0 }],       why: 'a tenth is NOT on the list — and must not count as a whole tablet' },
+  { in: '1/16 tablet',  out: [{ label: '1/16 tablet', mg: 0, pills: 0 }],       why: 'nor a sixteenth' },
+  { in: '1:1000',       out: [{ label: '1:1000', mg: 0, pills: 1 }],            why: 'a colon ratio is not a slash; unchanged from before' },
   // A SLASH THAT IS A RATE, not a fraction and not a strength. These were safe before and the guard
   // must not make them unsafe: there is no digit immediately before the slash in either.
   { in: '5 mg/mL',      out: [{ label: '5 mg/mL',    mg: 5,    pills: 5 }],    why: 'a concentration, not a fraction' },
@@ -240,9 +264,15 @@ const TABLE = [
 ];
 for (const row of TABLE) {
   const got = await parse(row.in);
+  // `pills: 0` IN THE TABLE MEANS "no count at all", and that is a different thing from a count of
+  // zero -- the app leaves the key off entirely when it cannot derive an amount, exactly as it does
+  // for "as directed". Folding the two together with `(g.pills || 0)` would let a literal 0 pass for
+  // an absent key and vice versa, on rows whose whole subject is the app refusing to invent a number.
+  if (got && got.threw) { t('"' + row.in + '" — THE PARSER THREW', false, got.threw); continue; }
   const same = Array.isArray(got) && got.length === row.out.length && row.out.every((want, i) => {
     const g = got[i] || {};
-    return g.label === want.label && g.mg === want.mg && (g.pills || 0) === want.pills;
+    if (want.pills === 0 && g.pills !== undefined) return false;
+    return g.label === want.label && g.mg === want.mg && (g.pills === undefined ? 0 : g.pills) === want.pills;
   });
   t('"' + row.in + '" → ' + row.out.map(o => o.label + ' [' + o.mg + 'mg / ' + o.pills + ']').join(' + '),
     same, same ? row.why : 'got ' + JSON.stringify(got));
@@ -256,6 +286,7 @@ for (const row of TABLE) {
 console.log('\n3. THE PRINTED LABEL AND THE COUNTED NUMBER CAN NEVER DISAGREE');
 for (const row of TABLE) {
   const got = await parse(row.in);
+  if (got && got.threw) { t('re-reading "' + row.in + '" — THE PARSER THREW', false, got.threw); continue; }
   const reparsed = await parse((got || []).map(d => d.label).join('|SPLIT|').split('|SPLIT|')[0]);
   const first = (got || [])[0] || {};
   const again = (reparsed || [])[0] || {};
@@ -278,15 +309,15 @@ for (const row of TABLE) {
 // ---------------------------------------------------------------------------------------------
 console.log('\n3b. THREE THIRDS OF A TABLET ARE ONE TABLET, NOT 0.999 OF ONE');
 {
-  const third = (await parse('1/3 tablet'))[0] || {};
+  const third = arr(await parse('1/3 tablet'))[0] || {};
   // THE BUTTON SAYS WHAT THE CAREGIVER TYPED. An earlier version of this fix printed "0.333 tablet"
   // and this check asserted it -- which meant the suite was pinning the rewrite of a string nobody
   // misreads. A fraction was never on the ISMP list; the naked decimal and the trailing zero were.
   t('the button still reads the fraction the caregiver wrote', third.label === '1/3 tablet', JSON.stringify(third.label));
   t('but three of them count as exactly one whole', third.pills * 3 === 1, 'three count as ' + (third.pills * 3));
-  const sixth = (await parse('1/6 tab'))[0] || {};
+  const sixth = arr(await parse('1/6 tab'))[0] || {};
   t('and six sixths are exactly one', sixth.pills * 6 === 1, 'six count as ' + (sixth.pills * 6));
-  const twothirds = (await parse('2/3 tablet'))[0] || {};
+  const twothirds = arr(await parse('2/3 tablet'))[0] || {};
   t('and three two-thirds are exactly two', twothirds.pills * 3 === 2, 'three count as ' + (twothirds.pills * 3));
 }
 
@@ -302,7 +333,15 @@ console.log('\n3c. A MEDICATION SAVED BY THE OLD PARSER IS MIGRATED, AND ITS HIS
 {
   const KEY = await page.evaluate(() => Object.keys(localStorage).find(k => /-med-v1$/.test(k)));
   const EK = await page.evaluate(() => Object.keys(localStorage).find(k => /entries-v1$/.test(k)));
+  // IF THERE IS NO CONFIG KEY, THE APP DID NOT START. Every assertion below reads stored state, so
+  // without this guard a broken app takes the suite down instead of being reported by it -- which is
+  // exactly what a mutant putting a constant back into the temporal dead zone did.
   t('the config and entry keys exist to seed into', !!KEY && !!EK, JSON.stringify({ KEY, EK }));
+  const canSeed = !!KEY && !!EK;
+  if (!canSeed) {
+    t('SKIPPED: the app wrote no medication config, so nothing below could be measured', false,
+      'this is a finding, not a pass');
+  } else {
   // Exactly the shape app-v80 wrote: the naked decimal kept, and 5 mg counted for it.
   await page.evaluate(({ key, ek }) => {
     localStorage.setItem(key, JSON.stringify({ version: 2, archivedMeds: {}, meds: [{
@@ -356,13 +395,17 @@ console.log('\n3c. A MEDICATION SAVED BY THE OLD PARSER IS MIGRATED, AND ITS HIS
   await page.waitForTimeout(1900);
   await dismiss();
   const sentinel = await page.evaluate((key) => JSON.parse(localStorage.getItem(key) || '{}').__untouched, KEY);
-  t('a config that needs nothing is not rewritten — the migration really is one-shot',
+  // NAMED FOR WHAT IT MEASURES. It read "the migration really is one-shot", and the round-4 audit
+  // was right that it cannot see that: M15 drops the stamp, the migration re-walks every medication
+  // on every load, and this check stays green. A sentinel proves no WRITE happened. The name is what
+  // anyone reads off the board, so the name has to be the honest half.
+  t('an already-correct config is not written back to disk',
     sentinel === 'sentinel', 'sentinel is ' + JSON.stringify(sentinel));
   // And the negative: a config that DOES need it must be written back, or the fix never reaches
   // an export, a backup, or the next launch.
   await page.evaluate((key) => {
     const cfg = JSON.parse(localStorage.getItem(key) || '{}');
-    cfg.meds = cfg.meds.map(m => { const c = { ...m }; delete c.doseSchemaV; c.doses = [{ label: '.5 mg', mg: 5, pills: 5 }]; return c; });
+    cfg.meds = (cfg.meds || []).map(m => { const c = { ...m }; delete c.doseSchemaV; c.doses = [{ label: '.5 mg', mg: 5, pills: 5 }]; return c; });
     cfg.__untouched = 'sentinel';
     localStorage.setItem(key, JSON.stringify(cfg));
   }, KEY);
@@ -376,6 +419,7 @@ console.log('\n3c. A MEDICATION SAVED BY THE OLD PARSER IS MIGRATED, AND ITS HIS
   }, KEY);
   t('a config that DOES need it is written back, so the fix outlives the session',
     after2.sentinel === undefined && after2.dose && after2.dose.mg === 0.5, JSON.stringify(after2));
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -385,6 +429,93 @@ console.log('\n3c. A MEDICATION SAVED BY THE OLD PARSER IS MIGRATED, AND ITS HIS
 // wrong is the worst of both. It must also NOT fire on every medication, or it is noise rather than
 // disclosure -- so the negative cases below matter as much as the positive ones.
 // ---------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
+// SECTION 3e -- EVERY DOOR INTO THE MEDICATION LIST, NOT JUST THE ONE THAT WAS BROKEN.
+// The round-4 audit's BLOCK 1: "Bring back" restores an archived medication straight to disk
+// without the migration, so one archived under an older release came back counting ten times its
+// dose and Home showed it over its limit before anything was logged. The audit's own words on the
+// finding: it is not "restore was missed", it is that more than one path writes into the list and
+// only one of them migrates. So this section walks them ALL -- and section 3c could never have
+// caught it, because every path 3c exercises enters through the migrating door.
+// ---------------------------------------------------------------------------------------------
+console.log('\n3e. EVERY WAY A MEDICATION GETS ONTO THE LIST PRODUCES A MIGRATED ONE');
+{
+  const KEY = await page.evaluate(() => Object.keys(localStorage).find(k => /-med-v1$/.test(k)));
+  t('the medication config key exists, so this section is measuring something', !!KEY, JSON.stringify(KEY));
+  if (!KEY) { t('SKIPPED: no config key, so no door could be walked', false, 'a finding, not a pass'); }
+  else {
+  // DOOR 1: restore from the archive. Seeded in exactly the shape a delete writes, with the dose
+  // numbers app-v80 would have stored.
+  await page.evaluate((key) => {
+    localStorage.setItem(key, JSON.stringify({ version: 2, meds: [], archivedMeds: {
+      backpill: { name: 'Backpill', sub: '', removedAt: Date.now() - 86400000, pausePeriods: [],
+        config: { id: 'backpill', name: 'Backpill', type: 'gap', schemaV: 2, quickLog: true, gapH: 1,
+          ceiling: true, ceilingMax: 2, doses: [{ label: '.5 mg', mg: 5, pills: 5 }] } }
+    } }));
+  }, KEY);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1900);
+  await dismiss();
+  await page.getByRole('button', { name: /^Meds/ }).first().click();
+  await page.waitForTimeout(700);
+  const bring = page.getByRole('button', { name: /Bring back/i }).first();
+  const haveBring = await bring.count() > 0;
+  t('the archived medication offers Bring back', haveBring);
+  if (haveBring) {
+    await bring.click();
+    await page.waitForTimeout(500);
+    // THE SAME BUTTON, ARMED. Its VISIBLE text becomes "Yes, bring it back" but its accessible name
+    // — which is what getByRole matches — is the aria-label, "Confirm bringing back <name>". Looking
+    // for the visible text found nothing, the helper quietly did nothing, and the restore never
+    // happened: the suite would have been measuring an empty list and calling it a pass.
+    const yes = page.getByRole('button', { name: /Confirm bringing back/i }).first();
+    t('the armed button asks for confirmation before restoring', await yes.count() > 0);
+    if (await yes.count()) { await yes.click(); await page.waitForTimeout(900); }
+  }
+  await dismiss();
+  // READ THE DISK, not the screen. The defect was that the WRONG numbers were persisted; the app
+  // then healed itself on the next full load, which is why reading state after a reload would have
+  // shown green while a backup taken in between carried the wrong configuration forward.
+  const restored = await page.evaluate((key) => {
+    const cfg = JSON.parse(localStorage.getItem(key) || '{}');
+    const m = (cfg.meds || []).find(x => x.id === 'backpill');
+    return m ? { dose: m.doses && m.doses[0], stamp: m.doseSchemaV } : null;
+  }, KEY);
+  t('Bring back writes a MIGRATED medication to disk, not the archived one',
+    !!restored && restored.stamp === 1 && restored.dose && restored.dose.label === '0.5 mg' && restored.dose.mg === 0.5,
+    JSON.stringify(restored));
+  // And the screen agrees, in the same session, with no reload to rescue it.
+  await page.getByRole('button', { name: /^Home/ }).first().click();
+  await page.waitForTimeout(900);
+  const card = await page.evaluate(() => {
+    const el = [...document.querySelectorAll('*')].find(e => (e.innerText || '').includes('Backpill') &&
+      ![...e.children].some(c => (c.innerText || '').includes('Backpill')));
+    let n = el;
+    for (let i = 0; i < 7 && n; i++) {
+      if (/over limit|Available|Log/i.test(n.innerText || '')) return (n.innerText || '').replace(/\s+/g, ' ').trim();
+      n = n.parentElement;
+    }
+    return '(card not found)';
+  });
+  t('and the restored card is not falsely over its limit in the same session',
+    card !== '(card not found)' && !/over limit/i.test(card), card.slice(0, 140));
+
+  // DOOR 2: THE CLASS, mechanically. Any future path that appends to the medication list has the
+  // same hazard, and the specific bug is fixed either way -- what keeps coming back is the class.
+  // Every medication the app is holding must carry the stamp, however it got there.
+  const unstamped = await page.evaluate((key) => {
+    const cfg = JSON.parse(localStorage.getItem(key) || '{}');
+    const all = cfg.meds || [];
+    return { total: all.length, bad: all.filter(m => !(Number(m.doseSchemaV) >= 1)).map(m => m.id) };
+  }, KEY);
+  // NOT VACUOUS. An empty list has no unmigrated medication in it either, so the count is asserted
+  // as well -- otherwise this check reports green loudest at the moment the restore silently failed
+  // and there is nothing on the list at all.
+  t('no medication anywhere on the list is unmigrated, and there is one to check',
+    unstamped.total >= 1 && unstamped.bad.length === 0, JSON.stringify(unstamped));
+  }
+}
+
 console.log('\n3d. THE CAREGIVER IS TOLD WHEN THE APP CHANGES WHAT THEY WROTE');
 {
   await page.getByRole('button', { name: /^Meds/ }).first().click();
@@ -393,9 +524,15 @@ console.log('\n3d. THE CAREGIVER IS TOLD WHEN THE APP CHANGES WHAT THEY WROTE');
   await page.waitForTimeout(400);
   await page.getByPlaceholder('Medication name').first().fill('Noticed');
   await page.getByPlaceholder('For example, 4 hours').first().fill('4');
+  // THE HELPER PROVES THE EDITOR IS STILL OPEN BEFORE IT REPORTS AN ABSENCE. It returned null both
+  // when the notice was absent and when the selector found nothing at all, so a future change that
+  // closed the editor early would have turned six negative assertions into six free passes. The
+  // round-4 audit flagged the shape while it was still latent; it is closed while it is cheap.
   const notice = async (text) => {
     await page.locator('#med-doses-text').fill(text);
     await page.waitForTimeout(AFTER_REDRAW);
+    const box = await page.locator('#med-doses-text').count();
+    if (!box) return '(THE DOSAGE OPTIONS BOX IS NOT ON SCREEN — this suite is not measuring what it thinks)';
     return page.evaluate(() => {
       const el = [...document.querySelectorAll('div')].find(d => /^Will be saved as:/.test((d.innerText || '').trim()));
       return el ? (el.innerText || '').replace(/\s+/g, ' ').trim() : null;
@@ -403,6 +540,13 @@ console.log('\n3d. THE CAREGIVER IS TOLD WHEN THE APP CHANGES WHAT THEY WROTE');
   };
   const naked = await notice('.5 mg');
   t('a naked decimal is disclosed', !!naked && /Will be saved as: 0\.5 mg/.test(naked), JSON.stringify(naked));
+  // THE PROMISE THAT CAME OUT. "so they cannot be misread" was an absolute claim about how a person
+  // reads, made by an app that had just been shown to get a number wrong. Asserted absent so it
+  // cannot come back in a later edit.
+  t('and it does not promise the amount cannot be misread', !!naked && !/cannot be misread/i.test(naked),
+    JSON.stringify(naked));
+  t('it says what it actually did instead', !!naked && /leading zero is added and a trailing zero removed/i.test(naked),
+    JSON.stringify(naked));
   const trailing = await notice('1.0 mg');
   t('a trailing zero is disclosed', !!trailing && /Will be saved as: 1 mg/.test(trailing), JSON.stringify(trailing));
   // THE NEGATIVES. A line that appears on every medication teaches people to ignore it.
@@ -435,23 +579,23 @@ console.log('\n3d. THE CAREGIVER IS TOLD WHEN THE APP CHANGES WHAT THEY WROTE');
 
 console.log('\n4. DELIBERATELY UNCHANGED, AND PINNED SO IT CANNOT DRIFT QUIETLY');
 {
-  const mcg = await parse('500 mcg');
+  const mcg = arr(await parse('500 mcg'));
   t('"500 mcg" still counts as 500 with no unit of its own — micrograms have nowhere to be stored yet',
     mcg.length === 1 && mcg[0].mg === 0 && mcg[0].pills === 500, JSON.stringify(mcg));
-  const ml = await parse('5 mL');
+  const ml = arr(await parse('5 mL'));
   t('"5 mL" still counts as 5 with no unit of its own — same reason',
     ml.length === 1 && ml[0].mg === 0 && ml[0].pills === 5, JSON.stringify(ml));
-  const units = await parse('8 units');
+  const units = arr(await parse('8 units'));
   t('"8 units" still counts as 8 with no unit of its own — same reason',
     units.length === 1 && units[0].mg === 0 && units[0].pills === 8, JSON.stringify(units));
-  const empty = await parse('');
+  const empty = arr(await parse(''));
   t('an empty Dosage options is still no doses at all, not one blank button',
     Array.isArray(empty) && empty.length === 0, JSON.stringify(empty));
-  const junk = await parse('as directed');
+  const junk = arr(await parse('as directed'));
   t('text with no number at all saves as a plain button and counts nothing',
     junk.length === 1 && junk[0].label === 'as directed' && junk[0].mg === 0 && junk[0].pills === undefined,
     JSON.stringify(junk));
-  const zero = await parse('1/0 tablet');
+  const zero = arr(await parse('1/0 tablet'));
   // `junk &&` used to sit in front of this condition. `junk` is a non-empty array, so the term could
   // never be false: a dead clause in an assertion, found by the round-3 audit. Removed rather than
   // left as decoration -- a condition that cannot contribute is indistinguishable from one that was
