@@ -1702,7 +1702,7 @@ function restoreView() {
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { heroSnoozeUntil: 0, vitalOpen: null, medFlash: null, entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
+let state = { heroSnoozeUntil: 0, vitalOpen: null, symptomFilter: null, symptomRange: 'weeks', medFlash: null, entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -1742,6 +1742,7 @@ const BACK_LAYERS = [
   // 3. FULL-SCREEN EDITORS AND PANELS.
   { key: 'medEditor', label: 'the medication editor', open: () => state.medEditor != null, close: () => setState({ medEditor: null, confirmDeleteMed: null }) },
   { key: 'vitalOpen', label: 'the open vitals panel', open: () => state.vitalOpen != null, close: () => setState({ vitalOpen: null }) },
+  { key: 'symptomFilter', label: 'the symptom filter', open: () => state.symptomFilter != null, close: () => setState({ symptomFilter: null }) },
   { key: 'help', label: 'an open help topic', open: () => !!(state.help && (state.help.topic || state.help.cat)), close: () => setState({ help: state.help && state.help.topic ? { cat: state.help.cat, topic: null } : { cat: null, topic: null } }) },
   { key: 'drawerOpen', label: 'the menu drawer', open: () => !!state.drawerOpen, close: () => setState({ drawerOpen: false }) }
 ];
@@ -8014,6 +8015,77 @@ function renderMedicationEditor() {
   );
 }
 
+
+// ---- WHAT THE MEDS CARD SAYS ABOUT TODAY -------------------------------------------------------
+//
+// Enhancer E5: the card described the medication and its rules and said nothing about what had
+// happened. These three helpers are the whole of the fix, and every one of them READS -- none
+// writes, and none is a second route to logging a dose.
+
+// The pill, from the SAME status() the Home cards use. One source, so the two screens cannot
+// disagree about whether a medication may be given -- which is the only way a status pill can do
+// real harm.
+function medStatusPill(med) {
+  const st = status(med) || {};
+  if (st.paused) return { text: 'Paused', fg: '#6F5347', bg: 'rgba(124,97,86,0.12)', bd: 'rgba(124,97,86,0.22)' };
+  if (st.chemoBlock) return { text: 'Held around treatment', fg: '#8B3C1B', bg: 'rgba(174,88,51,0.12)', bd: 'rgba(174,88,51,0.26)' };
+  if (st.ceilingHit) return { text: 'Daily limit reached', fg: '#A5443C', bg: 'rgba(192,69,59,0.10)', bd: 'rgba(192,69,59,0.26)' };
+  if (st.locked && st.availableAt) {
+    const left = st.availableAt - state.now;
+    return { text: left > 0 ? ('Wait ' + fmtCountdown(left)) : 'Available', fg: '#9A6419', bg: 'rgba(154,100,25,0.10)', bd: 'rgba(154,100,25,0.24)' };
+  }
+  if (st.courseComplete) return { text: 'Course finished', fg: '#6F5347', bg: 'rgba(124,97,86,0.12)', bd: 'rgba(124,97,86,0.22)' };
+  if (st.noWindowToday) return { text: 'Not scheduled today', fg: '#6F5347', bg: 'rgba(124,97,86,0.12)', bd: 'rgba(124,97,86,0.22)' };
+  if (st.locked) return { text: 'Not available', fg: '#6F5347', bg: 'rgba(124,97,86,0.12)', bd: 'rgba(124,97,86,0.22)' };
+  // DUE NOW vs AVAILABLE is a real distinction and status() marks it with `windowName`, not with a
+  // flag: an unlocked SCHEDULED medication is one standing inside an open window, which is what
+  // "due" means. An unlocked as-needed medication is merely available -- nothing is asking for it,
+  // and a card headed "Due now" would invite a dose nobody asked for (the app-v80 finding).
+  // There is no `st.dueNow`; an earlier draft of this function read one and would have printed
+  // "Available" for every scheduled medication forever, silently and correctly-looking.
+  if (st.windowName) return { text: 'Due now · ' + st.windowName, fg: '#A83D0F', bg: 'rgba(200,83,32,0.12)', bd: 'rgba(200,83,32,0.26)' };
+  return { text: 'Available', fg: '#0A6B4A', bg: 'rgba(46,125,79,0.10)', bd: 'rgba(46,125,79,0.24)' };
+}
+
+// How many doses today and when the last one was. Every medication has this question, limit or not.
+function medTodayLine(med) {
+  const from = dayStart(state.now);
+  const today = entriesFor(med.id).filter(e => e.ts >= from).sort((a, b) => b.ts - a.ts);
+  if (!today.length) return 'None logged today';
+  const n = today.length;
+  return n + (n === 1 ? ' dose today' : ' doses today') + ' · last at ' + fmtTime(today[0].ts);
+}
+
+// The bar, and ONLY when there is a real number behind it. A medication whose amounts the app
+// cannot count (app-v81) has no honest total to draw, so it gets no bar -- a bar drawn from a
+// figure the app admits it cannot compute looks measured and is not. That is the paracentesis
+// average all over again (Rule 2.7, question 3), and it is the harder kind to catch because
+// nothing is wrong with the arithmetic.
+function medCeilingBar(med) {
+  const dc = dailyCeiling(med);
+  if (!dc || !dc.max) return null;
+  const used = Number(dc.used) || 0;
+  const pct = Math.max(0, Math.min(100, (used / dc.max) * 100));
+  const over = used >= dc.max;
+  const near = !over && pct >= 75;
+  const colour = over ? '#C0453B' : near ? '#9A6419' : '#E46F3C';
+  const left = Math.max(0, dc.max - used);
+  const unit = dc.unit === 'mg' ? 'mg' : String(dc.unit || '');
+  return h('div', { 'data-med-ceiling': med.id, style: { marginTop: '9px' } },
+    h('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' } },
+      h('div', { className: 'mono', style: { fontSize: '13px', fontWeight: '700', color: over ? '#A5443C' : '#2A2127' } },
+        used.toLocaleString() + ' / ' + dc.max.toLocaleString() + ' ' + unit),
+      h('div', { style: { ...TYPE.caption, color: over ? '#A5443C' : '#7A6E76' } },
+        over ? 'Limit reached' : (left.toLocaleString() + ' ' + unit + ' left'))
+    ),
+    h('div', { role: 'img',
+      'aria-label': used.toLocaleString() + ' of ' + dc.max.toLocaleString() + ' ' + unit + ' used today',
+      style: { height: '8px', marginTop: '6px', borderRadius: '99px', background: 'rgba(246,108,49,0.10)', overflow: 'hidden' } },
+      h('div', { style: { height: '100%', width: Math.round(pct) + '%', background: colour, borderRadius: '99px', transition: 'width .45s ease, background .45s ease' } })
+    )
+  );
+}
+
 function renderMedicationManager(now) {
   // Alphabetical for easy scanning — independent of the underlying state.meds array order, which is
   // preserved separately to drive Home's Quick Log card order (see the Home screen order section below).
@@ -8143,6 +8215,18 @@ function renderMedicationManager(now) {
               )
             );
           })(),
+      // WHAT HAS HAPPENED, above what the rules are. The card used to open with configuration;
+      // somebody looking at this screen at 2am wants to know whether a dose has been given.
+      (function () {
+        const pill = medStatusPill(med);
+        return h('div', { 'data-med-status': med.id, style: { marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #F0E3DD' } },
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
+            h('span', { 'data-med-status-pill': med.id, style: { borderRadius: '99px', padding: '3px 9px', fontSize: '12px', fontWeight: '800', color: pill.fg, background: pill.bg, border: '1px solid ' + pill.bd } }, pill.text),
+            h('span', { 'data-med-today': med.id, style: { ...TYPE.caption, color: '#7A6E76', minWidth: '0', overflowWrap: 'anywhere' } }, medTodayLine(med))
+          ),
+          medCeilingBar(med)
+        );
+      })(),
       h('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: '5px', marginTop: '10px', color: '#5E4337', fontSize: '12px', lineHeight: '1.35' } },
         h('div', null, h('span', { style: { color: '#A83D0F', fontWeight: '700' } }, 'Doses: '), medicationDoseSummary(med)),
         h('div', null, h('span', { style: { color: '#A83D0F', fontWeight: '700' } }, 'Rules: '), formatRuleSummary(med)),
@@ -8623,7 +8707,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v82';
+const APP_VERSION = 'app-v83';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -10370,6 +10454,142 @@ function renderEraseAllModal() {
   );
 }
 
+
+function renderTemperatureReport(now) {
+  // Converted ONCE at ingestion, so a history logged in Celsius and viewed in Fahrenheit charts on
+  // one axis -- the same reason renderWeightTrend does it (its v12b note).
+  const all = state.entries.filter(e => e.medId === 'temp' && typeof e.temp === 'number')
+    .sort((a, b) => a.ts - b.ts)
+    .map(e => ({ ts: e.ts, t: dispTemp(e) }))
+    .filter(e => typeof e.t === 'number');
+  const range = state.weightRange;
+  const DAY = 86400000;
+  // THE THRESHOLDS COME FROM THE APP, NOT FROM THIS FILE. tempFever() and tempHigh() are what Home
+  // colours a reading from, so a line drawn here can never disagree with the colour shown there --
+  // and in Celsius they are 38.0 and 39.4, so the lines move with the unit instead of being drawn
+  // at a Fahrenheit number under a Celsius axis.
+  const fever = tempFever(), high = tempHigh();
+
+  const addRow = reportAddRow({
+    label: 'Log a temperature', placeholder: tempDefault(), max: 113, hook: 'data-temp-report-add',
+    value: state.tempInput, onInput: (e) => { state.tempInput = e.target.value; }, onLog: logTemp
+  });
+
+  const toggle = h('div', { style: { display: 'flex', gap: '5px', background: 'rgba(255,255,255,0.45)', borderRadius: '10px', padding: '3px', border: '1px solid #E9D8D1', alignSelf: 'flex-start' } },
+    h('button', { onClick: () => setState({ weightRange: 'weeks' }), 'aria-pressed': String(range === 'weeks'), style: { minHeight: '44px', padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', background: range === 'weeks' ? '#AE5833' : 'transparent', color: range === 'weeks' ? '#fff' : '#7A6E76' } }, 'Weeks'),
+    h('button', { onClick: () => setState({ weightRange: 'months' }), 'aria-pressed': String(range === 'months'), style: { minHeight: '44px', padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', background: range === 'months' ? '#AE5833' : 'transparent', color: range === 'months' ? '#fff' : '#7A6E76' } }, 'Months')
+  );
+
+  if (!all.length) {
+    return [addRow, toggle,
+      h('div', { 'data-temp-empty': 'true', style: { background: '#FFFFFF', border: '1px dashed #E9D8D1', borderRadius: '16px', padding: '32px 20px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } },
+        'No temperatures logged yet. Log one from the box above, or from the Temp tile on Home.')
+    ];
+  }
+
+  const spanDays = range === 'weeks' ? 28 : 90;
+  const minTs = now - spanDays * DAY;
+  const inRange = all.filter(e => e.ts >= minTs);
+  const points = inRange.length ? inRange : all.slice(-2);
+
+  const vals = points.map(p => p.t);
+  // The axis must always contain the fever line, or a week of normal readings draws a chart with
+  // no line on it and the reader has no idea where the threshold sits.
+  const lo = Math.min(Math.min.apply(null, vals), fever) - 0.6;
+  const hi = Math.max(Math.max.apply(null, vals), fever) + 0.6;
+  const vMin = Math.floor(lo * 2) / 2, vMax = Math.ceil(hi * 2) / 2;
+  const vRange = (vMax - vMin) || 2;
+  const tMin = points[0].ts;
+  const tMax = Math.max(points[points.length - 1].ts, tMin + DAY);
+  const tRange = (tMax - tMin) || DAY;
+
+  const W = 680, H = 300;
+  const pad = { top: 30, right: 20, bottom: 50, left: 58 };
+  const cW = W - pad.left - pad.right, cH = H - pad.top - pad.bottom;
+  const x = (ts) => pad.left + ((ts - tMin) / tRange) * cW;
+  const y = (v) => pad.top + cH - ((v - vMin) / vRange) * cH;
+  const colourFor = (v) => v >= high ? '#C0453B' : v >= fever ? '#9A6419' : '#AE5833';
+
+  let pathD = '';
+  points.forEach((p, i) => { pathD += (i === 0 ? 'M' : 'L') + x(p.ts).toFixed(1) + ',' + y(p.t).toFixed(1); });
+
+  const ySteps = 5, yLabels = [];
+  for (let i = 0; i <= ySteps; i++) { const v = vMin + (vRange / ySteps) * i; yLabels.push({ val: Math.round(v * 10) / 10, py: y(v) }); }
+  const xLabels = [], labelCount = range === 'weeks' ? 4 : 6;
+  for (let i = 0; i <= labelCount; i++) {
+    const ts = tMin + (tRange / labelCount) * i, d = new Date(ts);
+    xLabels.push({ label: (d.getMonth() + 1) + '/' + d.getDate(), px: x(ts) });
+  }
+
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;">';
+  yLabels.forEach(yl => {
+    svg += '<line x1="' + pad.left + '" y1="' + yl.py.toFixed(1) + '" x2="' + (W - pad.right) + '" y2="' + yl.py.toFixed(1) + '" stroke="rgba(246,108,49,0.10)" stroke-width="1"/>';
+    svg += '<text x="' + (pad.left - 10) + '" y="' + (yl.py + 4).toFixed(1) + '" fill="#7A6E76" font-size="12" font-family="ui-monospace,Menlo,monospace" text-anchor="end">' + yl.val + '</text>';
+  });
+  xLabels.forEach(xl => {
+    svg += '<text x="' + xl.px.toFixed(1) + '" y="' + (H - 10) + '" fill="#7A6E76" font-size="12" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">' + xl.label + '</text>';
+  });
+  // THE THRESHOLD LINES. Drawn before the data so a reading sits on top of them, and each labelled
+  // with its own number so nobody has to count gridlines to find out which line is which.
+  const rule = (v, colour, label) => {
+    if (v < vMin || v > vMax) return '';
+    const py = y(v).toFixed(1);
+    return '<line x1="' + pad.left + '" y1="' + py + '" x2="' + (W - pad.right) + '" y2="' + py + '" stroke="' + colour + '" stroke-width="1.5" stroke-dasharray="6 5"/>' +
+           '<text x="' + (W - pad.right) + '" y="' + (y(v) - 6).toFixed(1) + '" fill="' + colour + '" font-size="12" font-weight="700" font-family="ui-monospace,Menlo,monospace" text-anchor="end">' + label + '</text>';
+  };
+  svg += rule(fever, '#9A6419', 'Fever ' + fever + tempSuffix());
+  svg += rule(high, '#C0453B', 'High ' + high + tempSuffix());
+  svg += '<path d="' + pathD + '" fill="none" stroke="#AE5833" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
+  points.forEach((p, i) => {
+    const isLast = i === points.length - 1, c = colourFor(p.t);
+    svg += '<circle cx="' + x(p.ts).toFixed(1) + '" cy="' + y(p.t).toFixed(1) + '" r="' + (isLast ? 5 : 3.5) + '" fill="' + c + '" stroke="' + c + '" stroke-width="1.5"/>';
+    if (isLast) svg += '<text x="' + x(p.ts).toFixed(1) + '" y="' + (y(p.t) - 12).toFixed(1) + '" fill="' + c + '" font-size="13" font-weight="700" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">' + p.t + '</text>';
+  });
+  svg += '</svg>';
+
+  const latestPt = points[points.length - 1];
+  const peak = points.reduce((a, b) => (b.t > a.t ? b : a));
+  const overCount = points.filter(p => p.t >= fever).length;
+
+  const tile = (label, value, colour, hook) => h('div', { [hook]: 'true', style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '14px', padding: '14px', textAlign: 'center', boxShadow: '0 4px 24px rgba(203,122,87,0.10)' } },
+    h('div', { style: { ...TYPE.label, color: '#7A6E76', marginBottom: '6px' } }, label),
+    h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '700', color: colour } }, value)
+  );
+
+  return [
+    addRow,
+    toggle,
+    h('section', { 'data-temp-chart': 'true', style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '18px', padding: '20px 16px 12px', boxShadow: '0 4px 24px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' } },
+        h('div', { style: { minWidth: '0' } },
+          h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Temperature'),
+          h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px' } }, range === 'weeks' ? 'Last 4 weeks' : 'Last 3 months')
+        ),
+        h('div', { className: 'mono', style: { fontSize: '24px', fontWeight: '700', color: colourFor(latestPt.t), letterSpacing: '-0.02em' } }, latestPt.t + tempSuffix())
+      ),
+      h('div', { innerHTML: svg })
+    ),
+    // NO AVERAGE. A mean body temperature over a month describes nothing anybody acts on and
+    // invites the wrong reading -- "averaging 98.9, that's fine" across a week holding one 102.3.
+    // The peak and the count above the line are what a clinician asks for. Rule 2.7, question 3,
+    // applied before this shipped rather than after (the paracentesis average).
+    h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '10px' } },
+      tile('Highest', peak.t + '', colourFor(peak.t), 'data-temp-peak'),
+      tile('Latest', latestPt.t + '', colourFor(latestPt.t), 'data-temp-latest'),
+      tile('At or above ' + fever, String(overCount), overCount ? '#9A6419' : '#2A2127', 'data-temp-overcount')
+    ),
+    h('section', { 'data-temp-list': 'true', style: { display: 'flex', flexDirection: 'column', gap: '7px' } },
+      h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Readings'),
+      ...points.slice().reverse().map(p => h('div', { key: String(p.ts), style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '13px', padding: '11px 13px' } },
+        h('div', { style: { ...TYPE.caption, color: '#554A52', minWidth: '0' } },
+          new Date(p.ts).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + fmtTime(p.ts)),
+        h('div', { className: 'mono', style: { fontSize: '15px', fontWeight: '700', color: colourFor(p.t), whiteSpace: 'nowrap' } },
+          p.t + tempSuffix() + (p.t >= high ? ' · high' : p.t >= fever ? ' · fever' : ''))
+      ))
+    )
+  ];
+}
+
 function renderBloodPressureReport(now) {
   // v18 (Owner-reported): this function used to return a bare h() node in both branches instead of
   // an array like every sibling report function (renderWeightTrend, renderHistory, etc). renderReportDetail
@@ -10432,6 +10652,11 @@ function renderRadiationReport(now) {
 function reportDescriptor(type, now) {
   if (type === 'blood_pressure') { const bp = state.entries.filter(e => e.medId === 'blood_pressure').sort((a, b) => b.ts - a.ts)[0]; return { label: 'Blood Pressure', icon: 'chart', description: 'Review blood pressure readings over time.', meta: bp ? (bp.sys + '/' + bp.dia + ' mmHg latest') : 'No readings yet' }; }
   if (type === 'history') return { label: 'History', icon: 'history', description: 'Review dose, symptom, and vital logs by day.', meta: state.entries.length + ' recorded ' + (state.entries.length === 1 ? 'entry' : 'entries') };
+  // The tile's own line says whether the last reading was a fever, because that is the question
+  // somebody opens this screen to answer -- not how many readings there are.
+  if (type === 'temp') { const lt = latest('temp'); const d = lt ? dispTemp(lt) : null;
+    return { label: 'Temperature', icon: 'chart', description: 'See temperatures over time against the fever line.',
+      meta: d === null ? 'No readings yet' : (d + tempSuffix() + ' latest' + (d >= tempHigh() ? ' \u00b7 high' : d >= tempFever() ? ' \u00b7 fever' : '')) }; }
   if (type === 'weight') { const latestWeight = latest('weight'); return { label: 'Weight', icon: 'chart', description: 'Explore weight readings, trends, and recent changes.', meta: latestWeight ? (dispWeight(latestWeight) + ' ' + weightSuffix() + ' latest') : 'No readings yet' }; }
   if (type === 'cycle') {
     const active = cycleActive();
@@ -10469,7 +10694,7 @@ function reportDescriptor(type, now) {
 }
 
 function renderReportsMenu(now) {
-  const reportTypes = ['history', 'weight', 'paracentesis', 'blood_pressure', 'radiation', 'cycle', 'bowel_movement', 'appetite'].filter(t => (t !== 'cycle' || (cycleAllowed() && homePref('cycleTracking'))) && (t !== 'radiation' || hasRadiation()) && (t !== 'paracentesis' || homePref('paracentesisTracking') || paracentesisResolved().length));
+  const reportTypes = ['history', 'weight', 'temp', 'paracentesis', 'blood_pressure', 'radiation', 'cycle', 'bowel_movement', 'appetite'].filter(t => (t !== 'cycle' || (cycleAllowed() && homePref('cycleTracking'))) && (t !== 'radiation' || hasRadiation()) && (t !== 'paracentesis' || homePref('paracentesisTracking') || paracentesisResolved().length));
   return [
     h('section', null,
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: '#BF4C1A' } }, appIcon('chart', 19), h('span', { style: { ...TYPE.label } }, 'Care reports')),
@@ -10497,7 +10722,7 @@ function renderReportDetail(type, now) {
   const report = reportDescriptor(type, now);
   // The bare trailing `: renderAppetite(now)` was a trap -- a type added to reportTypes but missed
   // here rendered the Appetite report silently, under the new report's own heading.
-  const content = type === 'history' ? renderHistory(now) : type === 'weight' ? renderWeightTrend(now) : type === 'paracentesis' ? renderParacentesis(now) : type === 'blood_pressure' ? renderBloodPressureReport(now) : type === 'radiation' ? renderRadiationReport(now) : type === 'cycle' ? renderCycle(now) : type === 'bowel_movement' ? renderBowelMovementReport(now) : renderAppetite(now);
+  const content = type === 'history' ? renderHistory(now) : type === 'weight' ? renderWeightTrend(now) : type === 'temp' ? renderTemperatureReport(now) : type === 'paracentesis' ? renderParacentesis(now) : type === 'blood_pressure' ? renderBloodPressureReport(now) : type === 'radiation' ? renderRadiationReport(now) : type === 'cycle' ? renderCycle(now) : type === 'bowel_movement' ? renderBowelMovementReport(now) : renderAppetite(now);
   return [
     h('section', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' } },
       h('div', null,
@@ -10831,10 +11056,93 @@ function renderSymptoms(now) {
     ),
     h('button', { onClick: () => openSymptomModal(null), 'aria-label': 'Log a symptom', style: { flexShrink: '0', minHeight: '44px', width: '44px', borderRadius: '13px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '22px', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 18px rgba(168,61,15,0.32)' } }, '+')
   );
-  const list = entries.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-    ...entries.map(e => symptomRow(e))
-  ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(246,108,49,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No symptoms or reactions logged yet.\nTap + to add one.');
-  return [header, list];
+  // HOW OFTEN, NOT JUST WHAT. The list answered "what was logged" and nothing answered "how often",
+  // which is the question an oncologist asks and the reason somebody logs symptoms at all.
+  const DAY = 86400000;
+  const spanDays = state.symptomRange === 'months' ? 90 : 28;
+  const from = now - spanDays * DAY;
+  const windowed = entries.filter(e => e.ts >= from);
+
+  const counts = {};
+  windowed.forEach(e => {
+    const key = e.symptomType || (e.medId || '').slice(8);
+    if (!key) return;
+    if (!counts[key]) counts[key] = { key, n: 0, last: 0 };
+    counts[key].n += 1;
+    if (e.ts > counts[key].last) counts[key].last = e.ts;
+  });
+  const bars = Object.keys(counts).map(k => counts[k]).sort((a, b) => b.n - a.n || b.last - a.last);
+  const worst = bars.length ? bars[0].n : 0;
+
+  const rangeToggle = h('div', { style: { display: 'flex', gap: '5px', background: 'rgba(255,255,255,0.45)', borderRadius: '10px', padding: '3px', border: '1px solid #E9D8D1', alignSelf: 'flex-start' } },
+    ...[['weeks', 'Weeks'], ['months', 'Months']].map(([v, label]) => h('button', {
+      key: v, 'data-symptom-range': v,
+      onClick: () => setState({ symptomRange: v }),
+      'aria-pressed': String(state.symptomRange === v),
+      style: { minHeight: '44px', padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', background: state.symptomRange === v ? '#AE5833' : 'transparent', color: state.symptomRange === v ? '#fff' : '#7A6E76' }
+    }, label))
+  );
+
+  const daysAgo = (ts) => {
+    const d = Math.round((dayStart(now) - dayStart(ts)) / DAY);
+    return d <= 0 ? 'today' : d === 1 ? 'yesterday' : (d + ' days ago');
+  };
+
+  // COUNTS, AND NO AVERAGE SEVERITY. A count of discrete events is the honest number here -- it is
+  // the sentence somebody says on the phone to a clinic. A mean of a three-word severity scale
+  // recorded for one symptom type would be the paracentesis average again (Rule 2.7, question 3).
+  const summary = h('section', { 'data-symptom-summary': 'true', style: { display: 'flex', flexDirection: 'column', gap: '9px' } },
+    h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' } },
+      h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'How often'),
+      rangeToggle
+    ),
+    !bars.length
+      ? h('div', { 'data-symptom-bars-empty': 'true', style: { background: '#FFFFFF', border: '1px dashed #E9D8D1', borderRadius: '14px', padding: '20px', textAlign: 'center', color: '#7A6E76', fontSize: '13.5px', lineHeight: '1.5' } },
+          'Nothing logged in the last ' + (state.symptomRange === 'months' ? '3 months' : '4 weeks') + '.')
+      : h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 3px 14px rgba(203,122,87,0.10)' } },
+          ...bars.map(b => {
+            const on = state.symptomFilter === b.key;
+            const pct = worst ? Math.max(6, Math.round((b.n / worst) * 100)) : 0;
+            const name = SYMPTOM_TYPES[b.key] || b.key;
+            return h('button', {
+              key: b.key,
+              'data-symptom-bar': b.key,
+              'aria-pressed': on ? 'true' : 'false',
+              'aria-label': name + ', ' + b.n + (b.n === 1 ? ' time' : ' times') + ', last ' + daysAgo(b.last) + (on ? '. Showing only these.' : '. Tap to show only these.'),
+              onClick: () => setState({ symptomFilter: on ? null : b.key }),
+              style: { display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', minHeight: '44px', padding: '6px 7px', textAlign: 'left', borderRadius: '11px', background: on ? 'rgba(246,108,49,0.08)' : 'transparent', border: on ? '1px solid rgba(228,111,60,0.34)' : '1px solid transparent' }
+            },
+              h('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '9px', minWidth: '0' } },
+                h('span', { style: { ...TYPE.caption, fontSize: '13px', fontWeight: '700', color: '#2A2127', minWidth: '0', overflowWrap: 'anywhere' } }, name),
+                h('span', { className: 'mono', style: { fontSize: '12.5px', fontWeight: '700', color: '#A83D0F', flexShrink: '0', whiteSpace: 'nowrap' } },
+                  b.n + ' \u00b7 ' + daysAgo(b.last))
+              ),
+              h('div', { 'aria-hidden': 'true', style: { height: '7px', borderRadius: '99px', background: 'rgba(246,108,49,0.10)', overflow: 'hidden' } },
+                h('div', { style: { height: '100%', width: pct + '%', borderRadius: '99px', background: 'linear-gradient(90deg, #E46F3C 0%, #BF4C1A 100%)', transition: 'width .4s ease' } })
+              )
+            );
+          })
+        )
+  );
+
+  // The filter applies to the LIST ONLY, never to the bars -- a chart that re-draws itself around
+  // the selection stops being something you can compare against, and the selected bar would then
+  // always be the longest one on screen.
+  const shown = state.symptomFilter
+    ? entries.filter(e => (e.symptomType || (e.medId || '').slice(8)) === state.symptomFilter)
+    : entries;
+  const filterNote = state.symptomFilter ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
+    h('span', { style: { ...TYPE.caption, color: '#7A6E76' } },
+      'Showing ' + (SYMPTOM_TYPES[state.symptomFilter] || state.symptomFilter) + ' only'),
+    h('button', { 'data-symptom-clear': 'true', onClick: () => setState({ symptomFilter: null }),
+      style: { minHeight: '44px', padding: '0 12px', borderRadius: '11px', fontSize: '12.5px', fontWeight: '700', color: '#A83D0F', background: 'rgba(200,83,32,0.10)' } }, 'Show all')
+  ) : null;
+
+  const list = shown.length ? h('div', { 'data-symptom-list': 'true', style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
+    ...shown.map(e => symptomRow(e))
+  ) : h('div', { 'data-symptom-list': 'true', style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(246,108,49,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } },
+    entries.length ? 'None of these logged yet.' : 'No symptoms or reactions logged yet.\nTap + to add one.');
+  return [header, entries.length ? summary : null, filterNote, list];
 }
 
 // The Paracentesis report. Removal appends a tombstone rather than deleting, matching care-tracker
