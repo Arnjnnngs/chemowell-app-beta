@@ -1,5 +1,18 @@
 # ENHANCER — the Meds page, before a line of the rebuild is written
 
+> **WHICH RELEASE THIS GATED: app-v81.** Renamed from `ENHANCER-meds-page.md` so
+> `release_check.sh` can find it — the gate now refuses a release that touches `index.html` without
+> an `ENHANCER*<version>*` and a `DESIGN*<version>*` pass in `outputs/`, which is a promise
+> `TEAM-ORDER.md` had written down without keeping.
+>
+> **What in app-v81 this pass covers, and what it does not.** app-v81 changes two things on this
+> screen: the "What it's for" hint, and the Dosage options parser. Both are findings below — the
+> hint is what E7 is about (identity fields split apart, and the generic name is the lookup's second
+> input), and the parser is the front half of **E8**, whose back half is the unit list and is
+> deliberately not in this release. Everything else here — E1 through E6 — is PROPOSED and waiting
+> on Aaron's pick. **Nothing on this list was built into app-v81 without him choosing it.**
+
+
 Aaron, 2026-09-14: *"We need a full rundown with the whole team in the meds page. Designer and
 enhancer needs to be a big part of what needs to stay and what makes sense along with the order if
 how things are laid out. There needs to be a full sweep of that page with several eyes on it for

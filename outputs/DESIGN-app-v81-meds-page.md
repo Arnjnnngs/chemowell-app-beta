@@ -1,5 +1,15 @@
 # DESIGNER — the Meds page, before the rebuild
 
+> **WHICH RELEASE THIS GATED: app-v81.** Renamed from `DESIGN-meds-page.md` so `release_check.sh`
+> can find it. The gate now refuses a release touching `index.html` without one.
+>
+> **What in app-v81 this pass covers.** The measurements below are of the Meds screen and the
+> Add-medication form at 320 / 360 / 390 — which is the screen app-v81 changes. The release's own
+> layout risk, the description hint clipping at 320px, is measured separately and continuously by
+> `test/v81-purpose-hint.mjs` section 6b, because it is a per-drug property of 68 strings rather
+> than something one screenshot can settle. **D1-D3 are proposals and are not in app-v81.**
+
+
 Run with the Enhancer, before the build, per `TEAM-ORDER.md`. **This is the first Designer pass run
 as a role rather than as screenshots taken afterwards.**
 

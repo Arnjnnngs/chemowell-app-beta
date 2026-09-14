@@ -1,0 +1,41 @@
+OK M1 the number regex loses the leading dot again (and reads the label, not the stripped copy)
+      RED: "5,000 units" → 5,000 units [0mg / 5000]
+      RED: "5,000 mg" → 5,000 mg [5000mg / 5000]
+
+OK M2 the mg regex loses the leading dot again -- the ten-fold ceiling error itself
+      RED: "5,000 mg" → 5,000 mg [5000mg / 5000]
+
+OK M3 the leading zero is not added back
+      RED: the label is written as 0.5 mg, not .5 mg
+      RED: the Halfmil card is on Home and its dose button prints 0.5 mg
+      RED: the button never prints the naked ".5 mg" the caregiver typed
+      RED: nothing is at its daily limit before a single dose is logged
+      RED: the 0.5 mg dose button is offered and enabled
+      RED: tapping the dose asks which time to log it at
+      RED: a dose was actually written to the record
+      RED: THE LOGGED DOSE COUNTED 0.5 mg, NOT 5 mg
+      RED: the card found again after logging
+      RED: half a milligram of a 2 mg allowance is not the limit being reached
+      RED: a second dose is still offered, because 1.5 mg of the allowance is left
+      RED: ".5 mg" → 0.5 mg [0.5mg / 0.5]
+
+OK M4 the trailing zero is kept
+      RED: "1.0 mg" → 1 mg [1mg / 1]
+      RED: "2.50 mg" → 2.5 mg [2.5mg / 2.5]
+
+OK M5 a written fraction is no longer a number
+      RED: "1/2 tablet" → 0.5 tablet [0mg / 0.5]
+      RED: "3/4 tab" → 0.75 tab [0mg / 0.75]
+
+OK M6 the mixed number is taken after the plain fraction, not before
+      RED: "1 1/2 tablets" → 1.5 tablets [0mg / 1.5]
+
+OK M7 a thousands separator splits one dose into two again
+      RED: "5,000 units" → 5,000 units [0mg / 5000]
+      RED: "5,000 mg" → 5,000 mg [5000mg / 5000]
+
+OK M8 the vulgar-fraction character is no longer a number
+      RED: "½ tab" → 0.5 tab [0mg / 0.5]
+      RED: "1½ tabs" → 1.5 tabs [0mg / 1.5]
+
+restored; ALL MUTANTS DIED

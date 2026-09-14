@@ -442,6 +442,57 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
     echo "   push is not that gate."
     exit 1
   fi
+  # ---- THE DESIGN-TIME SEATS MUST HAVE RUN TOO ----------------------------------------------
+  # Added 2026-09-14, and it is the second half of a promise this repo had already written down
+  # without keeping. TEAM-ORDER.md said this gate "now also requires ENHANCER-<version>.md and
+  # DESIGN-<version>.md". It did not. That sentence claimed a property the code did not have --
+  # the exact class the app-v75 audit refused five times -- and it was claimed in the very document
+  # written to stop roles being skipped.
+  #
+  # WHY IT IS WORTH A GATE. Across six releases in one session the Enhancer ran zero times and the
+  # Designer ran zero times as a role. Everything they would have caught was caught instead by an
+  # Auditor at the end of a release, at a full agent and a full round each: a dead hero button, a
+  # clipped medication name, 52 of 68 descriptions cut off at 320px, a cursor thrown out of the box
+  # the release was about. Those are not correctness findings. No Auditor should have been the first
+  # person to see them.
+  #
+  # PRESENCE IS ALL A SCRIPT CAN CHECK, and that is said out loud rather than pretended otherwise:
+  # this cannot tell a real pass from a thin one. What it CAN do is make skipping the seat entirely
+  # impossible, which is what actually happened. Rule 2.6 allows an explicit "nothing this time" --
+  # after the pass, as information -- so a short file is legitimate; an ABSENT file is not.
+  ENH_REPORT=""
+  DSN_REPORT=""
+  for _f in outputs/ENHANCER*"$GATE_VERSION"*; do
+    if [ -e "$_f" ]; then ENH_REPORT="$_f"; break; fi
+  done
+  for _f in outputs/DESIGN*"$GATE_VERSION"*; do
+    if [ -e "$_f" ]; then DSN_REPORT="$_f"; break; fi
+  done
+  # Only when index.html itself moved. A workflow or lockfile change has no screen to walk, and a
+  # gate that demands a design pass for editing a YAML file is a gate people learn to route around.
+  if echo "$RULE5_CHANGED" | grep -q '^index\.html$'; then
+    if [ -z "$ENH_REPORT" ] || [ -z "$DSN_REPORT" ]; then
+      echo "❌ RELEASE CHECK FAILED: the design-time seats have not run for $GATE_VERSION."
+      [ -z "$ENH_REPORT" ] && echo "   missing: an outputs/ENHANCER*${GATE_VERSION}*.md pass"
+      [ -z "$DSN_REPORT" ] && echo "   missing: an outputs/DESIGN*${GATE_VERSION}*.md pass"
+      echo "   These run BEFORE the build, on the screens about to change (TEAM-ORDER.md)."
+      echo "   An Enhancer pass that found nothing is written down as 'nothing this time' and still"
+      echo "   counts. Silence does not -- that is the failure this gate exists for."
+      FAIL=1
+    else
+      # A FILE THAT EXISTS IS NOT A PASS THAT RAN. Three lines is not a threshold anyone should be
+      # proud of; it is here because `touch outputs/DESIGN-app-v81.md` would otherwise clear a gate
+      # written to stop exactly that.
+      for _f in "$ENH_REPORT" "$DSN_REPORT"; do
+        if [ "$(grep -c . "$_f" 2>/dev/null || echo 0)" -lt 3 ]; then
+          echo "❌ RELEASE CHECK FAILED: $_f is empty or near-empty."
+          echo "   A file with nothing in it is how a skipped seat looks from outside."
+          FAIL=1
+        fi
+      done
+    fi
+  fi
+
   # STALENESS. Finding a filename is not reading a report. app-v68 was gated by an audit of commit
   # 51ba75f while the head being shipped was 68d3dd6 -- 67 further lines of index.html, including a
   # rewritten treatmentActiveOn, that no auditor had ever seen. The gate passed, because the report

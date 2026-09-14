@@ -6535,9 +6535,57 @@ function updateMedicationForm(field, value, rerender) {
   }
 }
 
+// ONE PLACE DECIDES WHAT A WRITTEN AMOUNT MEANS, so the number printed on the card and the number
+// counted toward the daily limit can never disagree again. They disagreed by a factor of ten.
+//   * A NAKED DECIMAL gets its leading zero. ".5" is 0.5, not 5, and it is shown as "0.5" because
+//     that is what the ISMP error-prone list asks for -- a dot alone is the single most misread
+//     mark in a written dose.
+//   * A TRAILING ZERO after a decimal point is dropped: "1.0" is shown as "1", for the mirror
+//     reason -- "1.0" read as "10".
+//   * A VULGAR FRACTION is a number. "1/2 tablet" and "½ tab" are half a tablet, and the old parser
+//     read both as one whole -- which errs in the dangerous direction on a pill ceiling.
+// The VALUE is never altered: only the way it is written, and only where the way it is written is
+// on a published list of things that get misread.
+const DOSE_FRACTIONS = { '\u00bd': 0.5, '\u00bc': 0.25, '\u00be': 0.75, '\u2153': 1 / 3, '\u2154': 2 / 3 };
+function normaliseDoseNumber(label) {
+  let out = String(label == null ? '' : label);
+  const round3 = (n) => String(Math.round(n * 1000) / 1000);
+  // A MIXED NUMBER FIRST, because "1 1/2 tablets" is one amount and not two. Taking the fractions
+  // first turned it into the string "1 0.5 tablets", whose leading number is 1 -- the same
+  // under-count as the bug this is fixing, reintroduced by the fix. Measured, not reasoned about.
+  out = out.replace(/(?<![\d.])(\d+)\s+(\d+)\s*\/\s*(\d+)(?![\d.])/g, (whole, w, a, b) => {
+    const d = Number(b);
+    if (!d) return whole;
+    return round3(Number(w) + Number(a) / d);
+  });
+  // Then a plain fraction: "1/2" and "3/4" -> a decimal the rest of the app can add up.
+  out = out.replace(/(?<![\d.])(\d+)\s*\/\s*(\d+)(?![\d.])/g, (whole, a, b) => {
+    const d = Number(b);
+    if (!d) return whole;
+    return round3(Number(a) / d);
+  });
+  // A single-character fraction, alone or after a whole number: "1\u00bd" and a bare "\u00bd".
+  out = out.replace(/(\d*)\s*([\u00bd\u00bc\u00be\u2153\u2154])/g, (whole, lead, ch) =>
+    round3((lead ? Number(lead) : 0) + DOSE_FRACTIONS[ch]));
+  // The leading zero, and the trailing zero. Both are on the ISMP list and both are about how the
+  // number is WRITTEN -- neither changes what it is worth.
+  out = out.replace(/(^|[^\d.])\.(\d)/g, '$10.$2');
+  out = out.replace(/(\d+\.\d*?)0+(?![\d])/g, '$1');
+  out = out.replace(/(\d+)\.(?![\d])/g, '$1');
+  return out;
+}
+// A COMMA BETWEEN TWO DIGITS IS A THOUSANDS SEPARATOR, NOT A SEPARATOR BETWEEN DOSES. Splitting on
+// it turned "5,000 units" -- the ordinary way an insulin or heparin dose is written -- into a "5"
+// button and a "000 units" button. Commas anywhere else still separate the options, so
+// "500 mg, 1000 mg" is two doses exactly as before.
+function splitDoseOptions(text) {
+  return String(text || '').split(/,(?!\d{3}(?!\d))|(?<!\d),/).map(v => v.trim()).filter(Boolean);
+}
 function parseDoseOptions(text) {
-  return String(text || '').split(',').map(value => value.trim()).filter(Boolean).map(label => {
-    const mgMatch = label.match(/(\d+(?:\.\d+)?)\s*mg\b/i);
+  return splitDoseOptions(text).map(raw => {
+    const label = normaliseDoseNumber(raw);
+    const countable = label.replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
+    const mgMatch = countable.match(/(\d*\.?\d+)\s*mg\b/i);
     // v45 (Aaron-reported live bug): this used to require one specific word right after the number
     // -- pill/tab/tablet/cap/capsule/application -- for a non-mg Dosage options entry to "count"
     // toward the picked Limit unit. But Limit unit only has three choices (mg/pills/applications)
@@ -6550,11 +6598,30 @@ function parseDoseOptions(text) {
     // dosage option banner pops up and can't be bypassed." Fix: any leading number in a Dosage
     // options entry now counts as that entry's non-mg amount, whatever word (if any) follows it --
     // matches how a real person reads "1 patch" or "2 applications" (the number IS the amount).
-    const numMatch = label.match(/(\d+(?:\.\d+)?)/);
+    // WHAT EACH HALF OF THIS ACTUALLY BUYS, corrected after falsification. Putting the old
+    // `/(\d+(?:\.\d+)?)/` back broke nothing measurable, because normaliseDoseNumber above has
+    // ALREADY turned ".5 mg" into "0.5 mg" by the time these run -- the normalisation is what fixes
+    // the naked decimal, and the leading-dot tolerance here is defence in depth behind it, not the
+    // cure. What these two lines really carry is the COMMA: `countable` has the thousands separator
+    // stripped, so "5,000 mg" counts 5000. On the old pattern `\b` let "000 mg" match and a
+    // 5,000 mg dose weighed ZERO -- an overdose that raises no warning because the app thinks
+    // nothing was taken. The LABEL keeps its comma: that is how the amount is written and the
+    // caregiver should see what they typed.
+    const numMatch = countable.match(/(\d*\.?\d+)/);
     const dose = { label, mg: mgMatch ? Number(mgMatch[1]) : 0 };
     if (numMatch) dose.pills = Number(numMatch[1]);
     return dose;
   });
+}
+
+// Debug/test hook only -- same reasoning and same pattern as window.__syncTest and
+// window.__warnTest elsewhere in this file: this is a single <script type="module">, so a real
+// (non-simulated) harness cannot otherwise reach a module-scoped function. These three are pure
+// functions of a string and hold nothing, so exposing them adds no surface. The alternative is a
+// suite that tests its own copy of the parser, which is how a board stays green while the app is
+// wrong.
+if (typeof window !== 'undefined') {
+  window.__doseTest = { parseDoseOptions, normaliseDoseNumber, splitDoseOptions };
 }
 
 // v38 (Aaron-requested): whether Dosage options actually carries an amount in the currently-picked
