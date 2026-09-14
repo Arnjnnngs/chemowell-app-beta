@@ -1702,7 +1702,7 @@ function restoreView() {
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { medFlash: null, entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
+let state = { heroSnoozeUntil: 0, medFlash: null, entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -5706,6 +5706,9 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // harness-v80-up-next.py) and nothing here is stored.
   {
     const nx = nextDueDose(now);
+    // SNOOZED MEANS HIDDEN, NOT HANDLED. The card comes back by itself; nothing about the dose, the
+    // schedule or the record has changed while it was away.
+    const heroSnoozed = Number(state.heroSnoozeUntil) > Date.now();
     const prog = doseProgressToday(now);
     if (nx) {
       const mins = Math.max(0, Math.round((nx.at - now) / 60000));
@@ -5726,7 +5729,10 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       const firstDose = nx.med.doses && nx.med.doses.length === 1 ? nx.med.doses[0].label : null;
       const sub = [firstDose, nx.med.sub || null].filter(Boolean).join(' · ');
       const ringPct = prog.scheduled > 0 ? Math.min(100, Math.round(prog.taken / prog.scheduled * 100)) : 0;
-      parts.push(h('section', {
+      // SNOOZED MEANS HIDDEN. Gated HERE, on the branch that shows a dose as due — the first
+      // version gated the "all done" branch instead, which is the one case where a snooze means
+      // nothing because nothing is outstanding. The suite caught it by asserting the hero goes away.
+      if (!heroSnoozed) parts.push(h('section', {
         'data-home': 'up-next',
         style: {
           position: 'relative', overflow: 'hidden', borderRadius: '20px', padding: '18px 18px 16px',
@@ -5770,10 +5776,36 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         // over five lines, and at 320 the button -- 95px of it -- was what drove the card's height,
         // not the title the clamp was added to control. A long name gets the generic label instead;
         // the name itself is on the card the button goes to, in full.
-        h('button', {
-          onClick: () => scrollToMedCard(nx.med.id),
+        // THE ACTIONS AARON APPROVED. Two controls, not one: log it, or put it off.
+        // `heroDose` is the dose to log when there is exactly one to log. With several strengths
+        // the app will not choose for her -- it shows the card instead, where the strengths are.
+        (function () {
+          const doses = Array.isArray(nx.med.doses) ? nx.med.doses : [];
+          const heroDose = doses.length === 1 ? doses[0] : null;
+          const canLogHere = nx.openNow && (doses.length <= 1);
+          return h('div', { 'data-home-actions': 'up-next', style: { display: 'flex', gap: '8px', marginTop: '15px' } },
+            canLogHere ? h('button', {
+              // THE SAME PATH A MEDICATION CARD TAKES, with the same arguments. logMed checks the
+              // lock, offers the override when a dose is blocked, and opens the confirm-the-time
+              // sheet that does the writing. The app-v80 note reasoned that a second BUTTON was a
+              // second way to double-log; the hazard is a second WRITE PATH, and there is not one.
+              onClick: () => logMed(nx.med.id, heroDose),
+              style: { flex: '1 1 auto', minWidth: '0', minHeight: '48px', padding: '0 14px', borderRadius: '14px', border: '0', background: '#FFFFFF', color: '#8E3818', fontSize: '16px', fontWeight: '800', boxShadow: '0 3px 10px rgba(0,0,0,0.16)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+            }, 'Log this dose') : null,
+            h('button', {
+              onClick: () => setState({ heroSnoozeUntil: Date.now() + 15 * 60 * 1000 }),
+              // SNOOZE HIDES THE CARD FOR FIFTEEN MINUTES AND DOES NOTHING ELSE. It does not touch
+              // the dose, the schedule, the reminder or any record. A snooze that moved a reminder
+              // would be editing a medication's schedule from the Home screen, which is a far
+              // larger decision than this control is asking to make.
+              style: { flexShrink: '0', minHeight: '48px', padding: '0 16px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.55)', background: 'rgba(255,255,255,0.16)', color: '#FFFFFF', fontSize: '15px', fontWeight: '700' }
+            }, 'Snooze'),
+            canLogHere ? null : h('button', {
+              onClick: () => scrollToMedCard(nx.med.id),
           style: { marginTop: '15px', width: '100%', minHeight: '48px', padding: '0 14px', borderRadius: '14px', border: '0', background: '#FFFFFF', color: '#8E3818', fontSize: '16px', fontWeight: '800', boxShadow: '0 3px 10px rgba(0,0,0,0.16)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
-        }, (nx.openNow && String(nx.med.name).length <= 22) ? ('Go to ' + nx.med.name) : 'Show me the card')
+            }, 'Show me the card')
+          );
+        })()
       ));
     } else if (prog.scheduled > 0 && prog.taken >= prog.scheduled) {
       // ALL DONE IS A STATE WORTH SHOWING. Without this the card simply vanishes once the last dose

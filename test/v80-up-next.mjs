@@ -174,10 +174,35 @@ console.log('\n4. THE BUTTON GOES TO A CARD THAT EXISTS');
   await setup([win({ id: 'due3', name: 'TapTarget', windows: openWin })], []);
   const target = await page.evaluate(() => document.querySelectorAll('[data-med-card="due3"]').length);
   t('the medication it names has a card with a scroll hook', target === 1, String(target));
+  // THE CONTRACT CHANGED, ON AARON'S APPROVED DESIGN. app-v80 gave the hero ONE control that
+  // scrolled to the card; the mockup he approved shows two, "Log this dose" and "Snooze". This
+  // section is rewritten to the new contract rather than deleted, and every SAFETY property the old
+  // one encoded is kept below -- what changed is the design, not the hazards.
+  //
+  // AND ONE HAZARD IS GONE ENTIRELY. The app-v80 audit blocked three times on the same thing: the
+  // hero's only button was dead for a medication with no card on Home, and dead again once the
+  // Quick log section was collapsed. "Log this dose" cannot have that defect, because logMed does
+  // not need a card to exist.
   const btn = page.locator('[data-home="up-next"] button');
-  t('and the hero has exactly one control', await btn.count() === 1, String(await btn.count()));
-  await btn.first().click();
+  const labels = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-home="up-next"] button')].map(b => (b.innerText || '').trim()));
+  t('the hero offers Log this dose for a single-strength medication', labels.indexOf('Log this dose') >= 0, JSON.stringify(labels));
+  t('and it offers Snooze beside it', labels.indexOf('Snooze') >= 0, JSON.stringify(labels));
+  t('and it does NOT also offer the scroll fallback, which would be two ways to do one thing',
+    labels.indexOf('Show me the card') === -1, JSON.stringify(labels));
+  // LOGGING GOES THROUGH THE ONE PATH THAT ALREADY EXISTS. The hero must open the same
+  // confirm-the-time sheet a medication card opens -- not write a dose itself.
+  await page.getByRole('button', { name: 'Log this dose', exact: true }).first().click();
   await page.waitForTimeout(900);
+  const sheet = await page.getByRole('button', { name: 'Confirm', exact: true }).count();
+  t('tapping it opens the confirm-the-time sheet rather than writing a dose', sheet > 0, String(sheet));
+  const cancel = page.getByRole('button', { name: 'Cancel', exact: true });
+  if (await cancel.count()) { await cancel.first().click(); await page.waitForTimeout(500); }
+  const wrote = await page.evaluate(() => {
+    const ek = Object.keys(localStorage).find(k => /entries-v1$/.test(k));
+    return JSON.parse(localStorage.getItem(ek) || '[]').length;
+  });
+  t('and cancelling it writes nothing at all', wrote === 0, String(wrote));
   // NOT "the page scrolled" -- it does not need to on a short page. The assertion is that the
   // control reached its destination, which is what the caregiver needs.
   // NOT "the page scrolled" -- it does not need to on a short page, and not the inline style
@@ -187,7 +212,35 @@ console.log('\n4. THE BUTTON GOES TO A CARD THAT EXISTS');
   const landed = await page.evaluate(() =>
     (document.querySelector('[data-flash="on"]') || {}).getAttribute
       ? document.querySelector('[data-flash="on"]').getAttribute('data-med-card') : null);
-  t('tapping it marks that card, and the mark survives a re-render', landed === 'due3', String(landed));
+  t('the scroll mark is absent, because nothing scrolled — the dose was logged from here',
+    landed === null, String(landed));
+}
+
+console.log('\n4b. SNOOZE HIDES THE CARD AND CHANGES NOTHING ELSE');
+{
+  await setup([win({ id: 'snoozeme', name: 'SnoozeMe', windows: openWin })], []);
+  t('the hero is showing before the snooze', await page.locator('[data-home="up-next"]').count() === 1);
+  const before = await page.evaluate(() => {
+    const ek = Object.keys(localStorage).find(k => /entries-v1$/.test(k));
+    const mk = Object.keys(localStorage).find(k => /-med-v1$/.test(k));
+    return { entries: localStorage.getItem(ek) || '[]', meds: localStorage.getItem(mk) || '' };
+  });
+  await page.getByRole('button', { name: 'Snooze', exact: true }).first().click();
+  await page.waitForTimeout(800);
+  t('Snooze hides the hero', await page.locator('[data-home="up-next"]').count() === 0);
+  // IT MUST NOT TOUCH THE RECORD OR THE SCHEDULE. Snooze is the caregiver saying "not now" — if it
+  // moved a reminder it would be editing a medication's schedule from the Home screen, which is a
+  // much larger decision than this control asks to make.
+  const after = await page.evaluate(() => {
+    const ek = Object.keys(localStorage).find(k => /entries-v1$/.test(k));
+    const mk = Object.keys(localStorage).find(k => /-med-v1$/.test(k));
+    return { entries: localStorage.getItem(ek) || '[]', meds: localStorage.getItem(mk) || '' };
+  });
+  t('and writes no dose', after.entries === before.entries, after.entries.slice(0, 60));
+  t('and changes no medication or schedule', after.meds === before.meds);
+  // AND THE MEDICATION IS STILL DUE. Hidden is not handled.
+  const stillDue = await page.evaluate(() => !!document.querySelector('[data-med-card="snoozeme"]'));
+  t('the medication is still there and still due — hidden is not handled', stillDue);
 }
 
 console.log('\n3b. A MEDICATION WITH MORE THAN ONE STRENGTH NAMES NONE OF THEM');
@@ -207,13 +260,19 @@ console.log('\n4b. A GROUPED MEDICATION IS MARKED TOO, NOT JUST A STANDALONE CAR
   // section -- and it did not. It scrolled correctly and lit up nothing, which is exactly the
   // "landing on a card with nothing marking it" failure this release claims to have fixed, left in
   // place for the morning and evening rounds, which are the batches.
-  await setup([win({ id: 'grouped', name: 'GroupedMed', windows: openWin, quickLog: false, groupedEvening: true })], []);
+  // A MULTI-STRENGTH MEDICATION, because the scroll is now the FALLBACK. On Aaron's approved
+  // design a single-strength medication is logged from the hero, so there is nothing to scroll to
+  // and nothing to mark. Where the caregiver must choose a strength the hero still sends her to the
+  // card — and every property this section guards (the group card marks, the collapsed section
+  // opens, exactly one card lights, the h() null-attribute trap) belongs to that path and is kept.
+  const TWO = [{ label: '500 mg', mg: 500 }, { label: '1000 mg', mg: 1000 }];
+  await setup([win({ id: 'grouped', name: 'GroupedMed', windows: openWin, quickLog: false, groupedEvening: true, doses: TWO })], []);
   const txt = await page.evaluate(() => {
     const el = document.querySelector('[data-home="up-next"]');
     return el ? (el.innerText || '').replace(/\s+/g, ' ') : null;
   });
   t('a grouped medication can be the one named', /GroupedMed/.test(String(txt)), String(txt));
-  const btn = page.locator('[data-home="up-next"] button');
+  const btn = page.getByRole('button', { name: 'Show me the card', exact: true });
   if (await btn.count()) { await btn.first().click(); await page.waitForTimeout(900); }
   const marked = await page.evaluate(() => document.querySelectorAll('[data-flash="on"]').length);
   t('and tapping the hero marks the card that holds it', marked > 0, marked + ' marked');
@@ -225,14 +284,23 @@ console.log('\n4c. THE BUTTON STILL WORKS WITH THE QUICK LOG SECTION COLLAPSED')
   // and every standalone card leaves the page while the hero stays, still naming the medication and
   // still offering to take you to it. The button then did nothing at all -- no scroll, no mark, no
   // message -- and the collapse is remembered for the rest of the session.
-  await setup([win({ id: 'collapsed', name: 'CollapsedTarget', windows: openWin })], []);
+  // A MULTI-STRENGTH MEDICATION, because the scroll is now the FALLBACK. On Aaron's approved
+  // design a single-strength medication is logged from the hero, so there is nothing to scroll to
+  // and nothing to mark. Where the caregiver must choose a strength the hero still sends her to the
+  // card — and every property this section guards (the group card marks, the collapsed section
+  // opens, exactly one card lights, the h() null-attribute trap) belongs to that path and is kept.
+  const TWO = [{ label: '500 mg', mg: 500 }, { label: '1000 mg', mg: 1000 }];
+  await setup([win({ id: 'collapsed', name: 'CollapsedTarget', windows: openWin, doses: TWO })], []);
   await page.locator('[data-tour="quick-log"]').first().click();
   await page.waitForTimeout(700);
   const cardsGone = await page.evaluate(() => document.querySelectorAll('[data-med-card]').length);
   t('collapsing Quick log really does take the cards off the page', cardsGone === 0, cardsGone + ' card(s)');
   const btn = page.locator('[data-home="up-next"] button');
-  t('the hero and its button are still there', await btn.count() === 1, String(await btn.count()));
-  await btn.first().click();
+  // TWO CONTROLS NOW: the scroll fallback and Snooze. What matters is that the fallback is still
+  // reachable with the section collapsed — that was the app-v80 audit's third block.
+  const fallback = page.getByRole('button', { name: 'Show me the card', exact: true });
+  t('the hero and its scroll fallback are still there', await fallback.count() === 1, String(await btn.count()));
+  await fallback.first().click();
   await page.waitForTimeout(900);
   const landed = await page.evaluate(() => {
     const el = document.querySelector('[data-flash="on"]');
@@ -249,14 +317,20 @@ console.log('\n4d. ONE CARD LIGHTS UP, NOT EVERY CARD THAT HOLDS THE MEDICATION'
   // bottom of this section needs an UNFLASHED card to exist. Without one the page has no standalone
   // cards at all, the check passes on an empty query, and the h() trap it exists to catch walks
   // straight through it -- which is what happened the first time it was written.
+  // A MULTI-STRENGTH MEDICATION, because the scroll is now the FALLBACK. On Aaron's approved
+  // design a single-strength medication is logged from the hero, so there is nothing to scroll to
+  // and nothing to mark. Where the caregiver must choose a strength the hero still sends her to the
+  // card — and every property this section guards (the group card marks, the collapsed section
+  // opens, exactly one card lights, the h() null-attribute trap) belongs to that path and is kept.
+  const TWO = [{ label: '500 mg', mg: 500 }, { label: '1000 mg', mg: 1000 }];
   await setup([
     win({ id: 'twogroups', name: 'TwoGroups', windows: openWin,
-      quickLog: false, groupedMorning: true, groupedEvening: true }),
+      quickLog: false, groupedMorning: true, groupedEvening: true, doses: TWO }),
     win({ id: 'plaincard', name: 'PlainCard', windows: laterWin })
   ], []);
   const sections = await page.evaluate(() => document.querySelectorAll('[data-med-card-twogroups]').length);
   t('the medication really is in two group cards', sections === 2, sections + ' group(s)');
-  const btn = page.locator('[data-home="up-next"] button');
+  const btn = page.getByRole('button', { name: 'Show me the card', exact: true });
   if (await btn.count()) { await btn.first().click(); await page.waitForTimeout(900); }
   const marked = await page.evaluate(() => document.querySelectorAll('[data-flash="on"]').length);
   t('and exactly one of them is marked', marked === 1, marked + ' marked');
@@ -278,16 +352,20 @@ console.log('\n4e. A LONG MEDICATION NAME DOES NOT TURN THE BUTTON INTO A PARAGR
   await setup([win({ id: 'longname', name: LONG, windows: openWin })], []);
   const btn = page.locator('[data-home="up-next"] button');
   const label = (await btn.first().innerText()).trim();
-  t('the button falls back to a generic label', label === 'Show me the card', label);
+  // THE FALLBACK IS NOW THE ACTION ITSELF. "Log this dose" is already generic — it never contains
+  // the medication name — so a 105-character name cannot turn the button into a paragraph. That was
+  // the whole point of the old fallback, and it is satisfied by construction rather than by a
+  // length check nobody will remember to keep.
+  t('the button never contains the medication name', label.indexOf('Hydroxyprogesterone') === -1, label);
+  t('and it is the action, not a redirect', label === 'Log this dose', label);
   const box = await btn.first().boundingBox();
   t('and it is one line high', !!box && box.height <= 60, box ? Math.round(box.height) + 'px' : 'no box');
   await btn.first().click();
   await page.waitForTimeout(900);
-  const landed = await page.evaluate(() => {
-    const el = document.querySelector('[data-flash="on"]');
-    return el ? el.getAttribute('data-med-card') : null;
-  });
-  t('and it still goes where it says it goes', landed === 'longname', String(landed));
+  t('and it still does what it says, whatever the name length',
+    await page.getByRole('button', { name: 'Confirm', exact: true }).count() > 0);
+  const c2 = page.getByRole('button', { name: 'Cancel', exact: true });
+  if (await c2.count()) { await c2.first().click(); await page.waitForTimeout(500); }
 }
 
 console.log('\n4f. THE DAY’S DOSE FIGURE NEVER LEAVES HOME');

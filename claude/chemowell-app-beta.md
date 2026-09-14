@@ -68,6 +68,44 @@ the wrong thing to print under someone's name.
 
 ---
 
+## Rule 0.7 — A TASK LIST, EVERY TIME, COMPLETED IN ORDER. (2026-09-14, Aaron, and he has said it before)
+
+> *"Every time I give you something to do, you need to create a task list and complete in order
+> unless I tell you otherwise. I've said multiple times before about task list. Those notes should be
+> somewhere in the md file. There probably needs to be a meeting notes taker that can keep track of
+> tasks to keep you on track. This is absurd"*
+
+**He is right that he has said it before, and right that it was not written down here. That is the
+whole defect.** The Scribe seat (Rule 1.5) was described as keeping `REQUESTS.md` and
+`TASK-SHEET.md` — files. It was never made to create a LIVE, ORDERED task list at the moment he
+asks for something, and so the order of work was decided by whatever I found interesting.
+
+**What that cost, exactly, on 2026-09-13/14.** Aaron approved a three-screen redesign from
+screenshots and gave the order himself: *Home timeline → Meds cards + ceiling bar → Reports.* Twelve
+hours later **one card of one screen existed**, in a weaker form than the mockup, because a dose-
+parser defect turned into eleven audit rounds and a back-button fix turned into three ports, and
+neither was the thing he asked for. Both were real. Neither was next. **There was no list, so
+nothing said so.**
+
+### The rule
+
+1. **The moment Aaron asks for anything, create the task list — before any other tool call.** Use
+   the task tools (TaskCreate / TaskUpdate), not a paragraph and not a file. It has to be the thing
+   he can see at a glance.
+2. **One task per deliverable, in the order HE gave**, not the order that is easiest. If he did not
+   give an order, propose one in the list and start at the top.
+3. **Mark in_progress before starting and completed when it is genuinely done** — done means built,
+   verified and pushed, not "written".
+4. **Anything found along the way becomes its own task at the BOTTOM of the list**, not a detour.
+   A defect found mid-task is logged and scheduled; only a defect that makes the current task
+   impossible or unsafe is allowed to jump the queue, and then it is said out loud.
+5. **The list goes in the reply** whenever the work spans more than one message, so he never has to
+   ask what is happening or in what order.
+
+**This is not the Scribe's habit. It is the first action of every request.** A role whose output is
+a file Aaron does not read is not a role — that lesson is already written into Rule 2.6 about the
+Enhancer, and it is the same lesson here one level up.
+
 ## What this repo is
 The **native mobile app** codebase (APP-BETA). Seeded from `chemowell-beta` v71, with Firebase completely removed. Target: Capacitor-wrapped iOS/Android builds for the stores (APP-LIVE later).
 
