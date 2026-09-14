@@ -189,7 +189,12 @@ console.log('\n2. EVERY WRITTEN FORM ON THE ISMP LIST, THROUGH THE SHIPPING PARS
 
 // Unwraps the {threw} shape into an empty array so a single-value reader below reports a miss
 // rather than silently measuring a property of an Error.
+// Unwraps the {threw} shape into an empty array so a single-value reader below reports a miss
+// rather than crashing on a property of an Error. The round-5 audit noted sections 3b and 4 index
+// the result directly; they go through arr(), so a throw makes them report `undefined` — correct,
+// but unreadable. `threwNote` puts the actual message on the row instead.
 const arr = (r) => (Array.isArray(r) ? r : []);
+const threwNote = (r) => (r && r.threw ? '  [THE PARSER THREW: ' + r.threw + ']' : '');
 const hookOk = await page.evaluate(() => typeof (window.__doseTest || {}).parseDoseOptions === 'function').catch(() => false);
 t('the parser is reachable for measurement', hookOk);
 // A THROW IS A FINDING, NOT AN EXIT. This used to be a bare page.evaluate, so a mutant that broke
@@ -500,9 +505,12 @@ console.log('\n3e. EVERY WAY A MEDICATION GETS ONTO THE LIST PRODUCES A MIGRATED
   t('and the restored card is not falsely over its limit in the same session',
     card !== '(card not found)' && !/over limit/i.test(card), card.slice(0, 140));
 
-  // DOOR 2: THE CLASS, mechanically. Any future path that appends to the medication list has the
-  // same hazard, and the specific bug is fixed either way -- what keeps coming back is the class.
-  // Every medication the app is holding must carry the stamp, however it got there.
+  // DOOR 2: THE LIST AS A WHOLE, and stated honestly after the round-5 audit read it. This does NOT
+  // prove a future door will be caught -- it reads the disk at one moment, after one restore, and a
+  // door that writes and then reloads would have been repaired by the load before this looks. What
+  // it does prove is that the restore above left nothing unmigrated behind it, and that the list is
+  // not empty while it says so. The real guard against the next door is the write model naming every
+  // write before the code is written; a check cannot substitute for that and should not claim to.
   const unstamped = await page.evaluate((key) => {
     const cfg = JSON.parse(localStorage.getItem(key) || '{}');
     const all = cfg.meds || [];
@@ -534,7 +542,7 @@ console.log('\n3d. THE CAREGIVER IS TOLD WHEN THE APP CHANGES WHAT THEY WROTE');
     const box = await page.locator('#med-doses-text').count();
     if (!box) return '(THE DOSAGE OPTIONS BOX IS NOT ON SCREEN — this suite is not measuring what it thinks)';
     return page.evaluate(() => {
-      const el = [...document.querySelectorAll('div')].find(d => /^Will be saved as:/.test((d.innerText || '').trim()));
+      const el = document.querySelector('[data-dose-rewritten]');
       return el ? (el.innerText || '').replace(/\s+/g, ' ').trim() : null;
     });
   };
@@ -547,6 +555,9 @@ console.log('\n3d. THE CAREGIVER IS TOLD WHEN THE APP CHANGES WHAT THEY WROTE');
     JSON.stringify(naked));
   t('it says what it actually did instead', !!naked && /leading zero is added and a trailing zero removed/i.test(naked),
     JSON.stringify(naked));
+  // AND IT CLAIMS ONLY WHAT IS KNOWN. "the two amounts most often read wrong" was a ranking nobody
+  // here has measured -- the published list names both as error-prone, it does not order them.
+  t('and it does not rank them without evidence', !!naked && !/most often/i.test(naked), JSON.stringify(naked));
   const trailing = await notice('1.0 mg');
   t('a trailing zero is disclosed', !!trailing && /Will be saved as: 1 mg/.test(trailing), JSON.stringify(trailing));
   // THE NEGATIVES. A line that appears on every medication teaches people to ignore it.
@@ -562,7 +573,7 @@ console.log('\n3d. THE CAREGIVER IS TOLD WHEN THE APP CHANGES WHAT THEY WROTE');
   await page.setViewportSize({ width: 320, height: 900 });
   await page.waitForTimeout(600);
   const fits = await page.evaluate(() => {
-    const el = [...document.querySelectorAll('div')].find(d => /^Will be saved as:/.test((d.innerText || '').trim()));
+    const el = document.querySelector('[data-dose-rewritten]');
     if (!el) return { found: false };
     const r = el.getBoundingClientRect();
     return { found: true, right: Math.round(r.right), clipped: el.scrollWidth > el.clientWidth + 1,
@@ -572,9 +583,203 @@ console.log('\n3d. THE CAREGIVER IS TOLD WHEN THE APP CHANGES WHAT THEY WROTE');
     fits.found && !fits.clipped && fits.right <= 320 && fits.page <= 320, JSON.stringify(fits));
   await page.setViewportSize({ width: 390, height: 900 });
   await page.waitForTimeout(400);
+
+  // AND THE SAME THING IN THE EDITOR, WHILE THE LIMIT IS BEING SET. The card notice tells a
+  // caregiver about a medication that already exists; this one stops her creating the situation.
+  // It had no check at all until a mutant emptied it and the whole board stayed green -- which is
+  // the exact shape of "a role whose output nobody reads", one level down.
+  const editorNotice = () => page.evaluate(() => {
+    const el = document.querySelector('[data-uncounted="editor"]');
+    return el ? (el.innerText || '').replace(/\s+/g, ' ').trim() : null;
+  });
+  await page.locator('#med-doses-text').fill('1 tablet, 5/325 mg');
+  await page.waitForTimeout(AFTER_REDRAW);
+  await page.selectOption('#med-daily-limit-unit', 'pills');
+  await page.waitForTimeout(AFTER_REDRAW);
+  t('the daily limit unlocks, because one option does carry a pill count',
+    !(await page.locator('#med-daily-limit').isDisabled()));
+  await page.locator('#med-daily-limit').fill('4');
+  await page.waitForTimeout(AFTER_REDRAW);
+  const en = await editorNotice();
+  t('THE EDITOR NAMES THE OPTION THE LIMIT WILL NOT COUNT',
+    !!en && /5\/325 mg/.test(en), JSON.stringify(en));
+  t('and it does not name the one that will', !!en && !/1 tablet/.test(en), JSON.stringify(en));
+  t('and it says what to do about it', !!en && /plain number/i.test(en), JSON.stringify(en));
+  // THE NEGATIVES. This line must not appear on an ordinary medication, or it is wallpaper.
+  await page.locator('#med-doses-text').fill('1 tablet, 2 tablets');
+  await page.waitForTimeout(AFTER_REDRAW);
+  t('two ordinary options say nothing', (await editorNotice()) === null);
+  await page.selectOption('#med-daily-limit-unit', 'mg');
+  await page.waitForTimeout(AFTER_REDRAW);
+  await page.locator('#med-doses-text').fill('500 mg, 5/325 mg');
+  await page.waitForTimeout(AFTER_REDRAW);
+  t('an mg limit says nothing, because it counts the mg fine', (await editorNotice()) === null);
+
   const discard = page.getByRole('button', { name: 'Discard', exact: true });
   if (await discard.count()) { await discard.first().click(); await page.waitForTimeout(600); }
   await dismiss();
+}
+
+// ---------------------------------------------------------------------------------------------
+// SECTION 3f -- A LIMIT IS NEVER SILENTLY ENFORCED AND NEVER SILENTLY IGNORED.
+//
+// The round-5 audit's block, and it is the worst of the six rounds because it errs toward giving
+// MORE medicine. Round 4 refused this release because `5/325 mg` counted five tablets and locked a
+// four-a-day card before breakfast. Round 6 answered by refusing to invent a count — right as far
+// as it went — and left every armed ceiling on disk switched on. Measured on that build: six doses
+// tapped in a row, every one logged, no block, no warning, "Available" the whole way.
+//
+// THE TWO WRONG ANSWERS ARE IN TENSION AND THE CHECK HAS TO CATCH BOTH. Counting five locks a card
+// that should be open; counting nothing opens a ceiling that should hold. So this section asserts
+// the third thing: the count is not invented, AND the caregiver is told on the card. A mutant that
+// restores either one-line answer turns it red.
+// ---------------------------------------------------------------------------------------------
+console.log('\n3f. A DOSE THE APP CANNOT COUNT IS SAID OUT LOUD, WHERE THE DOSE IS GIVEN');
+{
+  const KEY = await page.evaluate(() => Object.keys(localStorage).find(k => /-med-v1$/.test(k)));
+  t('a config key exists to seed into', !!KEY);
+  const seedAndOpenHome = async (meds) => {
+    await page.evaluate(({ key, meds }) => {
+      localStorage.setItem(key, JSON.stringify({ version: 2, archivedMeds: {}, meds }));
+      const ek = Object.keys(localStorage).find(k => /entries-v1$/.test(k));
+      if (ek) localStorage.setItem(ek, '[]');
+    }, { key: KEY, meds });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1900);
+    await dismiss();
+    await page.getByRole('button', { name: /^Home/ }).first().click();
+    await page.waitForTimeout(900);
+  };
+  // BY AN EXPLICIT HOOK, NOT BY ITS OWN WORDS. The first version searched every div for the
+  // sentence and `find` returns the OUTERMOST match -- which is the whole page. So the text it
+  // returned contained every dose button on screen, and a check asserting the notice does not
+  // mention "1 tablet" failed because a button elsewhere did. Rule 5: elements by data- hooks,
+  // never by text.
+  const noticeText = () => page.evaluate(() => {
+    const el = document.querySelector('[data-uncounted="card"]');
+    return el ? (el.innerText || '').replace(/\s+/g, ' ').trim() : null;
+  });
+  // Exactly how an app-v80 device stores a Percocet card: a combination strength and a tablet limit.
+  const combo = (extra) => Object.assign({ id: 'perco', name: 'Perco', type: 'gap', schemaV: 2,
+    quickLog: true, gapH: 0, ceiling: true, ceilingMax: 4, ceilingUnit: 'pills',
+    doses: [{ label: '5/325 mg', mg: 325, pills: 5 }] }, extra || {});
+
+  await seedAndOpenHome([combo()]);
+  const stored = await page.evaluate((key) => {
+    const m = (JSON.parse(localStorage.getItem(key) || '{}').meds || [])[0];
+    return m && m.doses ? m.doses[0] : null;
+  }, KEY);
+  t('the app does not invent a tablet count it cannot derive', !!stored && stored.pills === undefined,
+    JSON.stringify(stored));
+  const n1 = await noticeText();
+  t('AND THE CARD SAYS THE LIMIT IS NOT COUNTING THIS DOSE', !!n1 && /5\/325 mg/.test(n1), JSON.stringify(n1));
+  t('it names the limit that is not being applied', !!n1 && /4 pills/.test(n1), JSON.stringify(n1));
+  // "Every other amount still counts" would be false here — there is no other amount.
+  t('and it does not reassure about other amounts when there are none',
+    !!n1 && /Nothing on this card is being counted/.test(n1) && !/other amounts still count/i.test(n1),
+    JSON.stringify(n1));
+
+  // THE MIXED LIST — the shape the audit measured the editor gate failing on. Two countable doses
+  // and one that is not: the limit genuinely applies to two of the three, so the sentence must say
+  // that rather than claim the whole limit is dead.
+  await seedAndOpenHome([combo({ doses: [
+    { label: '1 tablet', mg: 0, pills: 1 },
+    { label: '2 tablets', mg: 0, pills: 2 },
+    { label: '5/325 mg', mg: 325, pills: 5 } ] })]);
+  const n2 = await noticeText();
+  t('a mixed dose list still names only the dose that cannot be counted',
+    !!n2 && /5\/325 mg/.test(n2) && !/1 tablet/.test(n2), JSON.stringify(n2));
+  t('and it says the other amounts DO still count',
+    !!n2 && /other amounts still count/i.test(n2), JSON.stringify(n2));
+
+  // A LIMIT IN MILLIGRAMS IS NOT AFFECTED. `5/325 mg` carries mg 325, so an mg ceiling counts it
+  // correctly and there is nothing to disclose. A notice here would be noise.
+  await seedAndOpenHome([combo({ ceilingUnit: undefined, ceilingMax: 3000 })]);
+  t('an mg limit on the same medication says nothing, because it counts fine',
+    (await noticeText()) === null);
+
+  // AND NEITHER IS AN ORDINARY MEDICATION. The notice must be the exception, or it is wallpaper.
+  await seedAndOpenHome([combo({ doses: [{ label: '1 tablet', mg: 0, pills: 1 }] })]);
+  t('an ordinary tablet with a tablet limit says nothing', (await noticeText()) === null);
+  await seedAndOpenHome([{ id: 'plain', name: 'Plain', type: 'gap', schemaV: 2, quickLog: true, gapH: 4,
+    doses: [{ label: '500 mg', mg: 500, pills: 500 }] }]);
+  t('a medication with no limit at all says nothing', (await noticeText()) === null);
+
+  // THE LIMIT THAT COUNTS NOTHING BECAUSE THERE IS NOTHING TO COUNT. A medication with a pill limit
+  // and no dose options logs no amount at all, so the limit can never be reached however many times
+  // the plain Log button is tapped. Same defect, nothing to name, so the sentence is different.
+  await seedAndOpenHome([combo({ doses: [] })]);
+  const n3 = await noticeText();
+  t('a pill limit with no amounts set says so too', !!n3 && /no amounts set/i.test(n3), JSON.stringify(n3));
+
+  // THE UPGRADE, LOGGED THROUGH. The round-5 audit's own note on why its block was invisible to
+  // this suite: every limit check here used a medication the suite created through the editor, which
+  // never had a stored `pills` to lose. So this one seeds an app-v80 device and taps the button six
+  // times against a four-a-day limit -- which is exactly how the defect was found, and exactly what
+  // no check was doing.
+  await seedAndOpenHome([combo({ doses: [
+    { label: '1 tablet', mg: 0, pills: 1 },
+    { label: '5/325 mg', mg: 325, pills: 5 } ] })]);
+  {
+    const tapped = [];
+    for (let i = 1; i <= 6; i++) {
+      const btn = page.getByRole('button', { name: /^1 tablet$/ }).first();
+      if (!(await btn.count())) { tapped.push('no button at ' + i); break; }
+      if (!(await btn.isEnabled())) { tapped.push('disabled at ' + i); break; }
+      await btn.click();
+      await page.waitForTimeout(650);
+      const cf = page.getByRole('button', { name: 'Confirm', exact: true });
+      if (await cf.count()) { await cf.first().click(); await page.waitForTimeout(650); }
+      await dismiss();
+      const over = await page.getByRole('button', { name: /over limit/i }).count();
+      if (over) { tapped.push('offered only as an override at ' + (i + 1)); break; }
+    }
+    const logged = await page.evaluate(() => {
+      const ek = Object.keys(localStorage).find(k => /entries-v1$/.test(k));
+      return JSON.parse(localStorage.getItem(ek) || '[]').filter(e => e.medId === 'perco').length;
+    });
+    // The countable dose still holds the line at four. That is the half of the limit that works,
+    // and the migration must not have taken it out along with the count it could not derive.
+    t('a countable dose still stops at the limit after the upgrade', logged === 4,
+      'logged ' + logged + ' — ' + JSON.stringify(tapped));
+    // ASKED OF THE SCREEN, not inferred from why the loop stopped -- and asking the right question.
+    // The first version looked for a per-dose "over limit" button, which is what appears when ONE
+    // dose would cross the line. Four of four taken is the ceiling already HIT, and that is a
+    // different state: the whole card locks and says so, and the per-dose override never renders.
+    // The check was measuring the wrong control and calling the right behaviour a failure.
+    const reached = await page.evaluate(() => {
+      const el = document.querySelector('[data-uncounted="card"]');
+      const card = el && el.parentElement;
+      return card ? (card.innerText || '').replace(/\s+/g, ' ').trim() : '(no card)';
+    });
+    // WHAT THE CARD ACTUALLY SAYS AT THE CEILING, read off the screen rather than guessed at twice:
+    // the status chip reads "Limit" and the next dose is pushed to tomorrow. That is the lock, and
+    // it is the half of this medication's limit that still works after the upgrade.
+    t('and the card is locked at the limit until tomorrow',
+      /\bLimit\b/.test(reached) && /tomorrow/i.test(reached),
+      reached.slice(0, 160) + ' — ' + JSON.stringify(tapped));
+  }
+
+  // AND IT HAS TO BE READABLE ON THE NARROWEST PHONE, unclipped, without pushing the page sideways.
+  await seedAndOpenHome([combo()]);
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.waitForTimeout(700);
+  const fit = await page.evaluate(() => {
+    const el = document.querySelector('[data-uncounted="card"]');
+    if (!el) return { found: false };
+    const r = el.getBoundingClientRect();
+    return { found: true, left: Math.round(r.left), right: Math.round(r.right),
+      clipped: el.scrollHeight > el.clientHeight + 1,
+      page: Math.round(document.documentElement.scrollWidth) };
+  });
+  // AND IT KEEPS A GUTTER. The first run measured right: 320 -- flush against the edge of a 320px
+  // screen, which passes a "does the page scroll sideways" check and still looks broken.
+  t('the notice is unclipped at 320px and the page does not scroll sideways',
+    fit.found && !fit.clipped && fit.right <= 320 && fit.page <= 320, JSON.stringify(fit));
+  t('and it keeps a gutter on both sides rather than sitting flush to the screen edge',
+    fit.found && fit.left >= 8 && fit.right <= 312, JSON.stringify(fit));
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.waitForTimeout(400);
 }
 
 console.log('\n4. DELIBERATELY UNCHANGED, AND PINNED SO IT CANNOT DRIFT QUIETLY');

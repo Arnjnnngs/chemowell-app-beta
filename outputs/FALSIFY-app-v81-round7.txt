@@ -1,0 +1,37 @@
+OK M26 the card notice is removed -- the limit is silently disarmed again (the round-5 BLOCK)
+      RED: AND THE CARD SAYS THE LIMIT IS NOT COUNTING THIS DOSE
+      RED: it names the limit that is not being applied
+      RED: and it does not reassure about other amounts when there are none
+      RED: a mixed dose list still names only the dose that cannot be counted
+      ... and 5 more
+
+OK M27 the OTHER one-line answer: keep the invented count, so the card locks (the round-4 BLOCK)
+      RED: "5/325 mg" → 5/325 mg [325mg / 0]
+      RED: "10/325 mg" → 10/325 mg [325mg / 0]
+      RED: "7.5/325 mg" → 7.5/325 mg [325mg / 0]
+      RED: "80/12.5 mg" → 80/12.5 mg [12.5mg / 0]
+      ... and 18 more
+
+OK M28 the notice fires for every medication, not only one the limit cannot count
+      RED: a mixed dose list still names only the dose that cannot be counted
+      RED: and it says the other amounts DO still count
+      RED: an ordinary tablet with a tablet limit says nothing
+
+OK M29 the notice fires when there is no limit at all
+      RED: an mg limit on the same medication says nothing, because it counts fine
+
+OK M30 "your other amounts still count" is printed when there are no other amounts
+      RED: and it does not reassure about other amounts when there are none
+
+OK M31 a pill limit with no dose options at all goes back to saying nothing
+      RED: a pill limit with no amounts set says so too
+
+OK M32 the editor stops naming the options a mixed list would not count
+      RED: THE EDITOR NAMES THE OPTION THE LIMIT WILL NOT COUNT
+      RED: and it does not name the one that will
+      RED: and it says what to do about it
+
+OK M33 the Voice superlative comes back
+      RED: and it does not rank them without evidence
+
+restored; ALL MUTANTS DIED

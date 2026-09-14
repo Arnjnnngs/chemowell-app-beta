@@ -1830,6 +1830,45 @@ function medicationCeilingMax(med) {
   if (configured > 0) return configured;
   return null; // no silent fallback ceiling — only limits the user actually configured
 }
+// WHICH OF A MEDICATION'S DOSES THIS LIMIT CANNOT COUNT. Empty for almost every medication, and
+// that is the point -- it is the exception that has to be visible.
+//
+// A limit armed in pills or applications is enforced by reading `pills` off each dose. A dose whose
+// written amount the app could not turn into a number -- a combination strength like "5/325 mg", a
+// fraction over a denominator nobody writes, "as directed" -- carries no `pills` at all, so it adds
+// ZERO to the running total no matter how many times it is logged. Before this, that was silent:
+// six doses of a four-a-day medication logged one after another with the card reading "Available"
+// the whole way, because the ceiling was armed and nothing was counting against it.
+//
+// The app will not guess a number it cannot derive, and it will not pretend a limit is holding when
+// it is not. So it says which dose is not being counted, on the card where that dose is given.
+function uncountableDoses(med) {
+  if (!med || !med.ceiling || !med.ceilingUnit) return [];   // an mg limit reads `mg`, which is set
+  if (!Array.isArray(med.doses)) return [];
+  return med.doses.filter(d => d && !(Number(d.pills) > 0)).map(d => String(d.label == null ? '' : d.label));
+}
+function uncountableDoseNotice(med) {
+  const un = uncountableDoses(med);
+  const dc = dailyCeiling(med);
+  if (!dc) return null;   // no limit actually in force -- nothing to warn about
+  // A LIMIT WITH NO DOSE OPTIONS AT ALL IS THE SAME DEFECT WITH NOTHING TO NAME. Logging from a
+  // plain Log button records no amount, so a limit in pills counts nothing however many times it is
+  // tapped. The editor will not let a NEW medication reach that state; one already on a device can
+  // be in it, which is the whole class this release exists for.
+  if (!Array.isArray(med.doses) || !med.doses.length) {
+    return 'The daily limit of ' + dc.label + ' is not being counted, because this medication has no '
+      + 'amounts set. Add them in Edit, or the limit will never be reached.';
+  }
+  if (!un.length) return null;
+  // "EVERY OTHER AMOUNT STILL COUNTS" IS FALSE WHEN THERE IS NO OTHER AMOUNT -- and it was being
+  // printed on the single-dose medication that is the commonest shape of this defect. A sentence
+  // that reassures about something that does not exist is worse than no sentence.
+  const allOfThem = un.length >= med.doses.length;
+  const head = un.length === 1 ? 'This amount is' : 'These amounts are';
+  return head + ' not counted toward the daily limit of ' + dc.label + ' — the app cannot tell how '
+    + 'many that is: ' + un.join(', ') + '. '
+    + (allOfThem ? 'Nothing on this card is being counted against that limit.' : 'Your other amounts still count.');
+}
 function dailyCeiling(med) {
   if (!med || !med.ceiling) return null;
   const max = medicationCeilingMax(med);
@@ -6012,6 +6051,18 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       (med.treatmentOnly && !hasTreatmentDate() && !isOtherTreatmentType())
         ? h('div', { style: { ...TYPE.caption, color: '#8C5900' } }, 'Showing every day until you set a treatment date.') : null,
       med.note ? h('div', { style: { ...TYPE.caption, color: '#7A6E76', fontStyle: 'italic' } }, med.note) : null,
+      // app-v81 round 7: A LIMIT THAT CANNOT COUNT ONE OF ITS OWN DOSES SAYS SO, HERE. Not in the
+      // medication editor, which is where the only existing version of this sentence lived and
+      // which the caregiver is not looking at when she gives a dose. Renders for no medication whose
+      // amounts the app can read, which is nearly all of them.
+      (function () {
+        const notice = uncountableDoseNotice(med);
+        return notice ? h('div', { 'data-uncounted': 'card', style: { ...TYPE.caption, color: '#8C5900', display: 'flex', gap: '6px',
+            alignItems: 'flex-start', marginTop: '2px', padding: '6px 8px', borderRadius: '9px',
+            background: 'rgba(246,108,49,0.07)', border: '1px solid rgba(246,108,49,0.20)' } },
+          h('span', { style: { flexShrink: '0', fontWeight: '800' } }, '!'),
+          h('span', { style: { minWidth: '0', overflowWrap: 'anywhere' } }, notice)) : null;
+      })(),
       // Buttons
       buttonArea
     );
@@ -6766,7 +6817,7 @@ function dosesRewrittenNotice(form) {
   if (!parsed.length) return null;
   const shown = parsed.map(d => d.label).join(', ');
   if (shown === splitDoseOptions(raw).join(', ')) return null;
-  return h('div', { style: { display: 'flex', gap: '6px', alignItems: 'flex-start', margin: '4px 0 2px',
+  return h('div', { 'data-dose-rewritten': '1', style: { display: 'flex', gap: '6px', alignItems: 'flex-start', margin: '4px 0 2px',
       padding: '7px 9px', borderRadius: '9px', background: 'rgba(246,108,49,0.07)',
       border: '1px solid rgba(246,108,49,0.20)' } },
     h('div', { style: { fontSize: '13px', lineHeight: '1.4', color: '#5A4038' } },
@@ -6777,7 +6828,10 @@ function dosesRewrittenNotice(form) {
         // absolute claim about how a person reads, made by an app, on a screen that had just been
         // shown to get a number wrong -- and Rule 2.7 forbids promising a fix that has not been
         // confirmed, let alone one that cannot be. This says what happened and stops.
-        'A leading zero is added and a trailing zero removed, because .5 and 1.0 are the two amounts most often read wrong. Change the box above if this is not what you meant.')));
+        // "the two amounts MOST OFTEN read wrong" was a ranking nobody here has measured, flagged by
+        // the round-5 audit. Both forms are on the published error-prone-designations list; which is
+        // commonest is not something this app knows, and it did not need to claim it.
+        'A leading zero is added and a trailing zero removed, because a naked decimal point and a trailing zero are both easy to misread. Change the box above if this is not what you meant.')));
 }
 // v38 (Aaron-requested): whether Dosage options actually carries an amount in the currently-picked
 // Limit unit -- pulled out of dailyLimitPreview so it can gate the Daily limit input itself (see
@@ -6789,6 +6843,16 @@ function dosageOptionsCarryLimitUnit(form) {
   const unit = form.dailyLimitUnit;
   const testDoses = parseDoseOptions(form.dosesText);
   return unit === 'mg' ? testDoses.some(d => d.mg > 0) : testDoses.some(d => d.pills > 0);
+}
+// WHICH OF THE OPTIONS BEING TYPED THE LIMIT WOULD NOT COUNT. `dosageOptionsCarryLimitUnit` above is
+// a `.some()`, and the round-5 audit was right that this is exactly the wrong question for a list
+// with more than one entry: on `1 tablet, 2 tablets, 5/325 mg` the first two satisfy it, the gate
+// opens, the amber line never appears -- and every dose logged from the third counts zero against
+// the limit the caregiver is about to set. So the editor now names the ones that will not count,
+// while she is still in the box that decides it.
+function uncountedDosageOptions(form) {
+  if (!form || !form.dailyLimit || form.dailyLimitUnit === 'mg') return [];
+  return parseDoseOptions(form.dosesText).filter(d => !(Number(d.pills) > 0)).map(d => String(d.label));
 }
 // v25 (Aaron-reported: "Limit Unit doesn't entirely make sense... it's not clear"): a live,
 // plain-language line under Daily limit/Limit unit stating the ACTUAL rule that will be enforced,
@@ -7404,6 +7468,17 @@ function renderMedicationEditor() {
       // v26 (Aaron-requested): this warning explains Dosage options, so it now renders right under
       // that field instead of after Schedule type, several fields away from what it's about.
       dailyLimitPreview(form),
+      (function () {
+        const un = uncountedDosageOptions(form);
+        if (!un.length) return null;
+        return h('div', { 'data-uncounted': 'editor', style: { ...TYPE.caption, color: '#8C5900', margin: '2px 0 4px', padding: '7px 9px',
+            borderRadius: '9px', background: 'rgba(246,108,49,0.07)', border: '1px solid rgba(246,108,49,0.20)',
+            overflowWrap: 'anywhere' } },
+          h('strong', { style: { fontWeight: '700' } }, 'Not counted toward the limit: '),
+          un.join(', '),
+          h('div', { style: { marginTop: '2px' } },
+            'The app cannot tell how many that is, so it will not add it up. Write the amount as a plain number if it should count.'));
+      })(),
       // v41 (Aaron-requested reorder): Minimum gap / Hours between doses used to sit near the end
       // of the form, after Schedule windows, disconnected from the other dosing questions several
       // fields above it. Moved up next to Dosage options/Daily limit, where it reads as part of the
