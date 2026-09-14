@@ -182,7 +182,27 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
   // lives in one predicate instead of being copied per call site.
   pairs.push(['a medication whose treatment course has finished',
     [gapMed({ id: 'm1', name: 'FinishedMed', treatmentOnly: true, treatmentMode: 'only' })],
-    [{ id: 'c', medId: 'chemo_date', ts: now - 30 * 24 * HOUR, dose: '', mg: 0 }]]);
+    [{ id: 'c', medId: 'chemo_date', ts: now - 30 * 24 * HOUR, dose: 'Treatment scheduled', mg: 0, loggedAt: now - 30 * 24 * HOUR }]]);
+  // THE LAST ACTIVE DAY OF A COURSE, which is a DIFFERENT gate and the sweep proved it. Removing
+  // the `courseComplete` branch from the predicate changed nothing against the fixture above,
+  // because a treatment 30 days past is already caught by `treatmentOnlyBlocks` -- the mutant was a
+  // no-op, not a check that could not fail. `courseComplete` is reachable only in the narrow window
+  // where the medication is active TODAY and not tomorrow: a treatment date today with a zero-day
+  // window either side. Home drops the card on that day; the pill must agree.
+  // It must be a SCHEDULED medication: `courseComplete` is set only inside status()'s window
+  // branch, so an as-needed one never reaches it -- and my first attempt at this fixture used an
+  // as-needed medication and reported a failure that was the fixture's, not the app's. A treatment
+  // date must also carry `loggedAt`, which is what chemoDayList orders and de-duplicates by.
+  const hr = new Date().getHours();
+  pairs.push(['a medication on the last day of its course',
+    [{ id: 'm1', name: 'LastDayMed', type: 'win', schemaV: 2, quickLog: true,
+       doses: [{ label: '1 tab', mg: 0, pills: 1 }],
+       // A window that has already CLOSED today. status() only reaches `courseComplete` after the
+       // window loop finds nothing open -- with an open window it returns early and the branch is
+       // unreachable, which is why the first two versions of this fixture proved nothing.
+       windows: [{ name: 'Early', start: 0, end: 1 }],
+       treatmentOnly: true, treatmentMode: 'only', treatmentDaysBefore: 0, treatmentDaysAfter: 0 }],
+    [{ id: 'c', medId: 'chemo_date', ts: now, dose: 'Treatment scheduled', mg: 0, loggedAt: now }]]);
   for (const [label, meds, entries] of pairs) {
     const p = await open({ meds, entries });
     // HOME FIRST, and read what it actually offers.
@@ -190,19 +210,25 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
     // why; the finished-course gate removes the card from Home ENTIRELY. A check that only looked
     // for explanatory text called the second one a pass for Home and a failure for the fixture --
     // when the absence of any way to log the dose is the strongest form of withholding there is.
+    // ASK THE QUESTION A CAREGIVER ASKS: is there a Quick Log card for this medication that offers
+    // a dose? Reading the med's NAME off Home is not that question -- a missed-dose row names it
+    // too, and a row saying the dose was MISSED is the app withholding, not offering. That crude
+    // version reported a failure on the app for a fixture where Home was behaving correctly.
     const medName = meds[0].name;
     const homeText = await p.evaluate(() => {
       const m = document.querySelector('main');
       return m ? (m.innerText || '') : '';
     });
-    const namedOnHome = homeText.indexOf(medName) >= 0;
-    const explainedAsHeld = new RegExp(medName + '[\\s\\S]{0,120}(not scheduled|excluded|held near|held around|outside)', 'i').test(homeText)
-      || /not scheduled|excluded|held near|held around|outside (its|your) treatment/i.test(homeText);
-    const homeSaysNo = !namedOnHome || explainedAsHeld;
+    const card = await p.evaluate(() => document.querySelectorAll('[data-med-card]').length);
+    const cardForIt = await p.evaluate((n) => {
+      return [...document.querySelectorAll('[data-med-card]')].some(el => (el.innerText || '').indexOf(n) >= 0);
+    }, medName);
+    const explainedAsHeld = /not scheduled|excluded|held near|held around|outside (its|your) treatment/i.test(homeText);
+    const homeSaysNo = !cardForIt || explainedAsHeld;
     await goto(p, 'Meds');
     const pill = (await p.locator('[data-med-status-pill]').innerText().catch(() => '')).trim();
     t('Home withholds ' + label + ' -- otherwise this comparison proves nothing',
-      homeSaysNo, (namedOnHome ? 'named on Home; ' : 'no card on Home; ') + homeText.replace(/\n/g, ' | ').slice(0, 110));
+      homeSaysNo, (cardForIt ? 'has a Quick Log card; ' : 'no Quick Log card; ') + card + ' card(s); ' + homeText.replace(/\n/g, ' | ').slice(0, 90));
     t('and Meds does NOT say Available for ' + label,
       !/^Available$/.test(pill), pill || '(no pill)');
     t('and the two screens agree in words', /not scheduled|held|outside|finished|paused/i.test(pill), pill || '(no pill)');
