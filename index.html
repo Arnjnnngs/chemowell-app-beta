@@ -5957,7 +5957,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       );
       if (key === 'weight') return h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
         h('input', { 'data-vital-input': 'weight', type: 'number', inputMode: 'decimal', step: '0.1', 'aria-label': 'Weight', placeholder: weightDefault() || (CONFIG.weightUnit === 'kg' ? '68.0' : '150.0'), value: state.weightInput, onInput: (e) => { state.weightInput = e.target.value; }, className: 'mono', style: INPUT }),
-        h('button', { 'data-vital-log': 'weight', onClick: () => {}, style: LOGBTN }, 'Log')
+        h('button', { 'data-vital-log': 'weight', onClick: logWeight, style: LOGBTN }, 'Log')
       );
       return h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
         h('input', { 'data-vital-input': 'bp-sys', type: 'number', inputMode: 'numeric', 'aria-label': 'Systolic', placeholder: '120', value: state.bpSysInput, onInput: (e) => { state.bpSysInput = e.target.value; }, className: 'mono', style: INPUT }),
