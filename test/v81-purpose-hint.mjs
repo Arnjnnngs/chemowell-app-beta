@@ -127,6 +127,60 @@ console.log('\n2. TYPING SURVIVES THE REDRAW THAT MAKES THE HINT APPEAR');
   await cancel();
 }
 
+console.log('\n2b. MOVING TO ANOTHER FIELD INSIDE THE 450ms WINDOW DOES NOT EAT WHAT YOU TYPE THERE');
+{
+  // THE REGRESSION THIS RELEASE SHIPPED INTO ITS OWN BRANCH, and the audit caught it typing the one
+  // sentence the release exists for. Type the name, move straight to "What it's for" and keep
+  // going: the name field's debounce fires 450ms later, the page rebuilds under the cursor, and
+  // render() can only restore focus for an element it finds again BY ID. The purpose box had none,
+  // so "my own words" arrived as "my own wor" with focus on <body>.
+  // NO WAIT BETWEEN THE TWO FIELDS. That is the whole point -- the rebuild has to land while the
+  // second field is the one being typed in.
+  await openAdd();
+  await typeInto('Medication name', 'Ondansetron');
+  const box = page.getByPlaceholder('For example: settles nausea').first();
+  await box.click();
+  await box.type('my own words', { delay: 60 });
+  await page.waitForTimeout(AFTER_REDRAW);
+  const v = await box.inputValue();
+  t('everything typed into "What it\'s for" is there', v === 'my own words', JSON.stringify(v));
+  const focused = await page.evaluate(() => (document.activeElement || {}).id || (document.activeElement || {}).tagName || '(none)');
+  t('and the cursor did not get thrown out of it', focused === 'med-purpose', String(focused));
+  await cancel();
+}
+
+console.log('\n2c. AND THE SAME FOR THE OTHER BOXES, BECAUSE IT IS A CLASS AND NOT ONE FIELD');
+{
+  // Fixing only the box the auditor happened to type in would leave the identical defect in every
+  // other field of this form. Any of them can hold the cursor when the debounce fires.
+  await openAdd();
+  await typeInto('Medication name', 'Ondansetron');
+  // GUARDED. Removing the id makes the locator match nothing, and `.click()` on nothing THROWS --
+  // which kills the suite instead of turning one check red. That happened twice in this release
+  // already. A gate that crashes is a gate whose result somebody has to interpret.
+  const note = page.locator('#med-note');
+  const hasNote = await note.count() === 1;
+  t('the notes box has a stable id', hasNote, hasNote ? '' : 'no #med-note -- the cursor cannot survive a redraw there');
+  let nv = '(not reached)';
+  if (hasNote) {
+    await note.click();
+    await note.type('take with food', { delay: 55 });
+    await page.waitForTimeout(AFTER_REDRAW);
+    nv = await note.inputValue();
+  }
+  t('everything typed into Notes is there', nv === 'take with food', JSON.stringify(nv));
+  // Every text box in this form, not a list somebody has to remember to extend.
+  const idless = await page.evaluate(() => {
+    const form = document.querySelector('#med-name') && document.querySelector('#med-name').closest('section, form, div[style*="grid"]');
+    const scope = form || document;
+    return [...scope.querySelectorAll('input, textarea')]
+      .filter(el => !el.id && !['button', 'submit', 'checkbox', 'radio'].includes((el.type || '').toLowerCase()))
+      .map(el => (el.getAttribute('placeholder') || el.type || el.tagName));
+  });
+  t('no text box in the editor is left without one', idless.length === 0, JSON.stringify(idless));
+  await cancel();
+}
+
 console.log('\n3. THE CARET STAYS WHERE IT WAS, NOT AT THE END');
 {
   // A correction mid-word is the case that exposes a restored focus with a reset caret: the field
@@ -168,6 +222,27 @@ console.log('\n4. THE GENERIC NAME FEEDS THE LOOKUP TOO');
   t('typing the generic name lights the hint', h4 !== NO_HINT && !!h4, String(h4));
   const focused = await page.evaluate(() => (document.activeElement || {}).id || '(none)');
   t('and the cursor is still in the generic name field', focused === 'med-sub', focused);
+  await cancel();
+}
+
+console.log('\n4b. THE HINT GETS OUT OF THE WAY THE MOMENT SHE WRITES HER OWN WORDS');
+{
+  // The line under the box says "Leave the box empty to use it, or type your own." That was only
+  // true at the next redraw -- typing in the purpose box redrew nothing, so the app's sentence sat
+  // there under her own. A sentence describing a condition the app honours late is a sentence that
+  // is false while she is reading it.
+  await openAdd();
+  await typeInto('Medication name', 'Ondansetron');
+  await page.waitForTimeout(AFTER_REDRAW);
+  t('the hint is showing to begin with', (await hint()) !== NO_HINT, await hint());
+  const box = page.getByPlaceholder('For example: settles nausea').first();
+  await box.click();
+  await box.type('helps her keep food down', { delay: 45 });
+  await page.waitForTimeout(AFTER_REDRAW);
+  t('it is gone once she has written her own', (await hint()) === NO_HINT, await hint());
+  await box.fill('');
+  await page.waitForTimeout(AFTER_REDRAW);
+  t('and it comes back if she clears the box', (await hint()) !== NO_HINT, await hint());
   await cancel();
 }
 
@@ -224,6 +299,20 @@ console.log('\n6b. THE WHOLE DESCRIPTION IS READABLE AT 320px, NOT CLIPPED');
     };
   });
   t('the hint is on the screen at 320px', !!m, JSON.stringify(m));
+  // ON THE SCREEN MEANS VISIBLE, NOT MERELY PRESENT. The audit built the mutant that beat the first
+  // version of this pair: `opacity: 0; left: -9999px` left every check green, including "none of it
+  // is cut off", because the DOM will happily measure a box nobody can see. Asserting presence is
+  // not asserting legibility, and this repo has shipped that confusion before.
+  const vis = await page.evaluate(() => {
+    const el = document.querySelector('[data-purpose-hint]');
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    return { opacity: parseFloat(cs.opacity), visibility: cs.visibility, display: cs.display,
+             left: Math.round(r.left), width: Math.round(r.width), onScreen: r.right > 0 && r.left < window.innerWidth };
+  });
+  t('and a person can actually see it', !!vis && vis.opacity >= 0.5 && vis.visibility !== 'hidden'
+      && vis.display !== 'none' && vis.onScreen && vis.width > 40, JSON.stringify(vis));
   t('it carries the whole sentence',
     !!m && /damages the DNA of cancer cells\./.test(m.text), m ? m.text : '');
   t('and none of it is cut off', !!m && !m.clippedX && !m.clippedY,

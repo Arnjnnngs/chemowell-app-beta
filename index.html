@@ -7123,8 +7123,8 @@ function renderMedicationEditor() {
                                   sub: (state.medEditor && state.medEditor.form && state.medEditor.form.sub) || '' });
         return h('label', { style: { gridColumn: '1 / -1' } },
           fieldLabel('What it’s for'),
-          formInput({ value: form.purpose, placeholder: 'For example: settles nausea',
-                      onInput: event => updateMedicationForm('purpose', event.target.value) }),
+          formInput({ id: 'med-purpose', value: form.purpose, placeholder: 'For example: settles nausea',
+                      onInput: event => updateMedicationForm('purpose', event.target.value, 'debounced') }),
           (known && !String(form.purpose || '').trim())
             ? h('div', { 'data-purpose-hint': 'on', style: { marginTop: '7px', fontSize: '12.5px', lineHeight: '1.45', color: '#554A52', overflowWrap: 'anywhere' } },
                 h('span', { style: { fontWeight: '700', color: '#2A2127' } }, 'The app knows this one: '),
@@ -7186,13 +7186,13 @@ function renderMedicationEditor() {
               fieldLabel('Minimum gap between doses (hours, optional)', 'On top of the reminder times above -- stops a dose from being logged again too soon after the last one.'),
               helpIcon('Minimum gap between doses', 'The reminder windows above tell this medication WHEN to remind you. This field is a separate, optional safety rule on top of that: even if a reminder window is currently open, logging is still blocked until this many hours have passed since the last dose.\n\nExample: two reminder windows at 8 AM and 10 AM, with a 6-hour minimum gap set. If the 8 AM dose is logged late, at 10:30 AM, the 10 AM window is technically open -- but logging is still blocked until 2:30 PM, since only 2 of the required 6 hours have passed.\n\nLeave this blank if you only want the reminder windows to control timing, with no extra rule on top.')
             ),
-            formInput({ type: 'number', min: '0', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'No extra gap', onInput: event => updateMedicationForm('gapH', event.target.value) })
+            formInput({ id: 'med-gap-h-win', type: 'number', min: '0', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'No extra gap', onInput: event => updateMedicationForm('gapH', event.target.value) })
           )
         // v38 (Aaron-requested): placeholder now reads "For example, 4 hours" instead of the bare
         // "e.g. 4" -- Aaron: "I don't even know what 'e.g' means," and the old placeholder didn't
         // even repeat the unit the label states, which mattered more once it was the only on-field
         // hint of what a plain number here means.
-        : h('label', null, fieldLabel('Hours between doses', 'How long to wait after the last dose before this can be logged again. Required for an as-needed medication.'), formInput({ type: 'number', min: '0.5', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'For example, 4 hours', onInput: event => updateMedicationForm('gapH', event.target.value) })),
+        : h('label', null, fieldLabel('Hours between doses', 'How long to wait after the last dose before this can be logged again. Required for an as-needed medication.'), formInput({ id: 'med-gap-h', type: 'number', min: '0.5', step: '0.5', value: String(form.gapH == null ? '' : form.gapH), placeholder: 'For example, 4 hours', onInput: event => updateMedicationForm('gapH', event.target.value) })),
       // v25 audit re-verify fix (Finding A): type="number" inputs throw on setSelectionRange in
       // Chrome, which the new render()-time cursor-restore logic silently swallows -- with no
       // fallback, a freshly-refocused number input's cursor resets to position 0 after every
@@ -7238,9 +7238,9 @@ function renderMedicationEditor() {
           ),
           form.scheduleMode === 'interval' ? h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
             h('span', { style: { fontSize: '12.5px', color: '#554A52', fontWeight: '700' } }, 'every'),
-            formInput({ type: 'number', min: '2', step: '1', value: String(form.intervalN), onInput: event => updateMedicationForm('intervalN', event.target.value), style: { width: '70px' } }),
+            formInput({ id: 'med-interval-n', type: 'number', min: '2', step: '1', value: String(form.intervalN), onInput: event => updateMedicationForm('intervalN', event.target.value), style: { width: '70px' } }),
             h('span', { style: { fontSize: '12.5px', color: '#554A52', fontWeight: '700' } }, 'days, starting'),
-            formInput({ type: 'date', value: form.intervalAnchor, onInput: event => updateMedicationForm('intervalAnchor', event.target.value), style: { width: '165px' } })
+            formInput({ id: 'med-interval-anchor', type: 'date', value: form.intervalAnchor, onInput: event => updateMedicationForm('intervalAnchor', event.target.value), style: { width: '165px' } })
           ) : null
         ),
         form.scheduleMode === 'asneeded' ? h('div', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76', marginTop: '6px', lineHeight: '1.4' } }, form.type === 'win' ? 'Available any day \u2014 missed doses are never flagged for this medication.' : 'Available any day, governed only by the gap timer.') : null,
@@ -7302,7 +7302,7 @@ function renderMedicationEditor() {
           h('button', { type: 'button', onClick: addWindowRow, style: { minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.65)', border: '1px solid #E9D8D1', color: '#554A52', fontSize: '13px', fontWeight: '800', alignSelf: 'flex-start' } }, '+ Add another time window')
         )
       ) : null,
-      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Notes'), h('textarea', { placeholder: 'Take with food \u00b7 From Dr. Kim \u00b7 Crush if needed', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(246,108,49,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, form.note))
+      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('Notes'), h('textarea', { id: 'med-note', placeholder: 'Take with food \u00b7 From Dr. Kim \u00b7 Crush if needed', onInput: event => updateMedicationForm('note', event.target.value), style: { width: '100%', minHeight: '72px', resize: 'vertical', border: '1px solid rgba(246,108,49,0.22)', borderRadius: '11px', padding: '10px 11px', fontFamily: 'inherit', fontSize: '13px', lineHeight: '1.35', background: 'rgba(255,255,255,0.72)', color: '#2A2127' } }, form.note))
     ),
     h('div', { style: { marginTop: '12px' } },
       fieldLabel('Home screen placement', 'Where this medication\u2019s logging buttons live.'),
