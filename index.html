@@ -1718,40 +1718,82 @@ let pendingEntries = null;
 const BACK_LAYERS = [
   // 1. CONFIRMATIONS FIRST. These sit on top of whatever armed them, so Back must disarm the
   //    confirmation and leave that thing open -- not close both.
-  { key: 'confirmDeleteMed', label: 'the delete-medication confirmation', open: () => state.confirmDeleteMed != null, close: () => setState({ confirmDeleteMed: null }) },
-  { key: 'confirmRestoreMed', label: 'the bring-back confirmation', open: () => state.confirmRestoreMed != null, close: () => setState({ confirmRestoreMed: null }) },
-  { key: 'confirmDeleteProfile', label: 'the delete-profile confirmation', open: () => state.confirmDeleteProfile != null, close: () => setState({ confirmDeleteProfile: null }) },
-  { key: 'confirmDeleteAppt', label: 'the delete-appointment confirmation', open: () => state.confirmDeleteAppt != null, close: () => setState({ confirmDeleteAppt: null }) },
-  { key: 'confirmDeleteNote', label: 'the delete-note confirmation', open: () => state.confirmDeleteNote != null, close: () => setState({ confirmDeleteNote: null }) },
-  { key: 'confirmRemove', label: 'the remove-entry confirmation', open: () => state.confirmRemove != null, close: () => setState({ confirmRemove: null }) },
-  { key: 'confirmRemovePara', label: 'the remove-paracentesis confirmation', open: () => state.confirmRemovePara != null, close: () => setState({ confirmRemovePara: null }) },
-  { key: 'confirmClearChemo', label: 'the clear-treatment-date confirmation', open: () => !!state.confirmClearChemo, close: () => setState({ confirmClearChemo: false }) },
-  { key: 'override', label: 'the over-limit override', open: () => state.override != null, close: () => setState({ override: null }) },
+  { key: 'confirmDeleteMed', overlay: true, label: 'the delete-medication confirmation', open: () => state.confirmDeleteMed != null, close: () => setState({ confirmDeleteMed: null }) },
+  { key: 'confirmRestoreMed', overlay: true, label: 'the bring-back confirmation', open: () => state.confirmRestoreMed != null, close: () => setState({ confirmRestoreMed: null }) },
+  { key: 'confirmDeleteProfile', overlay: true, label: 'the delete-profile confirmation', open: () => state.confirmDeleteProfile != null, close: () => setState({ confirmDeleteProfile: null }) },
+  { key: 'confirmDeleteAppt', overlay: true, label: 'the delete-appointment confirmation', open: () => state.confirmDeleteAppt != null, close: () => setState({ confirmDeleteAppt: null }) },
+  { key: 'confirmDeleteNote', overlay: true, label: 'the delete-note confirmation', open: () => state.confirmDeleteNote != null, close: () => setState({ confirmDeleteNote: null }) },
+  { key: 'confirmRemove', overlay: true, label: 'the remove-entry confirmation', open: () => state.confirmRemove != null, close: () => setState({ confirmRemove: null }) },
+  { key: 'confirmRemovePara', overlay: true, label: 'the remove-paracentesis confirmation', open: () => state.confirmRemovePara != null, close: () => setState({ confirmRemovePara: null }) },
+  { key: 'confirmClearChemo', overlay: true, label: 'the clear-treatment-date confirmation', open: () => !!state.confirmClearChemo, close: () => setState({ confirmClearChemo: false }) },
+  { key: 'override', overlay: true, label: 'the over-limit override', open: () => state.override != null, close: () => setState({ override: null }) },
   // 2. MODALS AND SHEETS.
-  { key: 'timeModal', label: 'the confirm-the-time sheet', open: () => state.timeModal != null, close: () => setState({ timeModal: null }) },
-  { key: 'apptModal', label: 'the appointment sheet', open: () => state.apptModal != null, close: () => setState({ apptModal: null }) },
-  { key: 'noteModal', label: 'the note sheet', open: () => state.noteModal != null, close: () => setState({ noteModal: null }) },
-  { key: 'checkinModal', label: 'the check-in sheet', open: () => state.checkinModal != null, close: () => setState({ checkinModal: null }) },
-  { key: 'infoModal', label: 'the information pop-up', open: () => state.infoModal != null, close: () => setState({ infoModal: null }) },
-  { key: 'bkNotice', label: 'the backup notice', open: () => state.bkNotice != null, close: () => setState({ bkNotice: null }) },
-  { key: 'eraseAllModalOpen', label: 'the erase-everything warning', open: () => !!state.eraseAllModalOpen, close: () => setState({ eraseAllModalOpen: false }) },
-  { key: 'upgradeOpen', label: 'the upgrade sheet', open: () => !!state.upgradeOpen, close: () => setState({ upgradeOpen: false }) },
-  { key: 'addingProfile', label: 'the add-profile sheet', open: () => !!state.addingProfile, close: () => setState({ addingProfile: false }) },
-  { key: 'chemoCalOpen', label: 'the treatment-date calendar', open: () => !!state.chemoCalOpen, close: () => setState({ chemoCalOpen: false }) },
-  { key: 'tourStep', label: 'the guided tour', open: () => state.tourStep != null, close: () => setState({ tourStep: null }) },
+  { key: 'timeModal', overlay: true, label: 'the confirm-the-time sheet', open: () => state.timeModal != null, close: () => setState({ timeModal: null }) },
+  { key: 'apptModal', overlay: true, label: 'the appointment sheet', open: () => state.apptModal != null, close: () => setState({ apptModal: null }) },
+  { key: 'noteModal', overlay: true, label: 'the note sheet', open: () => state.noteModal != null, close: () => setState({ noteModal: null }) },
+  { key: 'checkinModal', overlay: true, label: 'the check-in sheet', open: () => state.checkinModal != null, close: () => setState({ checkinModal: null }) },
+  { key: 'infoModal', overlay: true, label: 'the information pop-up', open: () => state.infoModal != null, close: () => setState({ infoModal: null }) },
+  { key: 'bkNotice', overlay: true, label: 'the backup notice', open: () => state.bkNotice != null, close: () => setState({ bkNotice: null }) },
+  { key: 'eraseAllModalOpen', overlay: true, label: 'the erase-everything warning', open: () => !!state.eraseAllModalOpen, close: () => setState({ eraseAllModalOpen: false }) },
+  { key: 'upgradeOpen', overlay: true, label: 'the upgrade sheet', open: () => !!state.upgradeOpen, close: () => setState({ upgradeOpen: false }) },
+  { key: 'addingProfile', overlay: true, label: 'the add-profile sheet', open: () => !!state.addingProfile, close: () => setState({ addingProfile: false }) },
+  { key: 'chemoCalOpen', overlay: true, label: 'the treatment-date calendar', open: () => !!state.chemoCalOpen, close: () => setState({ chemoCalOpen: false }) },
+  { key: 'tourStep', overlay: true, label: 'the guided tour', open: () => state.tourStep != null, close: () => setState({ tourStep: null }) },
   // Back marks it seen, exactly as "Got it" does -- dismissing a notice is dismissing it, and a
   // notice that comes back after you closed it is worse than one that never appeared.
-  { key: 'whatsNewOpen', label: 'the what\u2019s-new notice', open: () => !!state.whatsNewOpen, close: () => { whatsNewMarkSeen(); setState({ whatsNewOpen: false }); } },
+  { key: 'whatsNewOpen', overlay: true, label: 'the what\u2019s-new notice', open: () => !!state.whatsNewOpen, close: () => { whatsNewMarkSeen(); setState({ whatsNewOpen: false }); } },
   // 3. FULL-SCREEN EDITORS AND PANELS.
-  { key: 'medEditor', label: 'the medication editor', open: () => state.medEditor != null, close: () => setState({ medEditor: null, confirmDeleteMed: null }) },
+  { key: 'medEditor', overlay: true, label: 'the medication editor', open: () => state.medEditor != null, close: () => setState({ medEditor: null, confirmDeleteMed: null }) },
   { key: 'vitalOpen', label: 'the open vitals panel', open: () => state.vitalOpen != null, close: () => setState({ vitalOpen: null }) },
   { key: 'symptomFilter', label: 'the symptom filter', open: () => state.symptomFilter != null, close: () => setState({ symptomFilter: null }) },
   { key: 'help', label: 'an open help topic', open: () => !!(state.help && (state.help.topic || state.help.cat)), close: () => setState({ help: state.help && state.help.topic ? { cat: state.help.cat, topic: null } : { cat: null, topic: null } }) },
-  { key: 'drawerOpen', label: 'the menu drawer', open: () => !!state.drawerOpen, close: () => setState({ drawerOpen: false }) }
+  { key: 'drawerOpen', overlay: true, label: 'the menu drawer', open: () => !!state.drawerOpen, close: () => setState({ drawerOpen: false }) }
 ];
 // EVERY KEY THE REGISTRY COVERS, for the suite's completeness check. Exported on the debug hook
 // beside the others rather than duplicated into the test, so the two cannot drift apart.
 function backLayerKeys() { return BACK_LAYERS.map(l => l.key); }
+// ---- SCROLLING BEHIND AN OVERLAY -------------------------------------------------------------
+//
+// THIS APP HAD NO SCROLL LOCK AT ALL. The audit found the What's New notice let the page scroll
+// 0 -> 333px behind it, and that is not one modal's bug: nothing in this file ever locked anything.
+// The sibling app learned this the expensive way -- Aaron found it by using the app, and its
+// CLAUDE.md Rule 5.5 is the rule that came out of it: every gate here asks about a STILL FRAME, and
+// nobody asks what happens while a finger is moving.
+//
+// So this is written for the CLASS, from the registry that already enumerates every dismissible
+// thing. A new overlay gets a lock the moment somebody marks it `overlay: true`, which is the same
+// line where they decide what Back does to it -- one decision, not two.
+//
+// DELIBERATELY EXEMPT, said out loud rather than quietly skipped:
+//   * The inline layers -- the open vitals panel, the symptom filter, an open help topic. They sit
+//     IN the page; locking the page around them would be a worse bug than the one this fixes.
+//   * Toasts. A toast is not a modal, does not take the screen, and must not freeze it.
+function anyOverlayOpen() { return BACK_LAYERS.some(l => l.overlay && l.open()); }
+let scrollLockY = null;
+function applyScrollLock() {
+  if (typeof document === 'undefined' || !document.body) return;
+  const want = anyOverlayOpen();
+  if (want && scrollLockY === null) {
+    scrollLockY = window.scrollY || window.pageYOffset || 0;
+    // position:fixed rather than overflow:hidden -- iOS Safari ignores overflow:hidden on body,
+    // which is exactly the platform this app is heading to the store on.
+    document.body.style.position = 'fixed';
+    document.body.style.top = (-scrollLockY) + 'px';
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+  } else if (!want && scrollLockY !== null) {
+    const y = scrollLockY;
+    scrollLockY = null;
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.width = '';
+    // Put them back where they were. A lock that loses the reader's place is its own defect.
+    window.scrollTo(0, y);
+  }
+}
 // Returns what it dismissed, or null if there was nothing left to dismiss on this screen.
 function handleBackPress() {
   for (let i = 0; i < BACK_LAYERS.length; i++) {
@@ -5072,6 +5114,10 @@ function render() {
     }
   }
   positionTour();
+  // AFTER the DOM is committed, so the lock reflects what is actually on screen rather than what
+  // was about to be. render() runs on a one-second tick; applyScrollLock is idempotent and does
+  // nothing at all when the answer has not changed.
+  applyScrollLock();
 }
 
 // Short "Mon, Jul 20" label for a collapsed date-picker pill button (v70).
@@ -6281,7 +6327,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       buttonArea = h('div', { style: { background: 'rgba(192,69,59,0.12)', border: '1px solid rgba(192,69,59,0.25)', borderRadius: '13px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '7px' } },
         h('div', { style: { fontSize: '12px', color: '#A15B56', fontWeight: '600', lineHeight: '1.35', display: 'flex', alignItems: 'center', gap: '7px' } },
           h('span', { style: { flexShrink: '0', width: '18px', height: '18px', borderRadius: '50%', background: '#C0453B', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '12px' } }, '!'),
-          st.ceilingHit ? (med.rollingCeilingH ? ('Up to the ' + (dc ? dc.label : 'limit') + ' reached. Log more anyway?') : ('Daily limit of ' + (dc ? dc.label : 'limit') + ' reached. Log more anyway?')) : st.chemoBlock ? 'Care team said no Zofran on chemo days. Log it anyway?' : st.courseComplete ? 'This medication’s treatment window has ended. Log it anyway?' : offDay ? ('Not scheduled today (' + scheduleDaysLabel(med) + '). Log it anyway?') : ('Closed — opens in ' + countdownLabel + '. Log it early anyway?')
+          st.ceilingHit ? (med.rollingCeilingH ? ('Up to the ' + (dc ? dc.label : 'limit') + ' reached. Log more anyway?') : ('Daily limit of ' + (dc ? dc.label : 'limit') + ' reached. Log more anyway?')) : st.chemoBlock ? (med.name + ' is set to be held around treatment days. Log it anyway?') : st.courseComplete ? 'This medication’s treatment window has ended. Log it anyway?' : offDay ? ('Not scheduled today (' + scheduleDaysLabel(med) + '). Log it anyway?') : ('Closed — opens in ' + countdownLabel + '. Log it early anyway?')
         ),
         h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
           ...doseList.map((d, i) => doseBlocked(d) ? overrideDoseBtn(d, i) : h('button', { onClick: () => logMed(med.id, d.single ? null : d, { force: true }), style: { flex: '0 1 auto', minWidth: '0', maxWidth: '100%', minHeight: '44px', padding: '0 13px', borderRadius: '999px', background: '#C0453B', color: '#fff', fontSize: '12.5px', fontWeight: '700', boxShadow: '0 2px 8px rgba(55,37,30,0.18)', whiteSpace: 'normal', textAlign: 'center', lineHeight: '1.25' } }, d.single ? 'Override — log now' : ('Log ' + d.label + ' now'))),
@@ -8023,9 +8069,23 @@ function renderMedicationEditor() {
 // real harm.
 function medStatusPill(med) {
   const st = status(med) || {};
+  // THE COMMENT ABOVE THIS FUNCTION USED TO CLAIM status() WAS ONE SOURCE AND THE TWO SCREENS
+  // THEREFORE COULD NOT DISAGREE. THAT WAS FALSE, AND THE INDEPENDENT AUDIT PROVED IT TWICE.
+  //
+  // Home does not gate on status() alone. It also asks `medScheduledOn` (is today one of this
+  // medication's days) and `treatmentExcludedNow` (is it held around a treatment date), and
+  // status() knows about NEITHER. So a medication Home showed as "Not scheduled today" behind a
+  // red override, and one Home rendered as an inert card with NO log button at all, both read a
+  // green "Available" here. The Meds screen was the only screen with an opinion, and it said yes.
+  //
+  // A claim in a comment is not a mechanism. These two questions are now asked HERE, in the same
+  // order Home asks them, and the suite opens Home and compares the two screens rather than
+  // matching this function's output against a regex written beside it.
   if (st.paused) return { text: 'Paused', fg: '#6F5347', bg: 'rgba(124,97,86,0.12)', bd: 'rgba(124,97,86,0.22)' };
+  if (treatmentExcludedNow(med, state.now)) return { text: isOtherTreatmentType() ? 'Held near your date' : 'Held near treatment day', fg: '#8B3C1B', bg: 'rgba(174,88,51,0.12)', bd: 'rgba(174,88,51,0.26)' };
+  if (!medScheduledOn(med, state.now)) return { text: 'Not scheduled today', fg: '#6F5347', bg: 'rgba(124,97,86,0.12)', bd: 'rgba(124,97,86,0.22)' };
   if (st.chemoBlock) return { text: 'Held around treatment', fg: '#8B3C1B', bg: 'rgba(174,88,51,0.12)', bd: 'rgba(174,88,51,0.26)' };
-  if (st.ceilingHit) return { text: 'Daily limit reached', fg: '#A5443C', bg: 'rgba(192,69,59,0.10)', bd: 'rgba(192,69,59,0.26)' };
+  if (st.ceilingHit) return { text: st.rollingCeiling ? 'Limit reached for now' : 'Daily limit reached', fg: '#A5443C', bg: 'rgba(192,69,59,0.10)', bd: 'rgba(192,69,59,0.26)' };
   if (st.locked && st.availableAt) {
     const left = st.availableAt - state.now;
     return { text: left > 0 ? ('Wait ' + fmtCountdown(left)) : 'Available', fg: '#9A6419', bg: 'rgba(154,100,25,0.10)', bd: 'rgba(154,100,25,0.24)' };
@@ -8060,6 +8120,15 @@ function medTodayLine(med) {
 function medCeilingBar(med) {
   const dc = dailyCeiling(med);
   if (!dc || !dc.max) return null;
+  // A ROLLING WINDOW IS NOT A DAILY ALLOWANCE, AND CALLING IT ONE IS A FALSE IMPRESSION ABOUT
+  // MEDICINE. A 15 mg / 4h limit with 15 mg given today and 5 mg inside the window drew a bar
+  // reading "5 / 15 mg - 10 mg left", labelled for a screen reader as "used today", directly
+  // beside a line saying "2 doses today". Every number was arithmetically right and the sentence
+  // they formed was wrong: the figure refills as doses age out, it is not what is left of a day.
+  // `dailyCeiling` already computes the real label -- it carries the "/ 4h" -- and this function
+  // was throwing it away. Rule 2.7 question 3: arithmetically correct and clinically meaningless
+  // is still a false impression, and it is the harder kind to catch.
+  const rolling = !!med.rollingCeilingH;
   const used = Number(dc.used) || 0;
   const pct = Math.max(0, Math.min(100, (used / dc.max) * 100));
   const over = used >= dc.max;
@@ -8067,15 +8136,20 @@ function medCeilingBar(med) {
   const colour = over ? '#C0453B' : near ? '#9A6419' : '#E46F3C';
   const left = Math.max(0, dc.max - used);
   const unit = dc.unit === 'mg' ? 'mg' : String(dc.unit || '');
-  return h('div', { 'data-med-ceiling': med.id, style: { marginTop: '9px' } },
+  const windowWord = rolling ? ('in the last ' + med.rollingCeilingH + 'h') : 'today';
+  return h('div', { 'data-med-ceiling': med.id, 'data-med-ceiling-rolling': rolling ? 'true' : 'false', style: { marginTop: '9px' } },
     h('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' } },
       h('div', { className: 'mono', style: { fontSize: '13px', fontWeight: '700', color: over ? '#A5443C' : '#2A2127' } },
         used.toLocaleString() + ' / ' + dc.max.toLocaleString() + ' ' + unit),
       h('div', { style: { ...TYPE.caption, color: over ? '#A5443C' : '#7A6E76' } },
-        over ? 'Limit reached' : (left.toLocaleString() + ' ' + unit + ' left'))
+        over ? 'Limit reached' : (left.toLocaleString() + ' ' + unit + ' left ' + windowWord))
     ),
+    // The window is named on the bar itself, not only in the figure beside it, because the bar is
+    // the thing somebody reads at a glance.
+    rolling ? h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '3px' } },
+      'A rolling ' + med.rollingCeilingH + '-hour limit, not a daily one \u2014 this frees up again as earlier doses age out.') : null,
     h('div', { role: 'img',
-      'aria-label': used.toLocaleString() + ' of ' + dc.max.toLocaleString() + ' ' + unit + ' used today',
+      'aria-label': used.toLocaleString() + ' of ' + dc.max.toLocaleString() + ' ' + unit + ' used ' + windowWord,
       style: { height: '8px', marginTop: '6px', borderRadius: '99px', background: 'rgba(246,108,49,0.10)', overflow: 'hidden' } },
       h('div', { style: { height: '100%', width: Math.round(pct) + '%', background: colour, borderRadius: '99px', transition: 'width .45s ease, background .45s ease' } })
     )
@@ -8715,7 +8789,7 @@ const CHANGELOG = [
     points: [
       'Until today ChemoWell updated quietly. A button could move or a number could start being counted differently and nothing on screen said so.',
       'From now on, the first time you open the app after an update, a short note tells you what is different. Tap "Got it" and it does not come back.',
-      'Every past update is listed under "What’s new" in the menu, newest first, if you want to look back.'
+      'Updates from here on are listed under “What’s new” in the menu, newest first, if you want to look back at one.'
     ] },
   { v: 'app-v83', date: 'Sep 14, 2026', title: 'Your medication cards now show what has happened today',
     points: [
@@ -10611,7 +10685,28 @@ function renderTemperatureReport(now) {
   const spanDays = range === 'weeks' ? 28 : 90;
   const minTs = now - spanDays * DAY;
   const inRange = all.filter(e => e.ts >= minTs);
-  const points = inRange.length ? inRange : all.slice(-2);
+  // NOTHING IN RANGE MEANS NOTHING IN RANGE, AND THE SCREEN SAYS SO.
+  //
+  // This used to fall back to `all.slice(-2)` -- the last two readings ever -- while every label on
+  // the screen went on saying "Last 4 weeks". Three readings from ten weeks ago rendered under that
+  // heading as HIGHEST 102.4 and "AT OR ABOVE 100.4: 2", and the third reading vanished from the
+  // list entirely. A fever chart that presents ten-week-old numbers as this month's is the one
+  // false impression on these screens with a clinical consequence: somebody reads it as a fever
+  // now. The fallback is gone. An empty window is an empty window, said in words, with the older
+  // readings offered behind the other range rather than smuggled under this one.
+  const points = inRange;
+  if (!points.length) {
+    const newest = all[all.length - 1];
+    return [addRow, toggle,
+      h('div', { 'data-temp-none-in-range': 'true', style: { background: '#FFFFFF', border: '1px dashed #E9D8D1', borderRadius: '16px', padding: '26px 20px', textAlign: 'center', color: '#7A6E76', fontSize: '13.5px', lineHeight: '1.55' } },
+        h('div', null, 'No temperatures logged in the last ' + (range === 'weeks' ? '4 weeks' : '3 months') + '.'),
+        newest ? h('div', { style: { marginTop: '6px' } },
+          'The most recent one was ' + newest.t + tempSuffix() + ' on ' +
+          new Date(newest.ts).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) +
+          (range === 'weeks' ? ' \u2014 tap Months to see further back.' : '.')) : null
+      )
+    ];
+  }
 
   const vals = points.map(p => p.t);
   // The axis must always contain the fever line, or a week of normal readings draws a chart with
@@ -11249,9 +11344,16 @@ function renderSymptoms(now) {
   // The filter applies to the LIST ONLY, never to the bars -- a chart that re-draws itself around
   // the selection stops being something you can compare against, and the selected bar would then
   // always be the longest one on screen.
+  // THE LIST AND THE BARS MUST COUNT THE SAME DAYS. The bars were windowed to 28 or 90 days and the
+  // list was not, so a bar reading "Nausea 2" opened a list of seven rows. Both figures were right
+  // about their own window and the pair of them was a lie -- and the changelog promised "tap one to
+  // see just those entries", which was true only of the symptom, not of the period. The list is
+  // windowed to the same span, and says so when older entries exist outside it.
+  const inWindow = entries.filter(e => e.ts >= from);
   const shown = state.symptomFilter
-    ? entries.filter(e => (e.symptomType || (e.medId || '').slice(8)) === state.symptomFilter)
-    : entries;
+    ? inWindow.filter(e => (e.symptomType || (e.medId || '').slice(8)) === state.symptomFilter)
+    : inWindow;
+  const olderCount = entries.length - inWindow.length;
   const filterNote = state.symptomFilter ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
     h('span', { style: { ...TYPE.caption, color: '#7A6E76' } },
       'Showing ' + (SYMPTOM_TYPES[state.symptomFilter] || state.symptomFilter) + ' only'),
@@ -11259,11 +11361,15 @@ function renderSymptoms(now) {
       style: { minHeight: '44px', padding: '0 12px', borderRadius: '11px', fontSize: '12.5px', fontWeight: '700', color: '#A83D0F', background: 'rgba(200,83,32,0.10)' } }, 'Show all')
   ) : null;
 
+  const olderNote = olderCount > 0 ? h('div', { 'data-symptom-older': String(olderCount), style: { ...TYPE.caption, color: '#7A6E76' } },
+    olderCount + (olderCount === 1 ? ' earlier entry is' : ' earlier entries are') + ' outside the last ' +
+    (state.symptomRange === 'months' ? '3 months' : '4 weeks') + '. Switch to ' +
+    (state.symptomRange === 'months' ? 'a wider range' : 'Months') + ' to include them.') : null;
   const list = shown.length ? h('div', { 'data-symptom-list': 'true', style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
     ...shown.map(e => symptomRow(e))
   ) : h('div', { 'data-symptom-list': 'true', style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(246,108,49,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } },
     entries.length ? 'None of these logged yet.' : 'No symptoms or reactions logged yet.\nTap + to add one.');
-  return [header, entries.length ? summary : null, filterNote, list];
+  return [header, entries.length ? summary : null, filterNote, list, olderNote];
 }
 
 // The Paracentesis report. Removal appends a tombstone rather than deleting, matching care-tracker
@@ -12361,7 +12467,7 @@ if (typeof window !== 'undefined') {
   // dismissible thing has a Back rule" assertion had nothing to compare against and PASSED on the
   // absence — a check that reports green loudest when it cannot see anything, which is the exact
   // class this file has been caught on four times.
-  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state),
+  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state), overlayKeys: () => BACK_LAYERS.filter(l => l.overlay).map(l => l.key),
     // A GETTER, NOT A VALUE. This hook is built ~1,500 lines ABOVE `const APP_VERSION`,
     // so reading it eagerly here throws "Cannot access 'APP_VERSION' before initialization"
     // at module load -- the temporal dead zone this repo has now been bitten by three

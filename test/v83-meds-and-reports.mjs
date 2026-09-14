@@ -127,9 +127,15 @@ section('1. THE MEDS CARD SAYS WHAT HAS HAPPENED, NOT ONLY WHAT THE RULES ARE');
 // ---------------------------------------------------------------------------------------------
 section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
 {
-  // THE CHECK THAT MATTERS ON THIS SCREEN. Two screens computing "can she have it" independently
-  // is two screens that will eventually differ, and the difference means somebody gives a dose the
-  // app elsewhere says to withhold. Both read status(); this proves it for the locking cases.
+  // THIS SECTION USED TO BE A LIE, AND THE AUDIT SAID SO. It was titled "Meds and Home cannot
+  // disagree" and it never opened Home -- it matched the Meds pill against regexes written beside
+  // it in this file, which proves only that the pill says what I expected the pill to say. It
+  // therefore could not see the two states where the screens DID disagree, and both shipped:
+  // an off-day medication and a treatment-excluded one both read a green "Available" on Meds while
+  // Home refused to give them.
+  //
+  // It opens Home now and compares the two screens, which is the only comparison that means
+  // anything. The pill regexes stay as a second, weaker assertion about the wording.
   const now = Date.now();
   const cases = [
     ['a dose inside the minimum gap', [gapMed({ id: 'm1', name: 'TestMed' })],
@@ -145,6 +151,35 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
     await goto(p, 'Meds');
     const pill = (await p.locator('[data-med-status-pill]').innerText().catch(() => '')).trim();
     t('the pill is right for ' + label, want.test(pill), pill || '(no pill)');
+    await p.close();
+  }
+}
+{
+  // THE TWO STATES THE OLD SECTION COULD NOT SEE, each read off BOTH screens.
+  // "Home will give it" is asked the way a caregiver asks it: is there a plain button that logs a
+  // dose, or is there not. An override behind a red confirmation is NOT Home saying yes.
+  const now = Date.now();
+  const today = new Date().getDay();
+  const otherDay = (today + 3) % 7;
+  const pairs = [
+    ['a medication not scheduled today',
+      [gapMed({ id: 'm1', name: 'OffDayMed', scheduleDays: { mode: 'weekly', days: [otherDay] } })], []],
+    ['a medication held around a treatment day',
+      [gapMed({ id: 'm1', name: 'ExcludedMed', treatmentMode: 'excluded' })],
+      [{ id: 'c', medId: 'chemo_date', ts: now, dose: '', mg: 0 }]]
+  ];
+  for (const [label, meds, entries] of pairs) {
+    const p = await open({ meds, entries });
+    // HOME FIRST, and read what it actually offers.
+    const homeText = await p.evaluate(() => (document.body.innerText || ''));
+    const homeSaysNo = /not scheduled|excluded|held near|held around/i.test(homeText);
+    await goto(p, 'Meds');
+    const pill = (await p.locator('[data-med-status-pill]').innerText().catch(() => '')).trim();
+    t('Home withholds ' + label + ' -- otherwise this comparison proves nothing',
+      homeSaysNo, homeText.replace(/\n/g, ' | ').slice(0, 130));
+    t('and Meds does NOT say Available for ' + label,
+      !/^Available$/.test(pill), pill || '(no pill)');
+    t('and the two screens agree in words', /not scheduled|held/i.test(pill), pill || '(no pill)');
     await p.close();
   }
 }
@@ -202,6 +237,22 @@ section('3. THE TEMPERATURE REPORT, WHICH DID NOT EXIST');
   t('the highest reading is reported', /101\.4/.test(stats), stats.replace(/\n/g, ' '));
   t('and how many were at or above the fever line', /\b1\b/.test(await p.locator('[data-temp-overcount]').innerText()),
     (await p.locator('[data-temp-overcount]').innerText()).replace(/\n/g, ' '));
+  // THAT COUNT MUST BE OVER THE CHARTED SET, NOT ALL HISTORY, and this is what proves it: a
+  // feverish reading from outside the window must not be counted. The check without this could not
+  // fail -- a mutant counting every reading ever passed it.
+  const withOld = await open({ entries: [
+    { id: 't1', medId: 'temp', temp: 101.4, dose: '101.4', mg: 0, ts: Date.now() - 3 * HOUR },
+    { id: 'old', medId: 'temp', temp: 103.6, dose: '103.6', mg: 0, ts: Date.now() - 60 * 24 * HOUR }
+  ] });
+  await goto(withOld, 'Reports');
+  await withOld.getByRole('button', { name: /Temperature/ }).first().click();
+  await withOld.waitForTimeout(900);
+  const oc = await withOld.locator('[data-temp-overcount]').innerText();
+  const pk = await withOld.locator('[data-temp-peak]').innerText();
+  t('a feverish reading from outside the window is not counted in it',
+    /\b1\b/.test(oc) && !/\b2\b/.test(oc), oc.replace(/\n/g, ' '));
+  t('and it is not reported as the highest, either', !/103\.6/.test(pk), pk.replace(/\n/g, ' '));
+  await withOld.close();
   // RULE 2.7 QUESTION 3. A mean body temperature over a month describes nothing anybody acts on,
   // and reads as reassurance across a week holding one 101.4.
   const screen = await p.locator('[data-temp-chart]').innerText() + ' ' + stats;
@@ -229,16 +280,44 @@ section('3. THE TEMPERATURE REPORT, WHICH DID NOT EXIST');
 section('4. THE SYMPTOM BARS');
 {
   const now = Date.now();
+  // THE FIXTURE CARRIES ENTRIES OUTSIDE THE WINDOW, and that is the point. Without them, "count the
+  // last 4 weeks" and "count everything ever" give the same answer, and the count check cannot tell
+  // them apart -- it did not: a mutant deleting the window entirely passed. Two entries from ~40
+  // days ago are inside the Months range and outside the Weeks range, so the two ranges must
+  // disagree, which is the only way this suite can see a window at all.
   const p = await open({ entries: [
     { id: 's1', medId: 'symptom_nausea', symptomType: 'nausea', dose: '', mg: 0, ts: now - 4 * HOUR },
     { id: 's2', medId: 'symptom_nausea', symptomType: 'nausea', dose: '', mg: 0, ts: now - 50 * HOUR },
-    { id: 's3', medId: 'symptom_fatigue', symptomType: 'fatigue', dose: '', mg: 0, ts: now - 26 * HOUR }
+    { id: 's3', medId: 'symptom_fatigue', symptomType: 'fatigue', dose: '', mg: 0, ts: now - 26 * HOUR },
+    { id: 'old1', medId: 'symptom_nausea', symptomType: 'nausea', dose: '', mg: 0, ts: now - 40 * 24 * HOUR },
+    { id: 'old2', medId: 'symptom_nausea', symptomType: 'nausea', dose: '', mg: 0, ts: now - 45 * 24 * HOUR }
   ] });
   await goto(p, 'Symptoms');
   const bars = await p.locator('[data-symptom-bar]').count();
   t('one bar per symptom', bars === 2, bars + ' bars');
   const txt = await p.locator('[data-symptom-summary]').innerText();
-  t('the count is right', /Nausea[\s\S]*?2/.test(txt), txt.replace(/\n/g, ' | '));
+  t('the count is right', /Nausea[\s\S]*?\b2\b/.test(txt) && !/Nausea[\s\S]*?\b4\b/.test(txt),
+    txt.replace(/\n/g, ' | '));
+  // THE WINDOW IS REAL, OR THE COUNT ABOVE MEANS NOTHING. Weeks and Months must disagree, because
+  // the fixture put two entries between the two ranges.
+  await p.locator('[data-symptom-range="months"]').click();
+  await p.waitForTimeout(500);
+  const months = await p.locator('[data-symptom-summary]').innerText();
+  t('switching to Months changes the count, so the window is actually applied',
+    /Nausea[\s\S]*?\b4\b/.test(months), months.replace(/\n/g, ' | '));
+  await p.locator('[data-symptom-range="weeks"]').click();
+  await p.waitForTimeout(500);
+  // THE LIST AND THE BARS COUNT THE SAME DAYS. A bar saying 2 that opens a list of 7 was a real
+  // defect; both figures were right about their own window and the pair of them was a lie.
+  await p.locator('[data-symptom-bar="nausea"]').click();
+  await p.waitForTimeout(500);
+  const rows = await p.locator('[data-symptom-list] [data-symptom-row], [data-symptom-list] > div').count();
+  const listTxt = await p.locator('[data-symptom-list]').innerText();
+  const listNausea = (listTxt.match(/Nausea/g) || []).length;
+  t('tapping a bar shows exactly as many entries as the bar counted',
+    listNausea === 2, listNausea + ' rows for a bar reading 2');
+  await p.locator('[data-symptom-clear]').click();
+  await p.waitForTimeout(400);
   t('and when it was last noted', /today|yesterday|days ago/.test(txt), txt.replace(/\n/g, ' | '));
   // LONGEST FIRST. A chart whose order is arbitrary makes the reader do the comparison the chart
   // exists to do for them.

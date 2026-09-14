@@ -226,6 +226,44 @@ section('7. THE NEWEST ENTRY IS ABOUT THE VERSION THAT IS RUNNING');
 }
 
 // ---------------------------------------------------------------------------------------------
+section('7b. THE PAGE DOES NOT SCROLL BEHIND IT -- Rule 5.5, THE CLASS NOT THE INSTANCE');
+{
+  // The audit found the page scrolling 0 -> 333px behind this notice, and the real finding was
+  // bigger than one modal: THIS APP HAD NO SCROLL LOCK AT ALL. So the lock is driven by the
+  // back-button registry -- the same list that already decides what Back closes -- and this checks
+  // the registry as a whole, not just the notice.
+  const p = await freshPage(true);
+  await p.evaluate(() => { localStorage.setItem('chemowell-app-seen-version', 'app-v1'); });
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await p.waitForTimeout(1800);
+  t('the notice is open', await p.locator('[data-whatsnew-modal]').count() === 1);
+  // A page that is already short cannot scroll, so a lock check on it passes on nothing. Make the
+  // page long first, then prove it stops moving.
+  await p.evaluate(() => { const d = document.createElement('div'); d.id = 'tall'; d.style.height = '3000px'; document.body.appendChild(d); });
+  await p.waitForTimeout(150);
+  await p.evaluate(() => window.scrollTo(0, 600));
+  await p.waitForTimeout(350);
+  const scrolledBehind = await p.evaluate(() => window.scrollY || Math.abs(parseInt(document.body.style.top || '0', 10)) === 0 ? window.scrollY : 0);
+  t('the page does not scroll behind the notice', scrolledBehind === 0, scrolledBehind + 'px');
+  await p.locator('[data-whatsnew-close]').click();
+  await p.waitForTimeout(500);
+  const unlocked = await p.evaluate(() => document.body.style.position);
+  t('and the page is released once the notice closes', unlocked !== 'fixed', unlocked || '(none)');
+
+  // THE CLASS. Every layer marked as an overlay must lock; every inline layer must NOT, or an open
+  // vitals panel would freeze the page around it -- a worse bug than the one being fixed.
+  const reg = await p.evaluate(() => (window.__backTest && window.__backTest.overlayKeys) ? window.__backTest.overlayKeys() : null);
+  t('the app exposes which layers are overlays, so this check has a list to compare against',
+    Array.isArray(reg) && reg.length > 0, JSON.stringify(reg));
+  if (Array.isArray(reg)) {
+    t('the what\u2019s-new notice is one of them', reg.indexOf('whatsNewOpen') >= 0, JSON.stringify(reg));
+    t('and the inline panels are deliberately NOT -- they sit in the page',
+      reg.indexOf('vitalOpen') < 0 && reg.indexOf('symptomFilter') < 0, JSON.stringify(reg));
+  }
+  await p.close();
+}
+
+// ---------------------------------------------------------------------------------------------
 section('8. AND NOTHING THREW');
 t('no page error at any point above', allErrors.length === 0, allErrors.slice(0, 3).join(' / ') || 'none');
 
