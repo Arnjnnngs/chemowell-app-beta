@@ -1,0 +1,66 @@
+OK M9  the proper-fraction guard is removed: any two integers are a fraction again (5/325 mg)
+      RED: "5/325 mg" → 5/325 mg [325mg / 5]
+      RED: "10/325 mg" → 10/325 mg [325mg / 10]
+      RED: "300/30/10" → 300/30/10 [0mg / 300]
+      RED: "25/2 mg" → 25/2 mg [2mg / 25]
+      RED: "11/2 tabs" → 11/2 tabs [0mg / 11]
+
+OK M10 only the improper check is removed (25/2 becomes 12.5)
+      RED: "25/2 mg" → 25/2 mg [2mg / 25]
+      RED: "11/2 tabs" → 11/2 tabs [0mg / 11]
+
+OK M11 only the denominator list is removed (5/325 becomes 0.015)
+      RED: "5/325 mg" → 5/325 mg [325mg / 5]
+      RED: "10/325 mg" → 10/325 mg [325mg / 10]
+
+OK M12 the count is read from the rounded label again (three thirds total 0.999)
+      RED: "5,000 units" → 5,000 units [0mg / 5000]
+      RED: "5,000 mg" → 5,000 mg [5000mg / 5000]
+      RED: "5/325 mg" → 5/325 mg [325mg / 5]
+      RED: "10/325 mg" → 10/325 mg [325mg / 10]
+      RED: "7.5/325 mg" → 7.5/325 mg [325mg / 7.5]
+      RED: "80/12.5 mg" → 80/12.5 mg [12.5mg / 80]
+      ... and 6 more
+
+OK M13 the label evaluates fractions again (the button stops saying what was typed)
+      RED: "1/2 tablet" → 1/2 tablet [0mg / 0.5]
+      RED: "3/4 tab" → 3/4 tab [0mg / 0.75]
+      RED: "1 1/2 tablets" → 1 1/2 tablets [0mg / 1.5]
+      RED: "2/3 tablet" → 2/3 tablet [0mg / 0.6666666666666666]
+      RED: "5/6 tablet" → 5/6 tablet [0mg / 0.8333333333333334]
+      RED: "3/8 tab" → 3/8 tab [0mg / 0.375]
+      ... and 3 more
+
+OK M14 the dose migration never runs (a medication saved before this release stays wrong)
+      RED: the stored medication was re-read on load
+      RED: ITS LABEL IS NO LONGER THE NAKED DECIMAL
+      RED: AND IT NO LONGER COUNTS TEN TIMES THE DOSE ON ITS OWN BUTTON
+      RED: and a second load leaves it alone
+      RED: a config that needs nothing is not rewritten — the migration really is one-shot
+      RED: a config that DOES need it is written back, so the fix outlives the session
+
+!! M15 the migration stamp is dropped by the whitelist again (it re-walks on every load) -- BOARD STAYED GREEN. A check that cannot fail.
+
+OK M16 the corrected doses are never written back to disk
+      RED: the stored medication was re-read on load
+      RED: ITS LABEL IS NO LONGER THE NAKED DECIMAL
+      RED: AND IT NO LONGER COUNTS TEN TIMES THE DOSE ON ITS OWN BUTTON
+      RED: and a second load leaves it alone
+      RED: a config that DOES need it is written back, so the fix outlives the session
+
+OK M17 the migration rewrites logged history as well as configuration
+      RED: the dose already LOGGED is left exactly as it was — history is not rewritten
+
+OK M18 the rewrite is silent again -- the notice never renders
+      RED: a naked decimal is disclosed
+      RED: a trailing zero is disclosed
+      RED: the notice is on screen and unclipped at 320px
+
+OK M19 the notice renders on every medication, not only a changed one
+      RED: an ordinary dose says nothing
+      RED: two ordinary strengths say nothing
+      RED: a fraction says nothing, because it is no longer rewritten
+      RED: a combination strength says nothing, because it is left alone
+      RED: a thousands separator says nothing — it is kept in the label
+
+restored; 1 SURVIVED OR CRASHED

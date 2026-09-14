@@ -1,0 +1,48 @@
+=== test/v72-med-purpose.mjs ===
+PASS  no page errors
+
+65/65 checks passed
+=== test/v75-no-other-patient.mjs ===
+  PASS  which the medication editor writes on every medication it creates
+
+27/27 checks passed
+=== test/v76-properties-equivalence.mjs ===
+  PASS  survives {}
+
+22/22 checks passed
+=== test/v77-legacy-migration-equivalence.mjs ===
+  PASS  a medication with no legacy rule is stamped too  |  {"id":"my-own-pill","type":"gap","schemaV":2}
+
+36/36 checks passed
+=== test/v78-fence-removed.mjs ===
+  PASS  and the config is stamped forward so it runs once  |  2
+
+20/20 checks passed
+=== test/v79-home-cards-render.mjs ===
+  PASS  an edited value survives a version-1 downgrade  |  9
+
+20/20 checks passed
+=== test/v79-warning-priority.mjs ===
+  PASS  no page error during any of the above
+
+14/14 checks passed
+=== test/v76-empty-window-render.mjs ===
+  PASS  Meds still renders, so there is a way to delete it  |  {"cards":1,"remove":1}
+
+13/13 checks passed
+=== test/v80-up-next.mjs ===
+  PASS  no page error at any point above
+
+38/38 checks passed
+=== test/v80-contrast.mjs ===
+  PASS  no page error
+
+10/10 checks passed
+=== test/v81-purpose-hint.mjs ===
+  PASS  no page error at any point above
+
+32/32 checks passed
+=== test/v81-dose-parser.mjs ===
+  PASS  no page errors at any point
+
+94/94 passing

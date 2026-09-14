@@ -18,9 +18,12 @@ so, and the acetaminophen ceiling is then reached after a tenth of the medicine 
 **This is the naked decimal the ISMP list exists to warn about, and the app currently agrees with
 the misreading.**
 
-`1/2 tablet` -- takes the 1 and ignores the /2, so a half counts as a whole. This one errs in the
-DANGEROUS direction on a pill ceiling: a limit of four is reached after eight halves, and the app
-says three are left.
+`1/2 tablet` -- takes the 1 and ignores the /2, so a half counts as a whole. THE DIRECTION OF THAT
+ERROR, corrected after the round-3 audit caught this paragraph stating it backwards: counting a half
+as a whole reaches a pill ceiling EARLY, not late. A limit of four fires after four halves, which is
+two tablets. That is the SAFE direction and it is still a real defect -- a limit that fires at half
+the medicine is a limit nobody trusts, and an untrusted limit gets overridden out of habit until the
+day it was right.
 
 `5,000 units` -- Dosage options is comma-separated, so a thousands separator splits one dose into
 two: a "5" button and a "000 units" button. That is how an insulin or heparin dose is normally

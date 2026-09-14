@@ -37,7 +37,7 @@ The Home card code has a whole singulariser measured across 42 real unit words (
 `lozenges`, `patches`, `caps`, `tablets` and `bolus`. **The display layer is already more capable
 than the editor.** Widening the list is mostly unlocking something that is already built and tested.
 
-**What it costs a caregiver right now.** She cannot set a daily limit on an inhaler, an insulin pen,
+**What it costs a caregiver right now.** They cannot set a daily limit on an inhaler, an insulin pen,
 eye drops, a liquid, or anything measured in micrograms — because Daily limit stays locked until the
 dosage text carries the unit she picked, and the only units she can pick are mg, pills and
 applications. The app's own help text already admits this: *"The list is currently only those three.
@@ -420,8 +420,14 @@ costing something today rather than costing an opportunity.
 
 Nothing in this report is keyed to one patient's medications or care plan. No medication id appears
 in any recommendation. Every unit named is a property of a dosage form, not of a regimen. The
-pronoun used throughout for the patient is **they**; "she"/"her" appears only where it refers to the
-generic caregiver the repo's existing copy already addresses, and §3–§7 avoid it entirely. §4b
+pronoun used throughout is **they**, for the patient and for the caregiver alike.
+
+**CORRECTED after the app-v81 round-3 audit, which was right to raise it.** This section previously
+said "she"/"her" was fine for the generic caregiver "the repo's existing copy already addresses" --
+and that is not a defence, it is a description of the leak. Rule 0's second shape is exactly this:
+a pronoun carried over from one named person's app into a product where the caregiver is whoever
+installed it. The one instance in §1 is fixed. If the repo's existing copy does this elsewhere, that
+is a finding against the copy, not a licence. §4b
 deliberately declines to put a chemotherapy prescribing unit into a patient-facing control.
 
 ---

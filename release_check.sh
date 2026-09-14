@@ -483,8 +483,17 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
       # A FILE THAT EXISTS IS NOT A PASS THAT RAN. Three lines is not a threshold anyone should be
       # proud of; it is here because `touch outputs/DESIGN-app-v81.md` would otherwise clear a gate
       # written to stop exactly that.
+      # `grep -c` PRINTS 0 AND EXITS 1 WHEN IT MATCHES NOTHING, so `|| echo 0` appended a SECOND
+      # zero and `[ "0\n0" -lt 3 ]` was a syntax error that evaluated false -- the check could not
+      # fire on the one case its own comment names, an empty file. Found by the app-v81 round-3
+      # audit by running it rather than reading it, which is the fifth time on this project that a
+      # gate has failed silently in exactly the case it was written for. `wc -l` cannot replace it
+      # (a file of three blank lines would pass), so the count is taken with grep and the exit
+      # status is simply not consulted -- the `|| true` is about grep's status, not about the value.
       for _f in "$ENH_REPORT" "$DSN_REPORT"; do
-        if [ "$(grep -c . "$_f" 2>/dev/null || echo 0)" -lt 3 ]; then
+        _lines=$(grep -c . "$_f" 2>/dev/null || true)
+        [ -z "$_lines" ] && _lines=0
+        if [ "$_lines" -lt 3 ]; then
           echo "❌ RELEASE CHECK FAILED: $_f is empty or near-empty."
           echo "   A file with nothing in it is how a skipped seat looks from outside."
           FAIL=1

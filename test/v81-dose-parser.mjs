@@ -198,11 +198,11 @@ const TABLE = [
   { in: '0.5 mg',       out: [{ label: '0.5 mg',      mg: 0.5,  pills: 0.5 }],  why: 'already correct, must stay correct' },
   { in: '1.0 mg',       out: [{ label: '1 mg',        mg: 1,    pills: 1 }],    why: 'trailing zero reads as 10' },
   { in: '2.50 mg',      out: [{ label: '2.5 mg',      mg: 2.5,  pills: 2.5 }],  why: 'trailing zero after a real decimal' },
-  { in: '1/2 tablet',   out: [{ label: '0.5 tablet',  mg: 0,    pills: 0.5 }],  why: 'half counted as a whole' },
-  { in: '3/4 tab',      out: [{ label: '0.75 tab',    mg: 0,    pills: 0.75 }], why: 'three quarters counted as three' },
-  { in: '1 1/2 tablets',out: [{ label: '1.5 tablets', mg: 0,    pills: 1.5 }],  why: 'mixed number counted as one' },
-  { in: '½ tab',   out: [{ label: '0.5 tab',     mg: 0,    pills: 0.5 }],  why: 'the fraction character a phone keyboard offers' },
-  { in: '1½ tabs', out: [{ label: '1.5 tabs',    mg: 0,    pills: 1.5 }],  why: 'mixed number written with the character' },
+  { in: '1/2 tablet',   out: [{ label: '1/2 tablet',  mg: 0,    pills: 0.5 }],  why: 'half counted as a whole — and the LABEL is left as written' },
+  { in: '3/4 tab',      out: [{ label: '3/4 tab',     mg: 0,    pills: 0.75 }], why: 'three quarters counted as three' },
+  { in: '1 1/2 tablets',out: [{ label: '1 1/2 tablets', mg: 0,  pills: 1.5 }],  why: 'mixed number counted as one' },
+  { in: '½ tab',   out: [{ label: '½ tab',   mg: 0,    pills: 0.5 }],  why: 'the fraction character a phone keyboard offers' },
+  { in: '1½ tabs', out: [{ label: '1½ tabs', mg: 0,    pills: 1.5 }],  why: 'mixed number written with the character' },
   { in: '5,000 units',  out: [{ label: '5,000 units', mg: 0,    pills: 5000 }], why: 'split into a 5 and a 000 units' },
   // THIS ROW EXISTS BECAUSE FALSIFICATION FOUND THE BOARD COULD NOT SEE THE mg REGEX AT ALL.
   // Putting the old regex back broke nothing measured, because the label is already normalised by
@@ -214,6 +214,29 @@ const TABLE = [
     why: 'REGRESSION: two strengths must still be two buttons' },
   { in: '1 patch, 2 patches', out: [{ label: '1 patch', mg: 0, pills: 1 }, { label: '2 patches', mg: 0, pills: 2 }],
     why: 'REGRESSION: the field’s own example' },
+
+  // EVERY ROW BELOW WAS ADDED BECAUSE THE ROUND-3 AUDIT BLOCKED THIS RELEASE, and the table above
+  // went green on the defect. A COMBINATION-PRODUCT STRENGTH IS NOT A FRACTION: `5/325 mg` is how
+  // oxycodone/paracetamol is written on the bottle, and the first fix read it as five
+  // three-hundred-and-twenty-fifths and stored 0.015 mg -- a paracetamol ceiling of 3,000 mg
+  // reached after two hundred thousand tablets. The parser must leave a slash alone unless it is a
+  // proper fraction over a denominator people actually write.
+  { in: '5/325 mg',     out: [{ label: '5/325 mg',   mg: 325,  pills: 5 }],    why: 'BLOCK 1: a combination strength read as a fraction' },
+  { in: '10/325 mg',    out: [{ label: '10/325 mg',  mg: 325,  pills: 10 }],   why: 'BLOCK 1: the other common strength of the same product' },
+  { in: '7.5/325 mg',   out: [{ label: '7.5/325 mg', mg: 325,  pills: 7.5 }],  why: 'BLOCK 1: survived by accident before; must survive on purpose now' },
+  { in: '80/12.5 mg',   out: [{ label: '80/12.5 mg', mg: 12.5, pills: 80 }],   why: 'BLOCK 1: a decimal on the other side' },
+  { in: '300/30/10',    out: [{ label: '300/30/10',  mg: 0,    pills: 300 }],  why: 'BLOCK 1: three components; the first fix printed "10/10"' },
+  { in: '25/2 mg',      out: [{ label: '25/2 mg',    mg: 2,    pills: 25 }],   why: 'BLOCK 1: improper — 25/2 is not twelve and a half of anything the app can know' },
+  { in: '11/2 tabs',    out: [{ label: '11/2 tabs',  mg: 0,    pills: 11 }],   why: 'BLOCK 1: eleven halves or one and a half? The app must not guess' },
+  // A SLASH THAT IS A RATE, not a fraction and not a strength. These were safe before and the guard
+  // must not make them unsafe: there is no digit immediately before the slash in either.
+  { in: '5 mg/mL',      out: [{ label: '5 mg/mL',    mg: 5,    pills: 5 }],    why: 'a concentration, not a fraction' },
+  { in: '100 mg/m2',    out: [{ label: '100 mg/m2',  mg: 100,  pills: 100 }],  why: 'a body-surface-area dose, not a fraction' },
+  // A PROPER FRACTION STILL WORKS. These are the whole point of the fraction pass and the guard
+  // must not have thrown them out with the combination strengths.
+  { in: '2/3 tablet',   out: [{ label: '2/3 tablet', mg: 0, pills: 2 / 3 }], why: 'a proper third still counts as a number' },
+  { in: '5/6 tablet',   out: [{ label: '5/6 tablet', mg: 0, pills: 5 / 6 }], why: 'a proper sixth still counts as a number' },
+  { in: '3/8 tab',      out: [{ label: '3/8 tab',    mg: 0, pills: 0.375 }], why: 'a proper eighth still counts as a number' },
 ];
 for (const row of TABLE) {
   const got = await parse(row.in);
@@ -247,6 +270,169 @@ for (const row of TABLE) {
 // rather than skipped. When the storage gains real units these three assertions must be inverted,
 // and that is the point of pinning them here.
 // ---------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
+// SECTION 3b -- WHAT THE APP COUNTS IS NOT WHAT IT PRINTS, DELIBERATELY, AND THE DIFFERENCE MATTERS.
+// The round-3 audit found that rounding a third to 0.333 let three of them total 0.999 against a
+// one-tablet limit -- so the app offered a fourth and the day ended a third over. The BUTTON still
+// reads 0.333, because nobody wants sixteen digits on it; the number ADDED UP is exact.
+// ---------------------------------------------------------------------------------------------
+console.log('\n3b. THREE THIRDS OF A TABLET ARE ONE TABLET, NOT 0.999 OF ONE');
+{
+  const third = (await parse('1/3 tablet'))[0] || {};
+  // THE BUTTON SAYS WHAT THE CAREGIVER TYPED. An earlier version of this fix printed "0.333 tablet"
+  // and this check asserted it -- which meant the suite was pinning the rewrite of a string nobody
+  // misreads. A fraction was never on the ISMP list; the naked decimal and the trailing zero were.
+  t('the button still reads the fraction the caregiver wrote', third.label === '1/3 tablet', JSON.stringify(third.label));
+  t('but three of them count as exactly one whole', third.pills * 3 === 1, 'three count as ' + (third.pills * 3));
+  const sixth = (await parse('1/6 tab'))[0] || {};
+  t('and six sixths are exactly one', sixth.pills * 6 === 1, 'six count as ' + (sixth.pills * 6));
+  const twothirds = (await parse('2/3 tablet'))[0] || {};
+  t('and three two-thirds are exactly two', twothirds.pills * 3 === 2, 'three count as ' + (twothirds.pills * 3));
+}
+
+// ---------------------------------------------------------------------------------------------
+// SECTION 3c -- A MEDICATION SAVED BEFORE THIS RELEASE IS FIXED TOO.
+// The round-3 audit's second block: parseDoseOptions only ever ran inside the editor, so a
+// medication already in localStorage kept its stored {label: ".5 mg", mg: 5} and went on counting
+// ten times the dose printed on its own button -- while three documents called the defect fixed.
+// The migration rewrites the medication's CONFIGURATION and nothing else; a dose already LOGGED is
+// history and is asserted below to be left exactly as it was.
+// ---------------------------------------------------------------------------------------------
+console.log('\n3c. A MEDICATION SAVED BY THE OLD PARSER IS MIGRATED, AND ITS HISTORY IS NOT');
+{
+  const KEY = await page.evaluate(() => Object.keys(localStorage).find(k => /-med-v1$/.test(k)));
+  const EK = await page.evaluate(() => Object.keys(localStorage).find(k => /entries-v1$/.test(k)));
+  t('the config and entry keys exist to seed into', !!KEY && !!EK, JSON.stringify({ KEY, EK }));
+  // Exactly the shape app-v80 wrote: the naked decimal kept, and 5 mg counted for it.
+  await page.evaluate(({ key, ek }) => {
+    localStorage.setItem(key, JSON.stringify({ version: 2, archivedMeds: {}, meds: [{
+      id: 'oldpill', name: 'Oldpill', type: 'gap', schemaV: 2, quickLog: true, gapH: 1,
+      ceiling: true, ceilingMax: 2,
+      doses: [{ label: '.5 mg', mg: 5, pills: 5 }]
+    }] }));
+    // A dose logged under the old parser, with the number it believed at the time.
+    localStorage.setItem(ek, JSON.stringify([{ id: 'old1', medId: 'oldpill', kind: 'dose',
+      ts: Date.now() - 3600000, mg: 5, pills: 5, label: '.5 mg' }]));
+  }, { key: KEY, ek: EK });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1900);
+  await dismiss();
+  const migrated = await page.evaluate((key) => {
+    const cfg = JSON.parse(localStorage.getItem(key) || '{}');
+    const m = (cfg.meds || []).find(x => x.id === 'oldpill');
+    return m ? { doses: m.doses, stamp: m.doseSchemaV } : null;
+  }, KEY);
+  const md = (migrated && migrated.doses && migrated.doses[0]) || {};
+  t('the stored medication was re-read on load', !!migrated && migrated.stamp === 1, JSON.stringify(migrated && migrated.stamp));
+  t('ITS LABEL IS NO LONGER THE NAKED DECIMAL', md.label === '0.5 mg', JSON.stringify(md.label));
+  t('AND IT NO LONGER COUNTS TEN TIMES THE DOSE ON ITS OWN BUTTON', md.mg === 0.5, JSON.stringify(md.mg));
+  const history = await page.evaluate((ek) => JSON.parse(localStorage.getItem(ek) || '[]'), EK);
+  const old = history.find(e => e.id === 'old1') || {};
+  t('the dose already LOGGED is left exactly as it was — history is not rewritten',
+    old.mg === 5 && old.label === '.5 mg', JSON.stringify(old));
+  // And it is one-shot: a second load must not re-walk it.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1700);
+  await dismiss();
+  const again = await page.evaluate((key) => {
+    const cfg = JSON.parse(localStorage.getItem(key) || '{}');
+    const m = (cfg.meds || []).find(x => x.id === 'oldpill');
+    return m ? m.doses[0] : null;
+  }, KEY);
+  t('and a second load leaves it alone', again && again.label === '0.5 mg' && again.mg === 0.5, JSON.stringify(again));
+
+  // ONE-SHOT, MEASURED RATHER THAN ASSERTED FROM THE STAMP BEING PRESENT. The migration is
+  // idempotent, so "did it re-run" is invisible in its own output -- which is exactly why a mutant
+  // that removed the stamp from normalizeMedication's whitelist left this whole board green. What
+  // IS observable is the WRITE-BACK: persistMedicationConfig rebuilds the stored object from
+  // scratch, so a top-level key the app does not know about survives if and only if nothing wrote.
+  // An already-correct, already-stamped config must not be written again.
+  await page.evaluate((key) => {
+    const cfg = JSON.parse(localStorage.getItem(key) || '{}');
+    cfg.__untouched = 'sentinel';
+    localStorage.setItem(key, JSON.stringify(cfg));
+  }, KEY);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1900);
+  await dismiss();
+  const sentinel = await page.evaluate((key) => JSON.parse(localStorage.getItem(key) || '{}').__untouched, KEY);
+  t('a config that needs nothing is not rewritten — the migration really is one-shot',
+    sentinel === 'sentinel', 'sentinel is ' + JSON.stringify(sentinel));
+  // And the negative: a config that DOES need it must be written back, or the fix never reaches
+  // an export, a backup, or the next launch.
+  await page.evaluate((key) => {
+    const cfg = JSON.parse(localStorage.getItem(key) || '{}');
+    cfg.meds = cfg.meds.map(m => { const c = { ...m }; delete c.doseSchemaV; c.doses = [{ label: '.5 mg', mg: 5, pills: 5 }]; return c; });
+    cfg.__untouched = 'sentinel';
+    localStorage.setItem(key, JSON.stringify(cfg));
+  }, KEY);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1900);
+  await dismiss();
+  const after2 = await page.evaluate((key) => {
+    const cfg = JSON.parse(localStorage.getItem(key) || '{}');
+    const m = (cfg.meds || []).find(x => x.id === 'oldpill');
+    return { sentinel: cfg.__untouched, dose: m ? m.doses[0] : null };
+  }, KEY);
+  t('a config that DOES need it is written back, so the fix outlives the session',
+    after2.sentinel === undefined && after2.dose && after2.dose.mg === 0.5, JSON.stringify(after2));
+}
+
+// ---------------------------------------------------------------------------------------------
+// SECTION 3d -- THE APP SAYS WHEN IT HAS REWRITTEN WHAT THE CAREGIVER TYPED.
+// The Voice raised this in the round-3 audit and it is the right call: the rewrite is defensible
+// while it is always right, and the same audit proved it can be wrong. A silent rewrite that can be
+// wrong is the worst of both. It must also NOT fire on every medication, or it is noise rather than
+// disclosure -- so the negative cases below matter as much as the positive ones.
+// ---------------------------------------------------------------------------------------------
+console.log('\n3d. THE CAREGIVER IS TOLD WHEN THE APP CHANGES WHAT THEY WROTE');
+{
+  await page.getByRole('button', { name: /^Meds/ }).first().click();
+  await page.waitForTimeout(600);
+  await page.locator('[data-tour="meds-add"]').first().click();
+  await page.waitForTimeout(400);
+  await page.getByPlaceholder('Medication name').first().fill('Noticed');
+  await page.getByPlaceholder('For example, 4 hours').first().fill('4');
+  const notice = async (text) => {
+    await page.locator('#med-doses-text').fill(text);
+    await page.waitForTimeout(AFTER_REDRAW);
+    return page.evaluate(() => {
+      const el = [...document.querySelectorAll('div')].find(d => /^Will be saved as:/.test((d.innerText || '').trim()));
+      return el ? (el.innerText || '').replace(/\s+/g, ' ').trim() : null;
+    });
+  };
+  const naked = await notice('.5 mg');
+  t('a naked decimal is disclosed', !!naked && /Will be saved as: 0\.5 mg/.test(naked), JSON.stringify(naked));
+  const trailing = await notice('1.0 mg');
+  t('a trailing zero is disclosed', !!trailing && /Will be saved as: 1 mg/.test(trailing), JSON.stringify(trailing));
+  // THE NEGATIVES. A line that appears on every medication teaches people to ignore it.
+  t('an ordinary dose says nothing', (await notice('500 mg')) === null);
+  t('two ordinary strengths say nothing', (await notice('500 mg, 1000 mg')) === null);
+  t('a fraction says nothing, because it is no longer rewritten', (await notice('1/2 tablet')) === null);
+  t('a combination strength says nothing, because it is left alone', (await notice('5/325 mg')) === null);
+  t('a thousands separator says nothing — it is kept in the label', (await notice('5,000 units')) === null);
+  t('an empty box says nothing', (await notice('')) === null);
+  // And it must be readable on the narrowest phone this app supports.
+  await page.locator('#med-doses-text').fill('.5 mg');
+  await page.waitForTimeout(AFTER_REDRAW);
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.waitForTimeout(600);
+  const fits = await page.evaluate(() => {
+    const el = [...document.querySelectorAll('div')].find(d => /^Will be saved as:/.test((d.innerText || '').trim()));
+    if (!el) return { found: false };
+    const r = el.getBoundingClientRect();
+    return { found: true, right: Math.round(r.right), clipped: el.scrollWidth > el.clientWidth + 1,
+      page: Math.round(document.documentElement.scrollWidth) };
+  });
+  t('the notice is on screen and unclipped at 320px',
+    fits.found && !fits.clipped && fits.right <= 320 && fits.page <= 320, JSON.stringify(fits));
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.waitForTimeout(400);
+  const discard = page.getByRole('button', { name: 'Discard', exact: true });
+  if (await discard.count()) { await discard.first().click(); await page.waitForTimeout(600); }
+  await dismiss();
+}
+
 console.log('\n4. DELIBERATELY UNCHANGED, AND PINNED SO IT CANNOT DRIFT QUIETLY');
 {
   const mcg = await parse('500 mcg');
@@ -266,8 +452,12 @@ console.log('\n4. DELIBERATELY UNCHANGED, AND PINNED SO IT CANNOT DRIFT QUIETLY'
     junk.length === 1 && junk[0].label === 'as directed' && junk[0].mg === 0 && junk[0].pills === undefined,
     JSON.stringify(junk));
   const zero = await parse('1/0 tablet');
+  // `junk &&` used to sit in front of this condition. `junk` is a non-empty array, so the term could
+  // never be false: a dead clause in an assertion, found by the round-3 audit. Removed rather than
+  // left as decoration -- a condition that cannot contribute is indistinguishable from one that was
+  // meant to check something and does not.
   t('a divide by zero leaves the text alone instead of printing Infinity',
-    junk && zero.length === 1 && zero[0].label === '1/0 tablet', JSON.stringify(zero));
+    zero.length === 1 && zero[0].label === '1/0 tablet', JSON.stringify(zero));
 }
 
 console.log('\n5. NOTHING THREW');
