@@ -6195,12 +6195,12 @@ const MED_PURPOSE = {
   'taxol': 'A chemotherapy medicine that stops cancer cells from dividing.',
   'docetaxel': 'A chemotherapy medicine that stops cancer cells from dividing.',
   'taxotere': 'A chemotherapy medicine that stops cancer cells from dividing.',
-  'etoposide': 'A chemotherapy medicine that stops cancer cells from dividing.',
+  'etoposide': 'A chemotherapy medicine that damages the DNA of cancer cells.',
   'vincristine': 'A chemotherapy medicine that stops cancer cells from dividing.',
   'vinorelbine': 'A chemotherapy medicine that stops cancer cells from dividing.',
-  'irinotecan': 'A chemotherapy medicine that stops cancer cells from dividing.',
-  'doxorubicin': 'A chemotherapy medicine that stops cancer cells from dividing.',
-  'adriamycin': 'A chemotherapy medicine that stops cancer cells from dividing.',
+  'irinotecan': 'A chemotherapy medicine that damages the DNA of cancer cells.',
+  'doxorubicin': 'A chemotherapy medicine that damages the DNA of cancer cells.',
+  'adriamycin': 'A chemotherapy medicine that damages the DNA of cancer cells.',
   'carboplatin': 'A chemotherapy medicine that damages the DNA of cancer cells.',
   'cisplatin': 'A chemotherapy medicine that damages the DNA of cancer cells.',
   'oxaliplatin': 'A chemotherapy medicine that damages the DNA of cancer cells.',
@@ -7111,7 +7111,28 @@ function renderMedicationEditor() {
       // root.innerHTML and restores focus and the caret BY ID. Debounce without the id would throw
       // her out of the field mid-word, which is worse than the silence it replaces.
       h('label', null, fieldLabel('Medication name'), formInput({ id: 'med-name', value: form.name, placeholder: 'Medication name', onInput: event => updateMedicationForm('name', event.target.value, 'debounced') })),
-      h('label', { style: { gridColumn: '1 / -1' } }, fieldLabel('What it’s for'), formInput({ value: form.purpose, placeholder: (purposeOf({ name: (state.medEditor && state.medEditor.form && state.medEditor.form.name) || '', sub: (state.medEditor && state.medEditor.form && state.medEditor.form.sub) || '' }) || 'For example: settles nausea'), onInput: event => updateMedicationForm('purpose', event.target.value) })),
+      // THE DESCRIPTION IS A LINE OF ITS OWN, NOT A PLACEHOLDER. It was a placeholder until the
+      // app-v81 audit measured it: a placeholder is one line and clips, so 52 of the 68 descriptions
+      // were cut off at 320px -- "A chemotherapy medicine that dan" -- and it cannot be selected or
+      // copied either. Making the hint appear and then showing a third of it is most of the way back
+      // to the complaint this release exists to answer.
+      // ONLY WHEN THE APP KNOWS THE MEDICATION AND SHE HAS NOT WRITTEN HER OWN. describeMed already
+      // puts what she typed first; repeating the app's version under her sentence is noise.
+      (function () {
+        const known = purposeOf({ name: (state.medEditor && state.medEditor.form && state.medEditor.form.name) || '',
+                                  sub: (state.medEditor && state.medEditor.form && state.medEditor.form.sub) || '' });
+        return h('label', { style: { gridColumn: '1 / -1' } },
+          fieldLabel('What it’s for'),
+          formInput({ value: form.purpose, placeholder: 'For example: settles nausea',
+                      onInput: event => updateMedicationForm('purpose', event.target.value) }),
+          (known && !String(form.purpose || '').trim())
+            ? h('div', { 'data-purpose-hint': 'on', style: { marginTop: '7px', fontSize: '12.5px', lineHeight: '1.45', color: '#554A52', overflowWrap: 'anywhere' } },
+                h('span', { style: { fontWeight: '700', color: '#2A2127' } }, 'The app knows this one: '),
+                known,
+                h('span', { style: { display: 'block', marginTop: '3px', color: '#7A6B73' } }, 'Leave the box empty to use it, or type your own.'))
+            : null
+        );
+      })(),
       // The generic name is the OTHER way into the lookup -- describeMed falls back to med.sub --
       // so typing "pembrolizumab" under an unrecognised brand name has to light the hint too.
       h('label', null, fieldLabel('Generic name'), formInput({ id: 'med-sub', value: form.sub, placeholder: 'Generic name', onInput: event => updateMedicationForm('sub', event.target.value, 'debounced') })),

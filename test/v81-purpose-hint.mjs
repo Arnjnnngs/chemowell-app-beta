@@ -54,7 +54,18 @@ await page.waitForTimeout(600);
 // The hint as the caregiver sees it: the placeholder of the field labelled "What it's for",
 // found through its own label rather than by position, so a reordered form does not silently
 // start measuring a different box.
-const hint = () => page.evaluate(() => {
+// THE HINT IS A LINE UNDER THE FIELD, NOT THE FIELD'S PLACEHOLDER. It was a placeholder until the
+// app-v81 audit measured that 52 of 68 descriptions clipped at 320px, unreadable and unselectable.
+// This reads what is actually on the screen; `placeholderOf` below is kept so the suite can also
+// assert the placeholder stayed the plain example rather than quietly becoming the hint again.
+const NO_HINT = '(no hint)';
+const hint = () => page.evaluate((none) => {
+  const el = document.querySelector('[data-purpose-hint]');
+  if (!el) return none;
+  return (el.innerText || '').replace(/\s+/g, ' ').replace(/^The app knows this one:\s*/, '')
+    .replace(/\s*Leave the box empty to use it, or type your own\.$/, '').trim();
+}, NO_HINT);
+const placeholderOf = () => page.evaluate(() => {
   const l = [...document.querySelectorAll('label')].find(x => /What it/i.test(x.innerText || ''));
   const inp = l ? l.querySelector('input, textarea') : null;
   return inp ? inp.getAttribute('placeholder') : '(field not found)';
@@ -63,9 +74,15 @@ const openAdd = async () => {
   await page.locator('[data-tour="meds-add"]').first().click();
   await page.waitForTimeout(400);
 };
+// THE BUTTON IS CALLED "Discard". The first version of this helper looked for "Cancel", found
+// nothing and silently did nothing -- the suite still measured the right thing, but by luck, and a
+// helper that quietly no-ops is how a suite ends up testing a screen it never reached.
 const cancel = async () => {
-  const b = page.getByRole('button', { name: /^Cancel$/ });
-  if (await b.count()) { await b.last().click(); await page.waitForTimeout(500); }
+  const b = page.getByRole('button', { name: /^Discard$/ });
+  const n = await b.count();
+  if (!n) throw new Error('the editor has no Discard button -- this helper is not doing anything');
+  await b.last().click();
+  await page.waitForTimeout(500);
 };
 // TYPED, NOT FILLED. `fill()` sets the value in one shot and fires one event, which is not what a
 // thumb does and would never expose a redraw eating the keystroke after it.
@@ -78,7 +95,9 @@ const typeInto = async (placeholder, text) => {
 console.log('\n1. THE HINT APPEARS WHILE YOU ARE STILL IN THE NAME FIELD');
 {
   await openAdd();
-  t('it starts as the example', (await hint()) === 'For example: settles nausea', await hint());
+  t('there is no hint before anything is typed', (await hint()) === NO_HINT, await hint());
+  t('and the box itself still offers the plain example',
+    (await placeholderOf()) === 'For example: settles nausea', await placeholderOf());
   await typeInto('Medication name', 'Ondansetron');
   await page.waitForTimeout(AFTER_REDRAW);
   const h1 = await hint();
@@ -142,11 +161,11 @@ console.log('\n4. THE GENERIC NAME FEEDS THE LOOKUP TOO');
   await openAdd();
   await typeInto('Medication name', 'Zzqbrand');
   await page.waitForTimeout(AFTER_REDRAW);
-  t('an unknown brand alone shows the example', (await hint()) === 'For example: settles nausea', await hint());
+  t('an unknown brand alone shows no hint', (await hint()) === NO_HINT, await hint());
   await typeInto('Generic name', 'pembrolizumab');
   await page.waitForTimeout(AFTER_REDRAW);
   const h4 = await hint();
-  t('typing the generic name lights the hint', h4 !== 'For example: settles nausea' && !!h4, String(h4));
+  t('typing the generic name lights the hint', h4 !== NO_HINT && !!h4, String(h4));
   const focused = await page.evaluate(() => (document.activeElement || {}).id || '(none)');
   t('and the cursor is still in the generic name field', focused === 'med-sub', focused);
   await cancel();
@@ -159,8 +178,7 @@ console.log('\n5. A MEDICATION THE APP DOES NOT KNOW STILL SAYS NOTHING');
   await openAdd();
   await typeInto('Medication name', 'Zzqmadeupdrug');
   await page.waitForTimeout(AFTER_REDRAW);
-  t('an unknown medication keeps the example placeholder',
-    (await hint()) === 'For example: settles nausea', await hint());
+  t('an unknown medication is given no description at all', (await hint()) === NO_HINT, await hint());
   await cancel();
 }
 
@@ -175,9 +193,45 @@ console.log('\n6. THE DRUGS THE TABLE GAINED THIS RELEASE ARE REACHABLE BY TYPIN
     await typeInto('Medication name', name);
     await page.waitForTimeout(AFTER_REDRAW);
     const h = await hint();
-    t(name + ' has a description', !!h && h !== 'For example: settles nausea' && h !== '(field not found)', String(h).slice(0, 70));
+    t(name + ' has a description', !!h && h !== NO_HINT, String(h).slice(0, 70));
     await cancel();
   }
+}
+
+console.log('\n6b. THE WHOLE DESCRIPTION IS READABLE AT 320px, NOT CLIPPED');
+{
+  // THE AUDIT MEASURED THIS AND THE FIRST FIX DID NOT. The description used to be the field's
+  // placeholder -- one line, clipped -- so 52 of the 68 descriptions were cut off at 320px and
+  // "A chemotherapy medicine that damages the DNA of cancer cells." read "A chemotherapy medicine
+  // that dan". A hint that appears and then shows a third of itself is most of the way back to the
+  // complaint this release answers.
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.waitForTimeout(400);
+  await openAdd();
+  await typeInto('Medication name', 'Cyclophosphamide');
+  await page.waitForTimeout(AFTER_REDRAW);
+  const m = await page.evaluate(() => {
+    const el = document.querySelector('[data-purpose-hint]');
+    if (!el) return null;
+    return {
+      text: (el.innerText || '').replace(/\s+/g, ' ').trim(),
+      // scrollWidth > clientWidth is the DOM's own answer to "is this clipped sideways", and
+      // scrollHeight > clientHeight to "is it clipped vertically". Both, because a one-line box
+      // clips the first way and a clamped box the second.
+      clippedX: el.scrollWidth > el.clientWidth + 1,
+      clippedY: el.scrollHeight > el.clientHeight + 1,
+      doc: document.documentElement.scrollWidth
+    };
+  });
+  t('the hint is on the screen at 320px', !!m, JSON.stringify(m));
+  t('it carries the whole sentence',
+    !!m && /damages the DNA of cancer cells\./.test(m.text), m ? m.text : '');
+  t('and none of it is cut off', !!m && !m.clippedX && !m.clippedY,
+    m ? ('x:' + m.clippedX + ' y:' + m.clippedY) : '');
+  t('and the page still does not scroll sideways', !!m && m.doc <= 320, m ? ('page=' + m.doc + 'px') : '');
+  await cancel();
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.waitForTimeout(400);
 }
 
 console.log('\n7. AND NOTHING THREW');

@@ -181,13 +181,38 @@ console.log('\n1. The table — what the app is willing to say about a medicatio
   // timing phrases -- "on chemo days", "with chemo", "after chemo" -- and those are right to be
   // here: they say WHEN to take something, which is the care team's job and not this table's. But
   // the bare noun says nothing about when. It banned "A chemotherapy medicine that stops cancer
-  // cells from dividing", which is a plain statement of what the drug IS, and so this app's
-  // medication table contained no chemotherapy drugs at all -- in an app for people having
-  // chemotherapy. Aaron found the consequence by typing Keytruda into it and getting nothing back.
-  // THE LIST GETS STRICTER, NOT LOOSER, IN THE SAME EDIT: every timing phrase is now caught in both
-  // spellings, so "with chemotherapy" and "after chemotherapy" are rejected exactly as "with chemo"
-  // and "after chemo" already were. What is admitted is the noun on its own, and nothing else.
-  const SCHEDULEY = /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|on chemotherapy days|around chemo|around chemotherapy|with chemo|with chemotherapy|after chemo|after chemotherapy|before chemo|before chemotherapy|during chemo|during chemotherapy|dose|doses|mg|ml|mcg)\b/i;
+  // cells from dividing", a plain statement of what the drug IS, and so this app's medication table
+  // contained no chemotherapy drugs at all -- in an app for people having chemotherapy. Aaron found
+  // the consequence by typing Keytruda into it and getting nothing back.
+  //
+  // THE FIRST ATTEMPT AT OPENING IT UP CLAIMED TO BE STRICTER AND WAS NOT, AND THE AUDIT BLOCKED
+  // THE RELEASE ON EXACTLY THAT. It removed the bare noun and re-listed the timing phrases in the
+  // `-therapy` spelling -- but every one of those phrases already CONTAINED the noun, so relative to
+  // the old rule the edit added nothing and removed a great deal. Measured on the shipping build:
+  // "Given prior to chemotherapy to prevent sickness.", "Taken throughout chemotherapy." and
+  // "Given on the day of chemotherapy." all passed, on a full green board. A check that prints a
+  // false sentence in green is worse than no check -- this repo's own app-v70 ruling.
+  //
+  // SO IT IS INVERTED, which is the shape test/v70-stay-does-not-lock.mjs already settled on. You
+  // cannot enumerate the prepositions; a blacklist of them will be beaten again by the next person
+  // who writes a sentence nobody thought of. Instead: a description may mention chemo AT ALL only if
+  // the WHOLE sentence is one somebody has read and put on this list on purpose. A new wording fails
+  // until it is added, which is the point -- the failure is the review.
+  const CHEMO_APPROVED = new Set([
+    'A chemotherapy medicine that stops cancer cells from dividing.',
+    'A chemotherapy medicine that damages the DNA of cancer cells.',
+    'A chemotherapy medicine that blocks a chemical cancer cells need to grow.',
+    'A chemotherapy medicine that stops cancer cells from copying their DNA.',
+    'A chemotherapy medicine that blocks vitamins cancer cells need to grow.',
+    'Helps prevent the nausea and vomiting that chemotherapy can cause.'
+  ]);
+  const chemoy = ids.filter(k => /chemo/i.test(TABLE[k]) && !CHEMO_APPROVED.has(TABLE[k].trim()));
+  t('every entry naming chemo is a wording somebody approved', chemoy.length === 0,
+    chemoy.map(k => k + ': ' + TABLE[k]).join(' | '));
+  // The timing phrases stay as a SECOND net, in both spellings. They are now redundant for anything
+  // containing "chemo" -- the allow-list above catches those first -- and they still do the work for
+  // every other schedule a description could state.
+  const SCHEDULEY = /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|on chemotherapy days|around chemo|around chemotherapy|with chemo|with chemotherapy|after chemo|after chemotherapy|before chemo|before chemotherapy|during chemo|during chemotherapy|prior to|ahead of|following|throughout|on the day of|dose|doses|mg|ml|mcg)\b/i;
   // NO FEVER CLAUSE, EVER. Removing them was this release's safety decision -- a fever during
   // treatment is a thing to REPORT, not to suppress -- and nothing was holding it. The patch header
   // says a later refresh to federal label wording is planned, and federal wording says "reduces
