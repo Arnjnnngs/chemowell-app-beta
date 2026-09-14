@@ -250,16 +250,43 @@ section('7b. THE PAGE DOES NOT SCROLL BEHIND IT -- Rule 5.5, THE CLASS NOT THE I
   const unlocked = await p.evaluate(() => document.body.style.position);
   t('and the page is released once the notice closes', unlocked !== 'fixed', unlocked || '(none)');
 
-  // THE CLASS. Every layer marked as an overlay must lock; every inline layer must NOT, or an open
-  // vitals panel would freeze the page around it -- a worse bug than the one being fixed.
-  const reg = await p.evaluate(() => (window.__backTest && window.__backTest.overlayKeys) ? window.__backTest.overlayKeys() : null);
-  t('the app exposes which layers are overlays, so this check has a list to compare against',
-    Array.isArray(reg) && reg.length > 0, JSON.stringify(reg));
-  if (Array.isArray(reg)) {
-    t('the what\u2019s-new notice is one of them', reg.indexOf('whatsNewOpen') >= 0, JSON.stringify(reg));
-    t('and the inline panels are deliberately NOT -- they sit in the page',
-      reg.indexOf('vitalOpen') < 0 && reg.indexOf('symptomFilter') < 0, JSON.stringify(reg));
-  }
+  // THE CLASS, AND IT IS ASSERTED AS BEHAVIOUR RATHER THAN AS A LIST. The first version of this
+  // check read a hand-written `overlay: true` flag off the registry -- and the audit found TEN OF
+  // TWENTY-THREE FLAGS WRONG, including the medication editor, which the lock then froze so hard
+  // that "Save changes" could not be reached at all. A check that reads the same wrong list as the
+  // code agrees with it. So the app decides by measuring the screen, and this measures the screen
+  // too: an overlay locks, an in-page panel does not, and neither is asked to be labelled.
+  t('the app decides from the screen, not from a flag list',
+    await p.evaluate(() => !!(window.__backTest && typeof window.__backTest.overlayNow === 'function')));
+  await p.close();
+}
+
+// ---------------------------------------------------------------------------------------------
+section('7c. AN IN-PAGE PANEL MUST NOT FREEZE THE PAGE AROUND IT');
+{
+  // THE REGRESSION THE FIRST LOCK SHIPPED. The medication editor is an in-page panel, and marking
+  // it as an overlay froze the body at one viewport around a 6,869px form with no inner scroller:
+  // "Save changes" and sixty-one other controls became unreachable, on the only screen where
+  // editing and deleting a medication live. This is the case that must never come back.
+  const p = await freshPage(true);
+  await p.getByRole('button', { name: /^Meds/ }).first().click();
+  await p.waitForTimeout(700);
+  const add = p.locator('[data-tour="meds-add"]').first();
+  t('the Add-medication control is reachable', await add.count() > 0);
+  await add.click();
+  await p.waitForTimeout(700);
+  t('the medication editor is open', await p.locator('#med-doses-text').count() > 0);
+  t('and the page is NOT locked around it',
+    await p.evaluate(() => document.body.style.position !== 'fixed'),
+    await p.evaluate(() => document.body.style.position || '(none)'));
+  await p.evaluate(() => window.scrollTo(0, 900));
+  await p.waitForTimeout(350);
+  t('and it still scrolls', await p.evaluate(() => window.scrollY) > 0,
+    (await p.evaluate(() => window.scrollY)) + 'px');
+  const save = p.getByRole('button', { name: /Add medication|Save changes/ }).first();
+  let reachable = true;
+  try { await save.scrollIntoViewIfNeeded({ timeout: 4000 }); } catch (e) { reachable = false; }
+  t('and the button that saves the medication can actually be reached', reachable);
   await p.close();
 }
 

@@ -1718,36 +1718,36 @@ let pendingEntries = null;
 const BACK_LAYERS = [
   // 1. CONFIRMATIONS FIRST. These sit on top of whatever armed them, so Back must disarm the
   //    confirmation and leave that thing open -- not close both.
-  { key: 'confirmDeleteMed', overlay: true, label: 'the delete-medication confirmation', open: () => state.confirmDeleteMed != null, close: () => setState({ confirmDeleteMed: null }) },
-  { key: 'confirmRestoreMed', overlay: true, label: 'the bring-back confirmation', open: () => state.confirmRestoreMed != null, close: () => setState({ confirmRestoreMed: null }) },
-  { key: 'confirmDeleteProfile', overlay: true, label: 'the delete-profile confirmation', open: () => state.confirmDeleteProfile != null, close: () => setState({ confirmDeleteProfile: null }) },
-  { key: 'confirmDeleteAppt', overlay: true, label: 'the delete-appointment confirmation', open: () => state.confirmDeleteAppt != null, close: () => setState({ confirmDeleteAppt: null }) },
-  { key: 'confirmDeleteNote', overlay: true, label: 'the delete-note confirmation', open: () => state.confirmDeleteNote != null, close: () => setState({ confirmDeleteNote: null }) },
-  { key: 'confirmRemove', overlay: true, label: 'the remove-entry confirmation', open: () => state.confirmRemove != null, close: () => setState({ confirmRemove: null }) },
-  { key: 'confirmRemovePara', overlay: true, label: 'the remove-paracentesis confirmation', open: () => state.confirmRemovePara != null, close: () => setState({ confirmRemovePara: null }) },
-  { key: 'confirmClearChemo', overlay: true, label: 'the clear-treatment-date confirmation', open: () => !!state.confirmClearChemo, close: () => setState({ confirmClearChemo: false }) },
-  { key: 'override', overlay: true, label: 'the over-limit override', open: () => state.override != null, close: () => setState({ override: null }) },
+  { key: 'confirmDeleteMed', label: 'the delete-medication confirmation', open: () => state.confirmDeleteMed != null, close: () => setState({ confirmDeleteMed: null }) },
+  { key: 'confirmRestoreMed', label: 'the bring-back confirmation', open: () => state.confirmRestoreMed != null, close: () => setState({ confirmRestoreMed: null }) },
+  { key: 'confirmDeleteProfile', label: 'the delete-profile confirmation', open: () => state.confirmDeleteProfile != null, close: () => setState({ confirmDeleteProfile: null }) },
+  { key: 'confirmDeleteAppt', label: 'the delete-appointment confirmation', open: () => state.confirmDeleteAppt != null, close: () => setState({ confirmDeleteAppt: null }) },
+  { key: 'confirmDeleteNote', label: 'the delete-note confirmation', open: () => state.confirmDeleteNote != null, close: () => setState({ confirmDeleteNote: null }) },
+  { key: 'confirmRemove', label: 'the remove-entry confirmation', open: () => state.confirmRemove != null, close: () => setState({ confirmRemove: null }) },
+  { key: 'confirmRemovePara', label: 'the remove-paracentesis confirmation', open: () => state.confirmRemovePara != null, close: () => setState({ confirmRemovePara: null }) },
+  { key: 'confirmClearChemo', label: 'the clear-treatment-date confirmation', open: () => !!state.confirmClearChemo, close: () => setState({ confirmClearChemo: false }) },
+  { key: 'override', label: 'the over-limit override', open: () => state.override != null, close: () => setState({ override: null }) },
   // 2. MODALS AND SHEETS.
-  { key: 'timeModal', overlay: true, label: 'the confirm-the-time sheet', open: () => state.timeModal != null, close: () => setState({ timeModal: null }) },
-  { key: 'apptModal', overlay: true, label: 'the appointment sheet', open: () => state.apptModal != null, close: () => setState({ apptModal: null }) },
-  { key: 'noteModal', overlay: true, label: 'the note sheet', open: () => state.noteModal != null, close: () => setState({ noteModal: null }) },
-  { key: 'checkinModal', overlay: true, label: 'the check-in sheet', open: () => state.checkinModal != null, close: () => setState({ checkinModal: null }) },
-  { key: 'infoModal', overlay: true, label: 'the information pop-up', open: () => state.infoModal != null, close: () => setState({ infoModal: null }) },
-  { key: 'bkNotice', overlay: true, label: 'the backup notice', open: () => state.bkNotice != null, close: () => setState({ bkNotice: null }) },
-  { key: 'eraseAllModalOpen', overlay: true, label: 'the erase-everything warning', open: () => !!state.eraseAllModalOpen, close: () => setState({ eraseAllModalOpen: false }) },
-  { key: 'upgradeOpen', overlay: true, label: 'the upgrade sheet', open: () => !!state.upgradeOpen, close: () => setState({ upgradeOpen: false }) },
-  { key: 'addingProfile', overlay: true, label: 'the add-profile sheet', open: () => !!state.addingProfile, close: () => setState({ addingProfile: false }) },
-  { key: 'chemoCalOpen', overlay: true, label: 'the treatment-date calendar', open: () => !!state.chemoCalOpen, close: () => setState({ chemoCalOpen: false }) },
-  { key: 'tourStep', overlay: true, label: 'the guided tour', open: () => state.tourStep != null, close: () => setState({ tourStep: null }) },
+  { key: 'timeModal', label: 'the confirm-the-time sheet', open: () => state.timeModal != null, close: () => setState({ timeModal: null }) },
+  { key: 'apptModal', label: 'the appointment sheet', open: () => state.apptModal != null, close: () => setState({ apptModal: null }) },
+  { key: 'noteModal', label: 'the note sheet', open: () => state.noteModal != null, close: () => setState({ noteModal: null }) },
+  { key: 'checkinModal', label: 'the check-in sheet', open: () => state.checkinModal != null, close: () => setState({ checkinModal: null }) },
+  { key: 'infoModal', label: 'the information pop-up', open: () => state.infoModal != null, close: () => setState({ infoModal: null }) },
+  { key: 'bkNotice', label: 'the backup notice', open: () => state.bkNotice != null, close: () => setState({ bkNotice: null }) },
+  { key: 'eraseAllModalOpen', label: 'the erase-everything warning', open: () => !!state.eraseAllModalOpen, close: () => setState({ eraseAllModalOpen: false }) },
+  { key: 'upgradeOpen', label: 'the upgrade sheet', open: () => !!state.upgradeOpen, close: () => setState({ upgradeOpen: false }) },
+  { key: 'addingProfile', label: 'the add-profile sheet', open: () => !!state.addingProfile, close: () => setState({ addingProfile: false }) },
+  { key: 'chemoCalOpen', label: 'the treatment-date calendar', open: () => !!state.chemoCalOpen, close: () => setState({ chemoCalOpen: false }) },
+  { key: 'tourStep', label: 'the guided tour', open: () => state.tourStep != null, close: () => setState({ tourStep: null }) },
   // Back marks it seen, exactly as "Got it" does -- dismissing a notice is dismissing it, and a
   // notice that comes back after you closed it is worse than one that never appeared.
-  { key: 'whatsNewOpen', overlay: true, label: 'the what\u2019s-new notice', open: () => !!state.whatsNewOpen, close: () => { whatsNewMarkSeen(); setState({ whatsNewOpen: false }); } },
+  { key: 'whatsNewOpen', label: 'the what\u2019s-new notice', open: () => !!state.whatsNewOpen, close: () => { whatsNewMarkSeen(); setState({ whatsNewOpen: false }); } },
   // 3. FULL-SCREEN EDITORS AND PANELS.
-  { key: 'medEditor', overlay: true, label: 'the medication editor', open: () => state.medEditor != null, close: () => setState({ medEditor: null, confirmDeleteMed: null }) },
+  { key: 'medEditor', label: 'the medication editor', open: () => state.medEditor != null, close: () => setState({ medEditor: null, confirmDeleteMed: null }) },
   { key: 'vitalOpen', label: 'the open vitals panel', open: () => state.vitalOpen != null, close: () => setState({ vitalOpen: null }) },
   { key: 'symptomFilter', label: 'the symptom filter', open: () => state.symptomFilter != null, close: () => setState({ symptomFilter: null }) },
   { key: 'help', label: 'an open help topic', open: () => !!(state.help && (state.help.topic || state.help.cat)), close: () => setState({ help: state.help && state.help.topic ? { cat: state.help.cat, topic: null } : { cat: null, topic: null } }) },
-  { key: 'drawerOpen', overlay: true, label: 'the menu drawer', open: () => !!state.drawerOpen, close: () => setState({ drawerOpen: false }) }
+  { key: 'drawerOpen', label: 'the menu drawer', open: () => !!state.drawerOpen, close: () => setState({ drawerOpen: false }) }
 ];
 // EVERY KEY THE REGISTRY COVERS, for the suite's completeness check. Exported on the debug hook
 // beside the others rather than duplicated into the test, so the two cannot drift apart.
@@ -1760,15 +1760,50 @@ function backLayerKeys() { return BACK_LAYERS.map(l => l.key); }
 // CLAUDE.md Rule 5.5 is the rule that came out of it: every gate here asks about a STILL FRAME, and
 // nobody asks what happens while a finger is moving.
 //
-// So this is written for the CLASS, from the registry that already enumerates every dismissible
-// thing. A new overlay gets a lock the moment somebody marks it `overlay: true`, which is the same
-// line where they decide what Back does to it -- one decision, not two.
+// So this is written for the CLASS, and after one wrong turn it is written without a list to keep:
+// see `anyOverlayOpen` below, which measures the screen instead of trusting a flag.
 //
-// DELIBERATELY EXEMPT, said out loud rather than quietly skipped:
-//   * The inline layers -- the open vitals panel, the symptom filter, an open help topic. They sit
-//     IN the page; locking the page around them would be a worse bug than the one this fixes.
-//   * Toasts. A toast is not a modal, does not take the screen, and must not freeze it.
-function anyOverlayOpen() { return BACK_LAYERS.some(l => l.overlay && l.open()); }
+// DELIBERATELY EXEMPT, and now exempt BY MEASUREMENT rather than by being remembered:
+//   * Every in-page panel -- the medication editor, the vitals panel, the symptom filter, an armed
+//     delete confirmation, an open help topic. They sit IN the page and do not cover the viewport,
+//     so they cannot trip the lock however anybody labels them. Locking the page around one of
+//     these is not theoretical: it happened, and it put "Save changes" out of reach.
+//   * Toasts. A toast does not take the screen and must not freeze it.
+// WHETHER SOMETHING COVERS THE SCREEN IS A FACT ABOUT THE SCREEN, SO IT IS READ OFF THE SCREEN.
+//
+// The first version of this lock asked a hand-written `overlay: true` flag on the back-button
+// registry, and the audit found TEN OF TWENTY-THREE FLAGS WRONG. The medication editor is an
+// in-page panel, not an overlay -- marking it froze the body at 844px around a 6,869px editor with
+// no inner scroller, putting "Save changes" and sixty-one other controls permanently out of reach
+// on the only screen where editing and deleting live. Nine inline confirmations had the same
+// problem: arming a delete froze the whole page around it.
+//
+// That is the same disease as BLOCK A above -- a hand-maintained list that has to be kept in step
+// with reality by somebody remembering. So nothing is maintained. The lock asks the DOM: is there
+// an element, right now, positioned fixed and covering essentially the whole viewport? A real
+// overlay answers yes by construction; an in-page panel cannot, however it is flagged; and a new
+// modal added next year locks without anybody deciding anything.
+//
+// Only the page's DIRECT children are examined, which is where every modal in this file mounts --
+// the header and the bottom nav are fixed too but cover a strip, not the screen, and the threshold
+// excludes them on their own measurements rather than by name.
+function anyOverlayOpen() {
+  if (typeof document === 'undefined') return false;
+  const root = document.getElementById('root');
+  const page = root && root.firstElementChild;
+  if (!page) return false;
+  const vw = window.innerWidth || document.documentElement.clientWidth;
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+  if (!vw || !vh) return false;
+  for (const el of page.children) {
+    let cs;
+    try { cs = window.getComputedStyle(el); } catch (e) { continue; }
+    if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') continue;
+    const r = el.getBoundingClientRect();
+    if (r.width >= vw * 0.9 && r.height >= vh * 0.9) return true;
+  }
+  return false;
+}
 let scrollLockY = null;
 function applyScrollLock() {
   if (typeof document === 'undefined' || !document.body) return;
@@ -2066,10 +2101,18 @@ function dailyCeiling(med) {
   if (!med || !med.ceiling) return null;
   const max = medicationCeilingMax(med);
   if (!max) return null;
-  if (med.ceilingUnit) return { used: dailyPills(med.id), max, unit: med.ceilingUnit, label: max + ' ' + med.ceilingUnit };
-  const used = med.rollingCeilingH ? rollingDoseMg(med.id, med.rollingCeilingH, state.now) : (med.ceilingGroup ? dailyGroupMg(med) : dailyDoseMg(med.id));
-  const label = max.toLocaleString() + ' mg' + (med.rollingCeilingH ? (' / ' + med.rollingCeilingH + 'h') : '');
-  return { used, max, unit: 'mg', label };
+  // EACH BRANCH REPORTS ITS OWN WINDOW, because the caller cannot infer it from the medication.
+  // `med.rollingCeilingH` is NOT the answer: this function short-circuits on `ceilingUnit` first, so
+  // a pills-unit medication that also carries `rollingCeilingH` returns a DAILY pill count -- and
+  // the bar, reading the flag rather than the branch that ran, labelled it "2 pills left in the
+  // last 4h" and promised it would free up as doses aged out. It does not; it resets at midnight.
+  // The previous bug said "today" about a rolling figure; that one said "in the last 4h" about a
+  // daily one and explained behaviour the number does not have, which is worse.
+  if (med.ceilingUnit) return { used: dailyPills(med.id), max, unit: med.ceilingUnit, label: max + ' ' + med.ceilingUnit, windowH: 0 };
+  const isRolling = !!med.rollingCeilingH;
+  const used = isRolling ? rollingDoseMg(med.id, med.rollingCeilingH, state.now) : (med.ceilingGroup ? dailyGroupMg(med) : dailyDoseMg(med.id));
+  const label = max.toLocaleString() + ' mg' + (isRolling ? (' / ' + med.rollingCeilingH + 'h') : '');
+  return { used, max, unit: 'mg', label, windowH: isRolling ? med.rollingCeilingH : 0, group: !!med.ceilingGroup };
 }
 // Missed-dose detection. A window counts as covered by any dose logged that day
 // before the window closed (and after the previous window closed) — so early logs
@@ -4447,7 +4490,7 @@ function renderGroupedMedsCard(title, meds, now) {
   if (groupFlashed) groupHook['data-flash'] = 'on';
   // v20: paused and treatment-window-hidden meds are excluded from "due"/"Take all" the same way
   // medCards' upstream filter already excludes them for standalone Quick Log cards.
-  const dueMeds = meds.filter(m => { if (m.paused) return false; if (treatmentOnlyBlocks(m, now)) return false; if (treatmentExcludedNow(m, now)) return false; if (!medScheduledOn(m, now)) return false; const s = status(m); return !s.locked; });
+  const dueMeds = meds.filter(m => { if (medWithheldNow(m, now)) return false; const s = status(m); return !s.locked; });
   return h('section', { ...groupHook, style: { overflowWrap: 'anywhere', transition: 'box-shadow .25s ease', ...(groupFlashed ? { boxShadow: '0 0 0 3px rgba(191,76,26,0.55)', borderRadius: '18px' } : {}) } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
       h('div', { style: { ...TYPE.label, color: '#915E48' } }, title),
@@ -6215,7 +6258,10 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   // reads as data loss to this app's anxious-caregiver audience (the same reasoning the `paused`
   // branch below already documents). This is not specific to radiation-only profiles: a chemo profile
   // that hadn't set a date yet hit the identical trap.
-  const medCards = state.meds.filter(m => m.quickLog && (m.paused || !treatmentOnlyBlocks(m, now) && !(m.treatmentOnly && status(m).courseComplete))).map(med => {
+  // Pause still wins -- an explicitly stopped medication keeps its card so the label and the
+  // Resume button stay reachable. Every other withholding reason removes the card, as before.
+  const medCards = state.meds.filter(m => { if (!m.quickLog) return false; if (m.paused) return true;
+    const w = medWithheldNow(m, now); return !(w && (w.reason === 'courseWindow' || w.reason === 'courseComplete')); }).map(med => {
     if (med.paused) {
       // v20: pause wins over every other card state -- "the user explicitly said stop" outranks
       // "hospital gave it" or "not scheduled today" as the thing to communicate. Card stays visible
@@ -8067,6 +8113,33 @@ function renderMedicationEditor() {
 // The pill, from the SAME status() the Home cards use. One source, so the two screens cannot
 // disagree about whether a medication may be given -- which is the only way a status pill can do
 // real harm.
+// ---- IS THIS MEDICATION BEING WITHHELD RIGHT NOW? ONE ANSWER, FOR EVERY SCREEN ---------------
+//
+// THIS EXISTS BECAUSE THE SAME DEFECT WAS FOUND TWICE IN TWO AUDITS OF THE SAME RELEASE. The Meds
+// status pill said a green "Available" for medications Home refuses to give: first for an off-day
+// and a treatment-excluded medication, and then -- after those two were added to the pill by hand --
+// for a medication whose treatment course has finished, which Home does not even draw a card for.
+//
+// The reason it recurred is structural, and the auditor named it: the list of gates was written out
+// by hand at four call sites (the Quick Log card filter, the grouped row, `dueMeds`, and the pill),
+// so "fix the pill" meant "copy the current list again" and the next gate was always going to be
+// missed. `status()` cannot answer this on its own -- it knows nothing about scheduled days, about
+// treatment exclusion, or about a finished course except one day ahead.
+//
+// So there is one predicate now and every screen asks it. Adding a gate here reaches all of them;
+// there is no second list to forget.
+function medWithheldNow(med, now) {
+  if (!med) return null;
+  if (med.paused) return { reason: 'paused', label: 'Paused' };
+  if (treatmentOnlyBlocks(med, now)) return { reason: 'courseWindow', label: isOtherTreatmentType() ? 'Outside your treatment window' : 'Outside its treatment window' };
+  if (treatmentExcludedNow(med, now)) return { reason: 'excluded', label: isOtherTreatmentType() ? 'Held near your date' : 'Held near treatment day' };
+  if (!medScheduledOn(med, now)) return { reason: 'offDay', label: 'Not scheduled today' };
+  // A finished course is the gate the second audit found. Home's card filter asks it as
+  // `m.treatmentOnly && status(m).courseComplete`; asking it here keeps the two in step.
+  if (med.treatmentOnly && (status(med) || {}).courseComplete) return { reason: 'courseComplete', label: 'Course finished' };
+  return null;
+}
+
 function medStatusPill(med) {
   const st = status(med) || {};
   // THE COMMENT ABOVE THIS FUNCTION USED TO CLAIM status() WAS ONE SOURCE AND THE TWO SCREENS
@@ -8081,9 +8154,14 @@ function medStatusPill(med) {
   // A claim in a comment is not a mechanism. These two questions are now asked HERE, in the same
   // order Home asks them, and the suite opens Home and compares the two screens rather than
   // matching this function's output against a regex written beside it.
-  if (st.paused) return { text: 'Paused', fg: '#6F5347', bg: 'rgba(124,97,86,0.12)', bd: 'rgba(124,97,86,0.22)' };
-  if (treatmentExcludedNow(med, state.now)) return { text: isOtherTreatmentType() ? 'Held near your date' : 'Held near treatment day', fg: '#8B3C1B', bg: 'rgba(174,88,51,0.12)', bd: 'rgba(174,88,51,0.26)' };
-  if (!medScheduledOn(med, state.now)) return { text: 'Not scheduled today', fg: '#6F5347', bg: 'rgba(124,97,86,0.12)', bd: 'rgba(124,97,86,0.22)' };
+  const held = medWithheldNow(med, state.now);
+  if (held) {
+    const warm = held.reason === 'excluded' || held.reason === 'courseWindow';
+    return { text: held.label,
+      fg: warm ? '#8B3C1B' : '#6F5347',
+      bg: warm ? 'rgba(174,88,51,0.12)' : 'rgba(124,97,86,0.12)',
+      bd: warm ? 'rgba(174,88,51,0.26)' : 'rgba(124,97,86,0.22)' };
+  }
   if (st.chemoBlock) return { text: 'Held around treatment', fg: '#8B3C1B', bg: 'rgba(174,88,51,0.12)', bd: 'rgba(174,88,51,0.26)' };
   if (st.ceilingHit) return { text: st.rollingCeiling ? 'Limit reached for now' : 'Daily limit reached', fg: '#A5443C', bg: 'rgba(192,69,59,0.10)', bd: 'rgba(192,69,59,0.26)' };
   if (st.locked && st.availableAt) {
@@ -8128,7 +8206,7 @@ function medCeilingBar(med) {
   // `dailyCeiling` already computes the real label -- it carries the "/ 4h" -- and this function
   // was throwing it away. Rule 2.7 question 3: arithmetically correct and clinically meaningless
   // is still a false impression, and it is the harder kind to catch.
-  const rolling = !!med.rollingCeilingH;
+  const rolling = Number(dc.windowH) > 0;
   const used = Number(dc.used) || 0;
   const pct = Math.max(0, Math.min(100, (used / dc.max) * 100));
   const over = used >= dc.max;
@@ -8136,7 +8214,7 @@ function medCeilingBar(med) {
   const colour = over ? '#C0453B' : near ? '#9A6419' : '#E46F3C';
   const left = Math.max(0, dc.max - used);
   const unit = dc.unit === 'mg' ? 'mg' : String(dc.unit || '');
-  const windowWord = rolling ? ('in the last ' + med.rollingCeilingH + 'h') : 'today';
+  const windowWord = rolling ? ('in the last ' + dc.windowH + 'h') : 'today';
   return h('div', { 'data-med-ceiling': med.id, 'data-med-ceiling-rolling': rolling ? 'true' : 'false', style: { marginTop: '9px' } },
     h('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' } },
       h('div', { className: 'mono', style: { fontSize: '13px', fontWeight: '700', color: over ? '#A5443C' : '#2A2127' } },
@@ -8146,8 +8224,10 @@ function medCeilingBar(med) {
     ),
     // The window is named on the bar itself, not only in the figure beside it, because the bar is
     // the thing somebody reads at a glance.
+    dc.group ? h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '3px' } },
+      'This limit is shared with other medications \u2014 the figure above counts all of them, not this one alone.') : null,
     rolling ? h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '3px' } },
-      'A rolling ' + med.rollingCeilingH + '-hour limit, not a daily one \u2014 this frees up again as earlier doses age out.') : null,
+      'A rolling ' + dc.windowH + '-hour limit, not a daily one \u2014 this frees up again as earlier doses age out.') : null,
     h('div', { role: 'img',
       'aria-label': used.toLocaleString() + ' of ' + dc.max.toLocaleString() + ' ' + unit + ' used ' + windowWord,
       style: { height: '8px', marginTop: '6px', borderRadius: '99px', background: 'rgba(246,108,49,0.10)', overflow: 'hidden' } },
@@ -12467,7 +12547,7 @@ if (typeof window !== 'undefined') {
   // dismissible thing has a Back rule" assertion had nothing to compare against and PASSED on the
   // absence — a check that reports green loudest when it cannot see anything, which is the exact
   // class this file has been caught on four times.
-  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state), overlayKeys: () => BACK_LAYERS.filter(l => l.overlay).map(l => l.key),
+  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state), overlayNow: () => anyOverlayOpen(), scrollLocked: () => document.body.style.position === 'fixed',
     // A GETTER, NOT A VALUE. This hook is built ~1,500 lines ABOVE `const APP_VERSION`,
     // so reading it eagerly here throws "Cannot access 'APP_VERSION' before initialization"
     // at module load -- the temporal dead zone this repo has now been bitten by three

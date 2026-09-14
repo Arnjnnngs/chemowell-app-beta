@@ -109,6 +109,14 @@ section('1. THE MEDS CARD SAYS WHAT HAS HAPPENED, NOT ONLY WHAT THE RULES ARE');
   t('and a ceiling bar reading used of max', /1,000 \/ 3,000 mg/.test(bar), bar.replace(/\n/g, ' | '));
   t('and the bar counts TODAY only -- yesterday\'s doses are not in it either',
     !/2,000 \/ 3,000|1,500 \/ 3,000/.test(bar), bar.replace(/\n/g, ' | '));
+  // THE WINDOW WORD IS PART OF THE CLAIM, and nothing read it -- a mutant reverting a rolling bar
+  // to "today" survived 56/56. A daily limit must say today and must NOT promise it frees up.
+  t('a daily limit names its window as today', /left today/.test(bar), bar.replace(/\n/g, ' | '));
+  t('and does not promise it frees up as doses age out, which is only true of a rolling one',
+    !/frees up/.test(bar), bar.replace(/\n/g, ' | '));
+  t('and is not marked as rolling',
+    await p.locator('[data-med-ceiling-rolling="true"]').count() === 0,
+    String(await p.locator('[data-med-ceiling-rolling="true"]').count()));
   t('and how much is left, not just how much is gone', /2,000 mg left/.test(bar), bar.replace(/\n/g, ' | '));
   await p.close();
 }
@@ -168,18 +176,36 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
       [gapMed({ id: 'm1', name: 'ExcludedMed', treatmentMode: 'excluded' })],
       [{ id: 'c', medId: 'chemo_date', ts: now, dose: '', mg: 0 }]]
   ];
+  // THE THIRD GATE, which the first fix missed entirely: a medication whose treatment course has
+  // finished has NO CARD ON HOME AT ALL, and the pill still read a green "Available". The two gates
+  // added by hand in the first pass were not the whole list, which is exactly why the list now
+  // lives in one predicate instead of being copied per call site.
+  pairs.push(['a medication whose treatment course has finished',
+    [gapMed({ id: 'm1', name: 'FinishedMed', treatmentOnly: true, treatmentMode: 'only' })],
+    [{ id: 'c', medId: 'chemo_date', ts: now - 30 * 24 * HOUR, dose: '', mg: 0 }]]);
   for (const [label, meds, entries] of pairs) {
     const p = await open({ meds, entries });
     // HOME FIRST, and read what it actually offers.
-    const homeText = await p.evaluate(() => (document.body.innerText || ''));
-    const homeSaysNo = /not scheduled|excluded|held near|held around/i.test(homeText);
+    // "HOME WITHHOLDS IT" HAS TWO SHAPES AND BOTH COUNT. Some gates leave an inert card saying
+    // why; the finished-course gate removes the card from Home ENTIRELY. A check that only looked
+    // for explanatory text called the second one a pass for Home and a failure for the fixture --
+    // when the absence of any way to log the dose is the strongest form of withholding there is.
+    const medName = meds[0].name;
+    const homeText = await p.evaluate(() => {
+      const m = document.querySelector('main');
+      return m ? (m.innerText || '') : '';
+    });
+    const namedOnHome = homeText.indexOf(medName) >= 0;
+    const explainedAsHeld = new RegExp(medName + '[\\s\\S]{0,120}(not scheduled|excluded|held near|held around|outside)', 'i').test(homeText)
+      || /not scheduled|excluded|held near|held around|outside (its|your) treatment/i.test(homeText);
+    const homeSaysNo = !namedOnHome || explainedAsHeld;
     await goto(p, 'Meds');
     const pill = (await p.locator('[data-med-status-pill]').innerText().catch(() => '')).trim();
     t('Home withholds ' + label + ' -- otherwise this comparison proves nothing',
-      homeSaysNo, homeText.replace(/\n/g, ' | ').slice(0, 130));
+      homeSaysNo, (namedOnHome ? 'named on Home; ' : 'no card on Home; ') + homeText.replace(/\n/g, ' | ').slice(0, 110));
     t('and Meds does NOT say Available for ' + label,
       !/^Available$/.test(pill), pill || '(no pill)');
-    t('and the two screens agree in words', /not scheduled|held/i.test(pill), pill || '(no pill)');
+    t('and the two screens agree in words', /not scheduled|held|outside|finished|paused/i.test(pill), pill || '(no pill)');
     await p.close();
   }
 }
@@ -197,6 +223,64 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
     String(await p.locator('[data-med-ceiling]').count()));
   t('but the card is still there with its status and its today line',
     await p.locator('[data-med-status-pill]').count() === 1 && await p.locator('[data-med-today]').count() === 1);
+  await p.close();
+}
+
+// ---------------------------------------------------------------------------------------------
+section('2b. A ROLLING LIMIT IS NOT A DAILY ONE, AND THE BAR MUST NOT MIX THEM UP');
+{
+  const now = Date.now();
+  const p = await open({
+    meds: [gapMed({ id: 'm1', name: 'RollingMed', ceiling: true, ceilingMax: 15, rollingCeilingH: 4,
+      doses: [{ label: '5 mg', mg: 5, pills: 1 }] })],
+    entries: [
+      { id: 'a', medId: 'm1', dose: '5 mg', mg: 5, pills: 1, ts: now - 9 * HOUR },
+      { id: 'b', medId: 'm1', dose: '5 mg', mg: 5, pills: 1, ts: now - 7 * HOUR },
+      { id: 'c', medId: 'm1', dose: '5 mg', mg: 5, pills: 1, ts: now - 1 * HOUR }
+    ]
+  });
+  await goto(p, 'Meds');
+  const bar = await p.locator('[data-med-ceiling]').innerText();
+  t('a rolling limit says which window it is counting', /in the last 4h/.test(bar), bar.replace(/\n/g, ' | '));
+  t('and never calls that window "today"', !/left today/.test(bar), bar.replace(/\n/g, ' | '));
+  t('and says in words that it is not a daily limit', /not a daily one/.test(bar), bar.replace(/\n/g, ' | '));
+  t('and is marked as rolling for anything reading the DOM',
+    await p.locator('[data-med-ceiling-rolling="true"]').count() === 1);
+  const aria = await p.locator('[data-med-ceiling] [role="img"]').getAttribute('aria-label');
+  t('and a screen reader is told the same window, not "used today"',
+    /in the last 4h/.test(aria || '') && !/used today/.test(aria || ''), String(aria));
+  await p.close();
+}
+{
+  // THE SHAPE THAT BROKE THE FIRST FIX. dailyCeiling() short-circuits on ceilingUnit BEFORE the
+  // rolling branch, so this medication's figure is a DAILY pill count even though it carries
+  // rollingCeilingH. Reading the flag instead of the branch labelled a daily count "in the last 4h"
+  // and promised it would free up as doses aged out. It resets at midnight.
+  const now = Date.now();
+  const p = await open({
+    meds: [gapMed({ id: 'm1', name: 'PillsRolling', ceiling: true, ceilingMax: 4, ceilingUnit: 'pills',
+      rollingCeilingH: 4, doses: [{ label: '1 tab', mg: 0, pills: 1 }] })],
+    entries: [{ id: 'a', medId: 'm1', dose: '1 tab', mg: 0, pills: 1, ts: now - 1 * HOUR }]
+  });
+  await goto(p, 'Meds');
+  const bar = await p.locator('[data-med-ceiling]').innerText();
+  t('a figure that is actually daily says today, whatever flags the medication carries',
+    /left today/.test(bar) && !/in the last/.test(bar), bar.replace(/\n/g, ' | '));
+  t('and does not promise it frees up as doses age out', !/frees up/.test(bar), bar.replace(/\n/g, ' | '));
+  await p.close();
+}
+{
+  // A SHARED CEILING IS NOT THIS MEDICATION'S ALONE, and the bar drew it as though it were.
+  const now = Date.now();
+  const p = await open({
+    meds: [gapMed({ id: 'm1', name: 'GroupA', ceiling: true, ceilingMax: 3000, ceilingGroup: 'acet' }),
+           gapMed({ id: 'm2', name: 'GroupB', ceiling: true, ceilingMax: 3000, ceilingGroup: 'acet' })],
+    entries: [{ id: 'a', medId: 'm2', dose: '500 mg', mg: 500, pills: 1, ts: now - 2 * HOUR }]
+  });
+  await goto(p, 'Meds');
+  const bars = await p.locator('[data-med-ceiling]').allTextContents();
+  t('a shared limit says it is shared', bars.some(b => /shared with other medications/.test(b)),
+    bars.join(' || ').replace(/\n/g, ' | ').slice(0, 140));
   await p.close();
 }
 
@@ -273,6 +357,37 @@ section('3. THE TEMPERATURE REPORT, WHICH DID NOT EXIST');
     'empty=' + await p.locator('[data-temp-empty]').count() + ' chart=' + await p.locator('[data-temp-chart]').count());
   t('and the box to log one is still on the screen',
     await p.locator('[data-temp-report-add]').count() === 1);
+  await p.close();
+}
+{
+  // AN EMPTY WINDOW WITH READINGS OUTSIDE IT. This is the case the report used to get wrong and the
+  // case the suite could not see: with nothing in range it charted the last two readings EVER and
+  // left every label saying "Last 4 weeks", so a 102.4 from ten weeks ago read as this month's
+  // fever. The previous fixture had readings both inside and outside the window, so the fallback
+  // never ran and a mutant restoring it survived 56/56.
+  const now = Date.now();
+  const p = await open({ entries: [
+    { id: 'o1', medId: 'temp', temp: 102.4, dose: '102.4', mg: 0, ts: now - 70 * 24 * HOUR },
+    { id: 'o2', medId: 'temp', temp: 99.8, dose: '99.8', mg: 0, ts: now - 72 * 24 * HOUR },
+    { id: 'o3', medId: 'temp', temp: 98.2, dose: '98.2', mg: 0, ts: now - 75 * 24 * HOUR }
+  ] });
+  await goto(p, 'Reports');
+  await p.getByRole('button', { name: /Temperature/ }).first().click();
+  await p.waitForTimeout(900);
+  t('nothing in the last 4 weeks draws NO chart at all',
+    await p.locator('[data-temp-chart]').count() === 0,
+    String(await p.locator('[data-temp-chart]').count()));
+  t('and says so in words instead',
+    await p.locator('[data-temp-none-in-range]').count() === 1,
+    String(await p.locator('[data-temp-none-in-range]').count()));
+  const note = await p.locator('[data-temp-none-in-range]').innerText().catch(() => '');
+  t('and names the range it is talking about', /4 weeks/.test(note), note.replace(/\n/g, ' | '));
+  t('and points at the most recent reading rather than hiding it', /102\.4/.test(note), note.replace(/\n/g, ' | '));
+  // THE HEADLINE OF THE ORIGINAL DEFECT: an old fever must not be reported as this month's.
+  const body = await p.evaluate(() => document.querySelector('main') ? document.querySelector('main').innerText : '');
+  t('no ten-week-old fever is presented under "Last 4 weeks"',
+    !/Last 4 weeks/.test(body) || !/102\.4/.test(body.split('Last 4 weeks')[1] || ''),
+    body.replace(/\n/g, ' | ').slice(0, 130));
   await p.close();
 }
 
