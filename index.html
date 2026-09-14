@@ -1741,6 +1741,7 @@ const BACK_LAYERS = [
   { key: 'tourStep', label: 'the guided tour', open: () => state.tourStep != null, close: () => setState({ tourStep: null }) },
   // 3. FULL-SCREEN EDITORS AND PANELS.
   { key: 'medEditor', label: 'the medication editor', open: () => state.medEditor != null, close: () => setState({ medEditor: null, confirmDeleteMed: null }) },
+  { key: 'vitalOpen', label: 'the open vitals panel', open: () => state.vitalOpen != null, close: () => setState({ vitalOpen: null }) },
   { key: 'help', label: 'an open help topic', open: () => !!(state.help && (state.help.topic || state.help.cat)), close: () => setState({ help: state.help && state.help.topic ? { cat: state.help.cat, topic: null } : { cat: null, topic: null } }) },
   { key: 'drawerOpen', label: 'the menu drawer', open: () => !!state.drawerOpen, close: () => setState({ drawerOpen: false }) }
 ];
@@ -5899,7 +5900,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   //
   // Each tile is the latest reading and how long ago it was. Tapping one opens the same input and
   // the same Log button that used to sit permanently on screen. Nothing was removed; it is behind
-  // one tap instead of occupying the top of the first screen, so what she opens the app to see is
+  // one tap instead of occupying the top of the first screen, so what they open the app to see is
   // which dose is due.
   (function () {
     const shown = [];
@@ -5981,7 +5982,10 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
             'data-vital-tile': key,
             'aria-expanded': isOpen ? 'true' : 'false',
             'aria-label': t.label + ', ' + (t.value ? (t.value + ', ' + ageOf(t.ts)) : 'no readings yet') + '. Tap to log.',
-            onClick: () => setState({ vitalOpen: isOpen ? null : key }),
+            onClick: () => setState(Object.assign({ vitalOpen: isOpen ? null : key },
+              // Closing a panel discards what was typed into it and NOT into any other. A number
+              // left behind invisibly is a number that gets logged by accident next time.
+              isOpen ? (key === 'temp' ? { tempInput: '' } : key === 'weight' ? { weightInput: '' } : { bpSysInput: '', bpDiaInput: '' }) : {})),
             style: {
               display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '1px',
               minWidth: '0', minHeight: '58px', padding: '7px 9px', textAlign: 'left',
@@ -6392,23 +6396,34 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   parts.push(h('section', { 'data-home': 'timeline' },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
       h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Today'),
-      journalGroups.length > 0 ? h('div', { style: { ...TYPE.caption, color: '#7A6E76' } },
-        journalGroups.reduce((n, g) => n + g.items.length, 0) + ' logged') : null
+      // LOGGED MEANS LOGGED. This figure summed journalGroups, and journalGroups is built from
+      // todayEntries AND missedTodayForJournal -- so a dose that was NEVER GIVEN was counted as one
+      // that was, on the first screen of a medication app, at the top of the day. One temperature
+      // plus one missed dose read "2 logged" with the word MISSED in the row directly beneath it.
+      // False in the reassuring direction, which is the only direction that matters here. It counts
+      // real entries now, and says separately when something was missed.
+      (function () {
+        const logged = todayEntries.length;
+        const missed = missedTodayForJournal.length;
+        if (!logged && !missed) return null;
+        return h('div', { 'data-timeline-count': 'true', style: { ...TYPE.caption, color: missed ? '#A5443C' : '#7A6E76', textAlign: 'right' } },
+          logged + ' logged' + (missed ? (' \u00b7 ' + missed + ' missed') : ''));
+      })()
     ),
     journalGroups.length > 0 ?
       h('div', { style: { position: 'relative', marginTop: '11px', paddingLeft: '14px' } },
         // THE RAIL. One line for the day, behind the dots, drawn with a pseudo-free absolute div so
         // it cannot interfere with the rows' own layout or their tap targets.
-        h('div', { 'aria-hidden': 'true', style: { position: 'absolute', left: '4px', top: '10px', bottom: '10px', width: '2px', borderRadius: '2px', background: 'rgba(246,108,49,0.20)' } }),
+        h('div', { 'data-timeline-rail': 'true', 'aria-hidden': 'true', style: { position: 'absolute', left: '4px', top: '10px', bottom: '10px', width: '2px', borderRadius: '2px', background: 'rgba(246,108,49,0.20)' } }),
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
         ...journalGroups.map(g => h('div', null,
           h('div', { style: { ...TYPE.caption, color: '#9A8C94', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '4px 0 6px' } }, g.label),
           h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(203,122,87,0.10)' } },
-            ...g.items.map((e, i) => e.missed ? missedRow(e, i) : h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderTop: i > 0 ? '1px solid rgba(246,108,49,0.08)' : 'none' } },
+            ...g.items.map((e, i) => e.missed ? missedRow(e, i) : h('div', { 'data-timeline-row': String(e.id || e.ts), style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderTop: i > 0 ? '1px solid rgba(246,108,49,0.08)' : 'none' } },
               // THE DOT, tied to the time rather than floated beside it, so a row that wraps on a
               // narrow phone keeps its marker level with the time it belongs to.
               h('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', minWidth: '0' } },
-                h('span', { 'aria-hidden': 'true', style: { flexShrink: '0', width: '9px', height: '9px', borderRadius: '50%', background: '#E46F3C', boxShadow: '0 0 0 3px #FFFFFF' } }),
+                h('span', { 'data-timeline-dot': 'true', 'aria-hidden': 'true', style: { flexShrink: '0', width: '9px', height: '9px', borderRadius: '50%', background: '#E46F3C', boxShadow: '0 0 0 3px #FFFFFF' } }),
                 h('div', { className: 'mono', style: { ...TYPE.mono, fontWeight: '600', color: '#915E48', minWidth: '58px' } }, fmtTime(e.ts))
               ),
               h('div', { style: { flex: '1' } },

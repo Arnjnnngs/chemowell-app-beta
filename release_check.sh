@@ -14,6 +14,42 @@ cd "$(dirname "$0")"
 
 FAIL=0
 
+# ---- WHAT IS ON DISK IS NOT WHAT SHIPS. (app-v82 audit, BLOCK 3) ------------------------------
+# Every gate in this project has always run against the WORKING TREE, and the working tree is not
+# the artifact. app-v82 proved why that matters, twice in one release:
+#
+#   * A deliberate falsification mutant -- the weight Log button wired to a no-op -- was COMMITTED,
+#     because the commit happened between breaking the code and restoring it. Every suite had been
+#     run before the break, so everything was green and nothing noticed.
+#   * The reverse is worse and harder to see: a mutant reverted on DISK but never committed makes
+#     the next run green because of the revert, while the commit still carries the break. A green
+#     board about a file nobody is going to ship.
+#
+# So this gate refuses to run against a dirty index.html or sw.js. It is two seconds of `git status`
+# standing in front of the whole rest of the script. A rule enforced only by the person it
+# constrains is the one that gets skipped at the end of a long day -- which is already written at
+# the top of this repo's CLAUDE.md about this very script.
+DIRTY=$(git status --porcelain -- index.html sw.js 2>/dev/null || true)
+if [ -n "$DIRTY" ]; then
+  echo "❌ BLOCKER: index.html or sw.js has uncommitted changes."
+  echo "$DIRTY" | sed 's/^/   /'
+  echo "   This gate must judge what will actually ship, not what happens to be on disk."
+  echo "   Commit the change (or restore the file) and run this again."
+  echo "   If a falsification mutant is still applied, THAT is what this just caught."
+  FAIL=1
+fi
+
+# And the suites run against a clean export of HEAD, not the working copy, for the same reason.
+# Set RELEASE_CHECK_TREE to reuse an export; otherwise one is made and cleaned up.
+if [ -z "${RELEASE_CHECK_TREE:-}" ] && [ "$FAIL" -eq 0 ]; then
+  RELEASE_CHECK_TREE=$(mktemp -d)
+  git archive HEAD | tar -x -C "$RELEASE_CHECK_TREE"
+  export RELEASE_CHECK_TREE
+  trap 'rm -rf "$RELEASE_CHECK_TREE"' EXIT
+  echo "ℹ️  Suites will run against a clean export of HEAD at $RELEASE_CHECK_TREE"
+  echo "   (not the working tree -- see the app-v82 note above)."
+fi
+
 # BACKLOG predicted this and it happened: a GitHub web upload does not preserve the executable bit,
 # so after anyone syncs from the remote `./release_check.sh` dies with exit 126 -- "Permission
 # denied", which reads like a broken gate rather than a mode bit, and the tempting next move is to

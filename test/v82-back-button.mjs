@@ -65,7 +65,11 @@ console.log('\n1. BACK DOES NOT LEAVE THE APP');
   t('after Back from a tab, the app is still on screen', await stillInApp());
   // "At least go to the previous page" — for a tab bar the honest previous page is Home. The tabs
   // are siblings, not a trail, so there is nowhere else to go back TO.
-  const onHome = await page.evaluate(() => /TEMPERATURE/.test(document.body.innerText || ''));
+  // ASSERT THE BEHAVIOUR, NOT WHERE IT WAS DRAWN LAST WEEK. This read the word TEMPERATURE out
+  // of the page, and app-v82 renamed that label to "Temp" when the vitals cards became tiles --
+  // so a check about the BACK BUTTON went red for a change to a heading. Home is identified by
+  // its own sections' hooks now, which survive any amount of relabelling.
+  const onHome = await page.evaluate(() => document.querySelectorAll('[data-home]').length > 0);
   t('and it is on Home, not still on the tab it was on', onHome);
 }
 
@@ -85,7 +89,7 @@ console.log('\n2. BACK CLOSES WHAT IS OPEN, ONE LAYER AT A TIME');
   await page.goBack();
   await page.waitForTimeout(800);
   t('a second Back goes to Home rather than out of the app', await stillInApp());
-  t('and it really is Home', await page.evaluate(() => /TEMPERATURE/.test(document.body.innerText || '')));
+  t('and it really is Home', await page.evaluate(() => document.querySelectorAll('[data-home]').length > 0));
 }
 
 console.log('\n3. A CONFIRMATION IS DISMISSED WITHOUT LOSING WHAT ARMED IT');
