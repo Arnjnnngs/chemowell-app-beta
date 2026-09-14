@@ -1,0 +1,37 @@
+OK M39 the batch confirmation loses the notice (the round-7 BLOCK 1)
+      RED: THE BATCH CONFIRMATION SAYS WHICH DOSE ITS LIMIT WILL NOT COUNT
+      RED: and it names the medication, because the batch is about several at once
+      RED: and it does not warn about the medication the limit counts fine
+      RED: the single-dose confirmation says it too
+
+OK M40 only the batch loses it, the single dose keeps it
+      RED: THE BATCH CONFIRMATION SAYS WHICH DOSE ITS LIMIT WILL NOT COUNT
+      RED: and it names the medication, because the batch is about several at once
+      RED: and it does not warn about the medication the limit counts fine
+
+OK M41 the confirmation warns about every medication, not the ones that cannot be counted
+      RED: THE BATCH CONFIRMATION SAYS WHICH DOSE ITS LIMIT WILL NOT COUNT
+      RED: and it does not warn about the medication the limit counts fine
+      RED: an ordinary batch says nothing
+      RED: the single-dose confirmation says it too
+
+OK M42 the count goes back to giving up on the first number (order decides again)
+      RED: "5/325 mg (1 tablet)" → 5/325 mg (1 tablet) [325mg / 1]
+      RED: "5/325 mg 2 tablets" → 5/325 mg 2 tablets [325mg / 2]
+      RED: "1/10 tablet (2 tabs)" → 1/10 tablet (2 tabs) [0mg / 2]
+
+OK M43 the ratio test is dropped entirely (5/325 counts five tablets again)
+      RED: "5/325 mg" → 5/325 mg [325mg / 0]
+      RED: "10/325 mg" → 10/325 mg [325mg / 0]
+      RED: "7.5/325 mg" → 7.5/325 mg [325mg / 0]
+      RED: "80/12.5 mg" → 80/12.5 mg [12.5mg / 0]
+      ... and 29 more
+
+OK M44 a SIXTH placement is added and the notice is not wired to it
+      RED: every Home placement that can log a dose is covered above, and the rest are named exempt
+
+OK M45 the copy calls a shared card and a modal "this card" again
+      RED: and it does not reassure about other amounts when there are none
+      RED: and it never claims to be talking about "this card"
+
+restored; ALL MUTANTS DIED

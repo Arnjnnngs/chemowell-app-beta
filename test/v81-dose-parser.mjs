@@ -267,6 +267,15 @@ const TABLE = [
   { in: '2 tablets (5/325 mg)', out: [{ label: '2 tablets (5/325 mg)', mg: 325, pills: 2 }], why: 'and with a count above one' },
   { in: '1 tablet 5/325 mg',    out: [{ label: '1 tablet 5/325 mg', mg: 325, pills: 1 }],    why: 'without the brackets' },
   { in: '1 x 5/325 mg',         out: [{ label: '1 x 5/325 mg', mg: 325, pills: 1 }],         why: 'the other way people write it' },
+  // AND WITH THE STRENGTH FIRST. Every row above puts the tablet count before the combination
+  // strength, and a mutant restoring "give up if the FIRST number is a ratio" left the whole board
+  // green — because not one case had the other order. That is exactly the defect the round-7 audit
+  // blocked: `5/325 mg (1 tablet)` counted nothing and the card said it could not tell how many that
+  // was, about a string containing the words "1 tablet". The answer must not turn on which half the
+  // caregiver wrote first.
+  { in: '5/325 mg (1 tablet)',  out: [{ label: '5/325 mg (1 tablet)', mg: 325, pills: 1 }],  why: 'ORDER MUST NOT DECIDE THE COUNT' },
+  { in: '5/325 mg 2 tablets',   out: [{ label: '5/325 mg 2 tablets', mg: 325, pills: 2 }],   why: 'same, without the brackets and with a count above one' },
+  { in: '1/10 tablet (2 tabs)', out: [{ label: '1/10 tablet (2 tabs)', mg: 0, pills: 2 }],   why: 'a rejected denominator first, a real count after it' },
   // A SLASH THAT IS A RATE, not a fraction and not a strength. These were safe before and the guard
   // must not make them unsafe: there is no digit immediately before the slash in either.
   { in: '5 mg/mL',      out: [{ label: '5 mg/mL',    mg: 5,    pills: 5 }],    why: 'a concentration, not a fraction' },
@@ -685,9 +694,12 @@ console.log('\n3f. A DOSE THE APP CANNOT COUNT IS SAID OUT LOUD, WHERE THE DOSE 
   t('AND THE CARD SAYS THE LIMIT IS NOT COUNTING THIS DOSE', !!n1 && /5\/325 mg/.test(n1), JSON.stringify(n1));
   t('it names the limit that is not being applied', !!n1 && /4 pills/.test(n1), JSON.stringify(n1));
   // "Every other amount still counts" would be false here — there is no other amount.
+  // AND IT DOES NOT CALL A GROUP CARD OR A MODAL "this card". The sentence renders in three places
+  // now and it is about the MEDICATION, not the furniture around it.
   t('and it does not reassure about other amounts when there are none',
-    !!n1 && /Nothing on this card is being counted/.test(n1) && !/other amounts still count/i.test(n1),
+    !!n1 && /No dose of this medication is being counted/.test(n1) && !/other amounts still count/i.test(n1),
     JSON.stringify(n1));
+  t('and it never claims to be talking about "this card"', !!n1 && !/this card/i.test(n1), JSON.stringify(n1));
 
   // THE MIXED LIST — the shape the audit measured the editor gate failing on. Two countable doses
   // and one that is not: the limit genuinely applies to two of the three, so the sentence must say
@@ -738,38 +750,103 @@ console.log('\n3f. A DOSE THE APP CANNOT COUNT IS SAID OUT LOUD, WHERE THE DOSE 
     t('the ' + where + ' group card says the limit is not counting this dose',
       !!anyNotice && /5\/325 mg/.test(anyNotice), JSON.stringify(anyNotice));
   }
-  // THE COMPLETENESS CHECK, and this is the part that outlives the specific bug. The app offers a
-  // fixed list of Home placements; every one that can LOG A DOSE must carry the disclosure. Read off
-  // the picker the caregiver actually sees, so adding a sixth placement without wiring the notice
-  // turns this red instead of shipping another silent surface.
-  //
-  // THE FIRST VERSION FELL BACK TO A LIST COPIED INTO THIS FILE when the picker was not on screen --
-  // which is a completeness check that completes against itself, and would have passed on any number
-  // of new placements. It opens the editor and reads the real thing now, and a picker it cannot find
-  // is a FAILURE rather than a fallback.
+  // THE COMPLETENESS CHECK, read off the app's own hooks. This is the THIRD version of it and the
+  // first that measures anything: v1 fell back to a list copied into this file; v2 harvested
+  // on-screen text matching /(Home card|meds group)$/, which is the same list written as a naming
+  // convention -- a sixth placement called "Bedtime list" left the whole board green, and the
+  // editor's own `Custom (current mix)` option was already invisible to it. Every option now
+  // carries `data-placement-option="<key>"`, so a new one cannot hide behind its label.
   {
     await page.getByRole('button', { name: /^Meds/ }).first().click();
     await page.waitForTimeout(700);
     await page.locator('[data-tour="meds-add"]').first().click();
     await page.waitForTimeout(600);
-    const offered = await page.evaluate(() => {
-      const seen = [...document.querySelectorAll('*')]
-        .filter(e => !e.children.length)
-        .map(e => (e.innerText || '').trim())
-        .filter(x => /(Home card|meds group)$/.test(x));
-      return [...new Set(seen)];
-    });
-    t('the placement picker is on screen to be read', offered.length > 0, JSON.stringify(offered));
-    // Every placement with a logging control is asserted above; "No Home card" has no button on
-    // Home at all, so there is no dose to disclose about. An exemption said out loud, per Rule 5.5.
-    const COVERED = [/Own Home card/, /Morning meds group/, /Afternoon meds group/, /Evening meds group/];
-    const EXEMPT = [/No Home card/];
-    const unaccounted = offered.filter(x => !COVERED.some(r => r.test(x)) && !EXEMPT.some(r => r.test(x)));
+    const keys = await page.evaluate(() =>
+      [...document.querySelectorAll('[data-placement-option]')].map(e => e.getAttribute('data-placement-option')));
+    t('the placement picker is on screen and every option is hooked', keys.length > 0, JSON.stringify(keys));
+    // Asserted above, one by one: own card, and the three group cards.
+    const COVERED = ['own', 'morning', 'afternoon', 'evening'];
+    // EXEMPT, SAID OUT LOUD. 'none' puts no logging control on Home, so there is no dose to
+    // disclose about. 'custom' is not a placement -- it is the editor offering to keep a mix the
+    // caregiver already has, and whichever cards that mix lands on are the four above.
+    const EXEMPT = ['none', 'custom'];
+    const unaccounted = keys.filter(k => COVERED.indexOf(k) === -1 && EXEMPT.indexOf(k) === -1);
     t('every Home placement that can log a dose is covered above, and the rest are named exempt',
-      offered.length > 0 && unaccounted.length === 0, 'unaccounted: ' + JSON.stringify(unaccounted) + ' of ' + JSON.stringify(offered));
+      keys.length > 0 && unaccounted.length === 0, 'unaccounted: ' + JSON.stringify(unaccounted) + ' of ' + JSON.stringify(keys));
     const discard2 = page.getByRole('button', { name: 'Discard', exact: true });
     if (await discard2.count()) { await discard2.first().click(); await page.waitForTimeout(600); }
     await dismiss();
+  }
+
+  // THE FIFTH DOOR: "TAKE ALL". The class is not "every placement" -- it is EVERY CONTROL THAT
+  // WRITES A DOSE. The batch button sits in the group card's HEADER while the row notice is in its
+  // list, and on a six-medication group at 320px the notice measured 404px below the fold. So the
+  // caregiver taps a button whose consequence is explained off-screen and confirms in a modal that
+  // names every medication and said nothing. Six taps logged six doses past a four-a-day ceiling.
+  {
+    const uncountable = combo({ quickLog: false, id: 'perco', name: 'Perco' });
+    uncountable.groupedEvening = true;
+    const filler = { id: 'filler', name: 'Filler', type: 'gap', schemaV: 2, gapH: 0,
+      groupedEvening: true, doses: [{ label: '1 tablet', mg: 0, pills: 1 }] };
+    await seedAndOpenHome([filler, uncountable]);
+    const takeAll = page.getByRole('button', { name: /Take all/i }).first();
+    t('the group card offers Take all', await takeAll.count() > 0);
+    if (await takeAll.count()) {
+      await takeAll.click();
+      await page.waitForTimeout(800);
+      const inModal = await page.evaluate(() => {
+        const dlg = document.querySelector('[role="dialog"]');
+        if (!dlg) return '(no dialog)';
+        const el = dlg.querySelector('[data-uncounted]');
+        return el ? (el.innerText || '').replace(/\s+/g, ' ').trim() : null;
+      });
+      t('THE BATCH CONFIRMATION SAYS WHICH DOSE ITS LIMIT WILL NOT COUNT',
+        !!inModal && inModal !== '(no dialog)' && /5\/325 mg/.test(inModal), JSON.stringify(inModal));
+      t('and it names the medication, because the batch is about several at once',
+        !!inModal && /Perco/.test(inModal), JSON.stringify(inModal));
+      t('and it does not warn about the medication the limit counts fine',
+        !!inModal && !/Filler/.test(inModal), JSON.stringify(inModal));
+      const cancel = page.getByRole('button', { name: 'Cancel', exact: true }).first();
+      if (await cancel.count()) { await cancel.click(); await page.waitForTimeout(500); }
+    }
+    // THE NEGATIVE: a batch of medications the limit counts properly must say nothing, or the
+    // warning is wallpaper on the one screen where it matters most.
+    const okA = { id: 'oka', name: 'OkA', type: 'gap', schemaV: 2, gapH: 0, groupedEvening: true,
+      ceiling: true, ceilingMax: 4, ceilingUnit: 'pills', doses: [{ label: '1 tablet', mg: 0, pills: 1 }] };
+    const okB = { ...okA, id: 'okb', name: 'OkB' };
+    await seedAndOpenHome([okA, okB]);
+    const ta2 = page.getByRole('button', { name: /Take all/i }).first();
+    if (await ta2.count()) {
+      await ta2.click();
+      await page.waitForTimeout(800);
+      t('an ordinary batch says nothing',
+        (await page.evaluate(() => {
+          const dlg = document.querySelector('[role="dialog"]');
+          return dlg ? dlg.querySelectorAll('[data-uncounted]').length : -1;
+        })) === 0);
+      const cancel2 = page.getByRole('button', { name: 'Cancel', exact: true }).first();
+      if (await cancel2.count()) { await cancel2.click(); await page.waitForTimeout(500); }
+    }
+  }
+
+  // AND THE SINGLE-DOSE CONFIRMATION, the same control one medication at a time. Written as part of
+  // the class rather than because anyone reported it.
+  {
+    const one = combo({ quickLog: true });
+    await seedAndOpenHome([one]);
+    const btn = page.getByRole('button', { name: /5\/325 mg/ }).first();
+    if (await btn.count()) {
+      await btn.click();
+      await page.waitForTimeout(800);
+      const inModal = await page.evaluate(() => {
+        const dlg = document.querySelector('[role="dialog"]');
+        const el = dlg && dlg.querySelector('[data-uncounted]');
+        return el ? (el.innerText || '').replace(/\s+/g, ' ').trim() : null;
+      });
+      t('the single-dose confirmation says it too', !!inModal && /5\/325 mg/.test(inModal), JSON.stringify(inModal));
+      const cancel3 = page.getByRole('button', { name: 'Cancel', exact: true }).first();
+      if (await cancel3.count()) { await cancel3.click(); await page.waitForTimeout(500); }
+    }
   }
 
   // AND THE NEGATIVE ON A GROUP CARD TOO, so the notice is not simply always on there.

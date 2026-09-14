@@ -1268,15 +1268,31 @@ const DOSE_FRACTION_DENOMS = [2, 3, 4, 5, 6, 8];
 // So the test is anchored to the match: the counted number is discarded only when a slash sits
 // immediately on one side of it with a digit on the other. `5 mg/mL` and `100 mg/m2` are unaffected
 // for the same reason they always were -- no digit on both sides of that slash.
-function leadingNumberIsRatio(text, match) {
-  if (!match || match.index == null) return false;
-  // ONLY WHAT FOLLOWS, and the symmetrical-looking half that used to be here is GONE. It also tested
-  // whether a slash and a digit sat immediately BEFORE the match -- which reads like completeness and
-  // is unreachable: the counted number is the FIRST number in the string, so it can never be the
-  // denominator of anything. A mutant deleting that half left every check green, which is what
-  // proved it dead. Symmetry that cannot run is not defence in depth; it is a line a later reader
-  // has to work out is meaningless.
-  return /^\s*\/\s*\d/.test(text.slice(match.index + match[0].length));
+// THE FIRST NUMBER THAT IS ACTUALLY AN AMOUNT, rather than the first number and a shrug.
+//
+// The previous version looked only at the leading number: if that was half of a ratio it could not
+// evaluate, it gave up and counted nothing. So `1 tablet (5/325 mg)` counted one tablet and
+// `5/325 mg (1 tablet)` counted nothing -- the same information, the same medication, and the
+// answer turned on which half the caregiver wrote first. The card then said it could not tell how
+// many "5/325 mg (1 tablet)" was, beside a dose button, about a string containing the words
+// "1 tablet". **Copy whose truth depends on word order is copy that will be false for somebody.**
+//
+// Walking past the ratio removes the question rather than documenting it. Every number belonging to
+// an unevaluated ratio is skipped; the first one that is not is the amount. `5/325 mg` alone still
+// counts nothing, because both of its numbers belong to the ratio -- which is the correct answer and
+// the reason this is a generalisation rather than a loosening.
+function numberIsInRatio(text, index, length) {
+  const before = text.slice(0, index);
+  const after = text.slice(index + length);
+  return /\d\s*\/\s*$/.test(before) || /^\s*\/\s*\d/.test(after);
+}
+function firstCountableNumber(text) {
+  const re = /(\d*\.?\d+)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (!numberIsInRatio(text, m.index, m[0].length)) return Number(m[1]);
+  }
+  return null;
 }
 function migrateDoseLabels(med) {
   if (!med || Number(med.doseSchemaV) >= DOSE_SCHEMA_VERSION) return med;
@@ -1885,7 +1901,11 @@ function uncountableDoseNotice(med) {
   const head = un.length === 1 ? 'This amount is' : 'These amounts are';
   return head + ' not counted toward the daily limit of ' + dc.label + ' — the app cannot tell how '
     + 'many that is: ' + un.join(', ') + '. '
-    + (allOfThem ? 'Nothing on this card is being counted against that limit.' : 'Your other amounts still count.');
+    // "NOTHING ON THIS CARD" WAS WRONG IN TWO OF THE THREE PLACES THIS NOW RENDERS, and the
+    // round-7 audit caught it: a group card holds several medications and only one is affected, and
+    // a confirmation modal is not a card at all. The sentence is about the MEDICATION, so it says
+    // so, and it is true wherever it appears.
+    + (allOfThem ? 'No dose of this medication is being counted against it.' : 'Your other amounts still count.');
 }
 function dailyCeiling(med) {
   if (!med || !med.ceiling) return null;
@@ -4379,8 +4399,15 @@ function renderGroupedMedsCard(title, meds, now) {
             // medication the way the developer tested it.
             (function () {
               const un = uncountableDoseNotice(med);
+              // BORDERED, LIKE THE STANDALONE CARD'S VERSION. It was a bare amber line styled
+              // identically to the scheduling note directly above it, so on a card carrying both,
+              // the one that says a safety limit is not being applied read as the same kind of
+              // remark as "showing every day until you set a treatment date". Same finding, same
+              // screen, and the Designer pass should have had it before the auditor did.
               return un ? h('div', { 'data-uncounted': 'group', style: { fontSize: '12px', color: '#8C5900',
-                  fontWeight: '600', marginTop: '3px', lineHeight: '1.35', overflowWrap: 'anywhere' } },
+                  fontWeight: '600', marginTop: '5px', lineHeight: '1.35', overflowWrap: 'anywhere',
+                  padding: '6px 8px', borderRadius: '9px', background: 'rgba(246,108,49,0.07)',
+                  border: '1px solid rgba(246,108,49,0.20)' } },
                 '! ' + un) : null;
             })(),
             lastToday ? h('div', { style: { fontSize: '12.5px', color: '#0C7F57', fontWeight: '700', marginTop: '2px' } }, '✓ Logged ' + fmtTime(lastToday.ts)) : null,
@@ -5023,6 +5050,29 @@ function renderTimeModal() {
   return h('div', { style: { position: 'fixed', inset: '0', background: 'rgba(59,25,10,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '60', padding: 'calc(20px + var(--safe-top)) 20px 20px' }, onClick: (e) => { if (e.target === e.currentTarget) setState({ timeModal: null }); } },
     h('div', { role: 'dialog', 'aria-modal': 'true', 'aria-label': title, style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '22px', padding: '24px 22px', width: '320px', maxWidth: '100%', maxHeight: '100%', overflowY: 'auto', boxShadow: '0 24px 64px rgba(136,57,24,0.18)' } },
       h('div', { style: { ...TYPE.title, color: '#2A2127', marginBottom: '22px', textAlign: 'center' } }, title),
+      // THE BATCH BUTTON IS THE FIFTH DOOR, and it is the same shape as the one round 8 closed, one
+      // level up. The row notice lives in the group card's list; "Take all" lives in that card's
+      // HEADER, and on a six-medication group at 320px the notice measured 404px below the fold --
+      // so the caregiver taps a button whose consequence is explained off-screen, then confirms in a
+      // modal that names every medication and says nothing. Six taps logged six doses past a
+      // four-a-day ceiling.
+      //
+      // THE CLASS IS NOT "EVERY PLACEMENT". It is EVERY CONTROL THAT WRITES A DOSE. A disclosure
+      // wired to a surface while the control that ignores it lives somewhere else is the defect,
+      // whichever surface it is.
+      (function () {
+        const ids = m.type === 'multi' ? (m.medIds || []) : (m.type === 'med' ? [m.medId] : []);
+        const lines = ids.map(id => {
+          const med = state.meds.find(x => x.id === id);
+          const un = med ? uncountableDoseNotice(med) : null;
+          return un ? (med.name + ': ' + un) : null;
+        }).filter(Boolean);
+        if (!lines.length) return null;
+        return h('div', { 'data-uncounted': 'confirm', style: { marginBottom: '16px', padding: '9px 11px',
+            borderRadius: '11px', background: 'rgba(246,108,49,0.07)', border: '1px solid rgba(246,108,49,0.20)',
+            fontSize: '12.5px', lineHeight: '1.45', color: '#8C5900', overflowWrap: 'anywhere' } },
+          ...lines.map(line => h('div', { style: { marginTop: '2px' } }, '! ' + line)));
+      })(),
       (m.type === 'para' && m.editId) ? h('div', { style: { marginBottom: '16px' } },
         h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '8px' } }, 'Liters drained'),
         h('input', { 'data-para-edit-liters': 'true', type: 'number', inputMode: 'decimal', step: '0.1', min: '0', max: String(PARA_MAX_LITERS),
@@ -6819,12 +6869,12 @@ function parseDoseOptions(text) {
     // 5,000 mg dose weighed ZERO -- an overdose that raises no warning because the app thinks
     // nothing was taken. The LABEL keeps its comma: that is how the amount is written and the
     // caregiver should see what they typed.
-    const numMatch = countable.match(/(\d*\.?\d+)/);
     const dose = { label, mg: mgMatch ? Number(mgMatch[1]) : 0 };
-    // NO COUNT AT ALL when the number the app would count is itself half of a ratio it could not
-    // evaluate. Leaving `pills` off is what it already does for "as directed": the limit in pills
-    // is not applied, and every screen that can log a dose says so. Inventing a number is not.
-    if (numMatch && !leadingNumberIsRatio(countable, numMatch)) dose.pills = Number(numMatch[1]);
+    // NO COUNT AT ALL when every number in the amount belongs to a ratio the app could not evaluate.
+    // Leaving `pills` off is what it already does for "as directed": the limit in pills is not
+    // applied, and every control that writes a dose says so. Inventing a number is not.
+    const countedNumber = firstCountableNumber(countable);
+    if (countedNumber !== null) dose.pills = countedNumber;
     return dose;
   });
 }
@@ -7653,9 +7703,21 @@ function renderMedicationEditor() {
     h('div', { style: { marginTop: '12px' } },
       fieldLabel('Home screen placement', 'Where this medication\u2019s logging buttons live.'),
       h('div', { role: 'radiogroup', 'aria-label': 'Home screen placement', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '8px' } },
+        // EVERY OPTION CARRIES ITS KEY, so a check for "is every placement accounted for" reads the
+        // app rather than a naming convention. Round 8's version harvested on-screen text matching
+        // `/(Home card|meds group)$/` -- which is the same list copied into the suite, one layer
+        // down: an option called "Bedtime list" was invisible to it, and `Custom (current mix)`
+        // already was. A completeness check that completes against itself is the thing it exists to
+        // prevent.
         ...PLACEMENT_OPTIONS.concat(placementOf(form._origPlacement || {}) === 'custom' ? [{ key: 'custom', label: 'Custom (current mix)', helper: (function () { const o = form._origPlacement || {}; const parts = []; if (o.quickLog) parts.push('Own card'); if (o.groupedMorning) parts.push('Morning group'); if (o.groupedAfternoon) parts.push('Afternoon group'); if (o.groupedEvening) parts.push('Evening group'); return 'Keeps the existing layout: ' + (parts.join(' + ') || 'no Home card') + '.'; })() }] : []).map(opt => {
           const on = placementOf(form) === opt.key;
-          return h('button', { type: 'button', role: 'radio', 'aria-checked': on ? 'true' : 'false', onClick: () => setPlacement(opt.key), style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', width: '100%', minHeight: '44px', borderRadius: '12px', padding: '9px 12px', background: on ? 'rgba(200,83,32,0.13)' : 'rgba(255,255,255,0.48)', border: '1px solid ' + (on ? 'rgba(200,83,32,0.30)' : 'rgba(246,108,49,0.18)'), color: on ? '#A83D0F' : '#5E4337', textAlign: 'left' } },
+          // EVERY OPTION CARRIES ITS KEY. A completeness check for "is every placement accounted
+          // for" then reads the app, not a naming convention. Round 8's version harvested on-screen
+          // text matching /(Home card|meds group)$/ -- the same list copied into the suite, one
+          // layer down: an option named "Bedtime list" was invisible to it, and `Custom (current
+          // mix)` already was. A completeness check that completes against itself is the thing it
+          // exists to prevent.
+          return h('button', { type: 'button', role: 'radio', 'data-placement-option': opt.key, 'aria-checked': on ? 'true' : 'false', onClick: () => setPlacement(opt.key), style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', width: '100%', minHeight: '44px', borderRadius: '12px', padding: '9px 12px', background: on ? 'rgba(200,83,32,0.13)' : 'rgba(255,255,255,0.48)', border: '1px solid ' + (on ? 'rgba(200,83,32,0.30)' : 'rgba(246,108,49,0.18)'), color: on ? '#A83D0F' : '#5E4337', textAlign: 'left' } },
             h('span', { style: { fontSize: '13px', fontWeight: '800' } }, (on ? '\u25C9 ' : '\u25CB ') + opt.label),
             h('span', { style: { fontSize: '12px', fontWeight: '600', color: '#7A6E76', lineHeight: '1.35' } }, opt.helper)
           );
