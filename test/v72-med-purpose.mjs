@@ -177,7 +177,17 @@ console.log('\n1. The table — what the app is willing to say about a medicatio
     ids.filter(k => NUMBERY.test(TABLE[k])).join(', '));
   // A schedule written in WORDS passed care-tracker's digit-only guard. WHEN and HOW MUCH are
   // never allowed here, and neither is a dosage form -- see the guard below.
-  const SCHEDULEY = /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|around chemo|with chemo|after chemo|before chemo|chemotherapy|dose|doses|mg|ml|mcg)\b/i;
+  // THE BARE WORD `chemotherapy` USED TO BE IN THIS LIST, AND IT SHAPED THE DATA. It sat among the
+  // timing phrases -- "on chemo days", "with chemo", "after chemo" -- and those are right to be
+  // here: they say WHEN to take something, which is the care team's job and not this table's. But
+  // the bare noun says nothing about when. It banned "A chemotherapy medicine that stops cancer
+  // cells from dividing", which is a plain statement of what the drug IS, and so this app's
+  // medication table contained no chemotherapy drugs at all -- in an app for people having
+  // chemotherapy. Aaron found the consequence by typing Keytruda into it and getting nothing back.
+  // THE LIST GETS STRICTER, NOT LOOSER, IN THE SAME EDIT: every timing phrase is now caught in both
+  // spellings, so "with chemotherapy" and "after chemotherapy" are rejected exactly as "with chemo"
+  // and "after chemo" already were. What is admitted is the noun on its own, and nothing else.
+  const SCHEDULEY = /\b(daily|hourly|nightly|weekly|every \w+|twice|once a|per day|a day|as needed|when needed|at bedtime|before bed|before meals|after meals|with food|on an empty stomach|in the morning|in the evening|on chemo days|on chemotherapy days|around chemo|around chemotherapy|with chemo|with chemotherapy|after chemo|after chemotherapy|before chemo|before chemotherapy|during chemo|during chemotherapy|dose|doses|mg|ml|mcg)\b/i;
   // NO FEVER CLAUSE, EVER. Removing them was this release's safety decision -- a fever during
   // treatment is a thing to REPORT, not to suppress -- and nothing was holding it. The patch header
   // says a later refresh to federal label wording is planned, and federal wording says "reduces
