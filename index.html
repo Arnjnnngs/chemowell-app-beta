@@ -1702,7 +1702,7 @@ function restoreView() {
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { heroSnoozeUntil: 0, medFlash: null, entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
+let state = { heroSnoozeUntil: 0, vitalOpen: null, medFlash: null, entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -5895,52 +5895,114 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       ) : null
     ));
   }
-  // Temperature + Weight row (each card user-toggleable in Settings)
-  if (homePref('showTemperature') || homePref('showWeight')) parts.push(h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: '12px' } },
-    // Temperature
-    !homePref('showTemperature') ? null : h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
-      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' } },
-        h('div', null,
-          h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Temperature'),
-          h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px' } }, tempSubLabel)
-        ),
-        lastTemp ? h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '600', letterSpacing: '-0.02em', color: tempColor, whiteSpace: 'nowrap' } }, dispTemp(lastTemp) + tempSuffix()) : null
-      ),
-      h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
-        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: tempDefault(), value: state.tempInput, onInput: (e) => { state.tempInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #E9D8D1', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: '#FFFFFF', color: '#2A2127' } }),
-        h('button', { onClick: logTemp, style: { flexShrink: '0', minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
-      )
-    ),
-    // Weight
-    !homePref('showWeight') ? null : h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
-      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' } },
-        h('div', null,
-          h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Weight'),
-          h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px' } }, weightSubLabel)
-        ),
-        lastWeight ? h('div', { className: 'mono', style: { fontSize: '18px', fontWeight: '600', letterSpacing: '-0.02em', color: '#2A2127', whiteSpace: 'nowrap' } }, dispWeight(lastWeight) + ' ' + weightSuffix()) : null
-      ),
-      h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
-        h('input', { type: 'number', inputMode: 'decimal', step: '0.1', placeholder: weightDefault() || (CONFIG.weightUnit === 'kg' ? '68.0' : '150.0'), value: state.weightInput, onInput: (e) => { state.weightInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #E9D8D1', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: '#FFFFFF', color: '#2A2127' } }),
-        h('button', { onClick: logWeight, style: { flexShrink: '0', minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
-      )
-    )
-,
-    !homePref('showBloodPressure') ? null : h('section', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)' } },
-      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' } },
-        h('div', null,
-          h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Blood pressure'),
-          h('div', { style: { ...TYPE.caption, color: '#7A6E76', marginTop: '2px' } }, (function () { const bp = state.entries.filter(e => e.medId === 'blood_pressure').sort((a, b) => b.ts - a.ts)[0]; return bp ? ('Last ' + bp.sys + '/' + bp.dia + ' · ' + fmtTime(bp.ts)) : 'No readings yet'; })())
-        )
-      ),
-      h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px', alignItems: 'center' } },
-        h('input', { type: 'number', inputMode: 'numeric', placeholder: '120', value: state.bpSysInput, onInput: (e) => { state.bpSysInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #E9D8D1', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: '#FFFFFF', color: '#2A2127' } }),
+  // THE VITALS STRIP -- three tiles, not three boxes asking to be typed into.
+  //
+  // Each tile is the latest reading and how long ago it was. Tapping one opens the same input and
+  // the same Log button that used to sit permanently on screen. Nothing was removed; it is behind
+  // one tap instead of occupying the top of the first screen, so what she opens the app to see is
+  // which dose is due.
+  (function () {
+    const shown = [];
+    if (homePref('showTemperature')) shown.push('temp');
+    if (homePref('showWeight')) shown.push('weight');
+    if (homePref('showBloodPressure')) shown.push('bp');
+    if (!shown.length) return;
+
+    const lastBp = state.entries.filter(e => e.medId === 'blood_pressure').sort((a, b) => b.ts - a.ts)[0];
+
+    // How old is this reading? A number with no age on it is the thing a caregiver at 2am cannot
+    // read. Hours only while it is still today; after that the day, because "31h ago" is arithmetic
+    // nobody asked for.
+    function ageOf(ts) {
+      if (!ts) return '';
+      const today = dayStart(simNow());
+      if (ts < today) {
+        const days = Math.round((today - dayStart(ts)) / 86400000);
+        return days === 1 ? 'yesterday' : (days + 'd ago');
+      }
+      const mins = Math.max(0, Math.round((simNow() - ts) / 60000));
+      if (mins < 1) return 'just now';
+      if (mins < 60) return mins + 'm ago';
+      return Math.round(mins / 60) + 'h ago';
+    }
+
+    const TILE = {
+      temp: {
+        label: 'Temp',
+        value: lastTemp ? (dispTemp(lastTemp) + tempSuffix()) : null,
+        color: tempColor,
+        ts: lastTemp ? lastTemp.ts : null
+      },
+      weight: {
+        label: 'Weight',
+        value: lastWeight ? (dispWeight(lastWeight) + ' ' + weightSuffix()) : null,
+        color: '#2A2127',
+        ts: lastWeight ? lastWeight.ts : null
+      },
+      bp: {
+        label: 'BP',
+        value: lastBp ? (lastBp.sys + '/' + lastBp.dia) : null,
+        color: '#2A2127',
+        ts: lastBp ? lastBp.ts : null
+      }
+    };
+
+    const INPUT = { flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #E9D8D1', borderRadius: '11px', padding: '0 12px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' };
+    const LOGBTN = { flexShrink: '0', minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13.5px', fontWeight: '700' };
+
+    function panelFor(key) {
+      if (key === 'temp') return h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
+        h('input', { 'data-vital-input': 'temp', type: 'number', inputMode: 'decimal', step: '0.1', 'aria-label': 'Temperature', placeholder: tempDefault(), value: state.tempInput, onInput: (e) => { state.tempInput = e.target.value; }, className: 'mono', style: INPUT }),
+        h('button', { 'data-vital-log': 'temp', onClick: logTemp, style: LOGBTN }, 'Log')
+      );
+      if (key === 'weight') return h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
+        h('input', { 'data-vital-input': 'weight', type: 'number', inputMode: 'decimal', step: '0.1', 'aria-label': 'Weight', placeholder: weightDefault() || (CONFIG.weightUnit === 'kg' ? '68.0' : '150.0'), value: state.weightInput, onInput: (e) => { state.weightInput = e.target.value; }, className: 'mono', style: INPUT }),
+        h('button', { 'data-vital-log': 'weight', onClick: () => {}, style: LOGBTN }, 'Log')
+      );
+      return h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
+        h('input', { 'data-vital-input': 'bp-sys', type: 'number', inputMode: 'numeric', 'aria-label': 'Systolic', placeholder: '120', value: state.bpSysInput, onInput: (e) => { state.bpSysInput = e.target.value; }, className: 'mono', style: INPUT }),
         h('span', { style: { color: '#915E48', fontWeight: '700' } }, '/'),
-        h('input', { type: 'number', inputMode: 'numeric', placeholder: '80', value: state.bpDiaInput, onInput: (e) => { state.bpDiaInput = e.target.value; }, className: 'mono', style: { flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #E9D8D1', borderRadius: '11px', padding: '0 12px', fontSize: '14.5px', background: '#FFFFFF', color: '#2A2127' } }),
-        h('button', { onClick: logBloodPressure, style: { flexShrink: '0', minHeight: '44px', padding: '0 15px', borderRadius: '11px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '13.5px', fontWeight: '700' } }, 'Log')
-      )
-    )
-  ));
+        h('input', { 'data-vital-input': 'bp-dia', type: 'number', inputMode: 'numeric', 'aria-label': 'Diastolic', placeholder: '80', value: state.bpDiaInput, onInput: (e) => { state.bpDiaInput = e.target.value; }, className: 'mono', style: INPUT }),
+        h('button', { 'data-vital-log': 'bp', onClick: logBloodPressure, style: LOGBTN }, 'Log')
+      );
+    }
+
+    // A tile whose vital was switched off in Settings is not on the strip, so an open panel for it
+    // would be a panel with no tile. Fall back to closed rather than drawing an orphan.
+    const open = shown.indexOf(state.vitalOpen) >= 0 ? state.vitalOpen : null;
+
+    parts.push(h('section', { 'data-home': 'vitals', style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '10px 11px', boxShadow: '0 3px 14px rgba(203,122,87,0.10), 0 1px 2px rgba(203,122,87,0.06)', display: 'flex', flexDirection: 'column', gap: '9px' } },
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(' + shown.length + ',1fr)', gap: '7px' } },
+        ...shown.map(key => {
+          const t = TILE[key];
+          const isOpen = open === key;
+          return h('button', {
+            key: key,
+            'data-vital-tile': key,
+            'aria-expanded': isOpen ? 'true' : 'false',
+            'aria-label': t.label + ', ' + (t.value ? (t.value + ', ' + ageOf(t.ts)) : 'no readings yet') + '. Tap to log.',
+            onClick: () => setState({ vitalOpen: isOpen ? null : key }),
+            style: {
+              display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '1px',
+              minWidth: '0', minHeight: '58px', padding: '7px 9px', textAlign: 'left',
+              borderRadius: '12px',
+              border: isOpen ? '1px solid #E46F3C' : '1px solid #F0E3DD',
+              background: isOpen ? 'rgba(246,108,49,0.07)' : '#FFFDFC'
+            }
+          },
+            h('span', { style: { ...TYPE.label, color: '#915E48' } }, t.label),
+            h('span', { className: 'mono', style: { fontSize: '17px', fontWeight: '600', letterSpacing: '-0.02em', color: t.value ? t.color : '#A2939B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' } }, t.value || '\u2014'),
+            h('span', { style: { ...TYPE.caption, color: '#7A6E76', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' } }, t.value ? ageOf(t.ts) : 'none yet')
+          );
+        })
+      ),
+      open ? h('div', { 'data-vital-panel': open, style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+        h('div', { style: { ...TYPE.caption, color: '#7A6E76' } },
+          open === 'temp' ? tempSubLabel : open === 'weight' ? weightSubLabel : (lastBp ? ('Last ' + lastBp.sys + '/' + lastBp.dia + ' \u00b7 ' + fmtTime(lastBp.ts)) : 'No readings yet')),
+        panelFor(open)
+      ) : null
+    ));
+  })();
 
   // Chemo schedule card (toggleable)
   const chemoTs = nextChemoTs();
@@ -6320,18 +6382,35 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
   [...todayEntries, ...missedTodayForJournal].sort((a, b) => a.ts - b.ts).forEach(e => { const bk = bucket(e.ts); (tmap[bk] = tmap[bk] || []).push(e); });
   const journalGroups = Object.keys(tmap).map(label => ({ label, minTs: tmap[label][0].ts, items: tmap[label] })).sort((a, b) => a.minTs - b.minTs);
 
-  parts.push(h('section', null,
+  // ONE DAY, IN ORDER. The bucket headings and the card-per-bucket are gone: four headings and four
+  // white cards for a single day read as four separate lists, and the caregiver has to reassemble
+  // them to answer "what happened today". The rail runs down the whole day, every event is a dot on
+  // it, and the time bucket survives as a quiet divider rather than a heading with its own card.
+  //
+  // THE ROWS THEMSELVES ARE UNCHANGED -- same text, same badges, same Remove, same missed-dose rows.
+  // The content was never the problem.
+  parts.push(h('section', { 'data-home': 'timeline' },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
-      h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Today’s journal'),
-      null
+      h('div', { style: { ...TYPE.label, color: '#915E48' } }, 'Today'),
+      journalGroups.length > 0 ? h('div', { style: { ...TYPE.caption, color: '#7A6E76' } },
+        journalGroups.reduce((n, g) => n + g.items.length, 0) + ' logged') : null
     ),
     journalGroups.length > 0 ?
-      h('div', { style: { display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '11px' } },
+      h('div', { style: { position: 'relative', marginTop: '11px', paddingLeft: '14px' } },
+        // THE RAIL. One line for the day, behind the dots, drawn with a pseudo-free absolute div so
+        // it cannot interfere with the rows' own layout or their tap targets.
+        h('div', { 'aria-hidden': 'true', style: { position: 'absolute', left: '4px', top: '10px', bottom: '10px', width: '2px', borderRadius: '2px', background: 'rgba(246,108,49,0.20)' } }),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
         ...journalGroups.map(g => h('div', null,
-          h('div', { style: { ...TYPE.label, color: '#7A6E76', marginBottom: '8px' } }, g.label),
+          h('div', { style: { ...TYPE.caption, color: '#9A8C94', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '4px 0 6px' } }, g.label),
           h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(203,122,87,0.10)' } },
             ...g.items.map((e, i) => e.missed ? missedRow(e, i) : h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderTop: i > 0 ? '1px solid rgba(246,108,49,0.08)' : 'none' } },
-              h('div', { className: 'mono', style: { ...TYPE.mono, fontWeight: '600', color: '#915E48', minWidth: '66px' } }, fmtTime(e.ts)),
+              // THE DOT, tied to the time rather than floated beside it, so a row that wraps on a
+              // narrow phone keeps its marker level with the time it belongs to.
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', minWidth: '0' } },
+                h('span', { 'aria-hidden': 'true', style: { flexShrink: '0', width: '9px', height: '9px', borderRadius: '50%', background: '#E46F3C', boxShadow: '0 0 0 3px #FFFFFF' } }),
+                h('div', { className: 'mono', style: { ...TYPE.mono, fontWeight: '600', color: '#915E48', minWidth: '58px' } }, fmtTime(e.ts))
+              ),
               h('div', { style: { flex: '1' } },
                 h('div', { style: { ...TYPE.body, display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' } },
                   nameOf(e.medId),
@@ -6344,6 +6423,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
             ))
           )
         ))
+        )
       ) :
       h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(246,108,49,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', marginTop: '11px', lineHeight: '1.5' } }, 'No doses logged yet today.\nDoses you log from your medication cards will appear here.')
   ));
@@ -8528,7 +8608,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v81';
+const APP_VERSION = 'app-v82';
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next

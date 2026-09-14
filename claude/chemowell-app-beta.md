@@ -106,6 +106,49 @@ nothing said so.**
 a file Aaron does not read is not a role — that lesson is already written into Rule 2.6 about the
 Enhancer, and it is the same lesson here one level up.
 
+## Rule 0.8 — THE TASK TABLE GOES IN THE MESSAGE. EVERY MESSAGE. (2026-09-14, Aaron, EXPLICIT)
+
+> *"I don't see the list. You said you fixed it. There needs to be very frequent task table update so
+> I can see what has been done when I go back to the chat occasionally. I shouldn't have to read 15
+> pages of small details to see what was done. I can scroll through and see the table and see what
+> was done. Commit to your record and put into place now"*
+
+**Rule 0.7 was written and then not obeyed.** The list was created with the task tools — which render
+somewhere Aaron does not look — and the replies went back to being prose. From his side that is
+identical to there being no list at all. The task tools are for me; **the table in the message is for
+him**, and it is the one that counts.
+
+### The rule
+
+1. **Every message to Aaron carries a markdown table.** Not a bulleted list, not a paragraph, not
+   "see the task list" — a table, so it is a recognisable shape he can scroll to and read in five
+   seconds without reading anything around it.
+2. **Columns, always these four, in this order:**
+
+   | # | App | Task | Status |
+
+   **App is not optional** (Aaron, 2026-09-14: *"the task should show what app is being worked on.
+   Bc I have no idea which one you're actually working on"*). It is one of
+   `ChemoWell app` · `care-tracker` · `staging` · `all 3 repos`.
+3. **The table shows the LAST 5 COMPLETED items plus everything still open.** Not open items only —
+   the completed rows are the record of what happened while he was away, and they are the reason the
+   table exists. Completed rows come first, oldest of the five at the top, so the eye lands on the
+   open work at the bottom where the next action is.
+4. **Status is one of:** `DONE — live` · `DONE — pushed, awaiting your word` · `IN PROGRESS` ·
+   `QUEUED` · `BLOCKED — needs you`. A status that names a blocker names it in the same cell.
+5. **Frequent means every message, including the long ones.** This does not license a status-only
+   message — Rule 0.6 still governs WHEN a message may be sent (an approval he must give, or
+   completion). Rule 0.8 governs what is IN a message once one is due: the table is the top of it,
+   and the detail goes underneath for whoever wants it.
+6. **If a task moved since the last table, the table says so.** A row that has not changed in three
+   messages while work is happening means the rows are wrong — split the task.
+
+**Why a table and not the task tools.** The task tools are a side panel in a developer's terminal.
+Aaron reads this on a tablet, scrolling back through a chat, looking for the shape of a table. Output
+that lands somewhere the owner does not look is not output — the same lesson as Rule 2.6's Enhancer
+list and Rule 0.7's task list, now for the third time. **Third time is the rule getting a mechanism:
+the table is part of the message body, so it cannot be filed anywhere else.**
+
 ## What this repo is
 The **native mobile app** codebase (APP-BETA). Seeded from `chemowell-beta` v71, with Firebase completely removed. Target: Capacitor-wrapped iOS/Android builds for the stores (APP-LIVE later).
 
