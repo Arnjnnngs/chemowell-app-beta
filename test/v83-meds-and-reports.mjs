@@ -64,7 +64,10 @@ async function open(fixture, viewport) {
   const keys = { prefs, entries: prefs.replace(/prefs-v1$/, 'entries-v1'), med: prefs.replace(/prefs-v1$/, 'med-v1') };
   await page.evaluate(({ k, f }) => {
     const pr = JSON.parse(localStorage.getItem(k.prefs) || '{}');
-    localStorage.setItem(k.prefs, JSON.stringify(Object.assign(pr, { patientName: 'Test', onboarded: true }, f.prefs || {})));
+    // A COMPLETE PROFILE, or Home shows "Finish setting up this profile" and renders NO
+    // medication cards -- and every card assertion below then measures a setup prompt. Two
+    // checks failed that way and both looked like app defects.
+    localStorage.setItem(k.prefs, JSON.stringify(Object.assign(pr, { patientName: 'Test', onboarded: true, sex: 'female', treatmentType: 'chemo' }, f.prefs || {})));
     localStorage.setItem(k.entries, JSON.stringify(f.entries || []));
     if (f.meds) localStorage.setItem(k.med, JSON.stringify({ version: 2, meds: f.meds, archivedMeds: {} }));
   }, { k: keys, f: fixture });
@@ -224,11 +227,26 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
       return [...document.querySelectorAll('[data-med-card]')].some(el => (el.innerText || '').indexOf(n) >= 0);
     }, medName);
     const explainedAsHeld = /not scheduled|excluded|held near|held around|outside (its|your) treatment/i.test(homeText);
-    const homeSaysNo = !cardForIt || explainedAsHeld;
+    // A MEDICATION VANISHING FROM HOME IS A DOSE NOT GIVEN, AND THE PREVIOUS VERSION OF THIS LINE
+    // COULD NOT SEE IT. Accepting "no card at all" as proof that Home withholds made the dangerous
+    // direction invisible: a mutant deleting the off-day and treatment-excluded cards from Home's
+    // filter passed 78/78. Two gates expect an INERT CARD THAT EXPLAINS ITSELF, and two expect the
+    // card to be gone, and the difference is the whole point -- so each case now says which it
+    // expects rather than accepting either.
+    const expectsNoCard = /course/i.test(label);
+    const homeSaysNo = expectsNoCard ? !cardForIt : (cardForIt && explainedAsHeld);
     await goto(p, 'Meds');
     const pill = (await p.locator('[data-med-status-pill]').innerText().catch(() => '')).trim();
     t('Home withholds ' + label + ' -- otherwise this comparison proves nothing',
-      homeSaysNo, (cardForIt ? 'has a Quick Log card; ' : 'no Quick Log card; ') + card + ' card(s); ' + homeText.replace(/\n/g, ' | ').slice(0, 90));
+      homeSaysNo,
+      (expectsNoCard ? 'expected: no card; ' : 'expected: an inert card that explains itself; ')
+      + (cardForIt ? 'has a Quick Log card; ' : 'no Quick Log card; ') + card + ' card(s); '
+      + homeText.replace(/\n/g, ' | ').slice(0, 80));
+    // AND SAID THE OTHER WAY ROUND, so the check fails whichever direction the filter breaks in.
+    if (!expectsNoCard) {
+      t('and ' + label + ' KEEPS its card rather than vanishing from Home',
+        cardForIt, cardForIt ? 'card present' : 'THE CARD IS GONE -- a medication that disappears is a dose not given');
+    }
     t('and Meds does NOT say Available for ' + label,
       !/^Available$/.test(pill), pill || '(no pill)');
     t('and the two screens agree in words', /not scheduled|held|outside|finished|paused/i.test(pill), pill || '(no pill)');

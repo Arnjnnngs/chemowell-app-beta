@@ -291,6 +291,51 @@ section('7c. AN IN-PAGE PANEL MUST NOT FREEZE THE PAGE AROUND IT');
 }
 
 // ---------------------------------------------------------------------------------------------
+section('7d. THE FIRST-RUN GUIDE MUST NOT FREEZE THE PAGE -- THE PATH A NEW USER TAKES');
+{
+  // THE CHECK ABOVE THIS ONE WAS WRITTEN FOR EXACTLY THIS REGRESSION AND COULD NOT SEE IT, BECAUSE
+  // ITS OWN SETUP CLICKS "Skip guide" FIRST. The precondition of the check was the dismissal of the
+  // thing that breaks. That is the sharpest version of a vacuous check I have hit: not a weak
+  // assertion, a setup step that removes the defect before measuring.
+  //
+  // The tour layer is fixed and full-screen but `pointer-events: none` -- it highlights the page
+  // without blocking it. The lock measured only position and size, called it an overlay, and froze
+  // the body for the whole guide. On the step telling a new user to fill in the form and tap "Add
+  // medication", that button sat over a thousand pixels below a fold that could not be scrolled,
+  // and the step only advances when a medication is saved. A brand-new user could not start.
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  page.on('pageerror', e => allErrors.push(String(e.message)));
+  await page.goto(BASE);
+  await page.waitForTimeout(1500);
+  const k = await page.evaluate(() => Object.keys(localStorage).find(x => /prefs-v1$/.test(x)));
+  if (k) {
+    await page.evaluate((key) => {
+      const pr = JSON.parse(localStorage.getItem(key) || '{}');
+      localStorage.setItem(key, JSON.stringify(Object.assign(pr, { patientName: 'Test', onboarded: true })));
+    }, k);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1800);
+  }
+  // DELIBERATELY NOT DISMISSED. That is the whole point of this case.
+  const tourUp = await page.locator('#tour-layer').count();
+  t('the first-run guide is on screen -- not skipped, which is what hid this', tourUp > 0,
+    tourUp + ' tour layer(s)');
+  t('and the page is NOT frozen by it',
+    await page.evaluate(() => document.body.style.position !== 'fixed'),
+    await page.evaluate(() => document.body.style.position || '(none)'));
+  await page.evaluate(() => window.scrollTo(0, 500));
+  await page.waitForTimeout(350);
+  t('and the page still scrolls while the guide is up',
+    await page.evaluate(() => window.scrollY) > 0,
+    (await page.evaluate(() => window.scrollY)) + 'px');
+  // AND THE THING A NEW USER IS BEING TOLD TO DO MUST BE REACHABLE.
+  const skip = page.getByRole('button', { name: 'Skip guide' });
+  const seen = await skip.count();
+  t('the guide offers a way out, and it is reachable', seen > 0, seen + ' control(s)');
+  await page.close();
+}
+
+// ---------------------------------------------------------------------------------------------
 section('8. AND NOTHING THREW');
 t('no page error at any point above', allErrors.length === 0, allErrors.slice(0, 3).join(' / ') || 'none');
 

@@ -1799,6 +1799,21 @@ function anyOverlayOpen() {
     let cs;
     try { cs = window.getComputedStyle(el); } catch (e) { continue; }
     if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') continue;
+    // A LAYER THAT LETS TAPS THROUGH IS NOT COVERING ANYTHING, AND THIS ONE LINE IS THE WHOLE
+    // DIFFERENCE BETWEEN A LOCK AND A TRAP.
+    //
+    // `#tour-layer` is `position: fixed; inset: 0` and deliberately `pointer-events: none` -- its
+    // own note says it "lets every gesture pass straight through to the real page", which is how a
+    // guided tour highlights the page without blocking it. Measuring only position and size, this
+    // function called it an overlay and froze the body FOR THE ENTIRE FIRST-RUN GUIDE. On the
+    // guide's own step telling a new user to fill in the form and tap "Add medication", that
+    // button sat 1,354px below a fold that could not be scrolled: A BRAND-NEW USER COULD NOT ADD
+    // THEIR FIRST MEDICATION, and the step only advances when one is saved, so the guide could not
+    // move either. The same misdetection froze the loading splash on every cold start.
+    //
+    // Whether something BLOCKS the screen is the actual question, and `pointer-events` is the
+    // browser's own answer to it. Every real modal in this file intercepts taps and is unaffected.
+    if (cs.pointerEvents === 'none') continue;
     const r = el.getBoundingClientRect();
     if (r.width >= vw * 0.9 && r.height >= vh * 0.9) return true;
   }
@@ -2108,11 +2123,14 @@ function dailyCeiling(med) {
   // last 4h" and promised it would free up as doses aged out. It does not; it resets at midnight.
   // The previous bug said "today" about a rolling figure; that one said "in the last 4h" about a
   // daily one and explained behaviour the number does not have, which is worse.
-  if (med.ceilingUnit) return { used: dailyPills(med.id), max, unit: med.ceilingUnit, label: max + ' ' + med.ceilingUnit, windowH: 0 };
+  if (med.ceilingUnit) return { used: dailyPills(med.id), max, unit: med.ceilingUnit, label: max + ' ' + med.ceilingUnit, windowH: 0, group: false };
   const isRolling = !!med.rollingCeilingH;
   const used = isRolling ? rollingDoseMg(med.id, med.rollingCeilingH, state.now) : (med.ceilingGroup ? dailyGroupMg(med) : dailyDoseMg(med.id));
   const label = max.toLocaleString() + ' mg' + (isRolling ? (' / ' + med.rollingCeilingH + 'h') : '');
-  return { used, max, unit: 'mg', label, windowH: isRolling ? med.rollingCeilingH : 0, group: !!med.ceilingGroup };
+  // `group` says the FIGURE counts other medications, which is only true on the branch that
+  // actually summed them. A rolling medication counts itself alone however it is configured,
+  // so claiming "counts all of them" there would be false.
+  return { used, max, unit: 'mg', label, windowH: isRolling ? med.rollingCeilingH : 0, group: !isRolling && !!med.ceilingGroup };
 }
 // Missed-dose detection. A window counts as covered by any dose logged that day
 // before the window closed (and after the previous window closed) — so early logs
@@ -2532,9 +2550,14 @@ function status(med) {
     if (med.ceiling) {
       const dc = dailyCeiling(med);
       if (dc && dc.used >= dc.max) {
-        if (med.rollingCeilingH) {
-          // Rolling-window ceiling (e.g. Morphine's 15 mg / 4h): the lockout self-resolves as old
-          // doses age out of the window, not at midnight — compute the actual next-available time.
+        // THE SAME MISREAD AS THE CEILING BAR, TWENTY LINES AWAY. dailyCeiling() short-circuits on
+        // `ceilingUnit` before its rolling branch, so a pills-unit medication carrying
+        // `rollingCeilingH` gets a DAILY count -- and asking the medication's flag rather than the
+        // figure that came back declared that daily lockout "rolling", promising it would clear as
+        // doses aged out when it clears at midnight. `windowH` is what the branch reports.
+        if (Number(dc.windowH) > 0) {
+          // Rolling-window ceiling (e.g. 15 mg / 4h): the lockout self-resolves as old doses age
+          // out of the window, not at midnight — compute the actual next-available time.
           return { locked: true, ceilingHit: true, rollingCeiling: true, ceilingLabel: dc.label, availableAt: rollingCeilingAvailableAt(med) };
         }
         return { locked: true, ceilingHit: true, ceilingLabel: dc.label };
@@ -6268,7 +6291,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       // (not removed, unlike treatmentOnly/excluded outside their window) so the "Paused" label and
       // inline Resume have somewhere to render -- a vanished card reads as data loss to this app's
       // anxious-caregiver audience.
-      return h('div', { style: { background: 'rgba(124,97,86,0.06)', border: '1.5px dashed rgba(124,97,86,0.30)', borderRadius: '16px', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' } },
+      return h('div', { 'data-med-card': String(med.id).replace(/[^A-Za-z0-9_-]/g, ''), 'data-med-inert': 'paused', style: { background: 'rgba(124,97,86,0.06)', border: '1.5px dashed rgba(124,97,86,0.30)', borderRadius: '16px', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' } },
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '0' } },
           h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name + ' — Paused'),
           h('div', { style: { fontSize: '12px', color: '#7A6E76' } }, 'Not tracked while paused. Resume anytime.')
@@ -6281,7 +6304,12 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       // medication still gets an inert card (matching renderGroupedMedsCard's equivalent row, index.html
       // ~line 1646) instead of vanishing without a trace -- the `paused` branch above already wins over
       // this one, matching every other guard's ordering in the file.
-      return h('div', { style: { background: 'rgba(124,97,86,0.06)', border: '1.5px dashed rgba(124,97,86,0.30)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
+      // THE INERT CARDS CARRY THE SAME HOOK AS THE LIVE ONE. They ARE this medication's card on
+      // Home -- the whole reason this branch exists is so a withheld medication does not vanish
+      // without a trace -- but they had no `data-med-card`, so anything inspecting Home's cards
+      // could not see them and reported the medication as GONE. A card a caregiver can see that
+      // no check can find is how a vanishing-medication defect would hide.
+      return h('div', { 'data-med-card': String(med.id).replace(/[^A-Za-z0-9_-]/g, ''), 'data-med-inert': 'excluded', style: { background: 'rgba(124,97,86,0.06)', border: '1.5px dashed rgba(124,97,86,0.30)', borderRadius: '16px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' } },
         h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name),
         h('div', { style: { fontSize: '12px', color: '#7A6E76' } }, isOtherTreatmentType() ? 'Excluded near your date' : 'Excluded near treatment day')
       );
