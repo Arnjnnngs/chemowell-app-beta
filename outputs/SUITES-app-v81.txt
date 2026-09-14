@@ -33,4 +33,4 @@
 32/32 checks passed
 === test/v81-dose-parser.mjs ===
 
-132/132 passing
+146/146 passing

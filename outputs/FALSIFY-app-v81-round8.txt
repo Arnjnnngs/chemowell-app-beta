@@ -1,0 +1,22 @@
+OK M34 the grouped placements lose the notice again (the round-6 BLOCK 1)
+      RED: the Morning group card says the limit is not counting this dose
+      RED: the Afternoon group card says the limit is not counting this dose
+      RED: the Evening group card says the limit is not counting this dose
+
+OK M35 the ratio guard goes back to testing the whole string (the round-6 BLOCK 2)
+      RED: "1 tablet (5/325 mg)" → 1 tablet (5/325 mg) [325mg / 1]
+      RED: "2 tablets (5/325 mg)" → 2 tablets (5/325 mg) [325mg / 2]
+      RED: "1 tablet 5/325 mg" → 1 tablet 5/325 mg [325mg / 1]
+      RED: "1 x 5/325 mg" → 1 x 5/325 mg [325mg / 1]
+
+OK M37 the guard stops looking ahead of the number (5/325 counts 5 again)
+      RED: "5/325 mg" → 5/325 mg [325mg / 0]
+      RED: "10/325 mg" → 10/325 mg [325mg / 0]
+      RED: "7.5/325 mg" → 7.5/325 mg [325mg / 0]
+      RED: "80/12.5 mg" → 80/12.5 mg [12.5mg / 0]
+      ... and 21 more
+
+OK M38 a SIXTH Home placement is added and the notice is not wired to it
+      RED: every Home placement that can log a dose is covered above, and the rest are named exempt
+
+restored; ALL MUTANTS DIED

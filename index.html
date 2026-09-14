@@ -1253,13 +1253,31 @@ const DOSE_FRACTIONS = { '\u00bd': 0.5, '\u00bc': 0.25, '\u00be': 0.75, '\u2153'
 // point: widening this list and removing that guard are the same decision, and neither is safe
 // alone.
 const DOSE_FRACTION_DENOMS = [2, 3, 4, 5, 6, 8];
-// A SLASH STILL BETWEEN TWO DIGITS AFTER EVALUATION MEANS THE APP DID NOT UNDERSTAND IT. That is
-// every combination strength (`5/325 mg`, `875/125 mg`, `300/30/10`), every improper ratio
-// (`25/2`, `11/2`) and every fraction over a denominator not on the list above (`1/10`, `1/16`).
-// The app must not then take the leading number as an amount: a single oxycodone/paracetamol
-// tablet was weighing FIVE tablets, so a four-a-day ceiling read "over limit" with nothing logged.
-// `5 mg/mL` and `100 mg/m2` are deliberately unaffected -- neither has a digit on both sides.
-const UNEVALUATED_RATIO = /\d\s*\/\s*\d/;
+// IS THE NUMBER THE APP WOULD COUNT ITSELF PART OF A RATIO? That is the question, and the first
+// version asked a different one: whether the string contained a ratio ANYWHERE. The difference is
+// the whole of the round-6 audit's second block.
+//
+// The app must not read `5/325 mg` as five tablets -- a single oxycodone/paracetamol tablet was
+// weighing five, so a four-a-day ceiling read "over limit" with nothing logged. Its leading number
+// IS the ratio, so it counts nothing. But `1 tablet (5/325 mg)` begins with a tablet count and
+// carries the strength as documentation, and the string-wide test refused that too -- **while the
+// editor was telling the caregiver to write exactly that.** Every natural way of following the
+// app's own instruction was rejected, and the card then said it could not tell how many "1 tablet"
+// was. An instruction that cannot be followed is worse than no instruction.
+//
+// So the test is anchored to the match: the counted number is discarded only when a slash sits
+// immediately on one side of it with a digit on the other. `5 mg/mL` and `100 mg/m2` are unaffected
+// for the same reason they always were -- no digit on both sides of that slash.
+function leadingNumberIsRatio(text, match) {
+  if (!match || match.index == null) return false;
+  // ONLY WHAT FOLLOWS, and the symmetrical-looking half that used to be here is GONE. It also tested
+  // whether a slash and a digit sat immediately BEFORE the match -- which reads like completeness and
+  // is unreachable: the counted number is the FIRST number in the string, so it can never be the
+  // denominator of anything. A mutant deleting that half left every check green, which is what
+  // proved it dead. Symmetry that cannot run is not defence in depth; it is a line a later reader
+  // has to work out is meaningless.
+  return /^\s*\/\s*\d/.test(text.slice(match.index + match[0].length));
+}
 function migrateDoseLabels(med) {
   if (!med || Number(med.doseSchemaV) >= DOSE_SCHEMA_VERSION) return med;
   const next = { ...med, doseSchemaV: DOSE_SCHEMA_VERSION };
@@ -4351,6 +4369,20 @@ function renderGroupedMedsCard(title, meds, now) {
             // be the same mistake at lower severity.
             (med.treatmentOnly && !hasTreatmentDate() && !isOtherTreatmentType())
               ? h('div', { style: { fontSize: '12px', color: '#8C5900', fontWeight: '600', marginTop: '3px', lineHeight: '1.35' } }, 'No date set — showing every day until you set a treatment date.') : null,
+            // THE SAME NOTICE AS THE STANDALONE CARD, and this is the THIRD time this function has
+            // been the place a per-medication line was left out. The v52 comment above records it
+            // once; the flash-mark comment at the top of this function records it again, in this
+            // same release, calling it "precisely the failure this release's own notes claim to
+            // have fixed, left in place for the grouped half."
+            // Three of the four placements the editor offers are group cards. A disclosure wired to
+            // the fourth is not a disclosure -- it is a disclosure for whoever happened to file the
+            // medication the way the developer tested it.
+            (function () {
+              const un = uncountableDoseNotice(med);
+              return un ? h('div', { 'data-uncounted': 'group', style: { fontSize: '12px', color: '#8C5900',
+                  fontWeight: '600', marginTop: '3px', lineHeight: '1.35', overflowWrap: 'anywhere' } },
+                '! ' + un) : null;
+            })(),
             lastToday ? h('div', { style: { fontSize: '12.5px', color: '#0C7F57', fontWeight: '700', marginTop: '2px' } }, '✓ Logged ' + fmtTime(lastToday.ts)) : null,
             isOv ? h('div', { style: { fontSize: '12px', color: '#A15B56', fontWeight: '600', marginTop: '3px', lineHeight: '1.35' } }, overrideExplain) : null
           ),
@@ -6789,10 +6821,10 @@ function parseDoseOptions(text) {
     // caregiver should see what they typed.
     const numMatch = countable.match(/(\d*\.?\d+)/);
     const dose = { label, mg: mgMatch ? Number(mgMatch[1]) : 0 };
-    // NO COUNT AT ALL when the amount is a ratio the app did not evaluate. Leaving `pills` off is
-    // the same thing it already does for "as directed": the daily limit in pills refuses to arm and
-    // the editor's own amber line says why, which is honest. Inventing a number is not.
-    if (numMatch && !UNEVALUATED_RATIO.test(countable)) dose.pills = Number(numMatch[1]);
+    // NO COUNT AT ALL when the number the app would count is itself half of a ratio it could not
+    // evaluate. Leaving `pills` off is what it already does for "as directed": the limit in pills
+    // is not applied, and every screen that can log a dose says so. Inventing a number is not.
+    if (numMatch && !leadingNumberIsRatio(countable, numMatch)) dose.pills = Number(numMatch[1]);
     return dose;
   });
 }

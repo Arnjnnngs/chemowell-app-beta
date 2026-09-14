@@ -257,6 +257,16 @@ const TABLE = [
   { in: '1/10 tablet',  out: [{ label: '1/10 tablet', mg: 0, pills: 0 }],       why: 'a tenth is NOT on the list — and must not count as a whole tablet' },
   { in: '1/16 tablet',  out: [{ label: '1/16 tablet', mg: 0, pills: 0 }],       why: 'nor a sixteenth' },
   { in: '1:1000',       out: [{ label: '1:1000', mg: 0, pills: 1 }],            why: 'a colon ratio is not a slash; unchanged from before' },
+  // THE EDITOR TELLS THE CAREGIVER "write the amount as a plain number if it should count", and the
+  // round-6 audit found that every natural way of doing so was refused: the guard tested whether the
+  // STRING contained a ratio anywhere, so "1 tablet (5/325 mg)" counted nothing and the card then
+  // said the app could not tell how many "1 tablet" was. An instruction that cannot be followed is
+  // worse than no instruction. The guard is anchored to the counted NUMBER now, and these rows are
+  // what stop it drifting back to the string.
+  { in: '1 tablet (5/325 mg)',  out: [{ label: '1 tablet (5/325 mg)', mg: 325, pills: 1 }],  why: 'the instruction the app itself gives' },
+  { in: '2 tablets (5/325 mg)', out: [{ label: '2 tablets (5/325 mg)', mg: 325, pills: 2 }], why: 'and with a count above one' },
+  { in: '1 tablet 5/325 mg',    out: [{ label: '1 tablet 5/325 mg', mg: 325, pills: 1 }],    why: 'without the brackets' },
+  { in: '1 x 5/325 mg',         out: [{ label: '1 x 5/325 mg', mg: 325, pills: 1 }],         why: 'the other way people write it' },
   // A SLASH THAT IS A RATE, not a fraction and not a strength. These were safe before and the guard
   // must not make them unsafe: there is no digit immediately before the slash in either.
   { in: '5 mg/mL',      out: [{ label: '5 mg/mL',    mg: 5,    pills: 5 }],    why: 'a concentration, not a fraction' },
@@ -711,6 +721,65 @@ console.log('\n3f. A DOSE THE APP CANNOT COUNT IS SAID OUT LOUD, WHERE THE DOSE 
   await seedAndOpenHome([combo({ doses: [] })]);
   const n3 = await noticeText();
   t('a pill limit with no amounts set says so too', !!n3 && /no amounts set/i.test(n3), JSON.stringify(n3));
+
+  // EVERY PLACEMENT THE EDITOR OFFERS, NOT THE ONE THE DEVELOPER TESTED. The round-6 audit's block:
+  // the notice was wired into `renderToday`'s standalone card and nowhere else, so on the Morning,
+  // Afternoon and Evening group cards -- three of the four placements -- the limit was still
+  // silently disarmed. Six doses logged past a four-a-day ceiling with nothing on the page. This
+  // section is the class, and it is written so a fifth placement added later fails it too.
+  for (const [flag, where] of [['groupedMorning', 'Morning'], ['groupedAfternoon', 'Afternoon'], ['groupedEvening', 'Evening']]) {
+    const med = combo({ quickLog: false });
+    med[flag] = true;
+    await seedAndOpenHome([med]);
+    const anyNotice = await page.evaluate(() => {
+      const els = [...document.querySelectorAll('[data-uncounted]')];
+      return els.length ? els.map(e => (e.innerText || '').replace(/\s+/g, ' ').trim()).join(' | ') : null;
+    });
+    t('the ' + where + ' group card says the limit is not counting this dose',
+      !!anyNotice && /5\/325 mg/.test(anyNotice), JSON.stringify(anyNotice));
+  }
+  // THE COMPLETENESS CHECK, and this is the part that outlives the specific bug. The app offers a
+  // fixed list of Home placements; every one that can LOG A DOSE must carry the disclosure. Read off
+  // the picker the caregiver actually sees, so adding a sixth placement without wiring the notice
+  // turns this red instead of shipping another silent surface.
+  //
+  // THE FIRST VERSION FELL BACK TO A LIST COPIED INTO THIS FILE when the picker was not on screen --
+  // which is a completeness check that completes against itself, and would have passed on any number
+  // of new placements. It opens the editor and reads the real thing now, and a picker it cannot find
+  // is a FAILURE rather than a fallback.
+  {
+    await page.getByRole('button', { name: /^Meds/ }).first().click();
+    await page.waitForTimeout(700);
+    await page.locator('[data-tour="meds-add"]').first().click();
+    await page.waitForTimeout(600);
+    const offered = await page.evaluate(() => {
+      const seen = [...document.querySelectorAll('*')]
+        .filter(e => !e.children.length)
+        .map(e => (e.innerText || '').trim())
+        .filter(x => /(Home card|meds group)$/.test(x));
+      return [...new Set(seen)];
+    });
+    t('the placement picker is on screen to be read', offered.length > 0, JSON.stringify(offered));
+    // Every placement with a logging control is asserted above; "No Home card" has no button on
+    // Home at all, so there is no dose to disclose about. An exemption said out loud, per Rule 5.5.
+    const COVERED = [/Own Home card/, /Morning meds group/, /Afternoon meds group/, /Evening meds group/];
+    const EXEMPT = [/No Home card/];
+    const unaccounted = offered.filter(x => !COVERED.some(r => r.test(x)) && !EXEMPT.some(r => r.test(x)));
+    t('every Home placement that can log a dose is covered above, and the rest are named exempt',
+      offered.length > 0 && unaccounted.length === 0, 'unaccounted: ' + JSON.stringify(unaccounted) + ' of ' + JSON.stringify(offered));
+    const discard2 = page.getByRole('button', { name: 'Discard', exact: true });
+    if (await discard2.count()) { await discard2.first().click(); await page.waitForTimeout(600); }
+    await dismiss();
+  }
+
+  // AND THE NEGATIVE ON A GROUP CARD TOO, so the notice is not simply always on there.
+  {
+    const ok = combo({ quickLog: false, doses: [{ label: '1 tablet', mg: 0, pills: 1 }] });
+    ok.groupedEvening = true;
+    await seedAndOpenHome([ok]);
+    t('an ordinary grouped medication says nothing',
+      (await page.evaluate(() => document.querySelectorAll('[data-uncounted]').length)) === 0);
+  }
 
   // THE UPGRADE, LOGGED THROUGH. The round-5 audit's own note on why its block was invisible to
   // this suite: every limit check here used a medication the suite created through the editor, which
