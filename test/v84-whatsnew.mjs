@@ -24,7 +24,7 @@ const { chromium } = (() => {
   throw new Error('playwright not found');
 })();
 
-const BASE = 'http://127.0.0.1:8899/index.html';
+const BASE = process.env.FALSIFY_BASE || 'http://127.0.0.1:8899/index.html';
 let pass = 0, fail = 0;
 const t = (name, cond, detail) => {
   console.log('  ' + (cond ? 'PASS  ' : 'FAIL  ') + name + (detail !== undefined ? '  |  ' + detail : ''));
