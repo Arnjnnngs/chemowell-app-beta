@@ -276,6 +276,33 @@ const TABLE = [
   { in: '5/325 mg (1 tablet)',  out: [{ label: '5/325 mg (1 tablet)', mg: 325, pills: 1 }],  why: 'ORDER MUST NOT DECIDE THE COUNT' },
   { in: '5/325 mg 2 tablets',   out: [{ label: '5/325 mg 2 tablets', mg: 325, pills: 2 }],   why: 'same, without the brackets and with a count above one' },
   { in: '1/10 tablet (2 tabs)', out: [{ label: '1/10 tablet (2 tabs)', mg: 0, pills: 2 }],   why: 'a rejected denominator first, a real count after it' },
+
+  // THE NUMBER AFTER A RATIO IS NOT AUTOMATICALLY AN AMOUNT, and this whole block exists because the
+  // fix for the rows above walked past the ratio and counted whatever came next. On a combination
+  // strength written the way a bottle writes it, what comes next is the DOSING INTERVAL. Measured on
+  // that build: `5/325 mg q6h` stored six tablets, so with a four-a-day limit the card was locked at
+  // zero doses logged and the only way to give the medicine was the red override — which then stamps
+  // every dose as an over-limit override in the history a caregiver hands a nurse.
+  //
+  // The suite had no row where the first non-ratio number was NOT the amount, so it stayed green.
+  // These are those rows.
+  { in: '5/325 mg q6h',        out: [{ label: '5/325 mg q6h', mg: 325, pills: 0 }],        why: 'AN INTERVAL IS NOT A PILL COUNT' },
+  { in: '10/325 mg q8h',       out: [{ label: '10/325 mg q8h', mg: 325, pills: 0 }],       why: 'nor is the other common one' },
+  { in: '5/325 mg q4-6h',      out: [{ label: '5/325 mg q4-6h', mg: 325, pills: 0 }],      why: 'nor a range of intervals' },
+  { in: '5/325mg #30',         out: [{ label: '5/325mg #30', mg: 325, pills: 0 }],         why: 'a quantity dispensed is not a dose' },
+  { in: '5/325 mg (max 8 per day)', out: [{ label: '5/325 mg (max 8 per day)', mg: 325, pills: 0 }], why: 'a maximum is not a dose either' },
+  { in: '5/325 mg x 2',        out: [{ label: '5/325 mg x 2', mg: 325, pills: 0 }],        why: 'and a bare multiplier says nothing about what is being counted' },
+  // AND THE AMOUNT STILL COUNTS WHEN THE NEXT WORD SAYS WHAT IT IS. That is the whole distinction,
+  // so both halves of it are pinned.
+  { in: '7.5/325 mg 1-2 tabs', out: [{ label: '7.5/325 mg 1-2 tabs', mg: 325, pills: 2 }], why: 'the noun follows the upper bound — the cautious direction on a ceiling' },
+  { in: '5/325 mg (2 capsules)', out: [{ label: '5/325 mg (2 capsules)', mg: 325, pills: 2 }], why: 'a different countable noun' },
+  { in: '5/325 mg 1 patch',    out: [{ label: '5/325 mg 1 patch', mg: 325, pills: 1 }],    why: 'and another' },
+  // A WORD THAT MERELY STARTS LIKE ONE OF THEM IS NOT ONE OF THEM. Without a word boundary on the
+  // whitelist, "tablespoons" matches "tab" and "dropperfuls" matches "drop" — so a liquid measure
+  // would be counted as that many tablets against a tablet ceiling. A mutant removing the boundary
+  // left every other row green, which is how this gap was found rather than guessed at.
+  { in: '5/325 mg 2 tablespoons', out: [{ label: '5/325 mg 2 tablespoons', mg: 325, pills: 0 }], why: 'a tablespoon is not a tablet' },
+  { in: '1/10 syrup 3 dropperfuls', out: [{ label: '1/10 syrup 3 dropperfuls', mg: 0, pills: 0 }], why: 'nor is a dropperful a drop' },
   // A SLASH THAT IS A RATE, not a fraction and not a strength. These were safe before and the guard
   // must not make them unsafe: there is no digit immediately before the slash in either.
   { in: '5 mg/mL',      out: [{ label: '5 mg/mL',    mg: 5,    pills: 5 }],    why: 'a concentration, not a fraction' },
@@ -856,6 +883,23 @@ console.log('\n3f. A DOSE THE APP CANNOT COUNT IS SAID OUT LOUD, WHERE THE DOSE 
     await seedAndOpenHome([ok]);
     t('an ordinary grouped medication says nothing',
       (await page.evaluate(() => document.querySelectorAll('[data-uncounted]').length)) === 0);
+  }
+
+  // THE SIG LINE OFF THE BOTTLE, ON THE REAL SCREEN. The round-8 audit's block was not visible in a
+  // parser table: the harm is that `pills: 6` on a four-a-day limit makes `doseBlocked` true at ZERO
+  // doses logged, so the ordinary Log button never appears and the only route is the red override —
+  // which stamps every dose as an over-limit override in the history a caregiver hands a nurse.
+  {
+    await seedAndOpenHome([combo({ doses: [{ label: '5/325 mg q6h', mg: 325 }] })]);
+    const plain = await page.getByRole('button', { name: /^5\/325 mg q6h$/ }).count();
+    const over = await page.getByRole('button', { name: /over limit/i }).count();
+    t('a medication typed as the bottle writes it offers an ordinary Log button',
+      plain > 0, 'plain buttons: ' + plain);
+    t('and is NOT locked behind the over-limit override at zero doses logged',
+      over === 0, 'override buttons: ' + over);
+    // And the limit it cannot count is disclosed rather than silently ignored — the other half.
+    const n = await noticeText();
+    t('and the card says the limit is not counting it', !!n && /5\/325 mg q6h/.test(n), JSON.stringify(n));
   }
 
   // THE UPGRADE, LOGGED THROUGH. The round-5 audit's own note on why its block was invisible to

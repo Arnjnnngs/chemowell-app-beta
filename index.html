@@ -1286,11 +1286,29 @@ function numberIsInRatio(text, index, length) {
   const after = text.slice(index + length);
   return /\d\s*\/\s*$/.test(before) || /^\s*\/\s*\d/.test(after);
 }
+// WHAT THE NEXT WORD HAS TO SAY BEFORE A NUMBER PAST A RATIO IS TREATED AS AN AMOUNT.
+// Deliberately a whitelist. The first version of this walked past the ratio and counted whatever
+// number came next -- and on a combination strength written the way a bottle writes it, that is the
+// DOSING INTERVAL: `5/325 mg q6h` counted six tablets, `#30` counted the quantity dispensed, and
+// `(max 8 per day)` counted the maximum. With a four-a-day limit the card was then locked at zero
+// doses logged, so the only way to give the medicine was the red override, and every dose went into
+// the record stamped as an over-limit override.
+// Blacklisting `q`, `h`, `#` and `max` would close those five shapes and leave the next sig
+// abbreviation nobody thought of. Saying what a countable thing IS closes the class.
+const COUNTABLE_NOUN = /^\s*\(?\s*(tab|tabs|tablet|tablets|cap|caps|capsule|capsules|pill|pills|patch|patches|spray|sprays|drop|drops|puff|puffs|lozenge|lozenges|application|applications|dose|doses|ml|mL|millilitre|millilitres|milliliter|milliliters)\b/;
 function firstCountableNumber(text) {
   const re = /(\d*\.?\d+)/g;
-  let m;
+  let m, sawRatio = false;
   while ((m = re.exec(text)) !== null) {
-    if (!numberIsInRatio(text, m.index, m[0].length)) return Number(m[1]);
+    if (numberIsInRatio(text, m.index, m[0].length)) { sawRatio = true; continue; }
+    // BEFORE ANY RATIO, NOTHING CHANGES. A leading number has counted as the amount since v45, at
+    // Aaron's request, because "1 patch" and "2 sprays" are how people write a dose and the field's
+    // own example does not contain any of the words above.
+    if (!sawRatio) return Number(m[1]);
+    // AFTER ONE, the next word has to say what is being counted. An interval, a quantity dispensed
+    // and a maximum are not amounts, so they are not counted -- and the card then says the limit is
+    // not being applied, which is true and is the honest answer.
+    if (COUNTABLE_NOUN.test(text.slice(m.index + m[0].length))) return Number(m[1]);
   }
   return null;
 }

@@ -1,0 +1,26 @@
+OK M46 any number past a ratio counts again (an interval becomes a pill count -- the round-8 BLOCK)
+      RED: "5/325 mg q6h" → 5/325 mg q6h [325mg / 0]
+      RED: "10/325 mg q8h" → 10/325 mg q8h [325mg / 0]
+      RED: "5/325 mg q4-6h" → 5/325 mg q4-6h [325mg / 0]
+      RED: "5/325mg #30" → 5/325mg #30 [325mg / 0]
+      ... and 8 more
+
+OK M47 the noun whitelist is emptied, so a real count past a ratio is lost
+      RED: "5/325 mg (1 tablet)" → 5/325 mg (1 tablet) [325mg / 1]
+      RED: "5/325 mg 2 tablets" → 5/325 mg 2 tablets [325mg / 2]
+      RED: "1/10 tablet (2 tabs)" → 1/10 tablet (2 tabs) [0mg / 2]
+      RED: "7.5/325 mg 1-2 tabs" → 7.5/325 mg 1-2 tabs [325mg / 2]
+      ... and 2 more
+
+OK M48 the sawRatio gate is dropped, so an ordinary leading amount now needs a noun
+      RED: ".5 mg" → 0.5 mg [0.5mg / 0.5]
+      RED: "0.5 mg" → 0.5 mg [0.5mg / 0.5]
+      RED: "1.0 mg" → 1 mg [1mg / 1]
+      RED: "2.50 mg" → 2.5 mg [2.5mg / 2.5]
+      ... and 9 more
+
+OK M49 the noun test loses its word boundary (q6hours would count)
+      RED: "5/325 mg 2 tablespoons" → 5/325 mg 2 tablespoons [325mg / 0]
+      RED: "1/10 syrup 3 dropperfuls" → 1/10 syrup 3 dropperfuls [0mg / 0]
+
+restored; ALL MUTANTS DIED
