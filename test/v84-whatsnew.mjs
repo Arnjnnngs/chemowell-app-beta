@@ -36,7 +36,12 @@ const browser = await chromium.launch();
 const allErrors = [];
 
 // A page with NOTHING in local storage -- a phone that has never run ChemoWell.
-async function freshPage() {
+//
+// `setUp` decides whether the app gets past its welcome screen. It matters more than it looks:
+// the notice is mounted in the running app, NOT on the first-run setup screen, and a fixture that
+// never names a patient sits on that screen forever while every check reports "no notice" -- which
+// is true, and about the wrong screen. That is how the first run of this suite failed.
+async function freshPage(setUp) {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   page.on('pageerror', e => allErrors.push(String(e.message)));
   page.on('console', m => {
@@ -47,6 +52,20 @@ async function freshPage() {
   });
   await page.goto(BASE);
   await page.waitForTimeout(1500);
+  if (setUp) {
+    const k = await page.evaluate(() => Object.keys(localStorage).find(x => /prefs-v1$/.test(x)));
+    if (!k) throw new Error('no prefs key to set up against');
+    await page.evaluate((key) => {
+      const pr = JSON.parse(localStorage.getItem(key) || '{}');
+      localStorage.setItem(key, JSON.stringify(Object.assign(pr, { patientName: 'Test', onboarded: true })));
+    }, k);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1600);
+    for (const n of ['Skip guide', 'Got it']) {
+      const b = page.getByRole('button', { name: n, exact: true });
+      if (await b.count()) { await b.first().click(); await page.waitForTimeout(400); }
+    }
+  }
   return page;
 }
 
@@ -67,7 +86,7 @@ section('1. A BRAND-NEW PHONE IS NOT GREETED WITH "HERE IS WHAT CHANGED"');
 // ---------------------------------------------------------------------------------------------
 section('2. A PHONE THAT HAS BEEN RUNNING THE APP *DOES* GET THE NOTICE');
 {
-  const p = await freshPage();
+  const p = await freshPage(true);
   // Simulate a phone upgrading from before the marker existed: it has ChemoWell data, no marker.
   await p.evaluate(() => {
     const keep = Object.keys(localStorage).filter(k => k.indexOf('chemowell-app') === 0 && k !== 'chemowell-app-seen-version');
@@ -86,7 +105,7 @@ section('2. A PHONE THAT HAS BEEN RUNNING THE APP *DOES* GET THE NOTICE');
 // ---------------------------------------------------------------------------------------------
 section('3. DISMISSING IT DISMISSES IT -- ON A SCREEN THAT REDRAWS EVERY SECOND');
 {
-  const p = await freshPage();
+  const p = await freshPage(true);
   await p.evaluate(() => { localStorage.setItem('chemowell-app-seen-version', 'app-v1'); });
   await p.reload({ waitUntil: 'domcontentloaded' });
   await p.waitForTimeout(1800);
@@ -108,7 +127,7 @@ section('3. DISMISSING IT DISMISSES IT -- ON A SCREEN THAT REDRAWS EVERY SECOND'
 // ---------------------------------------------------------------------------------------------
 section('4. THE PHONE’S BACK BUTTON DISMISSES IT, AND MARKS IT SEEN');
 {
-  const p = await freshPage();
+  const p = await freshPage(true);
   await p.evaluate(() => { localStorage.setItem('chemowell-app-seen-version', 'app-v1'); });
   await p.reload({ waitUntil: 'domcontentloaded' });
   await p.waitForTimeout(1800);
@@ -132,7 +151,7 @@ section('4. THE PHONE’S BACK BUTTON DISMISSES IT, AND MARKS IT SEEN');
 // ---------------------------------------------------------------------------------------------
 section('5. THE FULL LIST IS REACHABLE, BOTH WAYS');
 {
-  const p = await freshPage();
+  const p = await freshPage(true);
   await p.evaluate(() => { localStorage.setItem('chemowell-app-seen-version', 'app-v1'); });
   await p.reload({ waitUntil: 'domcontentloaded' });
   await p.waitForTimeout(1800);
@@ -152,7 +171,7 @@ section('5. THE FULL LIST IS REACHABLE, BOTH WAYS');
 {
   // Once dismissed, the only way back to it is the menu. A notice with no permanent home is a
   // notice somebody can never re-read.
-  const p = await freshPage();
+  const p = await freshPage(true);
   const menu = p.getByRole('button', { name: /menu/i });
   if (await menu.count()) { await menu.first().click(); await p.waitForTimeout(500); }
   const row = p.getByRole('button', { name: /What.s new/i });
@@ -170,7 +189,7 @@ section('5. THE FULL LIST IS REACHABLE, BOTH WAYS');
 // ---------------------------------------------------------------------------------------------
 section('6. THE COPY IS ABOUT A PRODUCT, NOT ABOUT ONE PATIENT (CLAUDE.md Rule 0)');
 {
-  const p = await freshPage();
+  const p = await freshPage(true);
   await p.evaluate(() => { localStorage.setItem('chemowell-app-seen-version', 'app-v1'); });
   await p.reload({ waitUntil: 'domcontentloaded' });
   await p.waitForTimeout(1800);
@@ -195,7 +214,7 @@ section('7. THE NEWEST ENTRY IS ABOUT THE VERSION THAT IS RUNNING');
 {
   // The whole point of the notice is that it describes THIS release. An entry that has not been
   // updated is a notice telling somebody about a change they got two releases ago.
-  const p = await freshPage();
+  const p = await freshPage(true);
   const mismatch = await p.evaluate(() => {
     const v = window.__backTest && window.__backTest.version;
     return { running: v, newest: (window.__whatsNewTest && window.__whatsNewTest.latest()) || null };

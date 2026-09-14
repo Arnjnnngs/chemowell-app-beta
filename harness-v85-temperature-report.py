@@ -215,6 +215,15 @@ src = cut(src,
   "      meta: d === null ? 'No readings yet' : (d + tempSuffix() + ' latest' + (d >= tempHigh() ? ' \\u00b7 high' : d >= tempFever() ? ' \\u00b7 fever' : '')) }; }",
   'the temperature descriptor')
 
+# The thresholds, exposed so a suite can compare the line DRAWN on the chart against the number
+# the app COLOURS from. Without it the only available check is a pattern match on chart text, and
+# the first version of exactly that check passed while the label had lost its number.
+src = cut(src,
+  "  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state) };",
+  "  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state) };\n"
+  "  window.__tempTest = { fever: tempFever, high: tempHigh, suffix: tempSuffix };",
+  'the temperature debug hook')
+
 src = cut(src,
   "  const content = type === 'history' ? renderHistory(now) : type === 'weight' ? renderWeightTrend(now) :",
   "  const content = type === 'history' ? renderHistory(now) : type === 'weight' ? renderWeightTrend(now) : type === 'temp' ? renderTemperatureReport(now) :",

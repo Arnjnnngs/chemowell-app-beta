@@ -1696,13 +1696,13 @@ const initialMedicationConfig = loadMedicationConfig();
 // through a strict whitelist (anything unexpected falls back to 'home'). Deliberately NOT
 // persisted: reportsView, open modals, drafts, confirms, and the TEST_MODE date offset.
 const UI_VIEW_KEY = 'chemowell-app-ui-view';
-const VALID_VIEWS = ['home', 'meds', 'reports', 'inpatient', 'symptoms', 'settings', 'calendar', 'account', 'notes', 'help', 'report'];
+const VALID_VIEWS = ['home', 'meds', 'reports', 'inpatient', 'symptoms', 'settings', 'calendar', 'account', 'notes', 'help', 'report', 'whatsnew'];
 function restoreView() {
   try { const v = sessionStorage.getItem(UI_VIEW_KEY); return VALID_VIEWS.indexOf(v) >= 0 ? v : 'home'; }
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { heroSnoozeUntil: 0, vitalOpen: null, symptomFilter: null, symptomRange: 'weeks', medFlash: null, entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
+let state = { heroSnoozeUntil: 0, whatsNewOpen: false, vitalOpen: null, symptomFilter: null, symptomRange: 'weeks', medFlash: null, entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -1739,6 +1739,9 @@ const BACK_LAYERS = [
   { key: 'addingProfile', label: 'the add-profile sheet', open: () => !!state.addingProfile, close: () => setState({ addingProfile: false }) },
   { key: 'chemoCalOpen', label: 'the treatment-date calendar', open: () => !!state.chemoCalOpen, close: () => setState({ chemoCalOpen: false }) },
   { key: 'tourStep', label: 'the guided tour', open: () => state.tourStep != null, close: () => setState({ tourStep: null }) },
+  // Back marks it seen, exactly as "Got it" does -- dismissing a notice is dismissing it, and a
+  // notice that comes back after you closed it is worse than one that never appeared.
+  { key: 'whatsNewOpen', label: 'the what\u2019s-new notice', open: () => !!state.whatsNewOpen, close: () => { whatsNewMarkSeen(); setState({ whatsNewOpen: false }); } },
   // 3. FULL-SCREEN EDITORS AND PANELS.
   { key: 'medEditor', label: 'the medication editor', open: () => state.medEditor != null, close: () => setState({ medEditor: null, confirmDeleteMed: null }) },
   { key: 'vitalOpen', label: 'the open vitals panel', open: () => state.vitalOpen != null, close: () => setState({ vitalOpen: null }) },
@@ -4318,6 +4321,7 @@ function renderDrawer() {
     // shrink every existing touch target below what the Designer signed off on. The drawer already
     // houses the app's other "check in on sometimes, not a daily quick-log" destinations.
     { key: 'notes', label: 'Notes', icon: 'notes', helper: 'Daily journal' },
+    { key: 'whatsnew', label: 'What\u2019s new', icon: 'bulb', helper: 'Every update, newest first' },
     { key: 'help', label: 'Help & FAQ', icon: 'help', helper: 'Find and fix a problem' },
     // Directly under Help, because the two are the same journey: Help is "is this already answered",
     // and this is "it isn't, and someone should know". A tester who cannot find this row is a
@@ -4544,6 +4548,7 @@ function renderContent(now, mg, pct, tyColor, ceiling) {
   // moment it stopped being set. Removed rather than left as a comforting no-op — dead branches
   // with confident comments are how the next reader gets misled about what the router accepts.
   // (state.faqOpenId is unrelated and still live: it is the Common-questions accordion.)
+  if (state.view === 'whatsnew') return renderWhatsNew(now);
   if (state.view === 'help') return renderHelpView(now);
   if (state.view === 'report') return renderReportView(now);
   if (state.view === 'notes') return renderNotesView(now);
@@ -5003,6 +5008,7 @@ function render() {
     // the same class on every other screen at once.
     state.toast ? h('div', { role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: toastNeedsLift() ? 'calc(142px + env(safe-area-inset-bottom))' : 'calc(96px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(59,25,10,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(136,57,24,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', pointerEvents: 'none' } }, state.toast) : null,
     renderTimeModal(),
+    renderWhatsNewModal(),
     renderUpgradeModal(),
     renderApptModal(),
     renderNoteModal(),
@@ -7121,16 +7127,6 @@ function parseDoseOptions(text) {
 // functions of a string and hold nothing, so exposing them adds no surface. The alternative is a
 // suite that tests its own copy of the parser, which is how a board stays green while the app is
 // wrong.
-if (typeof window !== 'undefined') {
-  window.__doseTest = { parseDoseOptions, normaliseDoseNumber, splitDoseOptions };
-  // The back-button registry, for the completeness check in test/v82-back-button.mjs. Exported
-  // rather than copied into the suite, so a new layer cannot be added to one and not the other.
-  // `stateKeys` is what makes the completeness check real. Without it the suite's "every
-  // dismissible thing has a Back rule" assertion had nothing to compare against and PASSED on the
-  // absence — a check that reports green loudest when it cannot see anything, which is the exact
-  // class this file has been caught on four times.
-  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state) };
-}
 
 // What the caregiver will actually get, shown only when the app changed what they wrote. Compared
 // on the JOINED options rather than on the raw text, so adding a space or a trailing comma does not
@@ -8707,7 +8703,132 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v83';
+const APP_VERSION = 'app-v84';
+
+// ---- WHAT'S NEW ------------------------------------------------------------------------------
+//
+// Written for the person holding the phone, not for a developer reading a diff. No version
+// numbers in the prose, no file names, no function names. THEY/THEM throughout: this app has
+// never asked anyone's gender and most users are not women (CLAUDE.md Rule 0, leak shape 2).
+const CHANGELOG = [
+  { v: 'app-v84', date: 'Sep 14, 2026', title: 'The app now tells you what changed',
+    points: [
+      'Until today ChemoWell updated quietly. A button could move or a number could start being counted differently and nothing on screen said so.',
+      'From now on, the first time you open the app after an update, a short note tells you what is different. Tap "Got it" and it does not come back.',
+      'Every past update is listed under "What’s new" in the menu, newest first, if you want to look back.'
+    ] },
+  { v: 'app-v83', date: 'Sep 14, 2026', title: 'Your medication cards now show what has happened today',
+    points: [
+      'Each medication on the Meds screen used to describe itself and its rules and say nothing about today. It now shows whether it is available, due, paused, or at its daily limit — and how many doses have been taken today and when the last one was.',
+      'A medication with a daily limit gets a bar showing how much of it has been used and how much is left.',
+      'Temperature has its own report for the first time. It charts your readings over time with the fever line marked, so you can see at a glance how long a temperature has been up and how high it got.',
+      'The Symptoms screen now shows how often each symptom has been happening over the last few weeks. Tap one to see just those entries.'
+    ] },
+  { v: 'app-v82', date: 'Sep 14, 2026', title: 'The home screen leads with your medications',
+    points: [
+      'Temperature, weight and blood pressure used to sit in three large boxes at the top of Home, asking to be typed into before you could see anything else. They are three small tiles now, each showing the last reading and how long ago it was.',
+      'Tap a tile and the same box and the same Log button open underneath it. Nothing was taken away.',
+      'Today’s events are one list down the day now instead of four separate cards split by time of day.',
+      'If you had turned temperature and weight off in Settings but kept blood pressure on, the blood pressure box used to disappear along with them. It stays now.'
+    ] },
+  { v: 'app-v81', date: 'Sep 14, 2026', title: 'Dose amounts are read the way they are written',
+    points: [
+      'An amount written as ".5 mg" was being counted as 5 mg against a daily limit, so a limit could be reached after a tenth of the medicine. Half-tablets, amounts with a comma in the thousands, and amounts ending in a zero after the point were all counted wrongly too.',
+      'Combination medicines written like "5/325 mg" are now left alone rather than guessed at. Where the app cannot work out how many tablets an amount means, it says so on the same screen as the button that gives the dose, and names the limit it is not applying.',
+      'Typing a medication name now shows what it is for straight away, instead of only after you touch another box. The list of medicines it recognises went from 66 to 184.'
+    ] },
+  { v: 'app-v80', date: 'Sep 13, 2026', title: 'Home answers "what is due next"',
+    points: [
+      'The top of Home now names the next medication that is due, its amount, and whether it is due now or at a time.',
+      'It never names a medication the app says not to give — one already logged, one paused, one not scheduled today, or one blocked around a treatment day.',
+      'When everything scheduled is logged, it says so rather than disappearing.'
+    ] }
+];
+
+// PER DEVICE, NOT PER PROFILE. "Have I read this yet" is a fact about the phone in your hand, so
+// the key carries no profile id: switching profile neither re-shows the notice nor silences it.
+const WHATS_NEW_KEY = 'chemowell-app-seen-version';
+function whatsNewLatest() { return CHANGELOG[0] || null; }
+function whatsNewSeenVersion() { try { return localStorage.getItem(WHATS_NEW_KEY); } catch (e) { return null; } }
+function whatsNewMarkSeen() { try { localStorage.setItem(WHATS_NEW_KEY, APP_VERSION); } catch (e) {} }
+// A FRESH INSTALL IS NOT AN UPDATE. No marker means two different things and they must not be
+// confused: a phone that has never run ChemoWell (say nothing -- "here is what changed" is
+// meaningless to somebody who has never seen the old version) and a phone that HAS run it from
+// before this marker existed (an upgrade, which is exactly what this is for). Any other ChemoWell
+// key already on the device separates them. Either way the version is stamped, so this is decided
+// once rather than on every load.
+function deviceHasPriorChemoWellData() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k !== WHATS_NEW_KEY && k.indexOf('chemowell-app') === 0) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+function whatsNewShouldShow() {
+  const seen = whatsNewSeenVersion();
+  if (!seen) { const prior = deviceHasPriorChemoWellData(); whatsNewMarkSeen(); return prior; }
+  return seen !== APP_VERSION;
+}
+
+function whatsNewEntry(e, latest) {
+  return h('div', { 'data-whatsnew-entry': e.v, style: { background: latest ? 'rgba(246,108,49,0.08)' : '#FFFDFC', border: '1px solid ' + (latest ? 'rgba(228,111,60,0.34)' : '#F0E3DD'), borderRadius: '15px', padding: '13px 14px', minWidth: '0' } },
+    h('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginBottom: '3px' } },
+      h('div', { style: { fontSize: '14.5px', fontWeight: '800', color: '#2A2127', letterSpacing: '-0.01em', minWidth: '0', overflowWrap: 'anywhere' } }, e.title),
+      h('div', { style: { fontSize: '11.5px', fontWeight: '700', color: '#915E48', flexShrink: '0' } }, e.date)
+    ),
+    h('ul', { style: { margin: '7px 0 0', paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '5px' } },
+      ...(e.points || []).map((pt) => h('li', { style: { fontSize: '13.5px', lineHeight: '1.5', color: '#554A52', overflowWrap: 'anywhere' } }, pt))
+    )
+  );
+}
+
+function renderWhatsNew(now) {
+  const latest = whatsNewLatest();
+  return [
+    h('section', { 'data-whatsnew-screen': 'true', style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
+      h('div', { style: { minWidth: '0' } },
+        h('div', { style: { fontSize: '18px', fontWeight: '800', letterSpacing: '-0.02em', color: '#2A2127' } }, 'What’s new'),
+        h('div', { style: { fontSize: '13px', color: '#7A6E76', marginTop: '3px', lineHeight: '1.45' } },
+          'Every update to ChemoWell, newest first. This phone is running ' + APP_VERSION + '.')
+      ),
+      ...CHANGELOG.map((e, i) => whatsNewEntry(e, i === 0 && latest && e.v === latest.v))
+    )
+  ];
+}
+
+// THE NEWEST RELEASE ONLY. A wall of entries on open is something a person dismisses without
+// reading, which defeats showing it at all. The rest is one tap away for anyone who wants it.
+function renderWhatsNewModal() {
+  if (!state.whatsNewOpen || !state.loaded) return null;
+  const e = whatsNewLatest();
+  if (!e) return null;
+  const close = () => { whatsNewMarkSeen(); setState({ whatsNewOpen: false }); };
+  return h('div', { 'data-whatsnew-modal': 'true', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'What’s new in this update',
+    onClick: (ev) => { if (ev.target === ev.currentTarget) close(); },
+    style: { position: 'fixed', inset: '0', zIndex: '95', background: 'rgba(42,33,39,0.42)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '16px' } },
+    h('div', { style: { width: '100%', maxWidth: '460px', maxHeight: '80vh', overflowY: 'auto', background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '20px', padding: '18px 16px calc(16px + env(safe-area-inset-bottom))', boxShadow: '0 -10px 40px rgba(86,28,4,0.22)', minWidth: '0' } },
+      h('div', { style: { fontSize: '11.5px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#BF4C1A', marginBottom: '8px' } }, 'Updated'),
+      whatsNewEntry(e, true),
+      h('div', { style: { display: 'flex', gap: '9px', marginTop: '14px' } },
+        h('button', { 'data-whatsnew-all': 'true', type: 'button',
+          onClick: () => { whatsNewMarkSeen(); setState({ whatsNewOpen: false, view: 'whatsnew', drawerOpen: false }); },
+          style: { flex: '1', minHeight: '46px', borderRadius: '13px', background: 'rgba(246,108,49,0.10)', border: '1px solid rgba(228,111,60,0.34)', color: '#BF4C1A', fontSize: '14px', fontWeight: '800' } }, 'See all updates'),
+        h('button', { 'data-whatsnew-close': 'true', type: 'button', onClick: close,
+          style: { flex: '1', minHeight: '46px', borderRadius: '13px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '14px', fontWeight: '800' } }, 'Got it')
+      )
+    )
+  );
+}
+
+// DECIDED ONCE, HERE, AND NOT EARLIER. render() runs on a one-second tick, so asking "should this
+// show" inside it would re-open the notice the moment it was dismissed. And it cannot be asked
+// where `state` is declared either: whatsNewShouldShow() reads APP_VERSION, which is a `const`
+// declared thousands of lines below that point -- calling it from there throws a ReferenceError
+// that the startup try/catch swallows, which is the exact defect this repo has now shipped twice.
+// It is asked immediately after APP_VERSION exists.
+state.whatsNewOpen = whatsNewShouldShow();
 
 // v35: the Settings notification card. One of eight mutually-exclusive states, computed by
 // nativeNotifStatus() -- never more than one status indicator on screen at once (no green pill next
@@ -12215,6 +12336,44 @@ if ('serviceWorker' in navigator) {
     swRefreshing = true;
     window.location.reload();
   });
+}
+
+// ---- DEBUG HOOKS FOR THE SUITES -- DELIBERATELY THE LAST THING IN THE MODULE ------------------
+//
+// This block used to sit ~1,500 lines higher up, and it read `APP_VERSION` and `WHATS_NEW_KEY`
+// eagerly. Both are `const` declared BELOW that point, so module evaluation threw "Cannot access
+// 'APP_VERSION' before initialization" and the whole app stopped booting -- silently, because the
+// only symptom was a feature that never appeared.
+//
+// **That is the third temporal-dead-zone failure in this file**, and the third one happened while
+// writing the comment about the second. Patching each field into a getter would have fixed the two
+// that were caught and left the next one to be found by somebody using the app. Position is the
+// actual guard: a block that runs last cannot read anything too early, so every future hook added
+// here is safe by construction rather than by remembering.
+//
+// Nothing here changes app behaviour; it exports what the suites compare against, so a check
+// cannot quietly test its own copy of the app's logic instead of the app's.
+if (typeof window !== 'undefined') {
+  window.__doseTest = { parseDoseOptions, normaliseDoseNumber, splitDoseOptions };
+  // The back-button registry, for the completeness check in test/v82-back-button.mjs. Exported
+  // rather than copied into the suite, so a new layer cannot be added to one and not the other.
+  // `stateKeys` is what makes the completeness check real. Without it the suite's "every
+  // dismissible thing has a Back rule" assertion had nothing to compare against and PASSED on the
+  // absence — a check that reports green loudest when it cannot see anything, which is the exact
+  // class this file has been caught on four times.
+  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state),
+    // A GETTER, NOT A VALUE. This hook is built ~1,500 lines ABOVE `const APP_VERSION`,
+    // so reading it eagerly here throws "Cannot access 'APP_VERSION' before initialization"
+    // at module load -- the temporal dead zone this repo has now been bitten by three
+    // times, and the third time was in the comment warning about the second. A getter is
+    // evaluated when a suite asks, by which point the const exists.
+    get version() { return APP_VERSION; } };
+  window.__whatsNewTest = { latest: whatsNewLatest, all: () => CHANGELOG, shouldShow: whatsNewShouldShow, key: WHATS_NEW_KEY };
+  // The temperature thresholds, so a suite can check that the line DRAWN on the chart carries
+  // the number the app COLOURS from, rather than pattern-matching text that happens to sit
+  // near it. The first version of that check matched "Fever" followed by an axis label and
+  // passed while the label had been stripped of its number entirely.
+  window.__tempTest = { fever: tempFever, high: tempHigh, suffix: tempSuffix };
 }
 </script>
 </body>

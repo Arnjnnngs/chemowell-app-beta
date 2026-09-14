@@ -65,11 +65,18 @@ BLOCK = r"""
 // numbers in the prose, no file names, no function names. THEY/THEM throughout: this app has
 // never asked anyone's gender and most users are not women (CLAUDE.md Rule 0, leak shape 2).
 const CHANGELOG = [
-  { v: 'app-v83', date: 'Sep 14, 2026', title: 'The app now tells you what changed',
+  { v: 'app-v84', date: 'Sep 14, 2026', title: 'The app now tells you what changed',
     points: [
       'Until today ChemoWell updated quietly. A button could move or a number could start being counted differently and nothing on screen said so.',
       'From now on, the first time you open the app after an update, a short note tells you what is different. Tap "Got it" and it does not come back.',
       'Every past update is listed under "What’s new" in the menu, newest first, if you want to look back.'
+    ] },
+  { v: 'app-v83', date: 'Sep 14, 2026', title: 'Your medication cards now show what has happened today',
+    points: [
+      'Each medication on the Meds screen used to describe itself and its rules and say nothing about today. It now shows whether it is available, due, paused, or at its daily limit — and how many doses have been taken today and when the last one was.',
+      'A medication with a daily limit gets a bar showing how much of it has been used and how much is left.',
+      'Temperature has its own report for the first time. It charts your readings over time with the fever line marked, so you can see at a glance how long a temperature has been up and how high it got.',
+      'The Symptoms screen now shows how often each symptom has been happening over the last few weeks. Tap one to see just those entries.'
     ] },
   { v: 'app-v82', date: 'Sep 14, 2026', title: 'The home screen leads with your medications',
     points: [
@@ -180,12 +187,12 @@ state.whatsNewOpen = whatsNewShouldShow();
 
 # Placed immediately after APP_VERSION, which every function above reads. Declaring them before it
 # would be the temporal-dead-zone defect this repo has now shipped twice.
-src = cut(src, "const APP_VERSION = 'app-v82';\n",
-          "const APP_VERSION = 'app-v83';\n" + BLOCK, 'the changelog block')
+src = cut(src, "const APP_VERSION = 'app-v83';\n",
+          "const APP_VERSION = 'app-v84';\n" + BLOCK, 'the changelog block')
 
 # ---- 2. state, decided once at startup ---------------------------------------------------------
 src = cut(src, "let state = { heroSnoozeUntil: 0, vitalOpen: null,",
-          "let state = { heroSnoozeUntil: 0, vitalOpen: null, whatsNewOpen: false,", 'state.whatsNewOpen')
+          "let state = { heroSnoozeUntil: 0, whatsNewOpen: false, vitalOpen: null,", 'state.whatsNewOpen')
 
 # ---- 3. the router, the view whitelist, the back registry, the drawer ---------------------------
 src = cut(src,
@@ -223,7 +230,13 @@ src = cut(src, "    renderTimeModal(),", "    renderTimeModal(),\n    renderWhat
 # project has been broken by on every legitimate release.
 src = cut(src,
   "  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state) };",
-  "  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state), version: APP_VERSION };\n"
+  "  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state),
+    // A GETTER, NOT A VALUE. This hook is built ~1,500 lines ABOVE `const APP_VERSION`,
+    // so reading it eagerly here throws "Cannot access 'APP_VERSION' before initialization"
+    // at module load -- the temporal dead zone this repo has now been bitten by three
+    // times, and the third time was in the comment warning about the second. A getter is
+    // evaluated when a suite asks, by which point the const exists.
+    get version() { return APP_VERSION; } };\n"
   "  window.__whatsNewTest = { latest: whatsNewLatest, all: () => CHANGELOG, shouldShow: whatsNewShouldShow, key: WHATS_NEW_KEY };",
   'the debug hooks')
 

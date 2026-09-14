@@ -174,10 +174,19 @@ section('3. THE TEMPERATURE REPORT, WHICH DID NOT EXIST');
   const svg = await p.locator('[data-temp-chart] svg').innerHTML();
   // THE LINE IS DRAWN FROM THE APP'S OWN THRESHOLD, so it cannot disagree with the colour Home
   // paints a reading. The label is read back out of the chart rather than compared to a literal.
-  const fever = await p.evaluate(() => (typeof tempFever === 'function' ? tempFever() : null)).catch(() => null);
-  t('the fever line is on the chart', /Fever/.test(svg), svg.match(/Fever[^<]*/) ? svg.match(/Fever[^<]*/)[0] : 'not found');
-  t('and it is labelled with a real number, not a hardcoded one',
-    /Fever\s*[\d.]+/.test(svg.replace(/<[^>]*>/g, ' ')), (svg.match(/Fever[^<]*/) || [''])[0]);
+  // THIS CHECK SURVIVED A MUTANT AND HAD TO BE REWRITTEN. Its first version stripped the SVG tags
+  // and matched /Fever\s*[\d.]+/ -- which happily matched the word "Fever" followed by whatever
+  // axis label came next in the flattened text. A mutant that replaced the label with a bare
+  // "Fever" and hardcoded the threshold passed 44/44. The check now reads the app's OWN threshold
+  // off a debug hook and requires the drawn label to be exactly that, so a hardcoded number and a
+  // computed one are distinguishable.
+  const want = await p.evaluate(() => (window.__tempTest ? ('Fever ' + window.__tempTest.fever() + window.__tempTest.suffix()) : null));
+  t('the app exposes its own fever threshold, so this check has something real to compare against',
+    typeof want === 'string' && /\d/.test(want), String(want));
+  const label = (svg.match(/>\s*(Fever[^<]*)</) || [])[1] || '';
+  t('the fever line is on the chart', /Fever/.test(svg), label || 'not found');
+  t('and its label is the threshold the app actually colours from, character for character',
+    label.trim() === String(want).trim(), 'drawn=' + JSON.stringify(label.trim()) + ' expected=' + JSON.stringify(want));
   const stats = await p.locator('[data-temp-peak]').innerText() + ' / ' + await p.locator('[data-temp-latest]').innerText() + ' / ' + await p.locator('[data-temp-overcount]').innerText();
   t('the highest reading is reported', /101\.4/.test(stats), stats.replace(/\n/g, ' '));
   t('and how many were at or above the fever line', /\b1\b/.test(await p.locator('[data-temp-overcount]').innerText()),
