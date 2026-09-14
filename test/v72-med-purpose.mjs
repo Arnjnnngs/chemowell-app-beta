@@ -353,14 +353,22 @@ console.log('\n4. The box is a PLACEHOLDER, and an edit stores nothing (care-tra
   });
   t('the Zofran editor opens', opened, '');
   await page.waitForTimeout(600);
+  // THE GUARANTEE IS "SHOWN, NEVER SEEDED" -- not "shown in the placeholder attribute".
+  // This check used to require the built-in sentence to BE the field's placeholder, and app-v81
+  // moved it to its own wrapping line under the field because a placeholder is one line and clipped
+  // 52 of the 68 descriptions at 320px. The sentence is more visible than it has ever been and this
+  // check went red anyway: it was pinned to where the text was drawn last week rather than to what
+  // it must never do, which is the third time this repo has been bitten by that exact shape in two
+  // releases. It now asserts the two things that actually matter, wherever the words live.
   const box = await page.evaluate(() => {
     const lab = [...document.querySelectorAll('label')].find(l => /what it/i.test(l.innerText || ''));
     const inp = lab && lab.querySelector('input, textarea');
-    return inp ? { value: inp.value, placeholder: inp.placeholder } : null;
+    return inp ? { value: inp.value, placeholder: inp.placeholder, shown: (lab.innerText || '').replace(/\s+/g, ' ') } : null;
   });
   t('the box is EMPTY for a medication nobody has described', box && box.value === '', JSON.stringify(box && box.value));
-  t('the built-in sentence shows as the PLACEHOLDER instead',
-    !!(box && box.placeholder === (TABLE['zofran'] || '<<no such entry>>')), JSON.stringify(box && box.placeholder));
+  t('the built-in sentence is SHOWN somewhere on that field, not typed into the box',
+    !!(box && TABLE['zofran'] && box.shown.includes(TABLE['zofran']) && !box.value.includes(TABLE['zofran'])),
+    JSON.stringify(box && box.shown).slice(0, 160));
   await clickText(/^Save changes$/);
   await page.waitForTimeout(900);
   const stored = await storedPurpose('zofran');
