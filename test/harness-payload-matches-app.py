@@ -112,17 +112,40 @@ for what, text in inserts:
 # written against (`cut`). The answer both times is to stop trusting a convention and check it:
 # `src` may be assigned only from the initial read, or from cut().
 ALLOWED_SRC_SOURCES = 'HTML.read_text() or cut()'
+# AND THE FIRST VERSION OF THIS GUARD SAW ONLY ONE ASSIGNMENT FORM, which is the same defect a
+# FOURTH time, one level up each round: the .mjs saw only the SPELLING (r"""), the .py only the
+# FUNCTION (cut), and this only `src = ...`. `src += "..."` is an ast.AugAssign and
+# `src, _ = src + "...", 1` puts a Tuple in targets; both wrote stale text and both scored a clean
+# board. Found by the PM gate falsifying a guard that had just been written to close exactly this
+# class. Every binding of the name is examined now, whatever shape it takes.
+def _binds_src(node):
+    if isinstance(node, ast.AugAssign):
+        return isinstance(node.target, ast.Name) and node.target.id == 'src'
+    if isinstance(node, ast.Assign):
+        for t in node.targets:
+            if isinstance(t, ast.Name) and t.id == 'src':
+                return True
+            if isinstance(t, (ast.Tuple, ast.List)):
+                if any(isinstance(e, ast.Name) and e.id == 'src' for e in t.elts):
+                    return True
+    return False
+
 for node in ast.walk(tree):
-    if not (isinstance(node, ast.Assign) and any(
-            isinstance(t, ast.Name) and t.id == 'src' for t in node.targets)):
+    if not _binds_src(node):
         continue
-    v = node.value
-    via_cut = isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id == 'cut'
-    via_read = isinstance(v, ast.Call) and isinstance(v.func, ast.Attribute) and v.func.attr == 'read_text'
+    # An augmented assignment appends to the app by definition -- there is no form of `src += x`
+    # that routes through cut() -- so it is refused outright rather than inspected.
+    v = getattr(node, 'value', None)
+    via_cut = isinstance(node, ast.Assign) and isinstance(v, ast.Call) \
+        and isinstance(v.func, ast.Name) and v.func.id == 'cut' \
+        and all(isinstance(t, ast.Name) for t in node.targets)
+    via_read = isinstance(node, ast.Assign) and isinstance(v, ast.Call) \
+        and isinstance(v.func, ast.Attribute) and v.func.attr == 'read_text' \
+        and all(isinstance(t, ast.Name) for t in node.targets)
     if via_cut or via_read:
         continue
     bad += 1
-    print('  FAIL  line %d assigns `src` from something other than %s, so the text it writes into'
+    print('  FAIL  line %d binds `src` from something other than %s, so the text it writes into'
           % (node.lineno, ALLOWED_SRC_SOURCES))
     print('        the app is never compared against anything. Route it through cut().')
 
