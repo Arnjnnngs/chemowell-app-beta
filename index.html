@@ -5257,8 +5257,9 @@ function render() {
       // NOT RE-ENTRANT, DELIBERATELY, AND THE NEXT PERSON NEEDS TO KNOW. The flag is a boolean, so
       // a focus handler that called setState() -> render() from inside this restore would clear it
       // on the inner finally and leave the rest of the outer restore unguarded. There is no such
-      // handler today -- nothing in this file listens for 'focus' -- and if one is ever added, this
-      // needs to become a counter rather than a boolean.
+      // handler today -- nothing in this file listens for 'focus' OR 'focusin' except the v28 nudge
+      // this flag exists to guard -- and if one is ever added, this needs to become a counter
+      // rather than a boolean.
       restoringFocus = true;
       try {
         try { freshActive.focus({ preventScroll: true }); } catch (e) { freshActive.focus(); }

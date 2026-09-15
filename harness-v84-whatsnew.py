@@ -19,7 +19,8 @@ WHAT THIS BUILDS, ported from care-tracker and de-personalised on the way (CLAUD
     has never asked anyone's gender and most users are not women.
   * A pop-up on open, showing the NEWEST release only. Not the whole history: a wall of entries on
     open is something a person dismisses without reading, which defeats showing it at all.
-  * A "See all updates" screen behind one tap, listing every release.
+  * A "See recent updates" screen behind one tap. It lists the entries the app carries, which is
+ * not every release -- five of eighty-four -- and no surface is allowed to say otherwise.
   * A drawer row so it can be found again after it has been dismissed.
 
 THE TWO RULES THAT MAKE IT BEARABLE RATHER THAN ANNOYING, both learned in care-tracker:
@@ -168,7 +169,7 @@ function renderWhatsNewModal() {
       h('div', { style: { display: 'flex', gap: '9px', marginTop: '14px' } },
         h('button', { 'data-whatsnew-all': 'true', type: 'button',
           onClick: () => { whatsNewMarkSeen(); setState({ whatsNewOpen: false, view: 'whatsnew', drawerOpen: false }); },
-          style: { flex: '1', minHeight: '46px', borderRadius: '13px', background: 'rgba(246,108,49,0.10)', border: '1px solid rgba(228,111,60,0.34)', color: '#BF4C1A', fontSize: '14px', fontWeight: '800' } }, 'See all updates'),
+          style: { flex: '1', minHeight: '46px', borderRadius: '13px', background: 'rgba(246,108,49,0.10)', border: '1px solid rgba(228,111,60,0.34)', color: '#BF4C1A', fontSize: '14px', fontWeight: '800' } }, 'See recent updates'),
         h('button', { 'data-whatsnew-close': 'true', type: 'button', onClick: close,
           style: { flex: '1', minHeight: '46px', borderRadius: '13px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '14px', fontWeight: '800' } }, 'Got it')
       )

@@ -41,8 +41,11 @@ const allErrors = [];
 // the notice is mounted in the running app, NOT on the first-run setup screen, and a fixture that
 // never names a patient sits on that screen forever while every check reports "no notice" -- which
 // is true, and about the wrong screen. That is how the first run of this suite failed.
-async function freshPage(setUp) {
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+async function freshPage(setUp, opts) {
+  // `opts` exists for ONE caller: the touch swipe in 7g needs a context with `hasTouch`, and a
+  // context is fixed at creation. Everything else about the fixture has to stay identical, or the
+  // touch check and the wheel check stop being the same measurement with a different finger.
+  const page = await browser.newPage(Object.assign({ viewport: { width: 390, height: 844 } }, opts || {}));
   page.on('pageerror', e => allErrors.push(String(e.message)));
   page.on('console', m => {
     if (m.type() !== 'error') return;
@@ -538,6 +541,75 @@ section('7e. SCROLLING AWAY FROM A FIELD YOU JUST TYPED IN MUST STICK');
 }
 
 // ---------------------------------------------------------------------------------------------
+section('7g. THE SAME SWIPE WITH A FINGER -- THE ONLY INPUT THIS APP WILL SHIP WITH');
+{
+  // 7e ABOVE VERIFIES THE GUARD ON AN INPUT DEVICE THIS PRODUCT WILL NEVER HAVE. It swipes with
+  // `page.mouse.wheel`, which is a real wheel event and was the right fix for the `window.scrollTo`
+  // version before it -- but this repo exists to be wrapped by Capacitor for iOS and Android
+  // (CLAUDE.md, "What this repo is"), and a phone has no wheel. The guard listens for
+  // `['wheel', 'touchmove']`; delete `'touchmove'` and the whole 65-check suite still scored 65/65
+  // while, measured with real touch, the page went from holding at scrollY 535 to being yanked back
+  // to 1. Every real user would have had the defect back and the sweep would have said 8 caught,
+  // 0 survived.
+  //
+  // Playwright's touchscreen API has only tap(), so the swipe is dispatched over CDP. Two things
+  // that make this measure something, both learned the hard way:
+  //   * Chromium's touch fling CONTINUES past touchEnd and will carry the page to the bottom on its
+  //     own, which looks like a pass whatever the app does. The finger holds still for ~80ms first,
+  //     which cancels the fling.
+  //   * The whole gesture must land INSIDE the 320ms window the nudge is scheduled in, or the nudge
+  //     fires mid-swipe and the measurement is about something else.
+  const p = await freshPage(true, { hasTouch: true, isMobile: true });
+  await p.getByRole('button', { name: /^Meds/ }).first().click();
+  await p.waitForTimeout(700);
+  await p.locator('[data-tour="meds-add"]').first().click();
+  await p.waitForTimeout(700);
+  t('the medication editor is open', await p.locator('#med-doses-text').count() > 0);
+
+  const cdp = await p.context().newCDPSession(p);
+  // A real touchmove has to reach the document, or this check is measuring a gesture that never
+  // happened. Counted from the page, not assumed from the API.
+  await p.evaluate(() => {
+    window.__tm = 0;
+    document.addEventListener('touchmove', (e) => { if (e.isTrusted) window.__tm++; }, { passive: true, capture: true });
+  });
+
+  await p.getByPlaceholder('Medication name').first().fill('TouchTest');
+  t('the caret is in a form field, which is what schedules the nudge',
+    await p.evaluate(() => { const a = document.activeElement; return !!a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); }),
+    await p.evaluate(() => (document.activeElement && (document.activeElement.id || document.activeElement.tagName)) || 'none'));
+
+  const swipe = async (fromY, toY) => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 195, y: fromY }] });
+    const steps = 8;
+    for (let i = 1; i <= steps; i++) {
+      const y = Math.round(fromY + (toY - fromY) * (i / steps));
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 195, y }] });
+    }
+    // Hold still: this is what stops Chromium flinging the page to the bottom after the finger
+    // lifts, which would move the page regardless of what the app decided.
+    await p.waitForTimeout(80);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+  await p.waitForTimeout(100);
+  await swipe(760, 120);
+  await swipe(760, 120);
+  await p.waitForTimeout(120);
+
+  t('a real, trusted touchmove reached the page -- otherwise this check measures nothing',
+    await p.evaluate(() => window.__tm) > 0, (await p.evaluate(() => window.__tm)) + ' touchmove event(s)');
+  const before = await p.evaluate(() => window.scrollY);
+  t('the finger moved the page away from the field', before > 300, before + 'px');
+
+  // And now nothing at all, past the 320ms timer and past the smooth animation it would start.
+  await p.waitForTimeout(1800);
+  const after = await p.evaluate(() => window.scrollY);
+  t('and it STAYS where the finger left it -- the touchmove half of the guard is doing the work',
+    after >= before - 40, 'scrollY ' + before + ' -> ' + after);
+  await p.close();
+}
+
+// ---------------------------------------------------------------------------------------------
 section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT THE THREE INSTANCES');
 {
   // THE SAME SENTENCE, FOUR TIMES, FIXED THREE TIMES. CHANGELOG holds five entries for an
@@ -554,20 +626,48 @@ section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT 
   // IT READS RENDERED TEXT FROM SCOPED ELEMENTS, NEVER document.body.textContent -- in a
   // single-file app the body text contains this app's own source, so a string check against it
   // matches the code that was just corrected and passes on anything.
-  const CLAIM = /\b(every|all)\b[^.]{0,30}\b(update|release|version)s?\b|complete (list|history)|full (list|history) of (update|release)/i;
+  // THE PATTERN, AND THE AUDIT WAS RIGHT THAT THE FIRST ONE WAS WRONG IN BOTH DIRECTIONS.
+  // Under-broad: a heading reading "The complete changelog for ChemoWell... Nothing is left out."
+  // passed 65/65. Over-broad: innocent true copy -- "We check every release on both phone sizes" --
+  // failed it, which would block a legitimate release with a message that does not describe what is
+  // wrong. A false positive is a defect too; it is the kind that teaches people to ignore a gate.
+  //
+  // So a quantifier near "update/release/version" is NOT enough on its own. The claim this hunts is
+  // a sentence about what THE LIST CONTAINS, which is a quantifier plus a listing word, or one of
+  // the fixed phrases that say it outright.
+  const CLAIM = new RegExp([
+    // "Every update, newest first" · "Every past update is listed under What's new"
+    '\\b(every|all|each|entire|whole|complete|full)\\b[^.]{0,40}\\b(update|release|version|changelog)s?\\b[^.]{0,40}\\b(list|listed|lists|listing|shown|shows|here|below|newest first|in the menu)\\b',
+    // the same thing with the halves the other way round
+    '\\b(update|release|version|changelog)s?\\b[^.]{0,40}\\b(is|are)\\b[^.]{0,25}\\b(all|every|complete|entire)\\b',
+    // "See all updates" -- a button label, which carries no sentence for the rules above to read
+    '\\b(see|view|read|open)\\s+(all|every|the\\s+(complete|full|entire|whole))\\b',
+    '\\b(complete|full|entire|whole)\\s+(list|history|changelog|record|archive)\\b',
+    '\\bnothing\\s+(is\\s+)?(left\\s+out|missing|omitted)\\b',
+    '\\beverything\\s+that\\s+(changed|has\\s+changed)\\b'
+  ].join('|'), 'i');
   const p = await freshPage(true);
   await p.evaluate(() => { localStorage.setItem('chemowell-app-seen-version', 'app-v1'); });
   await p.reload({ waitUntil: 'domcontentloaded' });
   await p.waitForTimeout(1800);
 
-  const modalText = await p.locator('[data-whatsnew-modal]').first().innerText();
+  // innerText AND the aria-labels inside the scope: a claim in an aria-label is read aloud to a
+  // screen-reader user and innerText never sees it.
+  const readScope = (sel) => p.evaluate((s) => {
+    const root = document.querySelector(s);
+    if (!root) return '';
+    const labels = Array.from(root.querySelectorAll('[aria-label]')).map(el => el.getAttribute('aria-label'));
+    if (root.getAttribute && root.getAttribute('aria-label')) labels.push(root.getAttribute('aria-label'));
+    return [root.innerText || ''].concat(labels).join('\n');
+  }, sel);
+  const modalText = await readScope('[data-whatsnew-modal]');
   t('the update notice is on screen, so there is something to read', modalText.length > 0, modalText.length + ' chars');
   t('and the notice claims nothing about being complete',
     !CLAIM.test(modalText), (modalText.match(CLAIM) || ['none'])[0]);
 
   await p.locator('[data-whatsnew-all]').click();
   await p.waitForTimeout(700);
-  const screenText = await p.locator('[data-whatsnew-screen]').first().innerText();
+  const screenText = await readScope('[data-whatsnew-screen]');
   t('the full screen is open', screenText.length > 0, screenText.length + ' chars');
   t('and the screen -- heading included -- claims nothing about being complete',
     !CLAIM.test(screenText), (screenText.match(CLAIM) || ['none'])[0]);
@@ -584,13 +684,36 @@ section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT 
   t('and its helper line claims nothing about being complete',
     !CLAIM.test(drawerText), (drawerText.match(CLAIM) || ['none'])[0]);
 
-  // AND THE CHECK HAS TO BE ABLE TO FAIL. The wording it hunts is not hypothetical -- it is the
-  // exact sentence that shipped four times -- so assert the pattern catches it, or a regex typo
-  // would turn all five checks above into decoration that passes on the defect.
-  t('and the pattern actually catches the sentence that shipped four times',
-    CLAIM.test('Every update, newest first') && CLAIM.test('Every update to ChemoWell, newest first.')
-      && CLAIM.test('See all updates') && CLAIM.test('Every past update is listed under What’s new')
-      && !CLAIM.test('Recent updates, newest first'));
+  // AND THE PATTERN IS TESTED IN BOTH DIRECTIONS, ON A CORPUS, because the previous version of this
+  // assertion ran the regex over four strings the author already had in hand and one known-good one.
+  // That proves there is no typo. It proves nothing about the class the check is named after -- and
+  // the gap between what a check does and what is written about it is what has cost this release
+  // round after round. Every string below that the audit found the old pattern got wrong is in here.
+  const CLAIMS = [
+    'Every update, newest first',                                   // the menu row, shipped
+    'Every update to ChemoWell, newest first.',                     // the screen heading, shipped
+    'See all updates',                                              // the button, shipped
+    'Every past update is listed under “What’s new” in the menu',   // the entry text, shipped
+    'The complete changelog for ChemoWell, newest first.',          // found by the audit, missed
+    'Nothing is left out.',                                         // found by the audit, missed
+    'View the entire history of changes',
+    'Everything that changed is here',
+    'All releases are listed below'
+  ];
+  const INNOCENT = [
+    'Recent updates, newest first',
+    'Recent updates to ChemoWell, newest first.',
+    'See recent updates',
+    'We check every release on both phone sizes.',                  // found by the audit, false red
+    'Every medication you add is kept on this phone.',
+    'Updates from here on are listed under “What’s new” in the menu, newest first.'
+  ];
+  const missed = CLAIMS.filter(x => !CLAIM.test(x));
+  const falsePos = INNOCENT.filter(x => CLAIM.test(x));
+  t('the pattern catches every wording of the claim that has actually been written',
+    missed.length === 0, missed.length ? JSON.stringify(missed) : CLAIMS.length + '/' + CLAIMS.length);
+  t('and it leaves innocent, true copy alone -- a false red is a defect too',
+    falsePos.length === 0, falsePos.length ? JSON.stringify(falsePos) : INNOCENT.length + '/' + INNOCENT.length);
   await p.close();
 }
 

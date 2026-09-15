@@ -39,11 +39,31 @@ const allErrors = [];
 
 // Fixtures are built around a FROZEN hour rather than the wall clock. A suite whose windows move
 // with the time of day stops testing anything at 11pm and nobody notices -- the app-v80 finding.
-const AT = (h, m) => { const d = new Date(); d.setHours(h, m || 0, 0, 0); return d.getTime(); };
+//
+// AND THE COMMENT ABOVE WAS HALF TRUE UNTIL NOW, which is worse than being absent. `AT()` froze the
+// FIXTURE hours and nothing froze the PAGE's clock, so the app still decided what "today" and
+// "this evening" meant from the wall clock. Measured by the independent audit: 24/24 with the page
+// clock at 23:50 and 20/24 at 01:50, four checks reporting "fixture no longer exercises this" for
+// a defect that does not exist. That is exactly the half-fix just corrected in
+// test/v82-vitals-strip.mjs, one file over, with the comment here claiming it had been avoided.
+//
+// 23:00, not 10:00: the latest fixture event is 19:30, and the timeline is a record of a day that
+// has happened. A page clock in the middle of the day puts half the fixtures in the future.
+const FROZEN = (() => { const d = new Date(); d.setHours(23, 0, 0, 0); return d.getTime(); })();
+const AT = (h, m) => { const d = new Date(FROZEN); d.setHours(h, m || 0, 0, 0); return d.getTime(); };
 
 async function open(fixture, viewport) {
   const page = await browser.newPage({ viewport: viewport || { width: 390, height: 844 } });
   page.on('pageerror', e => allErrors.push(String(e.message)));
+  // The page's own clock too. A frozen fixture against a live page clock is half a fix: the app
+  // decides what "today" and which time-of-day bucket mean, and both must mean what the fixture
+  // was written for.
+  await page.addInitScript((frozen) => {
+    const R = Date;
+    const D = function (...a) { return a.length ? new R(...a) : new R(frozen); };
+    D.now = () => frozen; D.parse = R.parse; D.UTC = R.UTC; D.prototype = R.prototype;
+    window.Date = D;
+  }, FROZEN);
   page.on('console', m => {
     if (m.type() !== 'error') return;
     const x = m.text();

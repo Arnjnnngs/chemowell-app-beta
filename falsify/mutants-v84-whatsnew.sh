@@ -86,3 +86,13 @@ assert s.count(old)==1
 open(p,'w',encoding='utf-8').write(s.replace(old,"void 0"))
 PY
 }
+
+MUTANT_DESC_9="the gesture guard stops listening for touchmove -- the yank returns on every phone"
+mutant_9() {
+  python3 - <<'PY'
+p='index.html'; s=open(p,encoding='utf-8').read()
+old="['wheel', 'touchmove'].forEach((evt) => {"
+assert s.count(old)==1
+open(p,'w',encoding='utf-8').write(s.replace(old,"['wheel'].forEach((evt) => {"))
+PY
+}
