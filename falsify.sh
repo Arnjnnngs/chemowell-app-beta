@@ -115,7 +115,14 @@ while declare -F "mutant_$i" >/dev/null; do
   # So: a summary line is what says the suite RAN. A red with no summary is still a catch, and says
   # so in those words. NO red and NO summary is not a catch at all -- it is a measurement that did
   # not happen, and it fails the sweep like a survivor, because that is what it is.
-  _ran=0; echo "$OUT" | grep -q "checks:" && _ran=1
+  # `echo "$OUT" | grep -q "checks:" && _ran=1` UNDER `set -e` KILLS THE SCRIPT when the grep finds
+  # nothing -- an `A && B` list whose A fails returns non-zero, and that is exactly the case this
+  # line exists to detect. So the guard written to catch a mutant that produces no output made the
+  # sweep exit silently the first time one did: the log ended on a header, the final tally never
+  # printed, and the pipeline still exited 0. A truncated sweep that looks finished, produced by the
+  # check for sweeps that look finished. `if` has no such behaviour.
+  _ran=0
+  if echo "$OUT" | grep -q "checks:"; then _ran=1; fi
   if echo "$OUT" | grep -q "^  FAIL"; then
     DEAD=$((DEAD+1))
     [ "$_ran" = 1 ] || echo "  ℹ️  CAUGHT, but the suite ABORTED after its first red -- the counts above are partial."
