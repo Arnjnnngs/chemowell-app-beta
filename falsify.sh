@@ -64,7 +64,7 @@ git archive HEAD | tar -x -C "$WORK"
   # sweep ran the ARCHIVED suite, not the working tree's. Harmless while the tree is committed, which
   # it always was; a trap the moment somebody sweeps with an edited suite, because this script
   # refuses a dirty index.html and says nothing about a dirty test/. Found by hand-running two
-  # mutants and getting 96 checks where the suite has 95. Copy the CONTENTS.
+  # mutants and getting 96 checks where the archived copy had 95. Copy the CONTENTS.
   cp -r test/. "$WORK/test/" || { echo "❌ could not copy the suite into the clone -- the sweep would run whatever git archive left there"; exit 1; }
 
 # NOT `( cd "$WORK" && python3 ... ) &`. That made $! the SUBSHELL, so the trap killed the wrapper
@@ -122,7 +122,7 @@ echo "$BASE"
 # THE BASELINE IS HELD TO THE SAME "DID IT RUN" TEST AS EVERY MUTANT, and it was not. Each mutant
 # below must produce a `checks:` summary or it is scored COULD NOT MEASURE -- while the run they are
 # all calibrated against was checked only for the absence of a red. A baseline that died before its
-# first check has no reds either, so the sweep would have proceeded to compare twelve mutants against
+# first check has no reds either, so the sweep would have proceeded to compare nineteen mutants against
 # nothing at all. An audit found this one line after the mutant half had already been fixed, which is
 # the usual shape: the guard goes on the thing you were thinking about and not on the thing beside it.
 if ! echo "$BASE" | grep -q "checks:"; then
@@ -140,7 +140,7 @@ fi
 # ceiling prints a truncated log that looks exactly like a finished one in anything filtered. That
 # has now happened twice. A slice finishes, says so, and the slices together are the sweep -- which
 # is honest, where "it probably would have passed" is not. Always state which slice a result covers.
-DEAD=0; ALIVE=0
+DEAD=0; ALIVE=0; SURVIVED=0; UNMEASURED=0
 FROM="${FALSIFY_FROM:-1}"
 TO="${FALSIFY_TO:-9999}"
 i=1
@@ -167,7 +167,8 @@ while declare -F "mutant_$i" >/dev/null; do
   fi
   OUT=$(run_suite)
   echo "$OUT"
-  # THREE OUTCOMES, NOT TWO -- and the third is the one this script used to hide.
+  # FOUR OUTCOMES, NOT TWO -- and this comment said THREE while the code below scored four, which is
+  # a small version of the thing the whole script exists to catch.
   #
   # Scoring on "is there a FAIL line" alone means a mutant that makes the suite DIE -- a page that
   # never loads, a locator that times out and takes the process with it -- is scored CAUGHT, on the
@@ -192,11 +193,11 @@ while declare -F "mutant_$i" >/dev/null; do
     DEAD=$((DEAD+1))
     [ "$_ran" = 1 ] || echo "  ℹ️  CAUGHT, but the suite ABORTED after its first red -- the counts above are partial."
   elif [ "$_ran" = 0 ]; then
-    ALIVE=$((ALIVE+1))
+    ALIVE=$((ALIVE+1)); UNMEASURED=$((UNMEASURED+1))
     echo "  ⚠️  COULD NOT MEASURE -- the suite produced neither a red nor a summary, so it never ran."
     echo "      This is not a survivor and not a catch. Find out why before believing anything here."
   else
-    ALIVE=$((ALIVE+1))
+    ALIVE=$((ALIVE+1)); SURVIVED=$((SURVIVED+1))
     echo "  ⚠️  SURVIVED -- no check went red. Either the check cannot fail, or this mutant is a no-op."
   fi
   # Rebuild the clone IN PLACE. `rm -rf "$WORK"; mkdir "$WORK"` looks equivalent and is not:
@@ -212,11 +213,16 @@ while declare -F "mutant_$i" >/dev/null; do
   # sweep ran the ARCHIVED suite, not the working tree's. Harmless while the tree is committed, which
   # it always was; a trap the moment somebody sweeps with an edited suite, because this script
   # refuses a dirty index.html and says nothing about a dirty test/. Found by hand-running two
-  # mutants and getting 96 checks where the suite has 95. Copy the CONTENTS.
+  # mutants and getting 96 checks where the archived copy had 95. Copy the CONTENTS.
   cp -r test/. "$WORK/test/" || { echo "❌ could not copy the suite into the clone -- the sweep would run whatever git archive left there"; exit 1; }
   i=$((i+1))
 done
 
 echo ""
-echo "=== $DEAD mutant(s) caught, $ALIVE survived"
+# THE TALLY MUST NOT COLLAPSE WHAT THE SCORING JUST SEPARATED. This line used to read
+# "$DEAD caught, $ALIVE survived", and $ALIVE counts survivors AND mutants that could not be
+# measured -- so a sweep where the suite never ran reported those runs to the reader as survivors,
+# which is a different and much more alarming claim than the truth. The summary line is the only
+# line most people read; it says which of the four outcomes actually happened.
+echo "=== $DEAD mutant(s) caught, $SURVIVED survived, $UNMEASURED could not be measured"
 [ "$ALIVE" -eq 0 ] || exit 1

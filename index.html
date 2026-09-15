@@ -5303,9 +5303,9 @@ function render() {
       // point here while moving the page is not. KEPT, AND IT IS HALF OF WHAT IT WAS COMMITTED AS.
       // app-v84 landed this line alone believing it cured "typing yanks the page back up". It did
       // not: with it in place the page still slid from scrollY 1503 to 1, because the restore below
-      // ALSO fires `focusin`, and the v28 listener near line 4218 was the thing doing the scrolling
+      // ALSO fires `focusin`, and the v28 listener (grep `lastUserScrollAt`) was the thing doing the scrolling
       // 320ms later. This line stops focus()'s own scroll; `restoringFocus` stops the listener's.
-      // `restoringFocus` is read by the focusin listener near line 4218: this focus came from the
+      // `restoringFocus` is read by the focusin listener (grep `lastUserScrollAt`): this focus came from the
       // renderer, not from a finger, so it must not schedule the v28 nudge. Set synchronously
       // around the focus() call because focusin is dispatched synchronously by it, and cleared in
       // a finally so a throw cannot leave the app unable to nudge a real tap ever again.
@@ -9724,7 +9724,7 @@ function helpSetQuery(value, el) {
   // THE SAME TREATMENT render() GIVES ITS OWN FOCUS RESTORE, for the same two reasons. This is a
   // refocus after a redraw, not a person tapping into the field: `preventScroll` stops focus()
   // scrolling the help search box into view on every keystroke, and `restoringFocus` stops the v28
-  // focusin listener (near line 4218) scheduling its centring nudge 320ms after each character.
+  // focusin listener (grep `lastUserScrollAt`) scheduling its centring nudge 320ms after each character.
   // Without the flag, typing a query would drag the page toward the search box once per letter.
   if (next && el) {
     restoringFocus = true;

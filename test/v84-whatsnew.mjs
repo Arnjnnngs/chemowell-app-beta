@@ -1,6 +1,6 @@
-// v83-whatsnew.mjs -- the update notice appears once, to the right people, and never lies.
+// v84-whatsnew.mjs -- the update notice appears once, to the right people, and never lies.
 //
-// WHAT THIS PROTECTS. ChemoWell shipped eighty-two releases without telling anybody what changed.
+// WHAT THIS PROTECTS. ChemoWell shipped eighty-three releases without telling anybody what changed.
 // The notice that fixes that is itself a thing that can go wrong in ways a still-frame check will
 // not see:
 //   1. It shows to somebody who has just installed the app, who has no idea what "changed".
@@ -11,7 +11,7 @@
 //   5. It says something untrue about the release, which is the one surface that speaks directly
 //      to the person taking the medicine.
 //
-// Run:  python3 -m http.server 8899 --directory <repo>   (then)  node test/v83-whatsnew.mjs
+// Run:  python3 -m http.server 8899 --directory <repo>   (then)  node test/v84-whatsnew.mjs
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { chromium } = (() => {
