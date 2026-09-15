@@ -415,3 +415,37 @@ report would be CURRENT, and the gate would fail again one stage later. Fixing o
 sentence will not turn this green.
 
 *Run B taken 2026-09-15, immediately after committing this file.*
+
+---
+
+# CORRECTION APPENDED 2026-09-15 — §9 OMITTED THE ONLY CODE CHANGE, AND CONTRADICTED §3
+
+**The body above is left exactly as written.** A record quietly edited after the fact is worse
+than one that is wrong, and this is the convention `outputs/PM-app-v84.md` already established
+with three corrections of its own.
+
+Section 9, "WHAT I DID NOT CHECK", says:
+
+> *"Mutants 1–16 have still never been swept against HEAD's `index.html` — though HEAD's
+> `index.html` is one comment block away from the tree they were swept against."*
+
+**The second half is false.** The swept tree is `714602b`. HEAD differs from it by the
+one-character prefix fix — `'chemowell-app'` → `'chemowell-app-'` — **plus** comments. "One
+comment block away" deletes the only executable change in the range, and that change is the entire
+reason it was worth asking whether the sweep still speaks for HEAD.
+
+**And this report already knew.** Section 3 of the same file reports, correctly, that filtering
+`714602b..HEAD` for non-comment changes yields exactly one line, and quotes it. So §9 contradicts
+§3 four sections earlier in the same document. Caught by the tenth Zero Day audit
+(`outputs/AUDIT-app-v84-delta9.md` §7), which read the two sections against each other.
+
+**The correct sentence** is: mutants 1–16 had not been swept against HEAD, and HEAD's `index.html`
+differs from the swept tree by that one character plus comments. `outputs/SWEEP-app-v84.md` states
+this correctly; the error was mine alone and is not in the artifact.
+
+**Nothing else in the report turns on it.** The verdict stood on two blockers, neither of which was
+this, and both are now closed — see `outputs/PM-app-v84-pass3.md`, which re-issues the PM stage at
+`c656ae8` with `VERDICT: SHIP`, and which records in its §5 what this class of defect is: a
+sign-off internally inconsistent with itself, which nothing in this chain currently checks for.
+
+*Correction written 2026-09-15 against `c656ae8`.*
