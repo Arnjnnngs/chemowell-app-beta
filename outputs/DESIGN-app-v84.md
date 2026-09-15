@@ -98,3 +98,40 @@ defect.
 **Still exempt, and still for the same reason: iPhone rendering.** Chromium only here. The new
 gesture-based guard on the focus nudge makes that exemption sharper than usual — see BACKLOG.md,
 "iOS: the focus nudge is guarded by gesture now". It is item 1 on the phone checklist.
+
+---
+
+# ADDENDUM 2, 2026-09-15 — THE NOTICE GAINED A LINE AFTER THE FOURTH AUDIT
+
+Three more screenshots, `whatsnew-older-{320,360,390}.png`, of the case the line exists for: a phone
+that last acknowledged an older release and is therefore several updates behind.
+
+| Surface | 320 | 360 | 390 |
+|---|---|---|---|
+| The update notice, with the "earlier updates" line | ✅ | ✅ | ✅ |
+
+**Measured on each, and the served file's md5 checked against the working tree first** — the third
+audit lost two suite runs to a stale server on a held port, and a measurement of the wrong build is
+worse than no measurement:
+
+- `document.scrollWidth` equals the viewport exactly at all three widths
+- **0** elements past the right edge · **0** text controls below the 16px iOS floor · **0** buttons
+  under the 44px touch floor · **0** elements carrying the literal attribute value `"null"` ·
+  **0** page errors
+- the line itself sits fully inside the viewport at every width (measured, not eyeballed)
+- the notice does **not** become scrollable at 320 — the extra line does not push it past its own
+  `max-height`, which was the thing worth checking
+
+**Looked at, not only measured.** At 320 the line sits between the entry card and the two buttons,
+wrapping to two lines in quiet grey: *"2 earlier updates you have not seen are under "See recent
+updates"."* It reads as a footnote rather than a second headline, which is right — the card above it
+is the thing to read, and this is the pointer to the rest. It quotes the button below it character
+for character, which is a rule this project bought with a v66 hint naming controls that had been
+renamed.
+
+**The number is computed, so the screenshots show `2` rather than `3`** — the fixture marks the
+phone as having last seen the fourth-newest entry, not app-v80. On a real phone sitting on app-v80
+it will read `3`. `test/v84-whatsnew.mjs` section 7h is what pins the arithmetic; these show the
+shape.
+
+**Still exempt, same reason: iPhone rendering.** Chromium only here.
