@@ -9,6 +9,20 @@ Command:  ./falsify.sh test/v84-whatsnew.mjs falsify/mutants-v84-whatsnew.sh
 Commit:   714602b69619935ed660f97cf2c5e9c0b9562757
 Duration: 17:27 to 18:19 UTC, run alone (no browser suite beside it)
 
+WHAT THIS RUN COVERS, AND WHAT MOVED AFTERWARDS. The sweep judged `714602b`. `index.html` has
+changed since, so this artifact does not automatically speak for HEAD and should not be read as
+though it does:
+
+  * `4b54901` — the one-character snapshot prefix (`'chemowell-app'` → `'chemowell-app-'`), which is
+    the only CODE change to `index.html` after this run. The independent audit re-applied all 19
+    anchors at that commit (19/19 apply, 0 stale, 0 no-ops) and re-ran the three mutants that touch
+    the changed lines — 17, 18 and 19 — getting baseline 96/96 and each mutant 94/96:
+    *"3 caught, 0 survived, 0 could not be measured, 0 anchor(s) stale"*. The result survives.
+  * Everything after that is comments and records, which no mutant and no check reads.
+
+A sweep artifact that does not say which later commits it covers invites the reader to assume it
+covers all of them — the same assumption that produced the figure this file exists to replace.
+
 Mutant 8 is scored CAUGHT-but-ABORTED: two correct reds, then the suite aborted before
 printing a summary. That is the outcome the four-way scoring exists for, and it labelled
 itself correctly rather than being counted as a clean catch on the strength of nothing.
