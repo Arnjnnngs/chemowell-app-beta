@@ -560,10 +560,19 @@ section('7g. THE SAME SWIPE WITH A FINGER -- THE ONLY INPUT THIS APP WILL SHIP W
   // class of defect as a vacuous one: nobody can tell what a red means. A tap alone schedules the
   // nudge, which is all this check needs -- 7e covers the typing path. So: tap, swipe, wait.
   //
-  // Playwright's touchscreen API has only tap(), so the gesture is dispatched over CDP. Chromium's
-  // touch fling CONTINUES past touchEnd and will carry the page to the bottom on its own, which
-  // looks like a pass whatever the app does -- the finger holds still for 60ms first, which
-  // cancels it.
+  // Playwright's touchscreen API has only tap(), so the gesture is dispatched over CDP.
+  //
+  // CHROMIUM'S TOUCH FLING CONTINUES PAST touchEnd, AND THE 60ms HOLD DOES NOT CANCEL IT. This
+  // comment used to claim it did; an auditor measured the shipping build three times and the page
+  // kept travelling 227-362px after the finger lifted (1316 -> 1543, 1181 -> 1543). The hold
+  // shortens the fling, it does not stop it, and a comment that gives the next person a false model
+  // of why a check works is the same defect as a false comment about the code.
+  //
+  // WHY THE CHECK STILL MEASURES SOMETHING, stated properly: the assertion is ONE-DIRECTIONAL. The
+  // fling only ever carries the page FURTHER from the field, and the defect drags it BACK, so
+  // `after >= before - 40` cannot be satisfied by momentum. Mutant 9 goes 1307 -> 519 against
+  // 1316 -> 1543 on the shipping build -- a ~790px margin against a 40px tolerance. The hold stays
+  // because a shorter fling makes the numbers easier to read, not because it makes the check work.
   const p = await freshPage(true, { hasTouch: true, isMobile: true });
   await p.getByRole('button', { name: /^Meds/ }).first().click();
   await p.waitForTimeout(700);
@@ -620,6 +629,62 @@ section('7g. THE SAME SWIPE WITH A FINGER -- THE ONLY INPUT THIS APP WILL SHIP W
 }
 
 // ---------------------------------------------------------------------------------------------
+section('7h. A PHONE THAT MISSED FOUR RELEASES IS NOT TOLD ABOUT ONE OF THEM AND LEFT THERE');
+{
+  // THE DEFECT IS A TRUE SCREEN THAT LEAVES A FALSE IMPRESSION, which is the Voice's first question
+  // and the hardest shape of it to see. The notice renders CHANGELOG[0] and nothing else. That is
+  // right for a phone one release behind. It is wrong for THIS release: live is app-v80 and v81,
+  // v82, v83 and v84 ship together, so every installed phone opens to a single card headed UPDATED
+  // about the newest one and is told nothing about the other three -- including app-v81's
+  // correction to how dose amounts are read, where ".5 mg" was being counted as 5 mg against a
+  // daily limit. Every sentence on that screen is true and the screen as a whole is not.
+  //
+  // NEITHER SIDE MAY ECHO THE OTHER. The expected count is computed here from the app's own
+  // CHANGELOG and the marker the fixture wrote -- not read off the hook and compared to itself,
+  // which is how a check ends up asserting that a function returns what it returns.
+  const p = await freshPage(true);
+  const marker = await p.evaluate(() => {
+    const all = window.__whatsNewTest ? window.__whatsNewTest.all() : [];
+    return all.length >= 4 ? all[3].v : null;   // pretend this phone last saw the 4th-newest entry
+  });
+  t('the changelog has enough entries for a phone to be several releases behind',
+    !!marker, marker || 'fewer than four entries');
+  await p.evaluate((v) => { localStorage.setItem('chemowell-app-seen-version', v); }, marker);
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await p.waitForTimeout(1800);
+  t('the notice is open for a phone that is behind', await p.locator('[data-whatsnew-modal]').count() === 1);
+
+  const line = await p.locator('[data-whatsnew-modal] [data-whatsnew-older]').first();
+  t('and it says there are earlier updates it has not shown', await line.count() === 1,
+    (await line.count()) + ' line(s)');
+  const shown = await p.evaluate(() => {
+    const el = document.querySelector('[data-whatsnew-modal] [data-whatsnew-older]');
+    return el ? { n: Number(el.getAttribute('data-whatsnew-older')), text: el.innerText } : null;
+  });
+  // 4th-newest as the marker => three entries newer than it, minus the one on screen => 2.
+  t('and the number is the count of updates it has NOT been shown -- computed, not typed in',
+    !!shown && shown.n === 2, shown ? (shown.n + ' :: ' + shown.text) : 'no line');
+  t('and the sentence names where to find them',
+    !!shown && /See recent updates/i.test(shown.text), shown ? shown.text : '');
+
+  // AND IT SAYS NOTHING WHEN THERE IS NOTHING TO SAY. "0 earlier updates" is worse than silence,
+  // and this is the ordinary case -- one release behind -- so a line here would be on every phone.
+  const p2 = await freshPage(true);
+  const prev = await p2.evaluate(() => {
+    const all = window.__whatsNewTest ? window.__whatsNewTest.all() : [];
+    return all.length >= 2 ? all[1].v : null;
+  });
+  await p2.evaluate((v) => { localStorage.setItem('chemowell-app-seen-version', v); }, prev);
+  await p2.reload({ waitUntil: 'domcontentloaded' });
+  await p2.waitForTimeout(1800);
+  t('a phone exactly one release behind still gets the notice', await p2.locator('[data-whatsnew-modal]').count() === 1);
+  t('and is told nothing about earlier updates, because there are none',
+    await p2.locator('[data-whatsnew-modal] [data-whatsnew-older]').count() === 0,
+    (await p2.locator('[data-whatsnew-modal] [data-whatsnew-older]').count()) + ' line(s)');
+  await p.close(); await p2.close();
+}
+
+// ---------------------------------------------------------------------------------------------
 section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT THE THREE INSTANCES');
 {
   // THE SAME SENTENCE, FOUR TIMES, FIXED THREE TIMES. CHANGELOG holds five entries for an
@@ -629,9 +694,23 @@ section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT 
   // line under the entry text that had already been corrected.
   //
   // FOUR ROUNDS OF THE SAME FIX IS A MISSING CHECK, NOT CARELESSNESS. So this does not look for the
-  // four strings anybody has written down: it reads what is ON THE SCREEN on every surface that
-  // shows the changelog and refuses any claim of completeness, however it is worded. A fifth
-  // surface added later fails here without anybody remembering to add it to a list.
+  // four strings anybody has written down: it reads what is ON THE SCREEN, on every surface that
+  // shows the changelog, and refuses the wordings of "this list is complete" that the corpus below
+  // pins.
+  //
+  // WHAT IT DOES NOT DO, SAID PLAINLY, BECAUSE THE FIRST VERSION OF THIS COMMENT CLAIMED IT DID.
+  // It said the check refuses any claim of completeness "however it is worded", and that a fifth
+  // surface would fail here without anybody remembering to add it to a list. **That was false**, and
+  // an auditor demonstrated it on a real surface: a changelog heading reading "Every update
+  // ChemoWell has ever shipped. Nothing has been left out." scored a clean 73/73. Thirteen natural
+  // phrasings were missed and four innocent sentences went red.
+  //
+  // In a release whose own record calls "a comment asserting a guarantee the code did not have" its
+  // worst finding, that is the same defect one file over. So: this catches EIGHTEEN pinned wordings,
+  // including every one that has shipped and every one the audit found missing, and leaves twelve
+  // pinned innocent sentences alone. It is a corpus, not a proof about English. A phrasing outside
+  // it can still get through, and the answer when one is found is to add it here -- not to widen the
+  // sentence describing what this does.
   //
   // IT READS RENDERED TEXT FROM SCOPED ELEMENTS, NEVER document.body.textContent -- in a
   // single-file app the body text contains this app's own source, so a string check against it
@@ -647,13 +726,20 @@ section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT 
   // the fixed phrases that say it outright.
   const CLAIM = new RegExp([
     // "Every update, newest first" · "Every past update is listed under What's new"
-    '\\b(every|all|each|entire|whole|complete|full)\\b[^.]{0,40}\\b(update|release|version|changelog)s?\\b[^.]{0,40}\\b(list|listed|lists|listing|shown|shows|here|below|newest first|in the menu)\\b',
+    '\\b(every|all|each|entire|whole|complete|full)\\b[^.]{0,40}\\b(update|release|version|changelog)s?\\b[^.]{0,40}\\b(list|listed|lists|listing|shown|shows|here|below|newest first|in the menu|ever)\\b',
+    // "Every past update." -- a bare noun phrase with no listing word, which the first version missed
+    '\\b(every|all|each)\\s+(past|previous|prior|earlier)\\s+(update|release|version|changelog)s?\\b',
     // the same thing with the halves the other way round
     '\\b(update|release|version|changelog)s?\\b[^.]{0,40}\\b(is|are)\\b[^.]{0,25}\\b(all|every|complete|entire)\\b',
-    // "See all updates" -- a button label, which carries no sentence for the rules above to read
-    '\\b(see|view|read|open)\\s+(all|every|the\\s+(complete|full|entire|whole))\\b',
-    '\\b(complete|full|entire|whole)\\s+(list|history|changelog|record|archive)\\b',
-    '\\bnothing\\s+(is\\s+)?(left\\s+out|missing|omitted)\\b',
+    // "See all updates" -- a button label, which carries no sentence for the rules above to read.
+    // It has to name an update: "See all medications" and "View all symptoms logged this week" are
+    // ordinary true copy and the first version of this line turned both red.
+    '\\b(see|view|read|open)\\s+(all|every|the\\s+(complete|full|entire|whole))\\s*[^.]{0,20}\\b(update|release|version|changelog|history of changes)s?\\b',
+    '\\b(complete|full|entire|whole)\\s+changelog\\b',
+    // "the complete set of updates" -- and NOT "the full list of medications", which is why the
+    // noun has to be followed by what it is a list OF.
+    '\\b(complete|full|entire|whole)\\s+(list|history|record|archive|set|collection)\\s+of\\s+[^.]{0,25}\\b(update|release|version|change)s?\\b',
+    '\\bnothing\\s+(is|has been|was|will be)?\\s*(left\\s+out|missing|omitted)\\b',
     '\\beverything\\s+that\\s+(changed|has\\s+changed)\\b'
   ].join('|'), 'i');
   const p = await freshPage(true);
@@ -685,10 +771,16 @@ section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT 
   // The menu row and its helper line, which is the surface the PM gate caught.
   const menu = p.getByRole('button', { name: /menu/i });
   if (await menu.count()) { await menu.first().click(); await p.waitForTimeout(600); }
+  // aria-labels here too. The menu row was read with a bare innerText while the other two scopes
+  // used readScope, so a claim in this row's aria-label -- read aloud to a screen-reader user --
+  // would have been invisible to the one check that exists to catch it.
   const drawerText = await p.evaluate(() => {
     const rows = Array.from(document.querySelectorAll('button, a'));
     const hit = rows.find(el => /What.s new/i.test(el.innerText || ''));
-    return hit ? (hit.innerText || '') : '';
+    if (!hit) return '';
+    const labels = Array.from(hit.querySelectorAll('[aria-label]')).map(el => el.getAttribute('aria-label'));
+    if (hit.getAttribute('aria-label')) labels.push(hit.getAttribute('aria-label'));
+    return [hit.innerText || ''].concat(labels).join('\n');
   });
   t('the menu row for the changelog is on screen', drawerText.length > 0, JSON.stringify(drawerText));
   t('and its helper line claims nothing about being complete',
@@ -703,9 +795,18 @@ section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT 
     'Every update, newest first',                                   // the menu row, shipped
     'Every update to ChemoWell, newest first.',                     // the screen heading, shipped
     'See all updates',                                              // the button, shipped
-    'Every past update is listed under “What’s new” in the menu',   // the entry text, shipped
-    'The complete changelog for ChemoWell, newest first.',          // found by the audit, missed
-    'Nothing is left out.',                                         // found by the audit, missed
+    'Every past update is listed under \u201cWhat\u2019s new\u201d in the menu',   // the entry text, shipped
+    'The complete changelog for ChemoWell, newest first.',          // audit 2 found this missed
+    'Nothing is left out.',                                         // audit 2 found this missed
+    'Every update ChemoWell has ever shipped.',                     // audit 3 found this missed
+    'Nothing has been left out.',                                   // audit 3: "has been", not "is"
+    'Every past update.',                                           // audit 3: no listing word at all
+    'All updates ever published.',                                  // audit 3
+    'This is the complete set of updates.',                         // audit 3
+    'The full history of every release.',
+    'All previous versions are shown here.',
+    'Read the complete record of changes.',
+    'Every version ChemoWell has released is here.',
     'View the entire history of changes',
     'Everything that changed is here',
     'All releases are listed below'
@@ -714,9 +815,15 @@ section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT 
     'Recent updates, newest first',
     'Recent updates to ChemoWell, newest first.',
     'See recent updates',
-    'We check every release on both phone sizes.',                  // found by the audit, false red
+    'We check every release on both phone sizes.',                  // audit 2 found this false-red
+    'See all medications',                                          // audit 3 found this false-red
+    'View all symptoms logged this week',                           // audit 3 found this false-red
+    'Open the full list of medications',                            // audit 3 found this false-red
+    'Read all about it',                                            // audit 3 found this false-red
     'Every medication you add is kept on this phone.',
-    'Updates from here on are listed under “What’s new” in the menu, newest first.'
+    'All doses are kept on this phone.',
+    'Every reminder you set stays on this phone.',
+    'Updates from here on are listed under \u201cWhat\u2019s new\u201d in the menu, newest first.'
   ];
   const missed = CLAIMS.filter(x => !CLAIM.test(x));
   const falsePos = INNOCENT.filter(x => CLAIM.test(x));

@@ -96,3 +96,33 @@ assert s.count(old)==1
 open(p,'w',encoding='utf-8').write(s.replace(old,"['wheel'].forEach((evt) => {"))
 PY
 }
+
+MUTANT_DESC_10="the button goes back to 'See all updates' -- the claim four review rounds removed"
+mutant_10() {
+  python3 - <<'PY'
+p='index.html'; s=open(p,encoding='utf-8').read()
+old="} }, 'See recent updates'),"
+assert s.count(old)==1
+open(p,'w',encoding='utf-8').write(s.replace(old,"} }, 'See all updates'),"))
+PY
+}
+
+MUTANT_DESC_11="a completeness claim planted in an aria-label -- nothing visible changes"
+mutant_11() {
+  python3 - <<'PY'
+p='index.html'; s=open(p,encoding='utf-8').read()
+old="'aria-label': 'What\u2019s new in this update'"
+assert s.count(old)==1, s.count(old)
+open(p,'w',encoding='utf-8').write(s.replace(old,"'aria-label': 'Every update ChemoWell has ever shipped'"))
+PY
+}
+
+MUTANT_DESC_12="the notice stops saying how many earlier updates this phone never saw"
+mutant_12() {
+  python3 - <<'PY'
+p='index.html'; s=open(p,encoding='utf-8').read()
+old="  return Math.max(0, unseen - 1);"
+assert s.count(old)==1
+open(p,'w',encoding='utf-8').write(s.replace(old,"  return 0;"))
+PY
+}

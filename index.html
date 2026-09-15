@@ -9021,6 +9021,28 @@ const CHANGELOG = [
 // the key carries no profile id: switching profile neither re-shows the notice nor silences it.
 const WHATS_NEW_KEY = 'chemowell-app-seen-version';
 function whatsNewLatest() { return CHANGELOG[0] || null; }
+
+// HOW MANY UPDATES THIS PHONE MISSED BESIDES THE ONE IT IS BEING SHOWN.
+//
+// THE DEFECT THIS EXISTS FOR IS A TRUE SCREEN THAT LEAVES A FALSE IMPRESSION -- the Voice's first
+// question, and the hardest shape of it to see. The notice renders CHANGELOG[0] and nothing else.
+// That is right for a phone one release behind. It is wrong for this release: live is app-v80 and
+// this ships v81, v82, v83 and v84 together, so every installed phone opens to a single card headed
+// UPDATED about the newest one and is told nothing about the other three -- including app-v81's
+// correction to how dose amounts are read, where ".5 mg" was being counted as 5 mg against a daily
+// limit. Every sentence on that screen is true and the screen as a whole is not.
+//
+// The app already knows: `whatsNewSeenVersion()` is the release this phone last acknowledged, and
+// CHANGELOG is newest-first, so the entries above it are the ones it has not seen. Minus the one on
+// screen. A version that is not in the list at all (an old phone, a trimmed changelog) counts every
+// entry rather than none -- erring towards telling somebody there is more to read.
+function whatsNewOlderUnseenCount() {
+  if (!Array.isArray(CHANGELOG) || CHANGELOG.length < 2) return 0;
+  const seen = whatsNewSeenVersion();
+  const idx = CHANGELOG.findIndex((x) => x && x.v === seen);
+  const unseen = idx === -1 ? CHANGELOG.length : idx;
+  return Math.max(0, unseen - 1);
+}
 function whatsNewSeenVersion() { try { return localStorage.getItem(WHATS_NEW_KEY); } catch (e) { return null; } }
 function whatsNewMarkSeen() { try { localStorage.setItem(WHATS_NEW_KEY, APP_VERSION); } catch (e) {} }
 // A FRESH INSTALL IS NOT AN UPDATE. No marker means two different things and they must not be
@@ -9083,6 +9105,16 @@ function renderWhatsNewModal() {
     h('div', { style: { width: '100%', maxWidth: '460px', maxHeight: '80vh', overflowY: 'auto', background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '20px', padding: '18px 16px calc(16px + env(safe-area-inset-bottom))', boxShadow: '0 -10px 40px rgba(86,28,4,0.22)', minWidth: '0' } },
       h('div', { style: { fontSize: '11.5px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#BF4C1A', marginBottom: '8px' } }, 'Updated'),
       whatsNewEntry(e, true),
+      // Only when there is something to say. A line reading "0 earlier updates" is worse than
+      // silence, and on the ordinary one-release-behind case this renders nothing at all.
+      (() => {
+        const n = whatsNewOlderUnseenCount();
+        if (!n) return null;
+        return h('div', { 'data-whatsnew-older': String(n), style: { fontSize: '12.5px', color: '#7A6E76', lineHeight: '1.45', marginTop: '10px' } },
+          n === 1
+            ? 'One earlier update you have not seen is under \u201cSee recent updates\u201d.'
+            : (n + ' earlier updates you have not seen are under \u201cSee recent updates\u201d.'));
+      })(),
       h('div', { style: { display: 'flex', gap: '9px', marginTop: '14px' } },
         h('button', { 'data-whatsnew-all': 'true', type: 'button',
           onClick: () => { whatsNewMarkSeen(); setState({ whatsNewOpen: false, view: 'whatsnew', drawerOpen: false }); },
@@ -12684,7 +12716,7 @@ if (typeof window !== 'undefined') {
     // was describing a file that no longer existed. The getter stays because it costs nothing and
     // keeps this hook correct if the block is ever moved back up; the position above is the guard.
     get version() { return APP_VERSION; } };
-  window.__whatsNewTest = { latest: whatsNewLatest, all: () => CHANGELOG, shouldShow: whatsNewShouldShow, key: WHATS_NEW_KEY };
+  window.__whatsNewTest = { latest: whatsNewLatest, all: () => CHANGELOG, shouldShow: whatsNewShouldShow, key: WHATS_NEW_KEY, olderUnseen: whatsNewOlderUnseenCount };
   // The temperature thresholds, so a suite can check that the line DRAWN on the chart carries
   // the number the app COLOURS from, rather than pattern-matching text that happens to sit
   // near it. The first version of that check matched "Fever" followed by an axis label and

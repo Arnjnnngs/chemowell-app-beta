@@ -20,7 +20,7 @@ WHAT THIS BUILDS, ported from care-tracker and de-personalised on the way (CLAUD
   * A pop-up on open, showing the NEWEST release only. Not the whole history: a wall of entries on
     open is something a person dismisses without reading, which defeats showing it at all.
   * A "See recent updates" screen behind one tap. It lists the entries the app carries, which is
- * not every release -- five of eighty-four -- and no surface is allowed to say otherwise.
+    not every release -- five of eighty-four -- and no surface is allowed to say otherwise.
   * A drawer row so it can be found again after it has been dismissed.
 
 THE TWO RULES THAT MAKE IT BEARABLE RATHER THAN ANNOYING, both learned in care-tracker:
