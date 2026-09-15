@@ -377,3 +377,41 @@ Aaron.
 *PM sign-off, pass 2. ChemoWell app-v83 + app-v84, measured at `22c4475` on 2026-09-15. Working
 tree untouched apart from this file; falsification of the drift check was done on copies under a
 scratchpad directory.*
+
+---
+
+# RUN B — `./release_check.sh` with this report committed, at `8980cf0`
+
+Raw, pasted rather than described. This is the gate's reading of the release *including* this
+desk's refusal, which is the reading that counts:
+
+    ℹ️  Suites will run against a clean export of HEAD at /tmp/tmp.tWuLdTlYY4
+       (not the working tree -- see the app-v82 note above).
+    ℹ️  Baseline: PUBLISHED.json -> app-v80 (chemowell-app-v80-2) at 048c1ff
+       37 commit(s) have changed index.html since that record. This gate assumes NONE of
+       them are live yet. If any were already pushed, run ./mark_published.sh <that commit>
+       first -- otherwise the comparison below is against the wrong build.
+    ❌ RELEASE CHECK FAILED: a chain report refuses this release, and nothing supersedes it.
+       These say DO NOT SHIP:
+         outputs/PM-app-v84-pass2.md — examined 22c4475
+         outputs/PM-app-v84.md — examined 3ec6b4c
+       A refusal is cleared by re-running that stage against a LATER commit and it saying
+       SHIP — not by adding another file beside it.
+
+    EXIT=1
+
+**Two things this run settles that a summary would have hidden.**
+
+The gate **can read this report** — it names it by path with the commit it examined, rather than
+listing it under "a chain report exists that this gate cannot read". That failure mode has twice
+been allowed to become "raises no objection" on this project, and the only way to know it has not
+happened again is to see the file's own name printed under a heading that says DO NOT SHIP. It is
+printed there.
+
+And the gate stops at the refusal, so the audit-currency blocker in §3 is **not visible in this
+output**. It is real and it is next: with both PM refusals cleared, `check_report_current()` would
+report `outputs/AUDIT-app-v84-delta8.md — examined 400bd37; changed since: index.html`, no AUDIT
+report would be CURRENT, and the gate would fail again one stage later. Fixing only the README
+sentence will not turn this green.
+
+*Run B taken 2026-09-15, immediately after committing this file.*
