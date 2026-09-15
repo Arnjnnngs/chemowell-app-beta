@@ -53,6 +53,13 @@ run_suite() {
 # shellcheck disable=SC1090
 source "$MUTANTS"
 
+# RUN THIS ALONE. Not a style preference -- measured on 2026-09-15: started beside eight browser
+# suites on the same box, the BASELINE came back 70/80 on a build that scores 80/80 by itself, and
+# ten reds about nothing is exactly as useless as a green that means nothing. The suites here drive
+# real gestures with real timings (a 320ms window, a touch fling, a one-second render tick), and
+# those are the first things a loaded machine distorts. If the baseline is red, check what else is
+# running before you believe it -- and do not filter the FAIL lines out of this script's output,
+# because they are what tells you which it was.
 echo "=== BASELINE (no mutant) -- every check must be green before any of them mean anything"
 BASE=$(run_suite)
 echo "$BASE"
