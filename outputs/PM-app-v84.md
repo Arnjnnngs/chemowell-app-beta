@@ -351,3 +351,70 @@ back and dies on it.
 **Three other records carried the same claim** — `README.md`, the comment above the function itself,
 and `outputs/DESIGN-app-v84.md` — and all three are corrected in place, because none of them is a
 signed record of a decision the way this file is.
+
+
+---
+
+# SECOND CORRECTION APPENDED 2026-09-15 — SECTION 4 IS NOW OUT OF DATE, AND ONE PART OF IT WAS INCOMPLETE WHEN WRITTEN
+
+**The body above is again left exactly as written.** Same reason as the first correction: this is a
+signed record of a decision, and a signed record that is silently changed is worse than one that is
+wrong. What follows says which of its claims no longer describe the repo, and which was wrong on the
+day.
+
+## What has changed since `3ec6b4c`
+
+Section 4 says, of `harness-v84-whatsnew.py`:
+
+> **`harness-v84-whatsnew.py` is not valid Python and has never run in its committed form.**
+> … **The What's New notice — the whole point of app-v84 — cannot be rebuilt from the repo at all.**
+
+**That was true at `3ec6b4c` and is no longer true.** The quoting error was fixed, and fixing it
+exposed two further defects underneath, each found the same way — by LOADING the rebuilt file rather
+than trusting the script's exit code:
+
+1. The script wrote `key: WHATS_NEW_KEY` into a hook block sitting ~1,500 lines above that `const`.
+   The rebuilt file threw *"Cannot access 'WHATS_NEW_KEY' before initialization"* and rendered an
+   empty `#root`. Fixed by lifting the whole hook block to the end of the module, as the release did.
+2. The script wrote `function deviceHasPriorChemoWellData() { return HAD_PRIOR_CHEMOWELL_DATA; }`
+   and **no step of it ever declared `HAD_PRIOR_CHEMOWELL_DATA`**. The rebuilt file threw
+   `ReferenceError` at module evaluation, rendered an empty `#root`, and printed
+   `OK -- What's New applied`. The snapshot is now its own patch step, which it has to be: the
+   question it answers is only answerable above the first `localStorage` write.
+
+The script now produces a file that boots, measured in a real browser against HEAD as a control:
+
+| | uncaught exceptions | `#root` length | hooks |
+|---|---|---|---|
+| committed script at `2dccb90^` | `ReferenceError: HAD_PRIOR_CHEMOWELL_DATA is not defined` | 0 | none |
+| fixed script | none | 4205 | all eight |
+| HEAD (control) | none | 4205 | all eight |
+
+`./verify-rebuild.sh` makes that repeatable and is the mechanism this desk asked for: a patch script
+exiting 0 looks exactly like success, which is how the same class of defect got through three times.
+
+## What was incomplete when it was written
+
+Section 4's second reason — *"Everything after the patches was hand-edited into `index.html`"* —
+**still stands and is the one that matters.** Fourteen commits of audit fixes have no patch scripts,
+so base + scripts is not byte-identical to HEAD and app-v84 remains rebuildable from git rather than
+from the harness. Nothing above changes that, and `verify-rebuild.sh` deliberately claims only that
+the rebuild BOOTS, not that it reproduces.
+
+**And the part that was wrong on the day is smaller and worth naming:** section 6 adds, as a finding
+this desk contributed, that the script "does not parse" and that "nothing in the repo records that".
+The desk checked whether the script PARSED. It did not check whether the script, once parsed, built
+an app that runs — which is the check that found both defects above, and which would have found the
+first one at `3ec6b4c` for the same cost. **A syntax check on a patch script is the same class of
+instrument as a syntax check on the app**, and this repo's own Quality Chain notes say in as many
+words that a syntax check is never sufficient because a syntax-valid build once shipped blank to
+production. The gate applied to the app the standard it did not apply to the thing that rebuilds it.
+
+## What this correction does NOT do
+
+It does not change the verdict. `VERDICT: DO NOT SHIP` at `3ec6b4c` stands as issued; the three
+objections in the body (the README row describing an intermediate commit, the audit never having
+seen the shipping commit, and the missing Enhancer and Designer passes) are answered elsewhere or
+not, and a fresh PM pass against the shipping commit is what re-issues, not this appendix.
+
+*Correction written 2026-09-15 against `a35f328`.*
