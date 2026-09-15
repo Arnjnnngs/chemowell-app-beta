@@ -58,3 +58,43 @@ Designer seat specifically cannot answer from here:
 2. **The first-run guide, as a brand-new user** — type a medication name, then thumb-scroll down to
    *Add medication* at the bottom of the form. The page must not jump back up to the field.
 3. **The Meds reorder arrows** — are 40×40 big enough under your thumb, or should they go to 44?
+
+
+---
+
+# ADDENDUM, 2026-09-15 — THE SURFACE THIS RELEASE IS NAMED AFTER HAD NO DESIGN PASS
+
+The fifteen screenshots above cover app-v83's screens. **Not one of them is the What's New notice**,
+which is the entire point of app-v84 and the only new full-screen thing a caregiver meets. That is
+the Enhancer's blind spot one level up: a pass that measured the screens the release *changed* and
+walked past the screen the release *added*.
+
+Six more, in `outputs/design-app-v84/`:
+
+| Surface | 320 | 360 | 390 |
+|---|---|---|---|
+| The update notice (`whatsnew-modal-*.png`) | ✅ | ✅ | ✅ |
+| The full list screen (`whatsnew-screen-*.png`, full page) | ✅ | ✅ | ✅ |
+
+Measured on each of the six, not eyeballed: `document.scrollWidth` equals the viewport exactly,
+**0** elements past the right edge, **0** text controls below the 16px iOS floor, **0** buttons
+under the 44px touch floor, **0** elements carrying the literal attribute value `"null"`, **0**
+page errors.
+
+**Looked at as well as measured.** At 320 the two buttons sit side by side and *"See recent
+updates"* wraps to two lines inside its pill without changing the row's height or pushing *"Got
+it"* off the edge; the notice's own body scrolls while the page behind it does not (asserted in
+`test/v84-whatsnew.mjs` 7b rather than left to the eye). The label reads *"See recent updates"*
+rather than *"See all updates"* — the fourth surface that claimed the changelog was complete, and
+the reason this addendum exists at all.
+
+**One thing the fixture shows that a real phone will not.** The shots force the notice by writing an
+old seen-version, so they catch a device that is simultaneously mid-first-run-guide and being told
+what changed. A genuinely new install is stamped silently and shown nothing
+(`deviceHasPriorChemoWellData()`), so that overlap needs a user who updated part-way through the
+guide. The notice sits above the guide and dismisses normally; noted rather than treated as a
+defect.
+
+**Still exempt, and still for the same reason: iPhone rendering.** Chromium only here. The new
+gesture-based guard on the focus nudge makes that exemption sharper than usual — see BACKLOG.md,
+"iOS: the focus nudge is guarded by gesture now". It is item 1 on the phone checklist.
