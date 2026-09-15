@@ -67,7 +67,11 @@ git archive HEAD | tar -x -C "$WORK"
   # mutants and getting 96 checks where the suite has 95. Copy the CONTENTS.
   cp -r test/. "$WORK/test/" || { echo "❌ could not copy the suite into the clone -- the sweep would run whatever git archive left there"; exit 1; }
 
-( cd "$WORK" && python3 -m http.server "$PORT" >/dev/null 2>"$WORK/.server.err" ) &
+# NOT `( cd "$WORK" && python3 ... ) &`. That made $! the SUBSHELL, so the trap killed the wrapper
+# and left the real server holding the port -- which is how a squatter appeared on this box in the
+# first place, and the busy-port guard above exists because of one. `--directory` needs no subshell,
+# so $! is the server itself and `kill` reaches it.
+python3 -m http.server "$PORT" --directory "$WORK" >/dev/null 2>"$WORK/.server.err" &
 SRV=$!
 _up=0
 for _ in $(seq 1 25); do
