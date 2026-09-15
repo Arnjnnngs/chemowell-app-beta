@@ -660,13 +660,28 @@ section('7h. A PHONE THAT MISSED SEVERAL RELEASES IS NOT TOLD ABOUT ONE OF THEM 
   const p = await freshPage(true);
   const all = await p.evaluate(() => (window.__whatsNewTest ? window.__whatsNewTest.all() : []).map(e => e.v));
   t('the changelog has enough entries to be several releases behind', all.length >= 4, all.length + ' entries');
+  // COMPUTED HERE, and the comment that used to say so was describing a hand-reasoned literal `2`.
+  // An auditor caught the gap between the sentence and the code -- the exact habit this release has
+  // spent five rounds breaking -- so the expectation is now actually derived: entries newer than the
+  // marker, minus the one the notice is showing.
+  const expectFor = (marker) => {
+    const i = all.indexOf(marker);
+    return Math.max(0, (i === -1 ? all.length : i) - 1);
+  };
 
   // --- several behind: the marker is the 4th newest, so 3 are newer, minus the one on screen = 2
   await seeVersion(p, all[3]);
   t('the notice is open for a phone that is behind', await p.locator('[data-whatsnew-modal]').count() === 1);
   let L = await olderLine(p);
   t('and the number is the count it has NOT been shown -- computed here, not read off the hook',
-    L.attr === 2, JSON.stringify(L.attr));
+    L.attr === expectFor(all[3]), JSON.stringify(L.attr) + ' expected ' + expectFor(all[3]));
+  // AND THE HOOK IS A SECOND OPINION, NOT THE ANSWER. window.__whatsNewTest.olderUnseen was exposed
+  // and read by nothing, which is a hook that proves only that it exists. Asserting it against the
+  // number ON SCREEN is what makes it worth having: if the function and the rendered sentence ever
+  // disagree, the screen is what a caregiver gets and the function is what every other check reads.
+  t('and the exported count agrees with the number drawn on the screen',
+    await p.evaluate(() => window.__whatsNewTest.olderUnseen()) === L.attr,
+    (await p.evaluate(() => window.__whatsNewTest.olderUnseen())) + ' vs ' + L.attr);
   // MUTANT 13: the sentence printed n + 1 while the attribute stayed right, and this check was green.
   t('and the SENTENCE carries that same number -- the attribute is not what anybody reads',
     !!L.text && new RegExp('(^|[^0-9])' + L.attr + '([^0-9]|$)').test(L.text) && !/\b3\b/.test(L.text),
@@ -679,7 +694,8 @@ section('7h. A PHONE THAT MISSED SEVERAL RELEASES IS NOT TOLD ABOUT ONE OF THEM 
   // "1 earlier updates ... are" because nothing ever rendered n === 1.
   await seeVersion(p, all[2]);
   L = await olderLine(p);
-  t('a phone with exactly one unseen earlier update says so', L.attr === 1, JSON.stringify(L.attr));
+  t('a phone with exactly one unseen earlier update says so',
+    L.attr === expectFor(all[2]) && L.attr === 1, JSON.stringify(L.attr) + ' expected ' + expectFor(all[2]));
   // "no plural anywhere" was the first version of this and it was WRONG, not the app: the sentence
   // quotes the button, which is called "See recent updates". The plural that matters is the subject.
   t('and says it in the singular -- "One earlier update ... is"',
@@ -690,7 +706,8 @@ section('7h. A PHONE THAT MISSED SEVERAL RELEASES IS NOT TOLD ABOUT ONE OF THEM 
   await seeVersion(p, 'app-v0-not-in-this-changelog');
   L = await olderLine(p);
   t('a marker the changelog does not carry counts every entry but the one on screen',
-    L.attr === all.length - 1, JSON.stringify(L.attr) + ' of ' + all.length + ' entries');
+    L.attr === expectFor('app-v0-not-in-this-changelog') && L.attr === all.length - 1,
+    JSON.stringify(L.attr) + ' of ' + all.length + ' entries');
 
   // --- one release behind: nothing to say, and a line saying "0" would be on every ordinary notice
   await seeVersion(p, all[1]);
@@ -759,6 +776,13 @@ section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT 
   // IT READS RENDERED TEXT FROM SCOPED ELEMENTS, NEVER document.body.textContent -- in a
   // single-file app the body text contains this app's own source, so a string check against it
   // matches the code that was just corrected and passes on anything.
+  //
+  // AND A WARNING FOR WHOEVER WRITES THE NEXT RELEASE NOTE. Changelog ENTRY TEXT renders inside two
+  // of the three scopes below, so a perfectly true future note reading "View all updates to your
+  // medication list on the Meds screen" turns this check red. That is loud and cheap to diagnose --
+  // the failure prints the matched phrase -- but it is a false red, and a false red is a defect too.
+  // If it happens: the wording of the note is not wrong, the pattern needs the exception, and the
+  // corpus below is where it goes.
   // THE PATTERN, AND THE AUDIT WAS RIGHT THAT THE FIRST ONE WAS WRONG IN BOTH DIRECTIONS.
   // Under-broad: a heading reading "The complete changelog for ChemoWell... Nothing is left out."
   // passed 65/65. Over-broad: innocent true copy -- "We check every release on both phone sizes" --
