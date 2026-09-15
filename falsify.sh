@@ -85,9 +85,17 @@ if echo "$BASE" | grep -q "^  FAIL"; then
   exit 1
 fi
 
+# FALSIFY_FROM / FALSIFY_TO -- run a SLICE of the sweep, because the whole thing no longer fits.
+# Nineteen mutants at five to eight minutes each is over two hours, and a run that hits its own
+# ceiling prints a truncated log that looks exactly like a finished one in anything filtered. That
+# has now happened twice. A slice finishes, says so, and the slices together are the sweep -- which
+# is honest, where "it probably would have passed" is not. Always state which slice a result covers.
 DEAD=0; ALIVE=0
+FROM="${FALSIFY_FROM:-1}"
+TO="${FALSIFY_TO:-9999}"
 i=1
 while declare -F "mutant_$i" >/dev/null; do
+  if [ "$i" -lt "$FROM" ] || [ "$i" -gt "$TO" ]; then i=$((i+1)); continue; fi
   desc_var="MUTANT_DESC_$i"
   echo ""
   echo "=== MUTANT $i: ${!desc_var:-（no description）}"
