@@ -95,8 +95,10 @@ and shown nothing. **At the time it was written that was false for every new ins
 `deviceHasPriorChemoWellData()` could only ever return `true`, because the app wrote a
 `chemowell-app` key of its own at startup before anything asked the question, so a brand-new phone
 WAS greeted with "here is what changed" on top of step 1 of the guide. The sixth audit found it and
-it is fixed: the answer is snapshotted before the first write. The overlap now really does need a
-phone that upgraded mid-guide. The notice sits above the guide and dismisses normally.
+it is fixed: the answer is snapshotted before the first write. The overlap now needs a phone that had already
+run ChemoWell -- one that upgraded mid-guide, or abandoned a first run on an older build and came
+back after this one. Measured on that path: the notice sits above the guide, dismisses cleanly, the
+scroll lock releases, and the sentence it carries is true for that person. The notice sits above the guide and dismisses normally.
 
 **Still exempt, and still for the same reason: iPhone rendering.** Chromium only here. The new
 gesture-based guard on the focus nudge makes that exemption sharper than usual — see BACKLOG.md,

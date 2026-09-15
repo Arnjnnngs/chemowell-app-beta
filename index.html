@@ -159,6 +159,16 @@ function saveJSON(key, value) { localStorage.setItem(key, JSON.stringify(value))
 const LICENSE_KEY = 'chemowell-app-license-v1';
 function getLicense() { return loadJSON(LICENSE_KEY, { tier: 'free' }); }
 function setLicense(patch) { saveJSON(LICENSE_KEY, { ...getLicense(), ...patch }); }
+// WHAT SURVIVES A FACTORY RESET. ONE LIST, TWO READERS, AND THE SECOND READER IS THE REASON.
+//
+// `eraseAllAppData()` preserves the licence because a purchase is not patient data. The snapshot
+// just below has to skip exactly the same keys, or a started-over phone looks like an upgrade
+// forever and is told "ChemoWell has never shown you one of these before" by an app that just did.
+// Those were two separate literals until an audit built the mutant: add one key to the erase path's
+// preservation list and that user-visible defect comes straight back with the suite green, because
+// nothing tied the two lists together. Now one list does, and adding a survivor here is enough.
+const WIPE_SURVIVORS = [LICENSE_KEY];
+
 function tierLimit(tier) { return tier === 'pro' ? Infinity : tier === 'plus' ? 3 : 1; }
 function tierLabel(tier) { return tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Plus' : 'Free'; }
 
@@ -180,16 +190,27 @@ function tierLabel(tier) { return tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Pl
 // The question has to be asked BEFORE the first write. This is that moment. Nothing above it
 // touches localStorage except reads.
 //
-// LICENSE_KEY IS EXCLUDED FOR THE SAME REASON `eraseAllAppData()` PRESERVES IT: a purchase is not
-// patient data and survives a wipe deliberately, so a device that bought Plus and then started over
-// would otherwise look like an upgrade forever.
+// WHAT IT SKIPS, AND WHY THE TWO EXCLUSIONS ARE WRITTEN DIFFERENTLY:
+//   * `WIPE_SURVIVORS` -- the same list `eraseAllAppData()` preserves, declared just above, so the
+//     two can no longer drift apart. That drift was a real mutant: one key added to the erase path
+//     and a started-over phone is told "ChemoWell has never shown you one of these before".
+//   * the seen-version marker, as a LITERAL, because `WHATS_NEW_KEY` is a `const` declared nine
+//     thousand lines below this point and reading it here is the temporal-dead-zone failure this
+//     file has shipped three times. The literal is deliberate; do not "tidy" it into the constant.
+//
+// AND A PROPERTY WORTH KNOWING BEFORE ANYONE SIMPLIFIES THIS: a first-ever visit evaluates this
+// module TWICE. The service worker activates, `controllerchange` fires, and the page reloads once --
+// so on the second evaluation this snapshot is `true` by construction, because the first evaluation
+// wrote the profiles key. A fresh install is held by the snapshot on pass one and by the marker
+// `whatsNewShouldShow()` stamps on pass one for pass two. Both are load-bearing. That is why the
+// mutant which stops "Got it" stamping the version also reddens the first-run check.
 const HAD_PRIOR_CHEMOWELL_DATA = (() => {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (!k || k.indexOf('chemowell-app') !== 0) continue;
-      if (k === 'chemowell-app-seen-version') continue;   // the marker itself is the question
-      if (k === 'chemowell-app-license-v1') continue;      // survives a wipe on purpose
+      if (k === 'chemowell-app-seen-version') continue;      // the marker itself is the question
+      if (WIPE_SURVIVORS.indexOf(k) !== -1) continue;         // survives a factory reset on purpose
       return true;
     }
   } catch (e) {}
@@ -1073,7 +1094,7 @@ function eraseAllAppData() {
     const doomed = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && k.indexOf('chemowell-app-') === 0 && k !== LICENSE_KEY) doomed.push(k); // purchases survive a data wipe
+      if (k && k.indexOf('chemowell-app-') === 0 && WIPE_SURVIVORS.indexOf(k) === -1) doomed.push(k); // purchases survive a data wipe
     }
     doomed.forEach(k => localStorage.removeItem(k));
   } catch (e) {}
@@ -9097,9 +9118,12 @@ function whatsNewMarkSeen() { try { localStorage.setItem(WHATS_NEW_KEY, APP_VERS
 // READS THE SNAPSHOT TAKEN AT THE TOP OF THE MODULE, and does not look at storage itself. It used
 // to walk localStorage here, which is nine thousand lines after `initProfiles()` has already written
 // a `chemowell-app` key -- so it answered "yes" on a phone that had never run this app in its life.
-// The literals above are deliberately spelled out rather than referencing WHATS_NEW_KEY and
-// LICENSE_KEY: both are `const`s declared BELOW the snapshot, and reading either from there is the
-// temporal-dead-zone failure this file has already shipped three times.
+// The seen-version marker is spelled out as a literal up there because `WHATS_NEW_KEY` is declared
+// BELOW the snapshot and reading it from there is the temporal-dead-zone failure this file has
+// already shipped three times. `LICENSE_KEY` is NOT below it -- it is at the top of the file -- so
+// the licence is excluded through `WIPE_SURVIVORS` rather than a second copy of the string. An
+// earlier comment here claimed both were below; that was wrong, and duplicating a string on the
+// strength of a wrong reason is how the two lists drifted apart in the first place.
 function deviceHasPriorChemoWellData() { return HAD_PRIOR_CHEMOWELL_DATA; }
 // SET ONCE, AT STARTUP, AND IT IS THE ONLY RECORD THAT THIS PHONE HAD NO MARKER.
 // `whatsNewShouldShow()` stamps the marker before anything renders -- it has to, or a caregiver who
@@ -12791,6 +12815,11 @@ if (typeof window !== 'undefined') {
   // near it. The first version of that check matched "Fever" followed by an axis label and
   // passed while the label had been stripped of its number entirely.
   window.__tempTest = { fever: tempFever, high: tempHigh, suffix: tempSuffix };
+  // The factory reset itself, so a suite can drive the real thing instead of writing a second
+  // implementation of it -- which is what let the erase path and the first-run snapshot drift apart
+  // with every check green. It is the same function the Account screen's button calls; nothing here
+  // is a test-only path.
+  window.__eraseTest = eraseAllAppData;
 }
 </script>
 </body>

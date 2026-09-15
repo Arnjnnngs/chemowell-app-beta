@@ -124,20 +124,26 @@ section('1. A BRAND-NEW PHONE IS NOT GREETED WITH "HERE IS WHAT CHANGED"');
   // that reinstates the defect. The path that catches it is the one the audit drove:
   // Account -> Start over, then set up again.
   //
-  // `eraseAllAppData()` wipes everything and PRESERVES THE LICENCE, deliberately -- a purchase is
-  // not patient data. So the licence is written here before the wipe: it is the one key that can
-  // make a started-over phone look like an upgrade forever, and without it in the fixture the
-  // exclusion in the snapshot is untested.
+  // THE FIXTURE USES THE APP'S OWN ERASE PATH, NOT A COPY OF IT. It used to clear storage itself and
+  // keep the licence by hand, which looked equivalent and was not: nothing tied the fixture to what
+  // `eraseAllAppData()` actually preserves. An audit built the mutant -- add one key to the erase
+  // path's preservation list and the user-visible defect comes straight back while this suite scores
+  // a clean pass, because the fixture was wiping the way the fixture thought it should.
+  //
+  // The licence is written first because a purchase survives a factory reset on purpose and is the
+  // one key that can make a started-over phone look like an upgrade forever. `location.reload()` at
+  // the end of eraseAllAppData() is what this waits out.
   const p = await freshPage();
   t('the phone sets up once, so there is something to start over from', await completeWelcome(p, 'Test'));
-  await p.evaluate(() => {
-    localStorage.setItem('chemowell-app-license-v1', JSON.stringify({ tier: 'plus' }));
-    const keep = localStorage.getItem('chemowell-app-license-v1');
-    localStorage.clear();
-    localStorage.setItem('chemowell-app-license-v1', keep);
+  await p.evaluate(() => { localStorage.setItem('chemowell-app-license-v1', JSON.stringify({ tier: 'plus' })); });
+  const erased = await p.evaluate(() => {
+    if (typeof window.__eraseTest !== 'function') return false;
+    window.__eraseTest();
+    return true;
   });
-  await p.reload({ waitUntil: 'domcontentloaded' });
-  await p.waitForTimeout(1900);
+  t('the app exposes its own factory reset, so the fixture is not a second implementation of it',
+    erased, String(erased));
+  await p.waitForTimeout(2600);
   t('after Start over the app is back on the welcome screen',
     await p.getByPlaceholder('Enter patient name').count() > 0,
     String(await p.getByPlaceholder('Enter patient name').count()));

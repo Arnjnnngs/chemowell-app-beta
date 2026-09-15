@@ -25,7 +25,13 @@ WHAT THIS BUILDS, ported from care-tracker and de-personalised on the way (CLAUD
 
 THE TWO RULES THAT MAKE IT BEARABLE RATHER THAN ANNOYING, both learned in care-tracker:
 
-  1. **A FRESH INSTALL IS NOT AN UPDATE.** With nothing stored we cannot tell a brand-new phone
+  1. **A FRESH INSTALL IS NOT AN UPDATE -- AND THIS SCRIPT BUILT IT WRONG FOR SIX AUDIT ROUNDS.**
+     The function it writes asked localStorage nine thousand lines after the app had already written
+     a key of its own, so the branch below never once took the other path. The version that ships
+     reads a snapshot taken above the first write. THIS SCRIPT DOES NOT BUILD THAT SNAPSHOT, so a
+     file rebuilt from base + this patch carries the defect: the release is reproducible from git
+     and not from the harness, which the README records. With nothing stored we cannot tell a
+     brand-new phone
      from one that has been running for weeks, and greeting a first-time user with "here is what
      changed" is both meaningless and in the way. `DEVICE_HAS_PRIOR_DATA` -- any other ChemoWell
      key already on this phone -- separates them. A genuinely new phone is stamped silently and
@@ -112,15 +118,13 @@ function whatsNewMarkSeen() { try { localStorage.setItem(WHATS_NEW_KEY, APP_VERS
 // before this marker existed (an upgrade, which is exactly what this is for). Any other ChemoWell
 // key already on the device separates them. Either way the version is stamped, so this is decided
 // once rather than on every load.
-function deviceHasPriorChemoWellData() {
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k !== WHATS_NEW_KEY && k.indexOf('chemowell-app') === 0) return true;
-    }
-  } catch (e) {}
-  return false;
-}
+// READS A SNAPSHOT TAKEN AT THE TOP OF THE MODULE, ABOVE THE FIRST WRITE. Walking localStorage
+// HERE is the defect this script used to build: `initProfiles()` writes a `chemowell-app` key at
+// module evaluation, nine thousand lines above this point, so the app was always its own prior data
+// and this could only ever return true -- a brand-new phone was greeted with "here is what changed",
+// and a factory reset told somebody "ChemoWell has never shown you one of these before" minutes
+// after they dismissed it. See `const HAD_PRIOR_CHEMOWELL_DATA` near `const PROFILES_KEY`.
+function deviceHasPriorChemoWellData() { return HAD_PRIOR_CHEMOWELL_DATA; }
 function whatsNewShouldShow() {
   const seen = whatsNewSeenVersion();
   if (!seen) { const prior = deviceHasPriorChemoWellData(); whatsNewMarkSeen(); return prior; }

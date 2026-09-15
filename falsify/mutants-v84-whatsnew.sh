@@ -186,3 +186,17 @@ assert s.count(old)==1
 open(p,'w',encoding='utf-8').write(s.replace(old,""))
 PY
 }
+
+MUTANT_DESC_19="a key is added to what survives a factory reset, and the snapshot no longer agrees"
+mutant_19() {
+  python3 - <<'PY'
+p='index.html'; s=open(p,encoding='utf-8').read()
+old="const WIPE_SURVIVORS = [LICENSE_KEY];"
+assert s.count(old)==1
+open(p,'w',encoding='utf-8').write(s.replace(old,"const WIPE_SURVIVORS = [LICENSE_KEY];\nconst WIPE_SURVIVORS_DRIFTED = [LICENSE_KEY, 'chemowell-app-profiles-v1'];"))
+s2=open(p,encoding='utf-8').read()
+old2="      if (k && k.indexOf('chemowell-app-') === 0 && WIPE_SURVIVORS.indexOf(k) === -1) doomed.push(k);"
+assert s2.count(old2)==1
+open(p,'w',encoding='utf-8').write(s2.replace(old2,"      if (k && k.indexOf('chemowell-app-') === 0 && WIPE_SURVIVORS_DRIFTED.indexOf(k) === -1) doomed.push(k);"))
+PY
+}
