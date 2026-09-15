@@ -118,6 +118,14 @@ SNAPSHOT = r"""// ---- HAD THIS PHONE RUN CHEMOWELL BEFORE? ASKED HERE, BECAUSE 
 // touches localStorage except reads.
 //
 // WHAT IT SKIPS, AND WHY THE TWO EXCLUSIONS ARE WRITTEN DIFFERENTLY:
+//   * THE SAME PREFIX `eraseAllAppData()` USES -- `'chemowell-app-'`, WITH THE HYPHEN. It read
+//     `'chemowell-app'` without one until an audit measured the gap: a key like `chemowell-appfoo`
+//     counted as prior data here but was NOT removed by a factory reset, so a started-over phone
+//     kept it, looked like an upgrade forever, and would be told "ChemoWell has never shown you one
+//     of these before" by an app that had just shown it. Latent rather than live -- every storage
+//     key this app writes carries the hyphen -- and unified on THIS side deliberately, because
+//     widening the erase path would delete more of somebody's phone to settle a comment. The
+//     snapshot should ask about exactly the set a reset can clear, and now does.
 //   * `WIPE_SURVIVORS` -- the same list `eraseAllAppData()` preserves, declared just above, so the
 //     two can no longer drift apart. That drift was a real mutant: one key added to the erase path
 //     and a started-over phone is told "ChemoWell has never shown you one of these before".
@@ -135,7 +143,7 @@ const HAD_PRIOR_CHEMOWELL_DATA = (() => {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (!k || k.indexOf('chemowell-app') !== 0) continue;
+      if (!k || k.indexOf('chemowell-app-') !== 0) continue;
       if (k === 'chemowell-app-seen-version') continue;      // the marker itself is the question
       if (WIPE_SURVIVORS.indexOf(k) !== -1) continue;         // survives a factory reset on purpose
       return true;

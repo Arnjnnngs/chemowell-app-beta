@@ -47,6 +47,18 @@ trap 'rm -rf "$WORK"; [ -n "${SRV:-}" ] && kill "$SRV" 2>/dev/null || true' EXIT
 git archive HEAD | tar -x -C "$WORK"
 git show "$BASE_COMMIT:index.html" > "$WORK/index.html"
 
+# DRIFT FIRST, BOOT SECOND -- because a stale payload still boots.
+# The script embeds blocks of index.html verbatim. That is a fact about the day they were lifted,
+# not a property that holds: the app moved one character twenty minutes after the lift and the
+# rebuild went quietly back to producing a file the app no longer is, with this gate still green.
+# A boot check cannot see that; only a comparison can.
+echo "→ checking the patch script's payload still matches the app"
+node test/harness-payload-matches-app.mjs || {
+  echo "❌ $SCRIPT no longer copies the app. Re-extract the blocks it reports; do not hand-edit."
+  exit 1
+}
+echo
+
 echo "→ rebuilding $BASE_COMMIT + $SCRIPT"
 ( cd "$WORK" && python3 "$SCRIPT" )
 
