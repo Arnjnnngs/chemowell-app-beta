@@ -93,3 +93,45 @@ into a clinical record and drags a chart axis with it. E1 is the same defect one
 
 **Nothing on this list was built into app-v83 or app-v84.** The release carries what Aaron approved
 from the screenshots and the twelve defects the audit found, and nothing else.
+
+---
+
+# ADDENDUM, 2026-09-15 — THE NOTICE GAINED A LINE, SO THE SCREEN GETS THE PASS AGAIN
+
+The pass above ran over Home, Meds and Reports. The update notice itself gained a line after the
+fourth audit, and a screen that changes gets read again — including with question 6, *is everything
+already on the screen worth being there*, which is the question this seat is most likely to walk
+past because it is looking for what is missing.
+
+## The line
+
+> *"2 earlier updates you have not seen are under "See recent updates"."*
+
+**Worth being there: yes, and it is the whole finding.** The notice renders the newest changelog
+entry and nothing else. On an ordinary release that is right — one card, one update, dismissed in
+five seconds. This release ships four versions to a phone sitting on app-v80, and without this line
+the screen tells a caregiver about one of them and closes. Every sentence true; the screen false.
+
+**It carries a number, so question 3 of the Voice applies: does this figure belong on a screen?**
+Yes. It is a count of discrete things a person can go and read, not an average of anything, and it
+changes what they do next — it is the difference between tapping *"Got it"* and tapping *"See
+recent updates"*. Compare the figure this project removed for failing the same question:
+*"Averaging 5.6 L per procedure"*, which described nothing anybody would act on.
+
+**It disappears when it is nothing.** A line reading *"0 earlier updates"* would be on every notice
+on every ordinary release, which is how a screen accumulates furniture. Asserted in both
+directions by `test/v84-whatsnew.mjs` section 7h.
+
+**Its wording names the control it points at, exactly.** The button says *"See recent updates"* and
+the line quotes it character for character. That rule is here because v66 shipped a hint naming
+controls that had been renamed.
+
+## Can the caregiver do the whole job on this screen?
+
+Unchanged and still yes: read what changed, tap through to the rest, or dismiss. **Nothing new is a
+dead end** — the line points at a control that is on the same screen, two rows below it.
+
+## Nothing else proposed this time
+
+E1–E6 above are still the list, unchanged and still Aaron's to pick from. **Explicitly: no new
+proposals from this addendum.** An explicit "nothing this time" is information; silence is not.
