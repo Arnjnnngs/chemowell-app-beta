@@ -38,9 +38,24 @@ const section = s => console.log('\n' + s);
 
 const HOUR = 3600000;
 
+// THE CLOCK IS FROZEN AT 10:00, AND THIS SUITE WAS 40/41 WITHOUT IT -- at 05:03, on the release it
+// was gating.
+//
+// The weight fixture sits at `now - 9h`. Run before about 09:00 local that lands on YESTERDAY, so
+// the tile correctly said "yesterday" and the check demanding "9h ago" went red for a defect that
+// does not exist. The app's own rule is that a reading from a previous day names the day rather
+// than counting hours -- "31h ago" is arithmetic nobody asked for -- so the suite was wrong and the
+// app was right, which is the worst kind of red: it sends somebody looking for a bug that is not
+// there, and "41/41" was a claim about what hour it happened to be rather than a measurement.
+//
+// test/v80-up-next.mjs and test/v83-meds-and-reports.mjs in this repo already do this, for exactly
+// this reason. Every fixture timestamp is derived from FROZEN and the page's own Date is shimmed to
+// match, so the suite measures the same day at 3am as it does at noon.
+const FROZEN = (() => { const d = new Date(); d.setHours(10, 0, 0, 0); return d.getTime(); })();
+
 // Seeded readings, each a different age so the "how long ago" line has something to be wrong about.
 function seed(homeCards) {
-  const now = Date.now();
+  const now = FROZEN;
   return {
     // The Settings toggles live under prefs.homeCards -- writing them at the top level is the shape
     // of a check that passes while testing nothing, because homePref() would never see them.
@@ -65,6 +80,14 @@ async function open(browser, fixture, viewport) {
     if (/Failed to load resource|ERR_TUNNEL_CONNECTION_FAILED|ERR_NAME_NOT_RESOLVED|net::ERR_/.test(x)) return;
     errors.push(x);
   });
+  // The page's own clock too. A frozen fixture against a live page clock is half a fix: the app
+  // decides what "today" means, and it must mean the same day the fixture was written for.
+  await page.addInitScript((frozen) => {
+    const R = Date;
+    const D = function (...a) { return a.length ? new R(...a) : new R(frozen); };
+    D.now = () => frozen; D.parse = R.parse; D.UTC = R.UTC; D.prototype = R.prototype;
+    window.Date = D;
+  }, FROZEN);
   await page.goto(BASE);
   await page.waitForTimeout(1200);
   // The app picks its own per-profile storage keys on first run, so the fixture is written into

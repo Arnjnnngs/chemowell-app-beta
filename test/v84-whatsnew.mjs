@@ -157,7 +157,7 @@ section('5. THE FULL LIST IS REACHABLE, BOTH WAYS');
   await p.waitForTimeout(1800);
   await p.locator('[data-whatsnew-all]').click();
   await p.waitForTimeout(600);
-  t('"See all updates" opens the full screen', await p.locator('[data-whatsnew-screen]').count() === 1);
+  t('the button to the full screen opens it', await p.locator('[data-whatsnew-screen]').count() === 1);
   const n = await p.locator('[data-whatsnew-screen] [data-whatsnew-entry]').count();
   t('which lists more than one release', n > 1, n + ' entries');
   t('and it names the version this phone is actually running -- computed, not typed in',
@@ -512,9 +512,72 @@ section('7e. SCROLLING AWAY FROM A FIELD YOU JUST TYPED IN MUST STICK');
   await deep.focus();
   await p.waitForTimeout(1400);
   const deepTopAfter = await deep.evaluate(el => Math.round(el.getBoundingClientRect().top));
-  t('and a field focused WITHOUT a swipe is still brought into view -- v28 is not deleted',
-    deepTopBefore > vhE || deepTopAfter < deepTopBefore - 20 || (deepTopAfter >= 0 && deepTopAfter <= vhE),
+  // THIS CHECK WAS VACUOUS WHEN FIRST WRITTEN, AND THE SWEEP SAID SO. It OR'd three conditions
+  // together, the first of which ("the field started below the fold") is true before the app does
+  // anything at all -- so mutant 3, which deletes the nudge outright, passed 57/57. A precondition
+  // belongs in its own check; OR-ing it into the assertion is how an assertion stops asserting.
+  t('precondition: the field is below the fold, so there is something for the nudge to do',
+    deepTopBefore > vhE, 'top=' + deepTopBefore + ' in a ' + vhE + 'px viewport');
+  t('and focusing it WITHOUT a swipe brings it into view -- v28 is not deleted by the guard',
+    deepTopAfter >= 0 && deepTopAfter <= vhE - 40,
     'top ' + deepTopBefore + ' -> ' + deepTopAfter + ' in ' + vhE + 'px');
+  await p.close();
+}
+
+// ---------------------------------------------------------------------------------------------
+section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT THE THREE INSTANCES');
+{
+  // THE SAME SENTENCE, FOUR TIMES, FIXED THREE TIMES. CHANGELOG holds five entries for an
+  // eighty-four-release app, so anything promising "every update" is false. The audit took it out
+  // of the modal copy; two more surfaces kept it and the PM gate found them; a fourth -- the
+  // button reading "See all updates" -- survived both and was found by the delta audit, sitting one
+  // line under the entry text that had already been corrected.
+  //
+  // FOUR ROUNDS OF THE SAME FIX IS A MISSING CHECK, NOT CARELESSNESS. So this does not look for the
+  // four strings anybody has written down: it reads what is ON THE SCREEN on every surface that
+  // shows the changelog and refuses any claim of completeness, however it is worded. A fifth
+  // surface added later fails here without anybody remembering to add it to a list.
+  //
+  // IT READS RENDERED TEXT FROM SCOPED ELEMENTS, NEVER document.body.textContent -- in a
+  // single-file app the body text contains this app's own source, so a string check against it
+  // matches the code that was just corrected and passes on anything.
+  const CLAIM = /\b(every|all)\b[^.]{0,30}\b(update|release|version)s?\b|complete (list|history)|full (list|history) of (update|release)/i;
+  const p = await freshPage(true);
+  await p.evaluate(() => { localStorage.setItem('chemowell-app-seen-version', 'app-v1'); });
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await p.waitForTimeout(1800);
+
+  const modalText = await p.locator('[data-whatsnew-modal]').first().innerText();
+  t('the update notice is on screen, so there is something to read', modalText.length > 0, modalText.length + ' chars');
+  t('and the notice claims nothing about being complete',
+    !CLAIM.test(modalText), (modalText.match(CLAIM) || ['none'])[0]);
+
+  await p.locator('[data-whatsnew-all]').click();
+  await p.waitForTimeout(700);
+  const screenText = await p.locator('[data-whatsnew-screen]').first().innerText();
+  t('the full screen is open', screenText.length > 0, screenText.length + ' chars');
+  t('and the screen -- heading included -- claims nothing about being complete',
+    !CLAIM.test(screenText), (screenText.match(CLAIM) || ['none'])[0]);
+
+  // The menu row and its helper line, which is the surface the PM gate caught.
+  const menu = p.getByRole('button', { name: /menu/i });
+  if (await menu.count()) { await menu.first().click(); await p.waitForTimeout(600); }
+  const drawerText = await p.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll('button, a'));
+    const hit = rows.find(el => /What.s new/i.test(el.innerText || ''));
+    return hit ? (hit.innerText || '') : '';
+  });
+  t('the menu row for the changelog is on screen', drawerText.length > 0, JSON.stringify(drawerText));
+  t('and its helper line claims nothing about being complete',
+    !CLAIM.test(drawerText), (drawerText.match(CLAIM) || ['none'])[0]);
+
+  // AND THE CHECK HAS TO BE ABLE TO FAIL. The wording it hunts is not hypothetical -- it is the
+  // exact sentence that shipped four times -- so assert the pattern catches it, or a regex typo
+  // would turn all five checks above into decoration that passes on the defect.
+  t('and the pattern actually catches the sentence that shipped four times',
+    CLAIM.test('Every update, newest first') && CLAIM.test('Every update to ChemoWell, newest first.')
+      && CLAIM.test('See all updates') && CLAIM.test('Every past update is listed under What’s new')
+      && !CLAIM.test('Recent updates, newest first'));
   await p.close();
 }
 

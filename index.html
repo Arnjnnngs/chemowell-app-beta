@@ -9061,7 +9061,7 @@ function renderWhatsNewModal() {
       h('div', { style: { display: 'flex', gap: '9px', marginTop: '14px' } },
         h('button', { 'data-whatsnew-all': 'true', type: 'button',
           onClick: () => { whatsNewMarkSeen(); setState({ whatsNewOpen: false, view: 'whatsnew', drawerOpen: false }); },
-          style: { flex: '1', minHeight: '46px', borderRadius: '13px', background: 'rgba(246,108,49,0.10)', border: '1px solid rgba(228,111,60,0.34)', color: '#BF4C1A', fontSize: '14px', fontWeight: '800' } }, 'See all updates'),
+          style: { flex: '1', minHeight: '46px', borderRadius: '13px', background: 'rgba(246,108,49,0.10)', border: '1px solid rgba(228,111,60,0.34)', color: '#BF4C1A', fontSize: '14px', fontWeight: '800' } }, 'See recent updates'),
         h('button', { 'data-whatsnew-close': 'true', type: 'button', onClick: close,
           style: { flex: '1', minHeight: '46px', borderRadius: '13px', background: 'linear-gradient(135deg, #E46F3C 0%, #BF4C1A 100%)', color: '#fff', fontSize: '14px', fontWeight: '800' } }, 'Got it')
       )
@@ -9571,7 +9571,18 @@ function helpSetQuery(value, el) {
   helpQuery = value;
   render();
   const next = document.getElementById('help-search');
-  if (next && el) { next.focus(); try { if (pos !== null) next.setSelectionRange(pos, pos); } catch (e) {} }
+  // THE SAME TREATMENT render() GIVES ITS OWN FOCUS RESTORE, for the same two reasons. This is a
+  // refocus after a redraw, not a person tapping into the field: `preventScroll` stops focus()
+  // scrolling the help search box into view on every keystroke, and `restoringFocus` stops the v28
+  // focusin listener (near line 4218) scheduling its centring nudge 320ms after each character.
+  // Without the flag, typing a query would drag the page toward the search box once per letter.
+  if (next && el) {
+    restoringFocus = true;
+    try {
+      try { next.focus({ preventScroll: true }); } catch (e) { next.focus(); }
+      try { if (pos !== null) next.setSelectionRange(pos, pos); } catch (e) {}
+    } finally { restoringFocus = false; }
+  }
 }
 
 function renderHelpView(now) {
@@ -12641,11 +12652,12 @@ if (typeof window !== 'undefined') {
   // absence — a check that reports green loudest when it cannot see anything, which is the exact
   // class this file has been caught on four times.
   window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state), overlayNow: () => anyOverlayOpen(), scrollLocked: () => document.body.style.position === 'fixed',
-    // A GETTER, NOT A VALUE. This hook is built ~1,500 lines ABOVE `const APP_VERSION`,
-    // so reading it eagerly here throws "Cannot access 'APP_VERSION' before initialization"
-    // at module load -- the temporal dead zone this repo has now been bitten by three
-    // times, and the third time was in the comment warning about the second. A getter is
-    // evaluated when a suite asks, by which point the const exists.
+    // A GETTER, AND THE COMMENT THAT USED TO BE HERE WAS FALSE ONCE THE BLOCK MOVED. It said
+    // this hook is built ~1,500 lines ABOVE `const APP_VERSION`. It WAS, which is what threw
+    // "Cannot access 'APP_VERSION' before initialization" and stopped the app booting -- and the
+    // fix was to move the whole block down here, after which the sentence describing the problem
+    // was describing a file that no longer existed. The getter stays because it costs nothing and
+    // keeps this hook correct if the block is ever moved back up; the position above is the guard.
     get version() { return APP_VERSION; } };
   window.__whatsNewTest = { latest: whatsNewLatest, all: () => CHANGELOG, shouldShow: whatsNewShouldShow, key: WHATS_NEW_KEY };
   // The temperature thresholds, so a suite can check that the line DRAWN on the chart carries

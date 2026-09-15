@@ -69,7 +69,7 @@ const CHANGELOG = [
     points: [
       'Until today ChemoWell updated quietly. A button could move or a number could start being counted differently and nothing on screen said so.',
       'From now on, the first time you open the app after an update, a short note tells you what is different. Tap "Got it" and it does not come back.',
-      'Every past update is listed under "What’s new" in the menu, newest first, if you want to look back.'
+      'Updates from here on are listed under “What’s new” in the menu, newest first, if you want to look back at one.'
     ] },
   { v: 'app-v83', date: 'Sep 14, 2026', title: 'Your medication cards now show what has happened today',
     points: [
@@ -222,28 +222,73 @@ src = cut(src,
 
 src = cut(src, "    renderTimeModal(),", "    renderTimeModal(),\n    renderWhatsNewModal(),", 'the modal mount')
 
-# ---- 4. the debug hooks the suite compares against ---------------------------------------------
-# Exported rather than copied into the suite. The v82 back-button suite's completeness check first
-# passed because the app was NOT exporting the list it compares against -- green precisely because
-# it could see nothing. The version is exported for the same reason: so the suite can assert the
-# newest changelog entry names the running release without pinning a version literal, which this
-# project has been broken by on every legitimate release.
-# A GETTER, NOT A VALUE. This hook is built ~1,500 lines ABOVE `const APP_VERSION`, so reading it
-# eagerly throws "Cannot access 'APP_VERSION' before initialization" at module load -- the temporal
-# dead zone this repo has been bitten by three times. A getter is evaluated when a suite asks.
+# ---- 4. the debug hooks: MOVED TO THE END OF THE MODULE, not edited where they sit -------------
 #
-# AND THIS BLOCK IS WHY THIS SCRIPT NEVER RAN. Its replacement text was written as a single-quoted
-# Python string spanning several lines, so `harness-v84-whatsnew.py` has been a SyntaxError since
-# the day that edit was made -- committed, pushed, and listed as the way to rebuild app-v84, while
-# being incapable of executing. The PM gate caught it; nothing else did, because nothing re-ran the
-# patch scripts after editing them. Concatenated line by line now, which is the shape the rest of
-# this file already uses.
-src = cut(src,
-  "  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state) };",
-  "  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state),\n"
-  "    get version() { return APP_VERSION; } };\n"
-  "  window.__whatsNewTest = { latest: whatsNewLatest, all: () => CHANGELOG, shouldShow: whatsNewShouldShow, key: WHATS_NEW_KEY };",
-  'the debug hooks')
+# THIS SECTION SHIPPED A SCRIPT THAT BUILT A BLANK APP, and it did it twice over.
+#
+# First it was a Python SyntaxError -- a multi-line JavaScript replacement written as a
+# single-quoted string -- so it had never executed at all, while being listed as the way to rebuild
+# app-v84. That was fixed, and the fix exposed the second defect underneath it: the script added
+# `key: WHATS_NEW_KEY` to a hook block that sits ~1,500 lines ABOVE `const WHATS_NEW_KEY`, so the
+# rebuilt file threw "Cannot access 'WHATS_NEW_KEY' before initialization" at module load and
+# rendered an empty #root. The independent delta audit found it by LOADING the rebuilt file, which
+# is the only way it could have been found -- the script ran, printed OK, and produced a dead app.
+#
+# The getter that was added here guarded APP_VERSION and nothing else, which is the patch-each-field
+# approach the shipped fix deliberately rejected. POSITION IS THE GUARD: the whole hook block runs
+# LAST, after every const it reads, so nothing it touches can be in its temporal dead zone and any
+# hook added to it later is safe by construction rather than by remembering. The script now does
+# what the release did -- lifts the block out and appends it before </script> -- instead of editing
+# it where it stands and hoping.
+BASE_HOOKS = """if (typeof window !== 'undefined') {
+  window.__doseTest = { parseDoseOptions, normaliseDoseNumber, splitDoseOptions };
+  // The back-button registry, for the completeness check in test/v82-back-button.mjs. Exported
+  // rather than copied into the suite, so a new layer cannot be added to one and not the other.
+  // `stateKeys` is what makes the completeness check real. Without it the suite's "every
+  // dismissible thing has a Back rule" assertion had nothing to compare against and PASSED on the
+  // absence \u2014 a check that reports green loudest when it cannot see anything, which is the exact
+  // class this file has been caught on four times.
+  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state) };
+}
+"""
+
+MOVED_HOOKS = """
+// ---- DEBUG/TEST HOOKS -- LAST IN THE MODULE, AND THE POSITION IS THE POINT --------------------
+//
+// This block used to sit ~1,500 lines higher up, and it read `APP_VERSION` and `WHATS_NEW_KEY`
+// eagerly. Both are `const` declared BELOW that point, so module evaluation threw "Cannot access
+// 'APP_VERSION' before initialization" and the whole app stopped booting -- silently, because the
+// only symptom was a feature that never appeared.
+//
+// **That is the third temporal-dead-zone failure in this file**, and the third one happened while
+// writing the comment about the second. Patching each field into a getter would have fixed the two
+// that were caught and left the next one to be found by somebody using the app. Position is the
+// actual guard: a block that runs last cannot read anything too early, so every future hook added
+// here is safe by construction rather than by remembering.
+//
+// Nothing here changes app behaviour; it exports what the suites compare against, so a check
+// cannot quietly test its own copy of the app's logic instead of the app's.
+if (typeof window !== 'undefined') {
+  window.__doseTest = { parseDoseOptions, normaliseDoseNumber, splitDoseOptions };
+  // The back-button registry, for the completeness check in test/v82-back-button.mjs. Exported
+  // rather than copied into the suite, so a new layer cannot be added to one and not the other.
+  // `stateKeys` is what makes the completeness check real. Without it the suite's "every
+  // dismissible thing has a Back rule" assertion had nothing to compare against and PASSED on the
+  // absence \u2014 a check that reports green loudest when it cannot see anything, which is the exact
+  // class this file has been caught on four times.
+  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state),
+    get version() { return APP_VERSION; } };
+  window.__whatsNewTest = { latest: whatsNewLatest, all: () => CHANGELOG, shouldShow: whatsNewShouldShow, key: WHATS_NEW_KEY };
+}
+</script>"""
+
+src = cut(src, BASE_HOOKS, '', 'lifting the hook block out of the middle of the module')
+# The anchor is the module's CLOSING TAG PLUS THE DOCUMENT'S, not "</script>" on its own: there are
+# six script tags in this file and the block must land at the end of the module, after every const
+# it reads. `cut` refuses an anchor that is not unique, which is how that was caught rather than
+# silently patching the first inline script it found.
+src = cut(src, "</script>\n</body>\n</html>", MOVED_HOOKS + "\n</body>\n</html>",
+          'the hook block, re-attached at the end of the module')
 
 HTML.write_text(src)
 print('OK -- What\'s New applied')
