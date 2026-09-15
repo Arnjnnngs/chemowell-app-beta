@@ -34,8 +34,13 @@ fi
 # uncommitted fix to the patch script is not what gets run, and the first run of this check reported
 # a dead app against a fix sitting in the working tree. A result that describes neither the tree nor
 # the commit is worse than no result.
-if [ -n "$(git status --porcelain -- "$SCRIPT")" ]; then
-  echo "❌ $SCRIPT has uncommitted changes, and this check judges HEAD."
+# BOTH HALVES MUST JUDGE THE SAME TREE, and they did not. The boot half rebuilds from
+# `git archive HEAD`; the drift half reads index.html from the WORKING TREE. With index.html dirty,
+# this script compared a patch payload against one file and then booted another -- a green board
+# describing no single state of the repo. falsify.sh has refused a dirty index.html since the day
+# it was written, for the same reason; this one did not, and an audit caught the asymmetry.
+if [ -n "$(git status --porcelain -- "$SCRIPT" index.html)" ]; then
+  echo "❌ $SCRIPT or index.html has uncommitted changes, and this check judges HEAD."
   echo "   Commit it first -- otherwise the clone runs the committed script and the verdict is"
   echo "   about neither the file you edited nor the one in the artifact."
   exit 1
@@ -48,13 +53,13 @@ git archive HEAD | tar -x -C "$WORK"
 git show "$BASE_COMMIT:index.html" > "$WORK/index.html"
 
 # DRIFT FIRST, BOOT SECOND -- because a stale payload still boots.
-# The script embeds blocks of index.html verbatim. That is a fact about the day they were lifted,
-# not a property that holds: the app moved one character twenty minutes after the lift and the
-# rebuild went quietly back to producing a file the app no longer is, with this gate still green.
+# The script copies text out of index.html. That is a fact about the day it was copied, not a
+# property that holds: the app moved one character twenty minutes after the lift and the rebuild
+# went quietly back to producing a file the app no longer is, with this gate green throughout.
 # A boot check cannot see that; only a comparison can.
-echo "→ checking the patch script's payload still matches the app"
-node test/harness-payload-matches-app.mjs || {
-  echo "❌ $SCRIPT no longer copies the app. Re-extract the blocks it reports; do not hand-edit."
+echo "→ checking all 17 pieces of app text the patch script carries are still the app's"
+python3 test/harness-payload-matches-app.py || {
+  echo "❌ $SCRIPT no longer copies the app. Re-extract what it names; do not hand-edit."
   exit 1
 }
 echo

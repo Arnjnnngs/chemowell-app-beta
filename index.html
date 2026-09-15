@@ -198,7 +198,10 @@ function tierLabel(tier) { return tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Pl
 //     of these before" by an app that had just shown it. Latent rather than live -- every storage
 //     key this app writes carries the hyphen -- and unified on THIS side deliberately, because
 //     widening the erase path would delete more of somebody's phone to settle a comment. The
-//     snapshot should ask about exactly the set a reset can clear, and now does.
+//     snapshot should ask about the set a reset can clear LESS THE MARKER ITSELF, and now does.
+//     It said "exactly the set a reset can clear" until an audit measured that: the marker IS
+//     cleared by a reset and is deliberately NOT counted here (next bullet), so a sentence
+//     about a set was off by one key.
 //   * `WIPE_SURVIVORS` -- the same list `eraseAllAppData()` preserves, declared just above, so the
 //     two can no longer drift apart. That drift was a real mutant: one key added to the erase path
 //     and a started-over phone is told "ChemoWell has never shown you one of these before".
