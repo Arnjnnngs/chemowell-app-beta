@@ -4215,10 +4215,47 @@ document.addEventListener('keydown', (ev) => {
 // keyboard's own open animation finish resizing the viewport first, then nudges the focused field
 // into view -- registered once at module scope (like the drawer's Tab-trap above) so it never
 // double-attaches on re-render.
+//
+// AND IT MUST NOT FIGHT A SCROLL THE PERSON MADE AFTER IT WAS SCHEDULED. This is the actual
+// mechanism behind "typing yanks the page back up", and app-v84 shipped a fix for a different one.
+//
+// WHAT WAS MEASURED, TWICE. Open the medication editor, type into the name field, then swipe down
+// towards "Add medication" at the bottom of the 2,387px form. Roughly a third of a second later
+// the page slid smoothly back to the top -- scrollY 1503 -> 1336 -> 454 -> 1 over about 750ms --
+// and the button sat 1,353px below the fold. That is THIS timer: the focusin fired when the finger
+// landed in the field, and 320ms later it centred the field regardless of where the person had
+// scrolled to in the meantime.
+//
+// WHAT IT IS NOT, and app-v84's first attempt assumed it was: the one-second re-render restoring
+// focus. Instrumented at that commit, a caret left in this field produced ZERO focusin events over
+// three seconds of idling -- render() does not rebuild this screen on the tick -- so the page did
+// not move at all on that path, with or without `preventScroll`. The symptom was real and
+// reproducible; the cause named in the commit was not the one producing it.
+//
+// TWO THINGS SCHEDULE THIS NUDGE AND ONLY ONE OF THEM IS A PERSON. Instrumented on the medication
+// editor: `focusin t=8 y=0 id=med-name` (the tap), `SWIPE t=134`, then `focusin t=468 y=1503
+// id=med-name` -- the second one is render() putting focus back after the debounced redraw that
+// typing triggered, and it re-scheduled the nudge from the position the swipe had reached, so the
+// scroll guard below could not see anything had moved. That second nudge is what pulled the page
+// to scrollY 1. `restoringFocus` is how the listener tells a finger from the renderer.
+//
+// So the fix is both halves, and each is needed for a different order of events:
+//   * `restoringFocus` -- the renderer never asks for a nudge, on any screen, ever.
+//   * the scroll guard -- a person who taps a field and swipes away inside 320ms keeps their swipe.
+let restoringFocus = false;
 document.addEventListener('focusin', (ev) => {
+  if (restoringFocus) return;
   const el = ev.target;
   if (!el || typeof el.matches !== 'function' || !el.matches('input, select, textarea')) return;
-  setTimeout(() => { try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }, 320);
+  const yAtFocus = window.scrollY || window.pageYOffset || 0;
+  setTimeout(() => {
+    const yNow = window.scrollY || window.pageYOffset || 0;
+    // 8px of slack, not 0: the on-screen keyboard resizing the visual viewport nudges scrollY by a
+    // pixel or two on its own, and v28 exists precisely for that moment -- a guard that treated
+    // that as "the user scrolled" would switch the feature off on the platform it was written for.
+    if (Math.abs(yNow - yAtFocus) > 8) return;
+    try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+  }, 320);
 });
 
 function openReport(report) {
@@ -5188,21 +5225,23 @@ function render() {
   if (prevActiveId) {
     const freshActive = document.getElementById(prevActiveId);
     if (freshActive) {
-      // preventScroll, AND THE REASON IS A DEFECT THIS RELEASE'S OWN CHECK CAUGHT.
-      //
-      // render() rebuilds the page into root.innerHTML and then puts focus back by id. A bare
-      // focus() ALSO SCROLLS that element into view -- so on any screen taller than the phone, the
-      // page jumps back to the focused field every time the app redraws. On the medication editor
-      // that is not cosmetic: type the name, scroll down to reach "Add medication" at the bottom of
-      // a 2,387px form, and roughly half a second later the debounced redraw fires and yanks you
-      // back up to the field you typed in. Measured: scrollY 1543 -> 679, with the button left at
-      // 1519 in an 844px viewport, out of reach for as long as you keep typing.
-      //
-      // Restoring focus and the caret is the point; moving the page is not, and never was.
-      try { freshActive.focus({ preventScroll: true }); } catch (e) { freshActive.focus(); }
-      if (prevSelStart !== null && typeof freshActive.setSelectionRange === 'function') {
-        try { freshActive.setSelectionRange(prevSelStart, prevSelEnd); } catch (e) { /* not a text-selectable input type, e.g. type="number" in some browsers -- focus alone is still restored */ }
-      }
+      // preventScroll: focus() also scrolls its element into view, and restoring focus is the
+      // point here while moving the page is not. KEPT, AND IT IS HALF OF WHAT IT WAS COMMITTED AS.
+      // app-v84 landed this line alone believing it cured "typing yanks the page back up". It did
+      // not: with it in place the page still slid from scrollY 1503 to 1, because the restore below
+      // ALSO fires `focusin`, and the v28 listener near line 4218 was the thing doing the scrolling
+      // 320ms later. This line stops focus()'s own scroll; `restoringFocus` stops the listener's.
+      // `restoringFocus` is read by the focusin listener near line 4218: this focus came from the
+      // renderer, not from a finger, so it must not schedule the v28 nudge. Set synchronously
+      // around the focus() call because focusin is dispatched synchronously by it, and cleared in
+      // a finally so a throw cannot leave the app unable to nudge a real tap ever again.
+      restoringFocus = true;
+      try {
+        try { freshActive.focus({ preventScroll: true }); } catch (e) { freshActive.focus(); }
+        if (prevSelStart !== null && typeof freshActive.setSelectionRange === 'function') {
+          try { freshActive.setSelectionRange(prevSelStart, prevSelEnd); } catch (e) { /* not a text-selectable input type, e.g. type="number" in some browsers -- focus alone is still restored */ }
+        }
+      } finally { restoringFocus = false; }
     }
   }
   positionTour();

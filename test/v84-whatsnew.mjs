@@ -441,6 +441,84 @@ section('7d. THE FIRST-RUN GUIDE MUST NOT FREEZE THE PAGE -- THE PATH A NEW USER
 }
 
 // ---------------------------------------------------------------------------------------------
+section('7e. SCROLLING AWAY FROM A FIELD YOU JUST TYPED IN MUST STICK');
+{
+  // WHY THIS EXISTS: a falsification sweep, not a reading. `./falsify.sh test/v84-whatsnew.mjs
+  // falsify/mutants-v84-whatsnew.sh` put app-v84's headline fix back the way it was and all fifty
+  // checks stayed green -- the fix was protected by nothing. Writing the check that would have gone
+  // red then showed something worse: the release's stated cause was not the one producing the
+  // symptom, and the shipped fix did not touch the real one.
+  //
+  // THE SCENARIO, which is the one a person actually performs: open the medication editor, type the
+  // name, and immediately swipe down to reach "Add medication" at the bottom of a 2,387px form.
+  // A `focusin` listener (index.html near 4218, added in v28 so the on-screen keyboard cannot leave
+  // a field above the fold) had already scheduled a smooth scrollIntoView 320ms out, and it fired
+  // after the swipe: scrollY 1503 -> 1336 -> 454 -> 1 over about 750ms, with the save button left
+  // 1,353px below the fold.
+  //
+  // THE TIMING IS THE CHECK. Waiting for the page to "settle" before scrolling -- which is what 7d
+  // above does -- lets that timer expire harmlessly and measures nothing. So this scrolls INSIDE the
+  // window, and then does nothing at all for long enough that any pending scroll would have run.
+  const p = await freshPage(true);
+  await p.getByRole('button', { name: /^Meds/ }).first().click();
+  await p.waitForTimeout(700);
+  await p.locator('[data-tour="meds-add"]').first().click();
+  await p.waitForTimeout(700);
+  t('the medication editor is open', await p.locator('#med-doses-text').count() > 0);
+
+  // The form must be TALLER than the phone or there is no "back up" to be dragged to, and this
+  // check would pass on anything.
+  const vhE = p.viewportSize().height;
+  const docH = await p.evaluate(() => document.documentElement.scrollHeight);
+  t('the form is taller than the screen, so scrolling away is possible at all',
+    docH > vhE * 2, docH + 'px of page in a ' + vhE + 'px viewport');
+
+  // Type, and LEAVE THE CARET WHERE A PERSON LEAVES IT -- fill() ends with the field focused, which
+  // is what schedules the nudge. A blurred field schedules nothing and the check would be vacuous.
+  await p.getByPlaceholder('Medication name').first().fill('ScrollTest');
+  t('the caret is in a form field, which is what schedules the nudge',
+    await p.evaluate(() => { const a = document.activeElement; return !!a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); }),
+    await p.evaluate(() => (document.activeElement && (document.activeElement.id || document.activeElement.tagName)) || 'none'));
+
+  // Swipe down NOW -- inside the 320ms window, the way a thumb moves. window.scrollTo is what a
+  // swipe amounts to; Playwright's scrollIntoViewIfNeeded drives it over CDP and is the cheat these
+  // checks exist to avoid.
+  await p.waitForTimeout(120);
+  await p.evaluate(() => window.scrollTo(0, Math.max(0, document.documentElement.scrollHeight - window.innerHeight - 40)));
+  await p.waitForTimeout(150);
+  const before = await p.evaluate(() => window.scrollY);
+  t('the swipe moved the page away from the field', before > 600, before + 'px');
+
+  // AND NOW DO NOTHING. No clicking, no re-scrolling, no re-resolving a handle -- 1.8s is past the
+  // 320ms timer and past the smooth animation it starts. Whatever the page does to itself here is
+  // what it does to somebody reaching for the button.
+  await p.waitForTimeout(1800);
+  const after = await p.evaluate(() => window.scrollY);
+  t('and it STAYS there -- nothing drags the page back to the field',
+    after >= before - 40, 'scrollY ' + before + ' -> ' + after);
+
+  // The consequence, stated the way the user meets it.
+  const saveBox = await p.getByRole('button', { name: /Add medication|Save changes/ }).first().boundingBox();
+  t('so the save button is still on screen where the swipe left it',
+    !!saveBox && saveBox.y >= 0 && saveBox.y + saveBox.height <= vhE + 1,
+    saveBox ? ('top=' + Math.round(saveBox.y) + ' of ' + vhE + 'px viewport') : 'no box');
+
+  // AND v28'S OWN REASON MUST SURVIVE THE GUARD. Focus a field and DON'T scroll: the nudge must
+  // still bring it to the middle, or this "fix" has quietly deleted the feature it guards.
+  await p.evaluate(() => window.scrollTo(0, 0));
+  await p.waitForTimeout(250);
+  const deep = p.locator('#med-doses-text').first();
+  const deepTopBefore = await deep.evaluate(el => Math.round(el.getBoundingClientRect().top));
+  await deep.focus();
+  await p.waitForTimeout(1400);
+  const deepTopAfter = await deep.evaluate(el => Math.round(el.getBoundingClientRect().top));
+  t('and a field focused WITHOUT a swipe is still brought into view -- v28 is not deleted',
+    deepTopBefore > vhE || deepTopAfter < deepTopBefore - 20 || (deepTopAfter >= 0 && deepTopAfter <= vhE),
+    'top ' + deepTopBefore + ' -> ' + deepTopAfter + ' in ' + vhE + 'px');
+  await p.close();
+}
+
+// ---------------------------------------------------------------------------------------------
 section('8. AND NOTHING THREW');
 t('no page error at any point above', allErrors.length === 0, allErrors.slice(0, 3).join(' / ') || 'none');
 

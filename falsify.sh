@@ -76,8 +76,13 @@ while declare -F "mutant_$i" >/dev/null; do
     ALIVE=$((ALIVE+1))
     echo "  ⚠️  SURVIVED -- no check went red. Either the check cannot fail, or this mutant is a no-op."
   fi
-  ( cd "$WORK" && git init -q . >/dev/null 2>&1 || true )
-  rm -rf "$WORK"; mkdir -p "$WORK"
+  # Rebuild the clone IN PLACE. `rm -rf "$WORK"; mkdir "$WORK"` looks equivalent and is not:
+  # the http.server subshell holds "$WORK" as its working directory, so deleting the directory
+  # leaves that process sitting on a deleted inode and serving nothing. Every mutant after the
+  # first would then fail the suite for want of a page, be scored as CAUGHT, and the sweep would
+  # report a clean sheet it never measured. Emptying the directory keeps the inode the server
+  # holds, so the same server serves the rebuilt files.
+  find "$WORK" -mindepth 1 -delete
   git archive HEAD | tar -x -C "$WORK"
   cp -r test "$WORK/test" 2>/dev/null || true
   i=$((i+1))
