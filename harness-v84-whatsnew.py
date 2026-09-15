@@ -145,7 +145,7 @@ function renderWhatsNew(now) {
       h('div', { style: { minWidth: '0' } },
         h('div', { style: { fontSize: '18px', fontWeight: '800', letterSpacing: '-0.02em', color: '#2A2127' } }, 'What’s new'),
         h('div', { style: { fontSize: '13px', color: '#7A6E76', marginTop: '3px', lineHeight: '1.45' } },
-          'Every update to ChemoWell, newest first. This phone is running ' + APP_VERSION + '.')
+          'Recent updates to ChemoWell, newest first. This phone is running ' + APP_VERSION + '.')
       ),
       ...CHANGELOG.map((e, i) => whatsNewEntry(e, i === 0 && latest && e.v === latest.v))
     )
@@ -216,7 +216,7 @@ src = cut(src,
 
 src = cut(src,
   "    { key: 'help', label: 'Help & FAQ', icon: 'help', helper: 'Find and fix a problem' },",
-  "    { key: 'whatsnew', label: 'What\\u2019s new', icon: 'bulb', helper: 'Every update, newest first' },\n"
+  "    { key: 'whatsnew', label: 'What\\u2019s new', icon: 'bulb', helper: 'Recent updates, newest first' },\n"
   "    { key: 'help', label: 'Help & FAQ', icon: 'help', helper: 'Find and fix a problem' },",
   'the drawer row')
 
@@ -228,15 +228,20 @@ src = cut(src, "    renderTimeModal(),", "    renderTimeModal(),\n    renderWhat
 # it could see nothing. The version is exported for the same reason: so the suite can assert the
 # newest changelog entry names the running release without pinning a version literal, which this
 # project has been broken by on every legitimate release.
+# A GETTER, NOT A VALUE. This hook is built ~1,500 lines ABOVE `const APP_VERSION`, so reading it
+# eagerly throws "Cannot access 'APP_VERSION' before initialization" at module load -- the temporal
+# dead zone this repo has been bitten by three times. A getter is evaluated when a suite asks.
+#
+# AND THIS BLOCK IS WHY THIS SCRIPT NEVER RAN. Its replacement text was written as a single-quoted
+# Python string spanning several lines, so `harness-v84-whatsnew.py` has been a SyntaxError since
+# the day that edit was made -- committed, pushed, and listed as the way to rebuild app-v84, while
+# being incapable of executing. The PM gate caught it; nothing else did, because nothing re-ran the
+# patch scripts after editing them. Concatenated line by line now, which is the shape the rest of
+# this file already uses.
 src = cut(src,
   "  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state) };",
-  "  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state),
-    // A GETTER, NOT A VALUE. This hook is built ~1,500 lines ABOVE `const APP_VERSION`,
-    // so reading it eagerly here throws "Cannot access 'APP_VERSION' before initialization"
-    // at module load -- the temporal dead zone this repo has now been bitten by three
-    // times, and the third time was in the comment warning about the second. A getter is
-    // evaluated when a suite asks, by which point the const exists.
-    get version() { return APP_VERSION; } };\n"
+  "  window.__backTest = { keys: backLayerKeys, press: handleBackPress, stateKeys: () => Object.keys(state),\n"
+  "    get version() { return APP_VERSION; } };\n"
   "  window.__whatsNewTest = { latest: whatsNewLatest, all: () => CHANGELOG, shouldShow: whatsNewShouldShow, key: WHATS_NEW_KEY };",
   'the debug hooks')
 

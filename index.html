@@ -4444,7 +4444,7 @@ function renderDrawer() {
     // shrink every existing touch target below what the Designer signed off on. The drawer already
     // houses the app's other "check in on sometimes, not a daily quick-log" destinations.
     { key: 'notes', label: 'Notes', icon: 'notes', helper: 'Daily journal' },
-    { key: 'whatsnew', label: 'What\u2019s new', icon: 'bulb', helper: 'Every update, newest first' },
+    { key: 'whatsnew', label: 'What\u2019s new', icon: 'bulb', helper: 'Recent updates, newest first' },
     { key: 'help', label: 'Help & FAQ', icon: 'help', helper: 'Find and fix a problem' },
     // Directly under Help, because the two are the same journey: Help is "is this already answered",
     // and this is "it isn't, and someone should know". A tester who cannot find this row is a
@@ -8999,7 +8999,7 @@ function renderWhatsNew(now) {
       h('div', { style: { minWidth: '0' } },
         h('div', { style: { fontSize: '18px', fontWeight: '800', letterSpacing: '-0.02em', color: '#2A2127' } }, 'What’s new'),
         h('div', { style: { fontSize: '13px', color: '#7A6E76', marginTop: '3px', lineHeight: '1.45' } },
-          'Every update to ChemoWell, newest first. This phone is running ' + APP_VERSION + '.')
+          'Recent updates to ChemoWell, newest first. This phone is running ' + APP_VERSION + '.')
       ),
       ...CHANGELOG.map((e, i) => whatsNewEntry(e, i === 0 && latest && e.v === latest.v))
     )
