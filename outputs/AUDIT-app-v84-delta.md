@@ -206,3 +206,35 @@ to `5600b92`, and my own `5600b92 → 5767bee` findings except where re-measured
 
 Measured in Chromium against private clones of `c70e06d` on ports 8981 and 8991–8994, plus a rebuild
 clone of `adfc99c^` on 8951. The repository working tree was not modified by this pass.
+
+---
+
+## POSTSCRIPT — the fix for the vacuous check does not fix it (re-measured at `be83637`)
+
+This audit's verdict is for `c70e06d` and does not change. But `69c0a89` landed while I was writing,
+it addresses the block above, and **the check is still vacuous**, so this belongs in the record
+rather than in the next round's surprise.
+
+`69c0a89` correctly splits the precondition into its own check — *"precondition: the field is below
+the fold"* — and narrows the assertion to `deepTopAfter >= 0 && deepTopAfter <= vhE - 40`. That
+removes the short-circuit. **It does not remove the confound**, which is the line above it:
+
+    await deep.focus();          // Playwright's locator.focus() -> DOM focus() -> the BROWSER scrolls
+
+`HTMLElement.focus()` scrolls its element into view on its own unless it is passed
+`{ preventScroll: true }`. So the field arrives on screen whether or not the app nudges it.
+
+**Measured, same suite, two private clones of `be83637` on ports 8983 and 8984:**
+
+| Build | that check | suite |
+|---|---|---|
+| `be83637` as committed | **PASS** — `top 870 -> 400 in 844px` | 65/65 |
+| `be83637` + mutant 3 (the v28 nudge deleted) | **PASS** — `top 870 -> 400 in 844px` | **65/65** |
+
+**The detail string is identical, character for character, on a build where the feature does not
+exist.** The 400 was never the app's; it is Playwright's. This is the same trap this release already
+documented once — *"a Playwright click is not a finger"* — one method along.
+
+**The fix is the measurement in section 3 of this report:** focus from inside the page with
+`el.focus({ preventScroll: true })`, then assert `window.scrollY` moved. On `c70e06d` that reads
+`0 → 470`; with the nudge deleted it reads `0 → 0`. Two lines, and then `mutant_3` dies.
