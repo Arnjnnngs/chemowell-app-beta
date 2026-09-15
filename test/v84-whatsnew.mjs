@@ -328,10 +328,62 @@ section('7d. THE FIRST-RUN GUIDE MUST NOT FREEZE THE PAGE -- THE PATH A NEW USER
   t('and the page still scrolls while the guide is up',
     await page.evaluate(() => window.scrollY) > 0,
     (await page.evaluate(() => window.scrollY)) + 'px');
-  // AND THE THING A NEW USER IS BEING TOLD TO DO MUST BE REACHABLE.
+  // AND NOW WALK IT TO THE STEP THAT ACTUALLY BROKE.
+  //
+  // THE FOUR CHECKS ABOVE MEASURE THE TOUR'S FIRST FRAME AND STOP, AND THAT IS NOT ENOUGH. A
+  // mutant that re-freezes the page precisely when the medication editor is open -- the original
+  // failure verbatim, a brand-new user unable to add their first medication -- passed this suite
+  // 37/37. A case that proves step 1 is fine says nothing about step 4, which is the step the
+  // defect was on.
+  //
+  // So this taps through the guide the way a new user does: Meds, then Add, then the editor, and
+  // then it CLICKS the button the guide is telling them to click. A click that times out because
+  // the button is a thousand pixels below a frozen fold is the failure, reported as a failure.
+  // Step 1 is a welcome CARD that covers the tab bar until it is acknowledged -- it is the one
+  // part of the tour layer that does intercept taps, which is correct and is why the walk starts
+  // by tapping its own button rather than reaching past it.
+  const showMe = page.getByRole('button', { name: 'Show me', exact: true });
+  t('the guide opens on its welcome card', await showMe.count() > 0);
+  if (await showMe.count()) { await showMe.first().click(); await page.waitForTimeout(700); }
+  await page.getByRole('button', { name: /^Meds/ }).first().click();
+  await page.waitForTimeout(700);
+  const addBtn = page.locator('[data-tour="meds-add"]').first();
+  t('the guide leads to the Add control', await addBtn.count() > 0);
+  await addBtn.click();
+  await page.waitForTimeout(800);
+  t('the medication editor opens under the guide', await page.locator('#med-doses-text').count() > 0);
+  t('and the guide is STILL up -- otherwise this is the ordinary editor case, not the tour one',
+    await page.locator('#tour-layer').count() > 0);
+  t('and the page is not frozen with the editor open under the guide',
+    await page.evaluate(() => document.body.style.position !== 'fixed'),
+    await page.evaluate(() => document.body.style.position || '(none)'));
+  await page.evaluate(() => window.scrollTo(0, 800));
+  await page.waitForTimeout(350);
+  t('and it scrolls, which is what a thousand-pixel-tall form needs',
+    await page.evaluate(() => window.scrollY) > 0,
+    (await page.evaluate(() => window.scrollY)) + 'px');
+
+  // THE WHOLE POINT: the button the guide names must be clickable, not merely present.
+  await page.getByPlaceholder('Medication name').first().fill('FirstMed');
+  await page.getByPlaceholder('For example, 4 hours').first().fill('4');
+  const save = page.getByRole('button', { name: 'Add medication', exact: true }).first();
+  t('the button the guide tells a new user to tap exists', await save.count() > 0);
+  let clicked = true;
+  try { await save.click({ timeout: 6000 }); } catch (e) { clicked = false; }
+  t('and it can actually be TAPPED -- not merely found in the DOM', clicked,
+    clicked ? 'clicked' : 'CLICK TIMED OUT: a new user cannot add their first medication');
+  await page.waitForTimeout(900);
+  // And the guide must move on, or the user is stuck even having saved.
+  const advanced = await page.evaluate(() => {
+    const el = document.querySelector('#tour-banner, #tour-card');
+    return el ? (el.innerText || '') : '';
+  });
+  t('and the guide advances once the medication is saved',
+    !/Fill out the form/i.test(advanced), advanced.replace(/\n/g, ' | ').slice(0, 90) || '(no banner)');
+
   const skip = page.getByRole('button', { name: 'Skip guide' });
   const seen = await skip.count();
-  t('the guide offers a way out, and it is reachable', seen > 0, seen + ' control(s)');
+  t('the guide still offers a way out', seen > 0, seen + ' control(s)');
   await page.close();
 }
 

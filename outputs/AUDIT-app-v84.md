@@ -1,236 +1,263 @@
-AUDITED-COMMIT: 2bfe0d6
+AUDITED-COMMIT: 1c50c87
 VERDICT: BLOCK
 
-# Zero Day Audit — ChemoWell app-v83 + app-v84, THIRD PASS
+# Zero Day Audit — ChemoWell app-v84, FOURTH PASS
 
-**HEADLINE: the medication editor is still frozen on the one path that matters most — the first-run
-guided tour. `#tour-layer` is `position:fixed; inset:0` and deliberately `pointer-events:none`, so it
-trips the new `anyOverlayOpen()` measurement even though it takes no gestures at all. The page is
-locked for the WHOLE tour, and on the tour's own step 4 — "Tap Add medication at the bottom" — the
-editor renders 2,387px tall inside an 844px frozen viewport with no inner scroller and the Add
-medication button 1,354px below the fold. A brand-new user cannot add their first medication.
-BLOCK B was fixed on the path the suite tests and left broken on the path a new user takes.**
+**HEADLINE: a mutant that freezes the page exactly while the medication editor is open under the
+first-run guide — which is the BLOCK-1 failure verbatim, a brand-new user unable to add their first
+medication — passes `test/v84-whatsnew.mjs` 37/37, all green. The app fix HOLDS; the check written
+to defend it does not. Case 7d measures the first frame of the tour and stops: the layer is up, the
+body is not fixed, the page scrolls, a "Skip guide" button exists. It never reaches step 4, and step
+4 is the step that broke. The previous pass asked in writing for "a case that walks the tour to step
+4 and asserts the save button is reachable"; none of that is in the case that landed.**
 
-**SECOND BLOCK, at the check level: a mutant that deletes the off-day and treatment-excluded cards
-from Home — a medication vanishing, a dose not given — passes the whole suite, 78/78.**
+**SECOND BLOCK: `test/v83-meds-and-reports.mjs` is 75/80 on an unmodified clone of 1c50c87 right
+now.** The commit message's "80/80" is true only for part of the day. Section 1 places "today's
+doses" at `now - 5h` and `now - 6h`, so before about 06:00 local those doses are yesterday and five
+checks go red. `test/v80-up-next.mjs` in this same repo already freezes the clock for exactly this
+reason and says so in a comment.
 
-Measured in Chromium at 390×844 against a clone of 2bfe0d6 served on its own port. The working tree
-was not modified other than this file.
+Measured in Chromium at 390×844 against private clones of 1c50c87, each served on its own port
+(8971, 8981-8984). The working tree was not modified other than this file.
 
-## Status of the three fixes this pass was asked to judge
+## Status of the four things this pass was asked to judge
 
-| Fix | Verdict |
+| | Verdict |
 |---|---|
-| **A — one predicate (`medWithheldNow`)** | **HOLDS.** No remaining state where Home withholds and Meds says Available; and no medication lost its Home card (proof below). |
-| **B — measured overlay detection + scroll lock** | **BLOCK 1.** Correct for every real modal; wrong for the tour layer, which is the layer the med editor opens under on first run. |
-| **C — `dailyCeiling()` returns `windowH`/`group`** | **HOLDS for the bar.** The same guess-from-the-medication defect is still live one level up, in `status()` (N1), and the new `group` flag carries two false cases (N2). Both are unreachable from the editor, so neither blocks. |
-| **D — the suites** | **BLOCK 2.** A mutant that makes the off-day and excluded cards VANISH from Home passes 78/78: section 2 treats "no card at all" as Home withholding, so the rewritten filter's dangerous direction is unguarded. See the sweep. |
+| **1 — the tour-layer freeze (`pointerEvents === 'none'`)** | **The fix HOLDS in the browser, end to end.** No real modal is unlocked by it. The claim that it also released the loading splash is **false** (N1). |
+| **2 — the Home/Meds comparison check + `data-med-card` on the inert cards** | **HOLDS, both halves.** The vanishing-card mutant is now killed; nothing that keys off `[data-med-card]` regressed. |
+| **3 — `status()` reads `dc.windowH`; `group` is `!isRolling && !!ceilingGroup`** | **HOLDS for the two cases named.** The same misread survives at three further call sites (N2) and the pills/group figure is still wrong behind an honest label (N3). |
+| **4 — my own falsification sweep** | **BLOCK 1** (M4 survives 37/37) and **BLOCK 2** (the suite is clock-dependent). Two more named checks overstate what they assert (N4, N5). |
 
 ---
 
-# BLOCK 1 — The guided tour freezes the page, and the first medication cannot be saved
+# BLOCK 1 — The first-run freeze is fixed in the app and unguarded in the suite
 
-`renderTourLayer()` returns, on every step:
+## The fix works. Measured, not read.
 
-    index.html 4950  h('div', { id: 'tour-layer', style: { position:'fixed', inset:'0', zIndex:'80', pointerEvents:'none' } }, …)
-    index.html 4979  (same, plus #tour-scrim, also pointerEvents:'none')
+A genuinely fresh install (no storage, setup completed in the browser: name, sex, treatment type),
+then every tour step walked with a real click, scrolling the page at each one:
 
-The layer is full-screen by construction and **transparent to every gesture on purpose** — its own
-comment says so in as many words: *"pointerEvents:'none' lets every gesture pass straight through to
-the real page"*, added in v48 precisely so the user can tap and scroll the real screen while the
-guide is up. `anyOverlayOpen()` asks only about `position`, `display`, `visibility` and size, so it
-answers **true** for it, and `applyScrollLock()` freezes the body for the entire tour.
-
-**Reproduction — the first-run path, no medications, nothing skipped.**
-
-| Tour step | body locked | documentElement.scrollHeight | body.scrollHeight |
+| Step | body locked | page scrolls | note |
 |---|---|---|---|
-| 1 "Welcome" | yes | 844 | 1,177 |
-| 2 "Tap Meds" | yes | 844 | 1,177 |
-| 3 "Tap Add" | yes | 844 | 844 |
-| **4 "Fill in the details"** | **yes** | **844** | **2,387** |
+| 1 Welcome | no | yes (28px, page is 872px) | `#tour-layer` present, computed `pointer-events: none` |
+| 2 Tap Meds | no | yes | |
+| 3 Tap Add | no | page is 844px, nothing to scroll | |
+| **4 Fill in the details** | **no** | **yes — scrollY 600 of a 2,387px page** | "Add medication" at top 2198, **clicked successfully** |
+| 5 Nice work | no | yes | the guide **advanced on `med:saved`** — banner read "GUIDE · 5 OF 10" |
+| 6-10 | no | yes | Finish ends the guide; `#tour-layer` count 0, lock released |
 
-At step 4, with the editor open:
+`MyMed` is in `…-med-v1` afterwards. Zero page errors across the whole walk. **The defect the third
+pass blocked on is gone on the path a real new user takes.**
 
-    inner scroll containers      : 0
-    buttons below the fold       : 10 of 21
-    "Add medication"             : top 2198   ← 1,354px below an 844px viewport
-    window.scrollTo(0, 800)      : lands at 0
-    Playwright click             : timed out, element outside the viewport
+## Attacking the fix itself: nothing real is unlocked
 
-The step's own instruction is *"Fill out the form, then tap Add medication at the bottom."* It cannot
-be done. The step advances on `med:saved`, so the guide cannot progress either; the only way out is
-"Skip this step" or "Skip". **Ending the guide does release the lock** — measured: locked → false,
-docH 844 → 2,387, Add medication clickable — so this is recoverable, by abandoning the onboarding
-that exists to get the first medication in.
+`pointer-events: none` appears exactly five times in the file (grep, whole file):
 
-This is the SAME defect the previous round blocked on, on a different route. `medEditor` is no longer
-an overlay, so Meds → Edit is fine (measured: not locked, body 6,187px, "Save changes" clickable).
-The editor opened **from the tour** is frozen exactly as before.
+| Element | Full-screen? | Why it has it |
+|---|---|---|
+| `#tour-layer` (banner form, 4973) | yes, `inset: 0` | deliberate — taps pass through to the page |
+| `#tour-layer` (card form, 5002) | yes, `inset: 0` | same |
+| `#tour-scrim` (5003) | yes, `inset: 0` | purely visual dim since v48 |
+| toast (4738, 5117) | no — a pill at the bottom | Rule 5.5 exemption, asserted scrollable on purpose |
+| Reports "↩ Back" wrapper (5134) | no — a strip above the nav | its button re-enables `pointer-events: auto` |
+| safe-area probe (124) | n/a | `visibility: hidden`, and not a child of the page |
 
-**Why no check saw it.** `test/v84-whatsnew.mjs` section 7c is the check written for this exact
-regression — and its `freshPage(true)` clicks **"Skip guide"** before it does anything, then opens the
-editor from the Meds screen. It exercises the one path that works. The precondition of the check is
-the dismissal of the thing that breaks it.
+No stylesheet rule sets `pointer-events` anywhere — the only two matches outside these are the new
+comment itself. **Every one of the 13 full-screen fixed layers that is a real modal intercepts taps**
+(`#tour-card` and `#tour-banner` both set `pointer-events: auto` on their own panels, so they are
+tappable while their wrapper is not — that is the intended shape, and it is the shape the brief asked
+me to look for going the other way). There is no modal in this app whose OUTER element is
+`pointer-events: none`, so the line unlocks nothing that should lock.
 
-**Fix, one line, and it is the honest test:** a layer that does not take the pointer is not covering
-the screen. In `anyOverlayOpen()`, skip elements whose computed `pointerEvents === 'none'`, beside the
-existing `display`/`visibility` tests. `#tour-layer` and `#tour-scrim` both declare it deliberately;
-every real modal in the file (13 of them are `position:'fixed', inset:'0'`) intercepts taps and is
-unaffected. Then add a case that walks the tour to step 4 and asserts the save button is reachable —
-the existing 7c with the Skip removed is most of it.
+## And here is what it does not guard
+
+**M4** — `anyOverlayOpen()` skips a `pointer-events: none` layer *unless the medication editor is
+open*:
+
+    if (cs.pointerEvents === 'none' && !document.querySelector('[data-tour="med-editor"]')) continue;
+
+That is one line, and it is BLOCK 1 restored exactly. Measured against the mutant on its own port,
+same fresh-install walk:
+
+| Step | body locked | scrollY after `scrollTo(0, 600)` | "Add medication" |
+|---|---|---|---|
+| 1-3 | no | scrolls | — |
+| **4 Fill in the details** | **yes** | **0** | **click TIMED OUT — outside the viewport** |
+
+Document height 844 against a 2,387px body, no inner scroller, 10 of 21 buttons below the fold. A
+brand-new user cannot add their first medication, the step only advances on save, so the guide
+cannot move either. **`test/v84-whatsnew.mjs` against that build: 37 checks, 37 passed, 0 failed.**
+
+**Why 7d cannot see it.** The case loads the app, writes `patientName`/`onboarded`, reloads, and
+asserts four things about **tour step 1**: a `#tour-layer` exists, `document.body.style.position`
+is not `fixed`, `window.scrollY > 0` after a scroll, and a "Skip guide" control exists. It never
+taps Meds, never taps Add, never opens the editor. The defect it was written for lives at step 4.
+
+It is a genuine improvement over 7c — it does not dismiss the guide, and it **does** kill the total
+revert (M3: the `pointerEvents` line deleted → 2 failures, *"and the page is NOT frozen by it |
+fixed"*, *"and the page still scrolls while the guide is up | 0px"*). But the release message should
+not carry "there is a case now that deliberately does NOT skip the guide" as if the regression class
+were covered. **It covers the first frame.**
+
+**Required before ship:** 7d walks to the editor step — tap `[data-tour="nav-meds"]`, tap
+`[data-tour="meds-add"]`, then assert the body is not fixed, that the page scrolls with the editor
+open, and that the "Add medication" button is clickable. M4 above is the falsification, and it takes
+about twelve lines. The walk in this report runs in eight seconds.
 
 ---
 
-# What holds, measured rather than assumed
+# BLOCK 2 — The suite's green depends on the wall clock, so "80/80" is not reproducible
 
-## A — the predicate, and the card filter it replaced
+An unmodified clone of 1c50c87, served on its own port, run at 02:44 local:
 
-**No medication lost a Home card.** The two filters are not merely close; the new one is a superset,
-and the proof is in the order of `medWithheldNow`'s tests:
+    80 checks: 75 passed, 5 failed
 
-    old:  m.quickLog && (m.paused || !treatmentOnlyBlocks(m,now) && !(m.treatmentOnly && status(m).courseComplete))
-    new:  m.quickLog && (m.paused || !(w.reason === 'courseWindow' || w.reason === 'courseComplete'))
+      FAIL  and says how many doses today                    |  None logged today
+      FAIL  and when the last one was                        |  None logged today
+      FAIL  and a ceiling bar reading used of max            |  0 / 3,000 mg | 3,000 mg left today
+      FAIL  and how much is left, not just how much is gone  |  0 / 3,000 mg | 3,000 mg left today
+      FAIL  the pill is right for a medication at its daily limit  |  Available
 
-`courseWindow` IS `treatmentOnlyBlocks`, tested in the same position, so that clause is identical.
-`courseComplete` is reached only after `excluded` and `offDay` have both said no, so the new filter
-hides a **subset** of what the old one hid: every medication that kept a card keeps it. The one
-divergence is in the safe direction and is listed as N3 below.
+Run twice, identical both times — not flake. The cause is in the fixtures: section 1 logs "today's"
+doses at `now - 6 * HOUR` and `now - 5 * HOUR`, and section 2's daily-limit case does the same. Any
+run before roughly 06:00 local puts them on yesterday, so the card correctly says *"None logged
+today"* and the checks correctly fail. **Between about 05:00 and 06:00 only one of the two lands on
+today**, which gives a third distinct result.
 
-**`dueMeds` / "Take all" / Up-next are unchanged.** The predicate adds `courseComplete`, but
-`status()` returns `{ locked: true, courseComplete: true }` — the same object — so `!s.locked` already
-excluded it. Same for `paused` (`{ locked: true, paused: true }`). Nothing is withheld that was
-offered before.
+This fails loudly rather than passing falsely, so it is not a vacuous check — but it means the
+evidence in the commit message cannot be reproduced, a night run of `release_check.sh` blocks the
+release for a reason that is not in the app, and nobody reading "80/80" can tell which it was.
 
-**Is the `courseComplete` branch reachable? Yes, but only just — and it should stay.** It needs a
-`win` medication, treatment-only, with a treatment date such that `treatmentOnlyBlocks` is false today
-and true tomorrow (a zero-day after-window with today's date), every window today already closed or
-used, and today a scheduled day. Narrow, but real, and it is the shape the second audit found on
-Home. Keeping it costs nothing and deleting it would put the pill and Home's filter out of step again,
-which is the whole reason the predicate exists.
+**The repo already has the fix and the reasoning.** `test/v80-up-next.mjs` freezes `Date` at 10:00
+via `addInitScript`, with a comment saying in as many words that *"a fixture whose meaning depends on
+when it is run is a fixture that reports green for the wrong reason on some days."* v83 needs the
+same five lines. (`test/v80-up-next.mjs` is 48/48 at this commit; `test/v84-whatsnew.mjs` 37/37;
+`test/v75-no-other-patient.mjs` 27/27 — none of those three is clock-dependent.)
 
-## B — everything about the lock other than the tour
+---
 
-* **The walk is free**: 5.7 µs per `anyOverlayOpen()` call, so ~0.0006% of a one-second tick.
-* **Scroll position is restored exactly**, with the page scrolled by script rather than by Playwright
-  (which auto-scrolls and produced a misleading reading in the last round): scrollY 900 → the lock
-  records `top: -900px` → Back pops `timeModal` → scrollY 900.
-* **Back releases it**, not only a button.
-* **No modal is missed.** Inventory: 13 layers are `position:'fixed', inset:'0'`. Eleven are real
-  overlays with a tap-intercepting backdrop (time sheet, drawer, check-in, info, upgrade, erase-all,
-  the bottom sheets, …) and all lock. The two that are not: the tour layer (BLOCK 1) and the loading
-  splash (N4).
-* **The time sheet was measured directly**: opened from Home at scrollY 400, `covers: true` at depth 1,
-  body locked, page immovable behind it.
-* Zero page errors and zero console errors across every fixture in this pass.
+# WHAT HOLDS, measured
 
-## C — `dailyCeiling()`, branch by branch
+## The Home/Meds comparison — both halves of the fix bite now
 
-| Medication | `used` from | `windowH` | `group` | Bar says | True? |
+Mutants applied to private clones of 1c50c87, each on its own port. (The five clock failures above
+appear in every v83 column and are excluded from the counts below.)
+
+| Mutant | Result |
+|---|---|
+| **M1 — Home's card filter also hides `offDay` and `excluded`; the card VANISHES** (the survivor of the last pass, verbatim) | **KILLED**, 4 new failures |
+| **M2 — the inert treatment-excluded card loses its `data-med-card` hook again** | **KILLED**, 2 new failures |
+| **M3 — the `pointerEvents` line deleted (BLOCK 1 verbatim)** | **KILLED** by v84 7d, 2 failures |
+| **M4 — the lock re-applied only while the med editor is open (BLOCK 1's user-facing failure, first frame intact)** | **SURVIVED — 37/37 green.** BLOCK 1 above |
+
+M1's kill is the exact sentence that was missing:
+
+    FAIL  and a medication not scheduled today KEEPS its card rather than vanishing from Home
+          |  THE CARD IS GONE -- a medication that disappears is a dose not given
+
+## Nothing else keyed off `[data-med-card]` meaning "a loggable card"
+
+`data-med-card` has exactly two consumers in the app: `scrollToMedCard()` (2420-2421) and the flash
+render at 6419. The hero's "show me the card" button (5924) is the only caller of
+`scrollToMedCard`, and its list is `dueMeds` — `meds.filter(m => !medWithheldNow(m, now) && !status(m).locked)`
+— so a paused, off-day, excluded, out-of-window or course-complete medication is never named by the
+hero and the button that scrolls to it never exists. `missedDosesFor()` independently skips
+`isPausedOn`, `treatmentOnlyBlocks` and `treatmentExcludedNow`, so no missed-dose row reaches an
+inert card either. **`test/v80-up-next.mjs` is 48/48 at this commit**, including its two checks that
+count `[data-med-card]` nodes — nothing miscounted. The hero cannot scroll to an inert card and
+cannot mark one.
+
+Latent, worth one line in a comment: **the inert branches render no `data-flash`**, so if a future
+change ever did route `scrollToMedCard` at one, the page would scroll and nothing would light up —
+the precise failure the 6419 comment records being caught once already.
+
+## The ceiling shapes, table-checked again
+
+| Medication | `used` from | `windowH` | `group` | `status()` calls the lockout | True? |
 |---|---|---|---|---|---|
-| plain daily mg | `dailyDoseMg` | 0 | false | "N mg left today", no rolling line | yes |
-| rolling mg (`rollingCeilingH`) | `rollingDoseMg` | the hours | false | "left in the last 4h" + frees-up line | yes |
-| pills unit (`ceilingUnit`) | `dailyPills` | 0 | **undefined** | "left today" | yes |
-| pills unit **+** `rollingCeilingH` | `dailyPills` | 0 | undefined | "left today" | **yes — this is the fix** |
-| mg **+** `ceilingGroup` | `dailyGroupMg` | 0 | true | "today" + shared-limit line | yes |
-| mg **+** group **+** rolling | `rollingDoseMg` (this med only) | the hours | true | shared-limit line | **no — N2** |
-| pills **+** `ceilingGroup` | `dailyPills` (this med only) | 0 | undefined | no shared line | **no — N2** |
+| plain daily mg | `dailyDoseMg` | 0 | false | daily | yes |
+| rolling mg | `rollingDoseMg` | the hours | false | **rolling** (`windowH > 0`) | yes |
+| pills (`ceilingUnit`) | `dailyPills` | 0 | **false** (was `undefined`) | daily | yes |
+| **pills + `rollingCeilingH`** | `dailyPills` | 0 | false | **daily** (was "rolling") | **yes — N1 of the last pass, fixed** |
+| mg + `ceilingGroup` | `dailyGroupMg` | 0 | true | daily | yes |
+| **mg + group + rolling** | `rollingDoseMg` (this med alone) | the hours | **false** (was `true`) | rolling | **yes — N2's first half, fixed** |
+| pills + `ceilingGroup` | `dailyPills` (this med alone) | 0 | false | daily | label true, **figure still wrong — N3** |
 
-`medCeilingBar` is the only consumer of the two new fields (seven call sites; the other six read only `used`, `max`, `label` and `unit` — none reads `windowH` or `group`), so
-nothing else broke on them.
+Product neutrality holds: `test/v75-no-other-patient.mjs` 27/27, all three ratchet counts unmoved.
+The only storage write in this release is still `chemowell-app-seen-version`; this commit's diff adds
+no write path and touches no `removeEntryDB`.
 
 ---
 
 # NON-BLOCKING FINDINGS
 
-## N1 — `status()` still guesses the window from the medication, which is BLOCK C's other half
+## N1 — The loading-splash claim is false, in the commit message AND in the code comment
 
-    index.html 2533  const dc = dailyCeiling(med);
-    index.html 2535  if (med.rollingCeilingH) { … rollingCeiling: true, availableAt: rollingCeilingAvailableAt(med) }
+Both say the pointer-events line *"also releases the loading splash, which was locking on every cold
+start."* Neither half is true.
 
-Identical shape to the defect just fixed: `dc.used` may have come from the **pills** branch while the
-line below reads `med.rollingCeilingH` and declares the lockout rolling. For a pills-unit medication
-carrying a rolling window the pill then reads *"Limit reached for now"* and Home prints *"Next dose at
-HH:MM"* computed by `rollingCeilingAvailableAt`, which sums `mg` — zero for a pills medication — so the
-time is derived from nothing. The fix was made where the audit pointed and not where the same mistake
-lives twenty lines away. Read `dc.windowH` here too.
+* The splash (`index.html` 5138) is `position: fixed; inset: 0; z-index: 100` **with no
+  `pointer-events` at all**, so its computed value is `auto` and the new `continue` never fires on
+  it. The line does not touch it.
+* And it was not locking. `document.body.style.position` polled every 8ms from the first frame
+  through 3.5 seconds of cold start, 427 samples, never once `fixed`. Storage reads in synchronously
+  (the subscribe comment at 12525 says so), so `state.loaded` is true before the first render and the
+  splash does not survive to a render that calls `applyScrollLock()`.
 
-## N2 — the new `group` flag is set on the wrong two cases
+So the previous pass's N4 was wrong in one direction and this comment is wrong in the other, and the
+comment is the one the next reader will trust. Fix the sentence; a code comment that asserts a
+behaviour nobody can reproduce is the same defect as a changelog that does.
 
-`group: !!med.ceilingGroup` is attached in the mg branch regardless of which sub-branch computed
-`used`. So a grouped **rolling** medication prints *"This limit is shared with other medications — the
-figure above counts all of them, not this one alone"* over a figure that counts **only** this one
-(`rollingDoseMg(med.id, …)`). And the pills branch never sets `group` at all, so a grouped pills-unit
-medication counts only itself against a shared maximum and says nothing about it. Both are Rule 2.7
-question 3 — a sentence that is wrong about what the number means. Neither `ceilingGroup` nor
-`rollingCeilingH` is settable in the medication editor, so neither is reachable for a user-created
-medication today; that is the only reason this is not a block. `group` should be `!!med.ceilingGroup
-&& !isRolling` and should be set in the pills branch as well.
+## N2 — `med.rollingCeilingH` is still read raw at three more call sites
 
-## N3 — the card filter's one divergence, in the safe direction
+The `status()` fix reads `dc.windowH`. These do not:
 
-A `treatmentOnly` medication whose course is complete AND which is also excluded near a treatment day
-or not scheduled today used to vanish from Home; it now keeps a card (the `excluded` / `offDay` reason
-is returned first, and neither is in the filter's hide list). It renders as the inert excluded row or
-as an ordinary off-day card behind the red override, and the Meds pill agrees with whichever it is —
-so nothing is inconsistent and no dose is lost. Noted only so the next reader does not mistake it for
-an accident.
+* **6404** — the override prompt: `st.ceilingHit ? (med.rollingCeilingH ? 'Up to the ' + label + ' reached. Log more anyway?' : 'Daily limit of ' + label + ' reached…')`. Not gated on `st.rollingCeiling`. For a pills-unit medication carrying a rolling window, `status()` now correctly says daily and this prompt still says the rolling sentence — the two disagree on the same tap.
+* **6618** — the description line: `'Up to ' + limit + ' ' + (med.ceilingUnit || 'mg') + ' per ' + med.rollingCeilingH + 'h'`, printed beside a bar reading "N left today".
+* **2577** — `if (med.rollingCeilingH) return { locked: false };`, skipping the gap lockout on a medication whose ceiling was actually counted daily.
 
-## N4 — the loading splash locks the body on every cold start
+Not a block for the same reason as last pass: nothing writes `rollingCeilingH` for a user-created
+medication (no `rollingCeilingH:` assignment exists in the file), so the combination is unreachable
+today. But the fix was made at one of four sites, and the comment at 2550 now reads as though the
+class were closed.
 
-`!state.loaded` renders `position:'fixed'; inset:'0'` at z-index 100, so `applyScrollLock` engages
-during startup and releases when data arrives. Harmless — scrollY is 0 then — but it is a lock nobody
-declared, and it means `window.scrollTo(0, 0)` runs on every launch. Worth one line in the comment
-that lists what is deliberately exempt, since that list is now the only record of intent.
+## N3 — `group: false` on the pills branch is an honest label over a wrong number
 
-## N5 — the tour cannot scroll to its own targets while the lock is on
+`dailyCeiling()` returns `used: dailyPills(med.id)` for a pills-unit medication — **this medication
+alone** — even when `med.ceilingGroup` puts it in a shared limit whose `max` is the group's. Setting
+`group: false` is truthful about what the figure counts and therefore correctly suppresses the
+"shared with other medications" line. It also means a grouped pills medication now counts only
+itself against a shared maximum **and says nothing at all about it**, which is the quieter of the two
+wrong answers. Unreachable today (`ceilingGroup` is not settable in the editor either); worth a line
+in the comment so the next reader does not read `false` as "not in a group".
 
-`positionTour()` calls `el.scrollIntoView({ block: 'center' })` on each new step. With the body fixed
-that call cannot move anything, so any highlighted target below the fold stays below the fold. It is
-invisible today because the steps that highlight anything low point at the fixed bottom nav; it stops
-being invisible the moment a step points at something in the page. The pointer-events fix in BLOCK 1
-fixes this too.
+## N4 — The comparison check derives its contract from an English label
+
+    const expectsNoCard = /course/i.test(label);
+
+Correct for all four cases today ("…treatment course has finished", "…last day of its course" expect
+no card; the other two expect one). But rewording a label to "…whose treatment has finished" silently
+flips that case to the opposite expectation. It fails loudly rather than quietly, so it is not
+vacuous — it is one rewording away from asserting the reverse of what it means. A field on the case
+tuple costs nothing and cannot drift.
+
+## N5 — 7d's last assertion is named for something it does not measure
+
+    t('the guide offers a way out, and it is reachable', seen > 0, seen + ' control(s)')
+
+`seen` is `await skip.count()`. Nothing measures reachability — not visibility, not position, not a
+click. The name is the part a future reader will trust, and it claims more than the check does. Given
+that the whole subject of this release is a control that existed and could not be reached, this is
+the wrong place to say "reachable" about a count.
 
 ---
 
-# FALSIFICATION SWEEP — my own mutants, not the builder's
+# WHAT I DID NOT GET TO
 
-Seven mutants against a throwaway clone of 2bfe0d6 on its own port, via `./falsify.sh`
-(`FALSIFY_PORT=8941`), suite `test/v83-meds-and-reports.mjs`. Baseline green.
-
-Mutants applied to private clones of 2bfe0d6, each served on its own port, suite run against the
-clone. Baseline green on both suites (v83 78/78, v84 33/33).
-
-| Mutant | Result |
-|---|---|
-| `anyOverlayOpen()` always returns false — no scroll lock anywhere in the app | **killed** by v84 — *"the page does not scroll behind the notice"* (600px). v83 is blind to it (78/78), which is right: the lock checks live in v84. |
-| the `courseComplete` gate is deleted from `medWithheldNow` (the third BLOCK, verbatim) | **killed** — and the check that went red is the PRECONDITION one, *"Home withholds a medication on the last day of its course — otherwise this comparison proves nothing"*. That is the guard against a vacuous comparison doing its job. |
-| the ceiling bar reads `med.rollingCeilingH` again instead of the branch that ran (BLOCK C, verbatim) | **killed** (2 checks) — *"a figure that is actually daily says today, whatever flags the medication carries"*. |
-| **Home's card filter hides an off-day and a treatment-excluded medication too — the card VANISHES** | **SURVIVED — 78/78 green.** |
-
-**The survivor is the one that matters, and it is the exact regression this release was most at risk
-of.** Section 2 compares the two screens through
-
-    const homeSaysNo = !cardForIt || explainedAsHeld;
-
-so **"no card at all" counts as Home withholding**. Every check in that section passes when the
-medication disappears from Home entirely — which is the failure the brief for this pass called worse
-than the bug, and which this file's own comments call out twice as reading like data loss to an
-anxious caregiver. The suite protects the hide direction of the rewritten filter and is blind to the
-show direction.
-
-**Required before ship:** for the off-day and treatment-excluded cases, assert `cardForIt` is TRUE
-*and* explained. `!cardForIt` may only be accepted for the `courseWindow` / `courseComplete` cases,
-where vanishing is the intended design. One line each, and the mutant above is the falsification.
-
-Mutants 5-7 (the pill stops asking `treatmentExcludedNow`; the temperature out-of-range fallback
-returns; `windowH` dropped from the rolling branch) were not re-run here — `./falsify.sh` was killed
-after 15 minutes at the time cap. Note for whoever uses it next: it pipes every run through
-`grep | tail`, so it prints NOTHING until the whole sweep ends, and a 7-mutant sweep of this suite is
-~15 minutes of silence. Two of the three are reported killed by the previous pass; I have not
-independently confirmed them.
-
-`test/v84-whatsnew.mjs` 33/33 and `test/v75-no-other-patient.mjs` 27/27 at this commit — product
-neutrality holds: no patient name, no gendered pronoun, no care-plan dose, and the three ratchet
-counts are unmoved. The only storage write in either release is still `chemowell-app-seen-version`;
-no new write path, no `removeEntryDB` on any path this release touches.
+* Only the four mutants above were run. I did not re-run the previous pass's mutants 5-7 (the pill
+  dropping `treatmentExcludedNow`; the temperature out-of-range fallback; `windowH` dropped from the
+  rolling branch), and I have not independently confirmed the kills reported for them.
+* No 320px or 360px pass, and no non-Chromium rendering — this sandbox has Chromium only, which is
+  the standing exemption on every release here.
+* `pm.py`/`release_check.sh` were not run; I did not touch the working tree beyond this file.

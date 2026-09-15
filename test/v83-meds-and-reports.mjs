@@ -42,6 +42,19 @@ const t = (name, cond, detail) => {
 };
 const section = s => console.log('\n' + s);
 const HOUR = 3600000;
+// THE CLOCK IS FROZEN AT 10:00, AND THIS SUITE WAS 75/80 WITHOUT IT.
+//
+// Section 1 placed "today's doses" at `now - 6h` and `now - 5h`. Run before about 06:00 local, both
+// land on YESTERDAY -- so the doses-today line read "None logged today", the ceiling bar read
+// "0 / 3,000 mg", the pill read "Available", and five checks went red for a defect that does not
+// exist. It fails loudly rather than passing falsely, which is the better direction, but a gate
+// that blocks a release at 3am for a reason that is not in the app is a gate people learn to
+// ignore -- and "80/80" was not reproducible, which makes it a claim rather than a measurement.
+//
+// `test/v80-up-next.mjs` in this same repo already does this, for exactly this reason. Every
+// fixture timestamp below is derived from FROZEN, and the page's own Date is shimmed to match, so
+// the suite measures the same day at 3am as it does at noon.
+const FROZEN = (() => { const d = new Date(); d.setHours(10, 0, 0, 0); return d.getTime(); })();
 const browser = await chromium.launch();
 const allErrors = [];
 
@@ -54,6 +67,14 @@ async function open(fixture, viewport) {
     if (/Failed to load resource|net::ERR_/.test(x)) return;
     allErrors.push(x);
   });
+  // The page's own clock too. A frozen fixture against a live page clock is half a fix: the app
+  // decides what "today" means, and it must mean the same day the fixture was written for.
+  await page.addInitScript((frozen) => {
+    const R = Date;
+    const D = function (...a) { return a.length ? new R(...a) : new R(frozen); };
+    D.now = () => frozen; D.parse = R.parse; D.UTC = R.UTC; D.prototype = R.prototype;
+    window.Date = D;
+  }, FROZEN);
   await page.goto(BASE);
   await page.waitForTimeout(1300);
   // Every key is DERIVED from the prefs key the app actually created. Searching for them finds
@@ -87,7 +108,7 @@ const gapMed = (m) => Object.assign({ type: 'gap', gapH: 4, schemaV: 2, quickLog
 // ---------------------------------------------------------------------------------------------
 section('1. THE MEDS CARD SAYS WHAT HAS HAPPENED, NOT ONLY WHAT THE RULES ARE');
 {
-  const now = Date.now();
+  const now = FROZEN;
   // THE FIXTURE CARRIES YESTERDAY, AND THAT IS THE POINT. Without an older dose, "count only
   // today's" and "count every dose ever" give the same answer, so the check below cannot tell them
   // apart -- and it did not: a mutant that deleted the day filter entirely passed 45/45. Two
@@ -147,7 +168,7 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
   //
   // It opens Home now and compares the two screens, which is the only comparison that means
   // anything. The pill regexes stay as a second, weaker assertion about the wording.
-  const now = Date.now();
+  const now = FROZEN;
   const cases = [
     ['a dose inside the minimum gap', [gapMed({ id: 'm1', name: 'TestMed' })],
       [{ id: 'a', medId: 'm1', dose: '500 mg', mg: 500, pills: 1, ts: now - 10 * 60000 }], /^Wait /],
@@ -169,8 +190,8 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
   // THE TWO STATES THE OLD SECTION COULD NOT SEE, each read off BOTH screens.
   // "Home will give it" is asked the way a caregiver asks it: is there a plain button that logs a
   // dose, or is there not. An override behind a red confirmation is NOT Home saying yes.
-  const now = Date.now();
-  const today = new Date().getDay();
+  const now = FROZEN;
+  const today = new Date(FROZEN).getDay();
   const otherDay = (today + 3) % 7;
   const pairs = [
     ['a medication not scheduled today',
@@ -196,7 +217,7 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
   // branch, so an as-needed one never reaches it -- and my first attempt at this fixture used an
   // as-needed medication and reported a failure that was the fixture's, not the app's. A treatment
   // date must also carry `loggedAt`, which is what chemoDayList orders and de-duplicates by.
-  const hr = new Date().getHours();
+  const hr = new Date(FROZEN).getHours();
   pairs.push(['a medication on the last day of its course',
     [{ id: 'm1', name: 'LastDayMed', type: 'win', schemaV: 2, quickLog: true,
        doses: [{ label: '1 tab', mg: 0, pills: 1 }],
@@ -273,7 +294,7 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
 // ---------------------------------------------------------------------------------------------
 section('2b. A ROLLING LIMIT IS NOT A DAILY ONE, AND THE BAR MUST NOT MIX THEM UP');
 {
-  const now = Date.now();
+  const now = FROZEN;
   const p = await open({
     meds: [gapMed({ id: 'm1', name: 'RollingMed', ceiling: true, ceilingMax: 15, rollingCeilingH: 4,
       doses: [{ label: '5 mg', mg: 5, pills: 1 }] })],
@@ -300,7 +321,7 @@ section('2b. A ROLLING LIMIT IS NOT A DAILY ONE, AND THE BAR MUST NOT MIX THEM U
   // rolling branch, so this medication's figure is a DAILY pill count even though it carries
   // rollingCeilingH. Reading the flag instead of the branch labelled a daily count "in the last 4h"
   // and promised it would free up as doses aged out. It resets at midnight.
-  const now = Date.now();
+  const now = FROZEN;
   const p = await open({
     meds: [gapMed({ id: 'm1', name: 'PillsRolling', ceiling: true, ceilingMax: 4, ceilingUnit: 'pills',
       rollingCeilingH: 4, doses: [{ label: '1 tab', mg: 0, pills: 1 }] })],
@@ -315,7 +336,7 @@ section('2b. A ROLLING LIMIT IS NOT A DAILY ONE, AND THE BAR MUST NOT MIX THEM U
 }
 {
   // A SHARED CEILING IS NOT THIS MEDICATION'S ALONE, and the bar drew it as though it were.
-  const now = Date.now();
+  const now = FROZEN;
   const p = await open({
     meds: [gapMed({ id: 'm1', name: 'GroupA', ceiling: true, ceilingMax: 3000, ceilingGroup: 'acet' }),
            gapMed({ id: 'm2', name: 'GroupB', ceiling: true, ceilingMax: 3000, ceilingGroup: 'acet' })],
@@ -331,7 +352,7 @@ section('2b. A ROLLING LIMIT IS NOT A DAILY ONE, AND THE BAR MUST NOT MIX THEM U
 // ---------------------------------------------------------------------------------------------
 section('3. THE TEMPERATURE REPORT, WHICH DID NOT EXIST');
 {
-  const now = Date.now();
+  const now = FROZEN;
   const p = await open({ entries: [
     { id: 't1', medId: 'temp', temp: 101.4, dose: '101.4', mg: 0, ts: now - 3 * HOUR },
     { id: 't2', medId: 'temp', temp: 99.2, dose: '99.2', mg: 0, ts: now - 30 * HOUR },
@@ -369,8 +390,8 @@ section('3. THE TEMPERATURE REPORT, WHICH DID NOT EXIST');
   // feverish reading from outside the window must not be counted. The check without this could not
   // fail -- a mutant counting every reading ever passed it.
   const withOld = await open({ entries: [
-    { id: 't1', medId: 'temp', temp: 101.4, dose: '101.4', mg: 0, ts: Date.now() - 3 * HOUR },
-    { id: 'old', medId: 'temp', temp: 103.6, dose: '103.6', mg: 0, ts: Date.now() - 60 * 24 * HOUR }
+    { id: 't1', medId: 'temp', temp: 101.4, dose: '101.4', mg: 0, ts: FROZEN - 3 * HOUR },
+    { id: 'old', medId: 'temp', temp: 103.6, dose: '103.6', mg: 0, ts: FROZEN - 60 * 24 * HOUR }
   ] });
   await goto(withOld, 'Reports');
   await withOld.getByRole('button', { name: /Temperature/ }).first().click();
@@ -409,7 +430,7 @@ section('3. THE TEMPERATURE REPORT, WHICH DID NOT EXIST');
   // left every label saying "Last 4 weeks", so a 102.4 from ten weeks ago read as this month's
   // fever. The previous fixture had readings both inside and outside the window, so the fallback
   // never ran and a mutant restoring it survived 56/56.
-  const now = Date.now();
+  const now = FROZEN;
   const p = await open({ entries: [
     { id: 'o1', medId: 'temp', temp: 102.4, dose: '102.4', mg: 0, ts: now - 70 * 24 * HOUR },
     { id: 'o2', medId: 'temp', temp: 99.8, dose: '99.8', mg: 0, ts: now - 72 * 24 * HOUR },
@@ -438,7 +459,7 @@ section('3. THE TEMPERATURE REPORT, WHICH DID NOT EXIST');
 // ---------------------------------------------------------------------------------------------
 section('4. THE SYMPTOM BARS');
 {
-  const now = Date.now();
+  const now = FROZEN;
   // THE FIXTURE CARRIES ENTRIES OUTSIDE THE WINDOW, and that is the point. Without them, "count the
   // last 4 weeks" and "count everything ever" give the same answer, and the count check cannot tell
   // them apart -- it did not: a mutant deleting the window entirely passed. Two entries from ~40
@@ -521,7 +542,7 @@ section('4. THE SYMPTOM BARS');
 // ---------------------------------------------------------------------------------------------
 section('5. ALL THREE SCREENS FIT A 320px PHONE, AND NONE CARRIES A LITERAL "null"');
 {
-  const now = Date.now();
+  const now = FROZEN;
   const p = await open({
     meds: [gapMed({ id: 'm1', name: 'TestMed', ceiling: true, ceilingMax: 3000 })],
     entries: [
