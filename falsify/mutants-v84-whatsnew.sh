@@ -21,7 +21,7 @@ MUTANT_DESC_2="the v28 nudge no longer checks whether the person scrolled since 
 mutant_2() {
   python3 - <<'PY'
 p='index.html'; s=open(p,encoding='utf-8').read()
-old="    if (Math.abs(yNow - yAtFocus) > 8) return;\n"
+old="    if (lastUserScrollAt > focusedAt) return;\n"
 assert s.count(old)==1
 open(p,'w',encoding='utf-8').write(s.replace(old,""))
 PY

@@ -483,8 +483,15 @@ section('7e. SCROLLING AWAY FROM A FIELD YOU JUST TYPED IN MUST STICK');
   // Swipe down NOW -- inside the 320ms window, the way a thumb moves. window.scrollTo is what a
   // swipe amounts to; Playwright's scrollIntoViewIfNeeded drives it over CDP and is the cheat these
   // checks exist to avoid.
+  // A REAL WHEEL, NOT window.scrollTo. The app now answers "has the person scrolled since?" from
+  // wheel/touchmove events rather than by comparing scroll positions -- by cause instead of by
+  // effect, so that an on-screen keyboard resizing the viewport can never be mistaken for a swipe.
+  // A synthetic scrollTo produces no gesture event, so a check that used one would be measuring a
+  // path no finger takes and would pass on a build with the guard removed. `page.mouse.wheel`
+  // dispatches the event the app actually listens for.
   await p.waitForTimeout(120);
-  await p.evaluate(() => window.scrollTo(0, Math.max(0, document.documentElement.scrollHeight - window.innerHeight - 40)));
+  await p.mouse.move(195, 500);
+  for (let i = 0; i < 6; i++) { await p.mouse.wheel(0, 400); await p.waitForTimeout(25); }
   await p.waitForTimeout(150);
   const before = await p.evaluate(() => window.scrollY);
   t('the swipe moved the page away from the field', before > 600, before + 'px');
@@ -507,11 +514,17 @@ section('7e. SCROLLING AWAY FROM A FIELD YOU JUST TYPED IN MUST STICK');
   // still bring it to the middle, or this "fix" has quietly deleted the feature it guards.
   await p.evaluate(() => window.scrollTo(0, 0));
   await p.waitForTimeout(250);
+  // FOCUS IT FROM INSIDE THE PAGE WITH preventScroll, or the browser's OWN focus scroll does the
+  // work and the check cannot tell a build with the nudge from a build without it. Playwright's
+  // locator.focus() lets the browser scroll the element into view, which is precisely how the
+  // first version of this check scored 57/57 against a mutant that deleted the nudge outright.
   const deep = p.locator('#med-doses-text').first();
   const deepTopBefore = await deep.evaluate(el => Math.round(el.getBoundingClientRect().top));
-  await deep.focus();
+  const yBeforeFocus = await p.evaluate(() => window.scrollY);
+  await deep.evaluate(el => el.focus({ preventScroll: true }));
   await p.waitForTimeout(1400);
   const deepTopAfter = await deep.evaluate(el => Math.round(el.getBoundingClientRect().top));
+  const yAfterFocus = await p.evaluate(() => window.scrollY);
   // THIS CHECK WAS VACUOUS WHEN FIRST WRITTEN, AND THE SWEEP SAID SO. It OR'd three conditions
   // together, the first of which ("the field started below the fold") is true before the app does
   // anything at all -- so mutant 3, which deletes the nudge outright, passed 57/57. A precondition
@@ -519,8 +532,8 @@ section('7e. SCROLLING AWAY FROM A FIELD YOU JUST TYPED IN MUST STICK');
   t('precondition: the field is below the fold, so there is something for the nudge to do',
     deepTopBefore > vhE, 'top=' + deepTopBefore + ' in a ' + vhE + 'px viewport');
   t('and focusing it WITHOUT a swipe brings it into view -- v28 is not deleted by the guard',
-    deepTopAfter >= 0 && deepTopAfter <= vhE - 40,
-    'top ' + deepTopBefore + ' -> ' + deepTopAfter + ' in ' + vhE + 'px');
+    yAfterFocus > yBeforeFocus + 100 && deepTopAfter >= 0 && deepTopAfter <= vhE - 40,
+    'scrollY ' + yBeforeFocus + ' -> ' + yAfterFocus + ', field top ' + deepTopBefore + ' -> ' + deepTopAfter + ' in ' + vhE + 'px');
   await p.close();
 }
 

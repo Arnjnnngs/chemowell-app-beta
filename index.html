@@ -4243,17 +4243,36 @@ document.addEventListener('keydown', (ev) => {
 //   * `restoringFocus` -- the renderer never asks for a nudge, on any screen, ever.
 //   * the scroll guard -- a person who taps a field and swipes away inside 320ms keeps their swipe.
 let restoringFocus = false;
+
+// "HAS THE PERSON SCROLLED SINCE?" ASKED BY CAUSE, NOT BY EFFECT -- and the difference is a
+// platform this sandbox cannot test.
+//
+// The first version of this guard compared scrollY at focus against scrollY 320ms later and
+// suppressed the nudge if it had moved by more than 8px. The independent audit named the risk
+// exactly: v28 exists for the moment the on-screen KEYBOARD resizes the viewport, and if iOS moves
+// the layout viewport by more than 8px doing that, an effect-based guard reads the keyboard's own
+// movement as "the person scrolled" and switches v28 off on the one platform it was written for.
+// That failure is invisible in Chromium and obvious on a phone.
+//
+// A gesture listener answers the same question by cause and needs no magic number: a wheel or a
+// touchmove is a person, and a keyboard opening is not. Passive and capture, so it cannot block
+// scrolling or be swallowed by a stopPropagation anywhere in the tree, and it stores a timestamp
+// rather than a flag so there is nothing to reset and no state to get stuck.
+let lastUserScrollAt = 0;
+['wheel', 'touchmove'].forEach((evt) => {
+  document.addEventListener(evt, () => { lastUserScrollAt = Date.now(); }, { passive: true, capture: true });
+});
+
 document.addEventListener('focusin', (ev) => {
   if (restoringFocus) return;
   const el = ev.target;
   if (!el || typeof el.matches !== 'function' || !el.matches('input, select, textarea')) return;
-  const yAtFocus = window.scrollY || window.pageYOffset || 0;
+  const focusedAt = Date.now();
   setTimeout(() => {
-    const yNow = window.scrollY || window.pageYOffset || 0;
-    // 8px of slack, not 0: the on-screen keyboard resizing the visual viewport nudges scrollY by a
-    // pixel or two on its own, and v28 exists precisely for that moment -- a guard that treated
-    // that as "the user scrolled" would switch the feature off on the platform it was written for.
-    if (Math.abs(yNow - yAtFocus) > 8) return;
+    // The person swiped after putting the caret here, so they have already said where they want to
+    // be. Anything else -- the keyboard opening, the app redrawing -- leaves this untouched and the
+    // nudge happens exactly as v28 intended.
+    if (lastUserScrollAt > focusedAt) return;
     try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
   }, 320);
 });
@@ -5235,6 +5254,11 @@ function render() {
       // renderer, not from a finger, so it must not schedule the v28 nudge. Set synchronously
       // around the focus() call because focusin is dispatched synchronously by it, and cleared in
       // a finally so a throw cannot leave the app unable to nudge a real tap ever again.
+      // NOT RE-ENTRANT, DELIBERATELY, AND THE NEXT PERSON NEEDS TO KNOW. The flag is a boolean, so
+      // a focus handler that called setState() -> render() from inside this restore would clear it
+      // on the inner finally and leave the rest of the outer restore unguarded. There is no such
+      // handler today -- nothing in this file listens for 'focus' -- and if one is ever added, this
+      // needs to become a counter rather than a boolean.
       restoringFocus = true;
       try {
         try { freshActive.focus({ preventScroll: true }); } catch (e) { freshActive.focus(); }
