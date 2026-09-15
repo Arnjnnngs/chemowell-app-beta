@@ -166,3 +166,23 @@ assert s.count(old)==1
 open(p,'w',encoding='utf-8').write(s.replace(old,"        if (false && Array.isArray(CHANGELOG) && CHANGELOG.length > 1) {"))
 PY
 }
+
+MUTANT_DESC_17="the app is its own prior data again -- a brand-new phone is greeted with 'here is what changed'"
+mutant_17() {
+  python3 - <<'PY'
+p='index.html'; s=open(p,encoding='utf-8').read()
+old="function deviceHasPriorChemoWellData() { return HAD_PRIOR_CHEMOWELL_DATA; }"
+assert s.count(old)==1
+open(p,'w',encoding='utf-8').write(s.replace(old,"function deviceHasPriorChemoWellData() { return true; }"))
+PY
+}
+
+MUTANT_DESC_18="the snapshot counts the licence key, so a device that bought Plus looks like an upgrade forever"
+mutant_18() {
+  python3 - <<'PY'
+p='index.html'; s=open(p,encoding='utf-8').read()
+old="      if (k === 'chemowell-app-license-v1') continue;      // survives a wipe on purpose\n"
+assert s.count(old)==1
+open(p,'w',encoding='utf-8').write(s.replace(old,""))
+PY
+}

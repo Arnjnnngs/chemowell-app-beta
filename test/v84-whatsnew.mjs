@@ -75,7 +75,38 @@ async function freshPage(setUp, opts) {
 // ---------------------------------------------------------------------------------------------
 section('1. A BRAND-NEW PHONE IS NOT GREETED WITH "HERE IS WHAT CHANGED"');
 {
+  // THIS CHECK MEASURED ON THE WELCOME SCREEN, WHERE THE NOTICE IS NEVER MOUNTED UNDER ANY
+  // CIRCUMSTANCES. It asserted "nothing pops up" on a page that could not pop anything up -- the
+  // exact trap this file's own header warns about, and it passed for three releases while a brand
+  // new phone WAS being greeted with "here is what changed". Mutant 17 (deviceHasPriorChemoWellData
+  // forced to `return true`) scored a clean 89/89 against it.
+  //
+  // So it walks the real welcome screen now. The decision is made once at module evaluation, so the
+  // question is what happens AFTER setup completes on that same first load -- which is the moment a
+  // person actually reaches the app.
   const p = await freshPage();
+  t('a first-ever run starts on the welcome screen, so there is a setup to complete',
+    await p.getByPlaceholder('Enter patient name').count() > 0,
+    String(await p.getByPlaceholder('Enter patient name').count()));
+  await p.getByPlaceholder('Enter patient name').first().fill('First Ever');
+  // completeSetup() refuses without all three answers and only says so in a toast, so a check that
+  // filled the name alone would sit on the welcome screen and call it a pass.
+  for (const chip of ['Female', 'Chemo']) {
+    const c = p.getByRole('button', { name: chip, exact: true }).first();
+    t('the welcome screen offers "' + chip + '", which setup refuses to complete without',
+      await c.count() > 0, String(await c.count()));
+    if (await c.count()) { await c.click(); await p.waitForTimeout(250); }
+  }
+  // EXACT LABEL, NOT A LOOSE PATTERN. The first version of this used an alternation that matched
+  // several controls on the page and clicked the wrong one, so setup never completed and the check
+  // below it measured the welcome screen again -- the very thing this rewrite exists to stop.
+  const go = p.getByRole('button', { name: 'Get started', exact: true });
+  t('the welcome screen offers exactly one way forward', await go.count() === 1, (await go.count()) + ' control(s)');
+  await go.first().click();
+  await p.waitForTimeout(1800);
+  t('and setup completes, so the app itself is on screen -- otherwise this measures nothing',
+    await p.getByPlaceholder('Enter patient name').count() === 0,
+    (await p.getByPlaceholder('Enter patient name').count()) + ' name field(s) left');
   t('nothing pops up on a first-ever run',
     await p.locator('[data-whatsnew-modal]').count() === 0,
     String(await p.locator('[data-whatsnew-modal]').count()));
@@ -83,6 +114,32 @@ section('1. A BRAND-NEW PHONE IS NOT GREETED WITH "HERE IS WHAT CHANGED"');
   const stamped = await p.evaluate(() => localStorage.getItem('chemowell-app-seen-version'));
   t('and the version is recorded silently, so it is asked once not forever',
     typeof stamped === 'string' && /^app-v/.test(stamped), String(stamped));
+  await p.close();
+}
+{
+  // AND THE PATH THE AUDIT ACTUALLY DROVE: Account -> Start over, then set up again. The wipe
+  // removes the marker, the app immediately re-creates a `chemowell-app` key of its own, and before
+  // the fix that re-fired the notice -- carrying "ChemoWell has never shown you one of these
+  // before" to somebody who had dismissed that exact notice minutes earlier. The sentence is this
+  // release's own copy and on that path it was false.
+  const p = await freshPage(true);
+  await p.evaluate(() => {
+    // what eraseAllAppData() leaves behind: the licence, and nothing else
+    const keep = localStorage.getItem('chemowell-app-license-v1');
+    localStorage.clear();
+    if (keep) localStorage.setItem('chemowell-app-license-v1', keep);
+  });
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await p.waitForTimeout(1800);
+  t('after a full wipe the app is back on the welcome screen',
+    await p.getByPlaceholder('Enter patient name').count() > 0,
+    String(await p.getByPlaceholder('Enter patient name').count()));
+  t('and it does NOT greet a wiped phone with "here is what changed"',
+    await p.locator('[data-whatsnew-modal]').count() === 0,
+    String(await p.locator('[data-whatsnew-modal]').count()));
+  t('and it does not tell anybody it has never shown them one of these before',
+    await p.locator('[data-whatsnew-firstever]').count() === 0,
+    String(await p.locator('[data-whatsnew-firstever]').count()));
   await p.close();
 }
 
@@ -675,16 +732,20 @@ section('7h. A PHONE THAT MISSED SEVERAL RELEASES IS NOT TOLD ABOUT ONE OF THEM 
   let L = await olderLine(p);
   t('and the number is the count it has NOT been shown -- computed here, not read off the hook',
     L.attr === expectFor(all[3]), JSON.stringify(L.attr) + ' expected ' + expectFor(all[3]));
-  // AND THE HOOK IS A SECOND OPINION, NOT THE ANSWER. window.__whatsNewTest.olderUnseen was exposed
-  // and read by nothing, which is a hook that proves only that it exists. Asserting it against the
-  // number ON SCREEN is what makes it worth having: if the function and the rendered sentence ever
-  // disagree, the screen is what a caregiver gets and the function is what every other check reads.
-  t('and the exported count agrees with the number drawn on the screen',
-    await p.evaluate(() => window.__whatsNewTest.olderUnseen()) === L.attr,
-    (await p.evaluate(() => window.__whatsNewTest.olderUnseen())) + ' vs ' + L.attr);
+  // THE HOOK IS NOT A SECOND OPINION AND THE CHECK THAT WAS HERE COULD NOT DISAGREE WITH ITSELF.
+  // `window.__whatsNewTest.olderUnseen()` and the `data-whatsnew-older` attribute are the same call:
+  // the attribute is `String(n)` where n came from that function. Asserting one against the other is
+  // a check that reports green about nothing, which is the class this release has now found five
+  // times -- and dressing it in a comment about second opinions made it worse, not better.
+  //
+  // What CAN disagree is the function and the SENTENCE, and mutant 13 proved it by printing n + 1
+  // in the sentence while the attribute stayed correct. That comparison is the check below.
   // MUTANT 13: the sentence printed n + 1 while the attribute stayed right, and this check was green.
+  // The off-by-one guard is DERIVED, not the literal 3 it used to be: the mutant this catches adds
+  // one, so the number that must be absent is whatever one more happens to be.
   t('and the SENTENCE carries that same number -- the attribute is not what anybody reads',
-    !!L.text && new RegExp('(^|[^0-9])' + L.attr + '([^0-9]|$)').test(L.text) && !/\b3\b/.test(L.text),
+    !!L.text && new RegExp('(^|[^0-9])' + L.attr + '([^0-9]|$)').test(L.text)
+      && !new RegExp('(^|[^0-9])' + (L.attr + 1) + '([^0-9]|$)').test(L.text),
     JSON.stringify(L.text));
   t('and it is plural, and names the control it points at',
     !!L.text && /earlier updates/.test(L.text) && /are under/.test(L.text) && /See recent updates/.test(L.text),

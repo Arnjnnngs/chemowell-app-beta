@@ -320,3 +320,34 @@ answered and I will re-issue against the later commit.
 
 *PM sign-off, ChemoWell app-v83 + app-v84. Measured at `3ec6b4c` on 2026-09-15. Working tree
 untouched apart from this file.*
+
+
+---
+
+# CORRECTION APPENDED 2026-09-15 — ONE CLAIM IN SECTION 3 WAS FALSE
+
+**This sign-off's body is left exactly as it was written.** A record that is quietly edited after the
+fact is worse than one that is wrong, and the reasoning above is still the reasoning that was
+applied. What follows is the correction, with the date, in the manner CLAUDE.md Rule 7 requires of
+this project's other list of known things.
+
+Section 3, under **"Claims I checked and found TRUE"**, includes:
+
+> *"A fresh install is not an update … stamped silently"* — `deviceHasPriorChemoWellData()` (8968)
+> distinguishes the two and `whatsNewShouldShow()` stamps either way.
+
+**The second half is true and the first half was false.** `deviceHasPriorChemoWellData()` could only
+ever return `true`: `initProfiles()` writes `chemowell-app-profiles-v1` at module evaluation, nine
+thousand lines before that function asks whether any `chemowell-app` key exists, so the app was
+always its own prior data. A brand-new phone WAS greeted with "here is what changed", on top of step
+1 of the first-run guide.
+
+It was checked by reading the function, which reads correctly in isolation. What it could not show
+is what has already run by the time it is called. **Found by the sixth audit, which drove a wiped
+phone through the real welcome screen instead.** Fixed by snapshotting the answer above the first
+write; `test/v84-whatsnew.mjs` section 1 now walks that path, and mutant 17 forces the old behaviour
+back and dies on it.
+
+**Three other records carried the same claim** — `README.md`, the comment above the function itself,
+and `outputs/DESIGN-app-v84.md` — and all three are corrected in place, because none of them is a
+signed record of a decision the way this file is.

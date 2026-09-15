@@ -162,6 +162,40 @@ function setLicense(patch) { saveJSON(LICENSE_KEY, { ...getLicense(), ...patch }
 function tierLimit(tier) { return tier === 'pro' ? Infinity : tier === 'plus' ? 3 : 1; }
 function tierLabel(tier) { return tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Plus' : 'Free'; }
 
+// ---- HAD THIS PHONE RUN CHEMOWELL BEFORE? ASKED HERE, BECAUSE ONE LINE LOWER IT IS UNANSWERABLE --
+//
+// `deviceHasPriorChemoWellData()` (far below, near the What's New code) asks whether any
+// `chemowell-app` key exists, to tell a brand-new phone from one upgrading across the release that
+// added the seen-version marker. **It could only ever return true.** `initProfiles()`, immediately
+// below this line, WRITES `chemowell-app-profiles-v1` at module evaluation -- nine thousand lines
+// before anything asks the question -- so the app was always its own prior data and the
+// "a fresh install is not an update" branch had never once taken the other path.
+//
+// What that produced, measured rather than reasoned: a wiped phone taken through the real welcome
+// screen got the "here is what changed" notice on top of step 1 of the first-run guide, and
+// Account -> Start over -> set up again brought it back reading "ChemoWell has never shown you one
+// of these before" to somebody who had dismissed that exact notice minutes earlier. The sentence is
+// this release's own copy and on that path it was false.
+//
+// The question has to be asked BEFORE the first write. This is that moment. Nothing above it
+// touches localStorage except reads.
+//
+// LICENSE_KEY IS EXCLUDED FOR THE SAME REASON `eraseAllAppData()` PRESERVES IT: a purchase is not
+// patient data and survives a wipe deliberately, so a device that bought Plus and then started over
+// would otherwise look like an upgrade forever.
+const HAD_PRIOR_CHEMOWELL_DATA = (() => {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || k.indexOf('chemowell-app') !== 0) continue;
+      if (k === 'chemowell-app-seen-version') continue;   // the marker itself is the question
+      if (k === 'chemowell-app-license-v1') continue;      // survives a wipe on purpose
+      return true;
+    }
+  } catch (e) {}
+  return false;
+})();
+
 // ---- Profiles: each patient gets fully separate on-device storage ----
 const PROFILES_KEY = 'chemowell-app-profiles-v1';
 (function initProfiles() {
@@ -9057,17 +9091,16 @@ function whatsNewMarkSeen() { try { localStorage.setItem(WHATS_NEW_KEY, APP_VERS
 // confused: a phone that has never run ChemoWell (say nothing -- "here is what changed" is
 // meaningless to somebody who has never seen the old version) and a phone that HAS run it from
 // before this marker existed (an upgrade, which is exactly what this is for). Any other ChemoWell
-// key already on the device separates them. Either way the version is stamped, so this is decided
-// once rather than on every load.
-function deviceHasPriorChemoWellData() {
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k !== WHATS_NEW_KEY && k.indexOf('chemowell-app') === 0) return true;
-    }
-  } catch (e) {}
-  return false;
-}
+// key already on the device separates them -- **as it stood when the app started, not as it stands
+// now**, which is the whole of the fix at the top of this file. Either way the version is stamped,
+// so this is decided once rather than on every load.
+// READS THE SNAPSHOT TAKEN AT THE TOP OF THE MODULE, and does not look at storage itself. It used
+// to walk localStorage here, which is nine thousand lines after `initProfiles()` has already written
+// a `chemowell-app` key -- so it answered "yes" on a phone that had never run this app in its life.
+// The literals above are deliberately spelled out rather than referencing WHATS_NEW_KEY and
+// LICENSE_KEY: both are `const`s declared BELOW the snapshot, and reading either from there is the
+// temporal-dead-zone failure this file has already shipped three times.
+function deviceHasPriorChemoWellData() { return HAD_PRIOR_CHEMOWELL_DATA; }
 // SET ONCE, AT STARTUP, AND IT IS THE ONLY RECORD THAT THIS PHONE HAD NO MARKER.
 // `whatsNewShouldShow()` stamps the marker before anything renders -- it has to, or a caregiver who
 // force-quits the app before dismissing the notice is shown it again forever -- so by the time the

@@ -88,12 +88,15 @@ it"* off the edge; the notice's own body scrolls while the page behind it does n
 rather than *"See all updates"* — the fourth surface that claimed the changelog was complete, and
 the reason this addendum exists at all.
 
-**One thing the fixture shows that a real phone will not.** The shots force the notice by writing an
-old seen-version, so they catch a device that is simultaneously mid-first-run-guide and being told
-what changed. A genuinely new install is stamped silently and shown nothing
-(`deviceHasPriorChemoWellData()`), so that overlap needs a user who updated part-way through the
-guide. The notice sits above the guide and dismisses normally; noted rather than treated as a
-defect.
+**One thing the fixture shows, and the sentence that was here was wrong about why.** The shots catch a
+device that is simultaneously mid-first-run-guide and being told what changed. This said that needed
+"a user who updated part-way through the guide" because a genuinely new install is stamped silently
+and shown nothing. **At the time it was written that was false for every new install** —
+`deviceHasPriorChemoWellData()` could only ever return `true`, because the app wrote a
+`chemowell-app` key of its own at startup before anything asked the question, so a brand-new phone
+WAS greeted with "here is what changed" on top of step 1 of the guide. The sixth audit found it and
+it is fixed: the answer is snapshotted before the first write. The overlap now really does need a
+phone that upgraded mid-guide. The notice sits above the guide and dismisses normally.
 
 **Still exempt, and still for the same reason: iPhone rendering.** Chromium only here. The new
 gesture-based guard on the focus nudge makes that exemption sharper than usual — see BACKLOG.md,
@@ -156,3 +159,20 @@ become scrollable at 320.
 The line reads: *"ChemoWell has never shown you one of these before, so the earlier updates under
 "See recent updates" will be new to you too."* It carries **no number**, because the number is not
 knowable on a phone with no marker and inventing one would be the defect this line exists to fix.
+
+
+---
+
+# ADDENDUM 4, 2026-09-15 — WHAT THE FIRST-RUN FIX CHANGES ON SCREEN
+
+Nothing, on the rollout this release is for. It changes who sees the notice, not how it looks: a
+phone upgrading from app-v80 is unaffected (addendum 3 is still the shipped screen), and a phone
+with no ChemoWell history at all now sees **no notice**, which is what the app was always documented
+to do and never did.
+
+Measured rather than assumed, in `test/v84-whatsnew.mjs` section 1 rather than here, because the
+question is which screen appears and not how it is drawn: a brand-new phone taken through the real
+welcome screen — name, both required answers, *Get started* — reaches the app with **0** notices,
+and the version is still stamped silently so the question is asked once. **The old check measured
+the welcome screen, where the notice is never mounted**, so it passed while the opposite was
+happening.
