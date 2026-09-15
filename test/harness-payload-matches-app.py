@@ -100,6 +100,32 @@ print('\ntext written into the app by cut()')
 for what, text in inserts:
     check(what, text)
 
+# EVERY EDIT TO THE FILE MUST GO THROUGH cut(), OR THIS WHOLE CHECK IS OPTIONAL.
+#
+# The finding that produced this, from the tenth audit pass: everything above audits `cut()` calls.
+# It says nothing about `src` being mutated any other way. `src.replace(...)`, `src + "..."`,
+# `"".join([src, ...])` and `re.sub(..., src)` each write text into the app that this check never
+# compares against anything, and all four score a clean 17/17.
+#
+# It is the same defect one level up, for the third time. The .mjs version could only see the
+# SPELLING it was written against (`r"""`). The .py version can only see the FUNCTION it was
+# written against (`cut`). The answer both times is to stop trusting a convention and check it:
+# `src` may be assigned only from the initial read, or from cut().
+ALLOWED_SRC_SOURCES = 'HTML.read_text() or cut()'
+for node in ast.walk(tree):
+    if not (isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == 'src' for t in node.targets)):
+        continue
+    v = node.value
+    via_cut = isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id == 'cut'
+    via_read = isinstance(v, ast.Call) and isinstance(v.func, ast.Attribute) and v.func.attr == 'read_text'
+    if via_cut or via_read:
+        continue
+    bad += 1
+    print('  FAIL  line %d assigns `src` from something other than %s, so the text it writes into'
+          % (node.lineno, ALLOWED_SRC_SOURCES))
+    print('        the app is never compared against anything. Route it through cut().')
+
 # A check that finds nothing reports green loudest. Pin what it must have seen.
 print('')
 if len(payloads) < 4:
@@ -131,9 +157,12 @@ if len(inserts) != _cut_calls - _deletions - _unresolved:
     print('  FAIL  %d cut() call(s), %d deletion(s), %d unresolved, but %d payload(s) resolved -- '
           'these must add up, or something is invisible here.'
           % (_cut_calls, _deletions, _unresolved, len(inserts))); bad += 1
-if bad == 0:
-    print('  ok    saw %d payload constant(s) and %d cut() insertion(s)' % (len(payloads), len(inserts)))
+# COUNTED UNCONDITIONALLY. This used to increment only when nothing else had failed, so the board
+# read 17 checks when green and 16 when red -- a denominator that moves with the answer, which is
+# the shape of a figure nobody can compare across runs.
+if len(payloads) >= 4 and len(inserts) >= 8:
     ok += 1
+    print('  ok    saw %d payload constant(s) and %d cut() insertion(s)' % (len(payloads), len(inserts)))
 
 print('\n%d checks: %d passed, %d failed' % (ok + bad, ok, bad))
 sys.exit(1 if bad else 0)
