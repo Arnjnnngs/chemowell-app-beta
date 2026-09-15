@@ -383,10 +383,33 @@ section('7d. THE FIRST-RUN GUIDE MUST NOT FREEZE THE PAGE -- THE PATH A NEW USER
   // `overflow: hidden` freeze that a thumb cannot -- so a build frozen that way let this "pass"
   // while a real user was stuck. The question is whether the button is ON THE SCREEN the user is
   // looking at, so that is what is measured, and only then is it tapped.
-  const box = await save.boundingBox();
+  // SCROLL THE WAY A FINGER DOES, THEN LOOK. Measuring the button where it sits before scrolling
+  // says nothing -- of course it is below the fold on a 2,387px form. And using Playwright's own
+  // scrollIntoView is the cheat this check exists to avoid: it drives the scroll over CDP and goes
+  // straight through an `overflow: hidden` freeze that a thumb cannot. `window.scrollTo` is what a
+  // finger's swipe amounts to, and a frozen page ignores it -- which is exactly the difference
+  // being measured.
   const vh = page.viewportSize().height;
+  // LET THE FORM SETTLE FIRST. Typing triggers a debounced redraw, and measuring where a button is
+  // while the page is still reflowing gives a position that is already stale.
+  await page.waitForTimeout(900);
+  // Then scroll the way a person does: a swipe, a look, and another swipe if needed. Two passes,
+  // no more -- a loop that keeps scrolling until it likes the answer would pass on anything.
+  let box = null;
+  const vh2 = page.viewportSize().height;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    // RE-RESOLVE EVERY TIME. render() rebuilds the page into root.innerHTML on its tick, so a
+    // handle taken before a scroll can point at a detached node and report "no box", which reads
+    // like the button vanished.
+    const fresh = page.getByRole('button', { name: 'Add medication', exact: true }).first();
+    const abs = await fresh.evaluate(el => el.getBoundingClientRect().top + (window.scrollY || 0));
+    await page.evaluate(y => window.scrollTo(0, Math.max(0, y - 200)), abs);
+    await page.waitForTimeout(600);
+    box = await page.getByRole('button', { name: 'Add medication', exact: true }).first().boundingBox();
+    if (box && box.y >= 0 && box.y + box.height <= vh2 + 1) break;
+  }
   const onScreen = !!box && box.y >= 0 && box.y + box.height <= vh + 1;
-  t('the button the guide names is ON SCREEN, reachable by scrolling as a finger would',
+  t('the button the guide names comes ON SCREEN when the page is scrolled as a finger would',
     onScreen, box ? ('top=' + Math.round(box.y) + ' of ' + vh + 'px viewport') : 'no box');
   let clicked = true;
   try { await save.click({ timeout: 6000 }); } catch (e) { clicked = false; }

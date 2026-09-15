@@ -5188,7 +5188,18 @@ function render() {
   if (prevActiveId) {
     const freshActive = document.getElementById(prevActiveId);
     if (freshActive) {
-      freshActive.focus();
+      // preventScroll, AND THE REASON IS A DEFECT THIS RELEASE'S OWN CHECK CAUGHT.
+      //
+      // render() rebuilds the page into root.innerHTML and then puts focus back by id. A bare
+      // focus() ALSO SCROLLS that element into view -- so on any screen taller than the phone, the
+      // page jumps back to the focused field every time the app redraws. On the medication editor
+      // that is not cosmetic: type the name, scroll down to reach "Add medication" at the bottom of
+      // a 2,387px form, and roughly half a second later the debounced redraw fires and yanks you
+      // back up to the field you typed in. Measured: scrollY 1543 -> 679, with the button left at
+      // 1519 in an 844px viewport, out of reach for as long as you keep typing.
+      //
+      // Restoring focus and the caret is the point; moving the page is not, and never was.
+      try { freshActive.focus({ preventScroll: true }); } catch (e) { freshActive.focus(); }
       if (prevSelStart !== null && typeof freshActive.setSelectionRange === 'function') {
         try { freshActive.setSelectionRange(prevSelStart, prevSelEnd); } catch (e) { /* not a text-selectable input type, e.g. type="number" in some browsers -- focus alone is still restored */ }
       }
