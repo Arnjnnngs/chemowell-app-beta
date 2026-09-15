@@ -43,12 +43,20 @@ fi
 # underneath it -- which is precisely the failure the sentence claimed was fixed. A stale server was
 # holding a port in this sandbox at the time it was found.
 # AND THE FIRST VERSION OF THIS CHECK DID NOT WORK EITHER, for a reason worth writing down: it
-# used `curl -fsS`, and `-f` makes curl FAIL on a 404. The thing most likely to be squatting this
-# port is another `python3 -m http.server` in a directory with no index.html -- which answers 404.
-# So the guard was asking "is something serving a page here", when the question is "is something
-# ANSWERING here". Proved by starting a bare http.server on 8951 and running the sweep against it:
-# five 404s, the refusal never fired, the sweep carried on. Without -f, curl exits 0 on any HTTP
-# response including 404, and non-zero only when nothing answered -- which is the actual question.
+# used `curl -fsS`, and `-f` makes curl fail on any 4xx/5xx. So the guard was asking "is something
+# serving a page here" when the question is "is something ANSWERING here". Proved by starting a
+# bare http.server on 8951 and sweeping against it: the refusal never fired and the sweep carried
+# on. Without -f, curl exits 0 on ANY HTTP response and non-zero only when nothing answered, which
+# is the actual question.
+#
+# WHAT THE SQUATTER ACTUALLY REPLIES IS NOT FIXED, and an earlier version of this comment asserted
+# it was. This guard requests `/`, and a bare `python3 -m http.server` answers `/` with **200** and
+# a directory listing when its directory exists, and 404 only when it does not (a deleted cwd --
+# which is what the 404s in the original measurement were). Both exit 0 without -f, which is why
+# the guard is correct either way; but "the squatter answers 404" was a detail of one run being
+# reported as how squatters behave. The flag was never the whole story -- the requested PATH is
+# equally load-bearing -- and the release's standing finding is records asserting more than the
+# code guarantees.
 if curl -sS --noproxy '*' --max-time 2 -o /dev/null "http://127.0.0.1:$PORT/" 2>/dev/null; then
   echo "❌ something is already answering on 127.0.0.1:$PORT."
   echo "   This sweep would have measured that server's files, not the clone it is about to build."
@@ -140,7 +148,7 @@ fi
 # ceiling prints a truncated log that looks exactly like a finished one in anything filtered. That
 # has now happened twice. A slice finishes, says so, and the slices together are the sweep -- which
 # is honest, where "it probably would have passed" is not. Always state which slice a result covers.
-DEAD=0; ALIVE=0; SURVIVED=0; UNMEASURED=0
+DEAD=0; ALIVE=0; SURVIVED=0; UNMEASURED=0; STALE=0
 FROM="${FALSIFY_FROM:-1}"
 TO="${FALSIFY_TO:-9999}"
 i=1
@@ -158,7 +166,7 @@ while declare -F "mutant_$i" >/dev/null; do
   if ! ( cd "$WORK" && "mutant_$i" ); then
     echo "  ❌ DID NOT APPLY -- this mutant's anchor no longer matches the file, so the sweep cannot"
     echo "     judge it. Update the mutant. Counted as not caught."
-    ALIVE=$((ALIVE+1))
+    ALIVE=$((ALIVE+1)); STALE=$((STALE+1))
     find "$WORK" -mindepth 1 -delete
     git archive HEAD | tar -x -C "$WORK"
     cp -r test/. "$WORK/test/" || { echo "❌ could not copy the suite into the clone"; exit 1; }
@@ -224,5 +232,11 @@ echo ""
 # measured -- so a sweep where the suite never ran reported those runs to the reader as survivors,
 # which is a different and much more alarming claim than the truth. The summary line is the only
 # line most people read; it says which of the four outcomes actually happened.
-echo "=== $DEAD mutant(s) caught, $SURVIVED survived, $UNMEASURED could not be measured"
+# FOUR OUTCOMES SCORED, FOUR OUTCOMES PRINTED -- and the first version of this line printed
+# THREE, which the independent audit caught by driving the tally block through all four. The
+# DID-NOT-APPLY branch incremented only $ALIVE, so a stale anchor left
+# $DEAD + $SURVIVED + $UNMEASURED short of the mutants attempted and vanished from the summary --
+# in the very commit whose message was "the sweep stopped three times on a stale mutant and never
+# said so". The exit code was right, so nothing could ship on it; the line a person reads was wrong.
+echo "=== $DEAD mutant(s) caught, $SURVIVED survived, $UNMEASURED could not be measured, $STALE anchor(s) stale"
 [ "$ALIVE" -eq 0 ] || exit 1

@@ -387,8 +387,8 @@ The script now produces a file that boots, measured in a real browser against HE
 | | uncaught exceptions | `#root` length | hooks |
 |---|---|---|---|
 | committed script at `2dccb90^` | `ReferenceError: HAD_PRIOR_CHEMOWELL_DATA is not defined` | 0 | none |
-| fixed script | none | 4205 | all eight |
-| HEAD (control) | none | 4205 | all eight |
+| fixed script | none | 4205 | all five probed fields |
+| HEAD (control) | none | 4205 | all five probed fields |
 
 `./verify-rebuild.sh` makes that repeatable and is the mechanism this desk asked for: a patch script
 exiting 0 looks exactly like success, which is how the same class of defect got through three times.
@@ -418,3 +418,22 @@ seen the shipping commit, and the missing Enhancer and Designer passes) are answ
 not, and a fresh PM pass against the shipping commit is what re-issues, not this appendix.
 
 *Correction written 2026-09-15 against `a35f328`.*
+
+
+---
+
+# THIRD CORRECTION, SAME DAY — "all eight" is a number nothing in the repo produces
+
+The evidence table in the correction above read `hooks: all eight`. The probe
+(`test/rebuild-boots.mjs`) collects **five** fields, and the shipped module defines **five**
+`window.__*` hooks. No grouping of either yields eight. Corrected above to "all five probed
+fields".
+
+Caught by the eighth Zero Day audit, which ran the probe instead of reading the table:
+
+    {"whatsnew":"object","version":"app-v84","key":"chemowell-app-seen-version",
+     "older":"function","firstEver":"function"}
+
+**A figure in the evidence column of a signed sign-off that nothing produces** is the same defect
+this release has now been refused for six times — committed inside the correction written to answer
+the fifth. Recorded rather than quietly edited, for the same reason the two corrections above exist.

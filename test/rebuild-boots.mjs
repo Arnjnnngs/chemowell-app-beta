@@ -8,7 +8,15 @@
 // broken build: it stops being read. It asks the three questions that matter instead:
 //   * did the module throw (pageerror -- a ReferenceError from a temporal dead zone lands here)
 //   * did the app render anything into #root
-//   * did module evaluation reach the LAST line, which is what the debug-hook block proves
+//   * did the hook block at the end of the module actually run
+//
+// THE THIRD LINE USED TO CLAIM MORE THAN IT DELIVERS, and an independent audit called it: it said
+// the hooks prove module evaluation "reached the LAST line". They do not. Two hooks defined after
+// the asserted ones (__tempTest, __eraseTest) are never checked, so the last line is proved by
+// `pageerror` coming back empty, not by these fields. The hooks prove the block RAN; that is worth
+// asserting and is all they assert. Claiming otherwise is this release's standing defect -- a
+// record asserting a guarantee the code does not have -- committed inside the gate built to catch
+// it.
 import _m from 'module';
 const require = _m.createRequire(import.meta.url);
 const { chromium } = (() => {
@@ -35,7 +43,16 @@ const hooks = await p.evaluate(() => ({
 console.log('uncaught exceptions:', thrown.length ? thrown : 'none');
 console.log('#root innerHTML length:', len);
 console.log('hooks:', JSON.stringify(hooks));
-const ok = thrown.length === 0 && len > 500 && hooks.whatsnew === 'object' && hooks.version === 'app-v84';
+// NOT PINNED TO 'app-v84'. A version literal inside a check turns green into red on the next
+// legitimate release -- three patches and several suites on this project have broken that way, and
+// Rule 5 says compare input to output, never to a literal. What matters here is that the getter
+// RESOLVES: if APP_VERSION were in a temporal dead zone this would throw or read undefined, which
+// is the whole failure being guarded against.
+const ok = thrown.length === 0
+  && len > 500
+  && hooks.whatsnew === 'object'
+  && typeof hooks.version === 'string' && /^app-v\d+$/.test(hooks.version)
+  && hooks.older === 'function' && hooks.firstEver === 'function';
 console.log(ok ? 'BOOTS' : 'DEAD');
 await b.close();
 process.exit(ok ? 0 : 1);
