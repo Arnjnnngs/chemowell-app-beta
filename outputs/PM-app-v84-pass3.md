@@ -333,3 +333,64 @@ lands. What needs saying when he gets that message: this push is four releases, 
 *PM sign-off, pass 3. ChemoWell app-v83 + app-v84, measured at `c656ae8` on 2026-09-15. Working
 tree untouched apart from this file and a dated correction appended to pass 2; falsification was
 done on copies under a scratchpad directory.*
+
+---
+
+# RUN B — `./release_check.sh` with this sign-off committed, at `9c057eb`
+
+Raw, pasted rather than described.
+
+    ℹ️  Suites will run against a clean export of HEAD at /tmp/tmp.douA05V0nw
+       (not the working tree -- see the app-v82 note above).
+    ℹ️  Baseline: PUBLISHED.json -> app-v80 (chemowell-app-v80-2) at 048c1ff
+       37 commit(s) have changed index.html since that record. This gate assumes NONE of
+       them are live yet. If any were already pushed, run ./mark_published.sh <that commit>
+       first -- otherwise the comparison below is against the wrong build.
+    ℹ️  Other reports present and not clearing this release:
+         outputs/AUDIT-app-v84-delta.md — says DO NOT SHIP
+         outputs/AUDIT-app-v84-delta2.md — says DO NOT SHIP
+         outputs/AUDIT-app-v84-delta3.md — says DO NOT SHIP
+         outputs/AUDIT-app-v84-delta4.md — says DO NOT SHIP
+         outputs/AUDIT-app-v84-delta5.md — says DO NOT SHIP
+         outputs/AUDIT-app-v84-delta6.md — examined 8bcb8c9; changed since: index.html sw.js
+         outputs/AUDIT-app-v84-delta7.md — says DO NOT SHIP
+         outputs/AUDIT-app-v84-delta8.md — examined 400bd37; changed since: index.html
+         outputs/AUDIT-app-v84.md — examined 5600b92; changed since: index.html sw.js
+         outputs/PM-app-v84-pass2.md — says DO NOT SHIP
+         outputs/PM-app-v84.md — says DO NOT SHIP
+    ℹ️  Chain artifacts present for app-v84, and current against the working tree:
+         outputs/AUDIT-app-v84-delta9.md
+         outputs/PM-app-v84-pass3.md
+    ℹ️  v76-properties-equivalence.mjs: green.
+    ℹ️  v76-empty-window-render.mjs: green.
+    ℹ️  No-other-patient check: clean.
+    ✅ Release check passed.
+       index.html changed and sw.js's CACHE constant changed with it -- installed
+       copies of the app will pick this up automatically on next open.
+
+    EXIT=0
+
+**`EXIT=0`. The gate passes, and it passes for the right reasons rather than by silence.**
+
+Three things in that output are worth an eye, because a green board is exactly when nobody reads
+one.
+
+**It names the two reports that clear the release**, by path: `AUDIT-app-v84-delta9.md` and this
+file. Not "a report was found" — the specific two it read, each current against the working tree.
+
+**Eleven superseded reports are listed and not hidden**, including this desk's own two refusals and
+seven Auditor ones. A gate that printed only the passing reports would look identical to a gate
+that could not see the refusals, and this file's comments record that exact failure happening
+twice. Ten refusals and two stale-by-drift reports are visible above the tick.
+
+**The stages beyond the chain gate ran for the first time in this release.** Every previous run
+`exit 1`ed before reaching them. `v76-properties-equivalence`, `v76-empty-window-render` and the
+Rule 0 patient-leak check are green here, in the gate's own run against a clean export of HEAD —
+not only in mine against the working tree. That is a distinction this repo has been bitten by
+(`app-v82` audit, BLOCK 3: what is on disk is not what ships), and it is now closed by measurement.
+
+The `ℹ️` line about `PUBLISHED.json` is informational and is answered in §7: the record is correct
+after a fetch, `mark_published.sh` must not run before the push, and assuming nothing is live makes
+the comparison stricter rather than looser.
+
+*Run B taken 2026-09-15, immediately after committing this file.*
