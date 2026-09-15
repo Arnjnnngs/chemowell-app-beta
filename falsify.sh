@@ -34,6 +34,28 @@ if [ -n "$(git status --porcelain -- index.html)" ]; then
   exit 1
 fi
 
+# REFUSE A PORT SOMETHING ELSE IS ALREADY SERVING, AND THIS SCRIPT CLAIMED TO DO IT FOR TWELVE
+# COMMITS WITHOUT DOING IT. The README said "it also refuses a port something else is already
+# serving"; the Scribe read all nine commits of this file and found no check of any kind. What
+# actually happened was worse than nothing: `python3 -m http.server` is started with stderr to
+# /dev/null, so a failed bind was silent, and the readiness curl then succeeded against THE OTHER
+# PROCESS. The sweep would have judged whatever that server was serving while mutating $WORK
+# underneath it -- which is precisely the failure the sentence claimed was fixed. A stale server was
+# holding a port in this sandbox at the time it was found.
+# AND THE FIRST VERSION OF THIS CHECK DID NOT WORK EITHER, for a reason worth writing down: it
+# used `curl -fsS`, and `-f` makes curl FAIL on a 404. The thing most likely to be squatting this
+# port is another `python3 -m http.server` in a directory with no index.html -- which answers 404.
+# So the guard was asking "is something serving a page here", when the question is "is something
+# ANSWERING here". Proved by starting a bare http.server on 8951 and running the sweep against it:
+# five 404s, the refusal never fired, the sweep carried on. Without -f, curl exits 0 on any HTTP
+# response including 404, and non-zero only when nothing answered -- which is the actual question.
+if curl -sS --noproxy '*' --max-time 2 -o /dev/null "http://127.0.0.1:$PORT/" 2>/dev/null; then
+  echo "❌ something is already answering on 127.0.0.1:$PORT."
+  echo "   This sweep would have measured that server's files, not the clone it is about to build."
+  echo "   Pick a free port with FALSIFY_PORT=<n>, or stop what is holding this one."
+  exit 1
+fi
+
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"; [ -n "${SRV:-}" ] && kill "$SRV" 2>/dev/null || true' EXIT
 git archive HEAD | tar -x -C "$WORK"
@@ -45,9 +67,33 @@ git archive HEAD | tar -x -C "$WORK"
   # mutants and getting 96 checks where the suite has 95. Copy the CONTENTS.
   cp -r test/. "$WORK/test/" || { echo "❌ could not copy the suite into the clone -- the sweep would run whatever git archive left there"; exit 1; }
 
-( cd "$WORK" && python3 -m http.server "$PORT" >/dev/null 2>&1 ) &
+( cd "$WORK" && python3 -m http.server "$PORT" >/dev/null 2>"$WORK/.server.err" ) &
 SRV=$!
-for _ in $(seq 1 25); do curl -fsS -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/index.html" && break; sleep 0.4; done
+_up=0
+for _ in $(seq 1 25); do
+  # The server's own liveness is checked BEFORE the curl. A bind failure exits within milliseconds,
+  # and without this the loop would spend ten seconds curling and then blame the network.
+  if ! kill -0 "$SRV" 2>/dev/null; then break; fi
+  if curl -fsS -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/index.html" 2>/dev/null; then _up=1; break; fi
+  sleep 0.4
+done
+if [ "$_up" != 1 ]; then
+  echo "❌ the clone's server never came up on 127.0.0.1:$PORT."
+  [ -s "$WORK/.server.err" ] && sed 's/^/   /' "$WORK/.server.err"
+  exit 1
+fi
+# The server's own stderr is kept rather than discarded: a bind failure used to vanish into
+# /dev/null and the readiness curl would then pass against somebody else's server.
+#
+# BUT `python3 -m http.server` WRITES ITS ACCESS LOG TO STDERR, so the first version of this warned
+# on every healthy run -- one line per request, thousands of them across a sweep. A warning that
+# always fires is a warning nobody reads, and it would have buried the bind failure it exists to
+# surface underneath its own noise. The access lines are dropped and only what is left is shown.
+_noise='^127\.0\.0\.1 - - \[.*\] "(GET|HEAD) .*" [0-9]{3} -$'
+if grep -Ev "$_noise" "$WORK/.server.err" 2>/dev/null | grep -q .; then
+  echo "⚠️  the clone's server wrote to stderr:"
+  grep -Ev "$_noise" "$WORK/.server.err" | sed 's/^/   /'
+fi
 
 # The suite is pointed at the clone's port by environment, never by editing the suite.
 run_suite() {
