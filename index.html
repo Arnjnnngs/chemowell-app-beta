@@ -9036,6 +9036,14 @@ function whatsNewLatest() { return CHANGELOG[0] || null; }
 // CHANGELOG is newest-first, so the entries above it are the ones it has not seen. Minus the one on
 // screen. A version that is not in the list at all (an old phone, a trimmed changelog) counts every
 // entry rather than none -- erring towards telling somebody there is more to read.
+//
+// AND IT SAYS NOTHING FOR A PHONE WITH NO MARKER, WHICH IS DELIBERATE. `whatsNewShouldShow()`
+// stamps the marker immediately for a device that has ChemoWell data but no seen-version -- so by
+// the time this runs, `seen` is already APP_VERSION, `idx` is 0, and this returns 0. That reads
+// like a bug and is not: with no marker there is no way to know how far behind that phone was, and
+// a number invented for it would be the same class of defect this line was written to fix. Silence
+// is the honest answer when the count is unknown. Do not "fix" it by falling back to the length of
+// the changelog.
 function whatsNewOlderUnseenCount() {
   if (!Array.isArray(CHANGELOG) || CHANGELOG.length < 2) return 0;
   const seen = whatsNewSeenVersion();
