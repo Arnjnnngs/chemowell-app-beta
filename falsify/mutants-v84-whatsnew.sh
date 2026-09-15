@@ -126,3 +126,43 @@ assert s.count(old)==1
 open(p,'w',encoding='utf-8').write(s.replace(old,"  return 0;"))
 PY
 }
+
+MUTANT_DESC_13="the sentence prints one more than the count -- the data attribute stays right"
+mutant_13() {
+  python3 - <<'PY'
+p='index.html'; s=open(p,encoding='utf-8').read()
+old=": (n + ' earlier updates you have not seen are under"
+assert s.count(old)==1
+open(p,'w',encoding='utf-8').write(s.replace(old,": ((n + 1) + ' earlier updates you have not seen are under"))
+PY
+}
+
+MUTANT_DESC_14="a marker the changelog does not carry counts nothing instead of everything"
+mutant_14() {
+  python3 - <<'PY'
+p='index.html'; s=open(p,encoding='utf-8').read()
+old="  const unseen = idx === -1 ? CHANGELOG.length : idx;"
+assert s.count(old)==1
+open(p,'w',encoding='utf-8').write(s.replace(old,"  const unseen = idx === -1 ? 0 : idx;"))
+PY
+}
+
+MUTANT_DESC_15="the singular branch never fires -- '1 earlier updates ... are'"
+mutant_15() {
+  python3 - <<'PY'
+p='index.html'; s=open(p,encoding='utf-8').read()
+old="            n === 1\n"
+assert s.count(old)==1
+open(p,'w',encoding='utf-8').write(s.replace(old,"            n === 0\n"))
+PY
+}
+
+MUTANT_DESC_16="the first-ever line is gone -- every phone in this rollout is told nothing again"
+mutant_16() {
+  python3 - <<'PY'
+p='index.html'; s=open(p,encoding='utf-8').read()
+old="        if (whatsNewFirstEver && Array.isArray(CHANGELOG) && CHANGELOG.length > 1) {"
+assert s.count(old)==1
+open(p,'w',encoding='utf-8').write(s.replace(old,"        if (false && Array.isArray(CHANGELOG) && CHANGELOG.length > 1) {"))
+PY
+}

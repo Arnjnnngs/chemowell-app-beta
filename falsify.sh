@@ -63,6 +63,17 @@ source "$MUTANTS"
 echo "=== BASELINE (no mutant) -- every check must be green before any of them mean anything"
 BASE=$(run_suite)
 echo "$BASE"
+# THE BASELINE IS HELD TO THE SAME "DID IT RUN" TEST AS EVERY MUTANT, and it was not. Each mutant
+# below must produce a `checks:` summary or it is scored COULD NOT MEASURE -- while the run they are
+# all calibrated against was checked only for the absence of a red. A baseline that died before its
+# first check has no reds either, so the sweep would have proceeded to compare twelve mutants against
+# nothing at all. An audit found this one line after the mutant half had already been fixed, which is
+# the usual shape: the guard goes on the thing you were thinking about and not on the thing beside it.
+if ! echo "$BASE" | grep -q "checks:"; then
+  echo "❌ the baseline produced no summary line, so the suite never finished on HEAD."
+  echo "   Nothing below would mean anything. Find out why before running a sweep."
+  exit 1
+fi
 if echo "$BASE" | grep -q "^  FAIL"; then
   echo "❌ the suite is not green on HEAD. Fix that before falsifying anything."
   exit 1

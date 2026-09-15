@@ -129,9 +129,30 @@ is the thing to read, and this is the pointer to the rest. It quotes the button 
 for character, which is a rule this project bought with a v66 hint naming controls that had been
 renamed.
 
-**The number is computed, so the screenshots show `2` rather than `3`** — the fixture marks the
-phone as having last seen the fourth-newest entry, not app-v80. On a real phone sitting on app-v80
-it will read `3`. `test/v84-whatsnew.mjs` section 7h is what pins the arithmetic; these show the
-shape.
+**The number is computed, so the screenshots show `2`** — the fixture marks the phone as having last seen the fourth-newest entry.
+
+**AND THE SENTENCE THAT WAS HERE — *“on a real phone sitting on app-v80 it will read 3”* — WAS FALSE, which an audit measured.** app-v80 carries no What's New code at all, so no phone in this rollout has a marker; `whatsNewShouldShow()` stamps one before the modal renders, and the count is **0 on every phone receiving this release**. These screenshots show a case that exists only after the next update. The case that ships is the one below.
 
 **Still exempt, same reason: iPhone rendering.** Chromium only here.
+
+
+---
+
+# ADDENDUM 3, 2026-09-15 — THE SCREEN THIS ROLLOUT ACTUALLY PRODUCES
+
+Addendum 2 measured a phone with a marker. **No phone receiving app-v84 has one**, because app-v80
+contains no What's New code — so the shipped screen is the one with the first-ever line, not the
+count. Three more screenshots, `whatsnew-firstever-{320,360,390}.png`.
+
+| Surface | 320 | 360 | 390 |
+|---|---|---|---|
+| The update notice as this rollout draws it | ✅ | ✅ | ✅ |
+
+Measured on each, served file md5 checked against the working tree first: `document.scrollWidth`
+equals the viewport, **0** past the right edge, **0** text controls under the 16px iOS floor, **0**
+buttons under 44px, **0** literal `"null"` attributes, **0** page errors, and the notice does not
+become scrollable at 320.
+
+The line reads: *"ChemoWell has never shown you one of these before, so the earlier updates under
+"See recent updates" will be new to you too."* It carries **no number**, because the number is not
+knowable on a phone with no marker and inventing one would be the defect this line exists to fix.

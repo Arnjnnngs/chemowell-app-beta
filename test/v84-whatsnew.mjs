@@ -629,59 +629,103 @@ section('7g. THE SAME SWIPE WITH A FINGER -- THE ONLY INPUT THIS APP WILL SHIP W
 }
 
 // ---------------------------------------------------------------------------------------------
-section('7h. A PHONE THAT MISSED FOUR RELEASES IS NOT TOLD ABOUT ONE OF THEM AND LEFT THERE');
+section('7h. A PHONE THAT MISSED SEVERAL RELEASES IS NOT TOLD ABOUT ONE OF THEM AND LEFT THERE');
 {
-  // THE DEFECT IS A TRUE SCREEN THAT LEAVES A FALSE IMPRESSION, which is the Voice's first question
-  // and the hardest shape of it to see. The notice renders CHANGELOG[0] and nothing else. That is
-  // right for a phone one release behind. It is wrong for THIS release: live is app-v80 and v81,
-  // v82, v83 and v84 ship together, so every installed phone opens to a single card headed UPDATED
-  // about the newest one and is told nothing about the other three -- including app-v81's
-  // correction to how dose amounts are read, where ".5 mg" was being counted as 5 mg against a
-  // daily limit. Every sentence on that screen is true and the screen as a whole is not.
+  // THE DEFECT IS A TRUE SCREEN THAT LEAVES A FALSE IMPRESSION -- the Voice's first question, and the
+  // hardest shape of it to see. The notice renders CHANGELOG[0] and nothing else. Right for a phone
+  // one release behind; wrong for this one, where live is app-v80 and v81 to v84 ship together, so a
+  // phone would be told about the newest and nothing about app-v81's correction to how dose amounts
+  // are read -- ".5 mg" counted as 5 mg against a daily limit. Every sentence true, the screen not.
   //
-  // NEITHER SIDE MAY ECHO THE OTHER. The expected count is computed here from the app's own
-  // CHANGELOG and the marker the fixture wrote -- not read off the hook and compared to itself,
-  // which is how a check ends up asserting that a function returns what it returns.
-  const p = await freshPage(true);
-  const marker = await p.evaluate(() => {
-    const all = window.__whatsNewTest ? window.__whatsNewTest.all() : [];
-    return all.length >= 4 ? all[3].v : null;   // pretend this phone last saw the 4th-newest entry
+  // AND THE FIRST VERSION OF THIS CHECK COVERED TWO CASES OUT OF FIVE, which an audit turned into
+  // three surviving mutants: the sentence could print a different number from the attribute this
+  // read; the singular branch was never exercised, so "1 earlier updates ... are" would ship; and
+  // the unknown-marker branch was never exercised at all. Every assertion below reads THE SENTENCE A
+  // PERSON SEES, not only the data attribute, because those are the two that drifted apart.
+  const olderLine = (page) => page.evaluate(() => {
+    const el = document.querySelector('[data-whatsnew-modal] [data-whatsnew-older]');
+    const first = document.querySelector('[data-whatsnew-modal] [data-whatsnew-firstever]');
+    return {
+      attr: el ? Number(el.getAttribute('data-whatsnew-older')) : null,
+      text: el ? el.innerText : null,
+      firstEver: first ? first.innerText : null
+    };
   });
-  t('the changelog has enough entries for a phone to be several releases behind',
-    !!marker, marker || 'fewer than four entries');
-  await p.evaluate((v) => { localStorage.setItem('chemowell-app-seen-version', v); }, marker);
+  const seeVersion = async (page, v) => {
+    await page.evaluate((x) => { localStorage.setItem('chemowell-app-seen-version', x); }, v);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1700);
+  };
+
+  const p = await freshPage(true);
+  const all = await p.evaluate(() => (window.__whatsNewTest ? window.__whatsNewTest.all() : []).map(e => e.v));
+  t('the changelog has enough entries to be several releases behind', all.length >= 4, all.length + ' entries');
+
+  // --- several behind: the marker is the 4th newest, so 3 are newer, minus the one on screen = 2
+  await seeVersion(p, all[3]);
+  t('the notice is open for a phone that is behind', await p.locator('[data-whatsnew-modal]').count() === 1);
+  let L = await olderLine(p);
+  t('and the number is the count it has NOT been shown -- computed here, not read off the hook',
+    L.attr === 2, JSON.stringify(L.attr));
+  // MUTANT 13: the sentence printed n + 1 while the attribute stayed right, and this check was green.
+  t('and the SENTENCE carries that same number -- the attribute is not what anybody reads',
+    !!L.text && new RegExp('(^|[^0-9])' + L.attr + '([^0-9]|$)').test(L.text) && !/\b3\b/.test(L.text),
+    JSON.stringify(L.text));
+  t('and it is plural, and names the control it points at',
+    !!L.text && /earlier updates/.test(L.text) && /are under/.test(L.text) && /See recent updates/.test(L.text),
+    JSON.stringify(L.text));
+
+  // --- exactly one behind the one on screen: the SINGULAR branch. MUTANT 15 shipped
+  // "1 earlier updates ... are" because nothing ever rendered n === 1.
+  await seeVersion(p, all[2]);
+  L = await olderLine(p);
+  t('a phone with exactly one unseen earlier update says so', L.attr === 1, JSON.stringify(L.attr));
+  // "no plural anywhere" was the first version of this and it was WRONG, not the app: the sentence
+  // quotes the button, which is called "See recent updates". The plural that matters is the subject.
+  t('and says it in the singular -- "One earlier update ... is"',
+    !!L.text && /One earlier update /.test(L.text) && / is under /.test(L.text) && !/earlier updates/.test(L.text),
+    JSON.stringify(L.text));
+
+  // --- a marker naming a release the changelog no longer carries. MUTANT 14 forced this branch to 0.
+  await seeVersion(p, 'app-v0-not-in-this-changelog');
+  L = await olderLine(p);
+  t('a marker the changelog does not carry counts every entry but the one on screen',
+    L.attr === all.length - 1, JSON.stringify(L.attr) + ' of ' + all.length + ' entries');
+
+  // --- one release behind: nothing to say, and a line saying "0" would be on every ordinary notice
+  await seeVersion(p, all[1]);
+  t('a phone exactly one release behind still gets the notice', await p.locator('[data-whatsnew-modal]').count() === 1);
+  L = await olderLine(p);
+  t('and is told nothing about earlier updates, because there are none',
+    L.attr === null && L.firstEver === null, JSON.stringify(L));
+  await p.close();
+}
+{
+  // --- NO MARKER AT ALL, WHICH IS EVERY PHONE IN THIS ROLLOUT AND IS WHY THE COUNT ALONE WAS NOT
+  // ENOUGH. app-v80 carries no What's New code, so nothing on those phones records a version.
+  // `whatsNewShouldShow()` stamps the marker before the modal renders, so the count is 0 on all of
+  // them -- the line written for this release could not appear on a single phone receiving it.
+  // The count is genuinely unknowable there and is not invented; what is said instead is true.
+  const p = await freshPage(true);
+  await p.evaluate(() => { localStorage.removeItem('chemowell-app-seen-version'); });
   await p.reload({ waitUntil: 'domcontentloaded' });
   await p.waitForTimeout(1800);
-  t('the notice is open for a phone that is behind', await p.locator('[data-whatsnew-modal]').count() === 1);
-
-  const line = await p.locator('[data-whatsnew-modal] [data-whatsnew-older]').first();
-  t('and it says there are earlier updates it has not shown', await line.count() === 1,
-    (await line.count()) + ' line(s)');
-  const shown = await p.evaluate(() => {
-    const el = document.querySelector('[data-whatsnew-modal] [data-whatsnew-older]');
-    return el ? { n: Number(el.getAttribute('data-whatsnew-older')), text: el.innerText } : null;
+  t('a phone with prior data and NO marker still gets the notice -- this is the whole rollout',
+    await p.locator('[data-whatsnew-modal]').count() === 1);
+  const first = await p.evaluate(() => {
+    const el = document.querySelector('[data-whatsnew-modal] [data-whatsnew-firstever]');
+    const cnt = document.querySelector('[data-whatsnew-modal] [data-whatsnew-older]');
+    return { first: el ? el.innerText : null, counted: !!cnt,
+             hook: window.__whatsNewTest ? window.__whatsNewTest.firstEver() : null,
+             n: window.__whatsNewTest ? window.__whatsNewTest.olderUnseen() : null };
   });
-  // 4th-newest as the marker => three entries newer than it, minus the one on screen => 2.
-  t('and the number is the count of updates it has NOT been shown -- computed, not typed in',
-    !!shown && shown.n === 2, shown ? (shown.n + ' :: ' + shown.text) : 'no line');
-  t('and the sentence names where to find them',
-    !!shown && /See recent updates/i.test(shown.text), shown ? shown.text : '');
-
-  // AND IT SAYS NOTHING WHEN THERE IS NOTHING TO SAY. "0 earlier updates" is worse than silence,
-  // and this is the ordinary case -- one release behind -- so a line here would be on every phone.
-  const p2 = await freshPage(true);
-  const prev = await p2.evaluate(() => {
-    const all = window.__whatsNewTest ? window.__whatsNewTest.all() : [];
-    return all.length >= 2 ? all[1].v : null;
-  });
-  await p2.evaluate((v) => { localStorage.setItem('chemowell-app-seen-version', v); }, prev);
-  await p2.reload({ waitUntil: 'domcontentloaded' });
-  await p2.waitForTimeout(1800);
-  t('a phone exactly one release behind still gets the notice', await p2.locator('[data-whatsnew-modal]').count() === 1);
-  t('and is told nothing about earlier updates, because there are none',
-    await p2.locator('[data-whatsnew-modal] [data-whatsnew-older]').count() === 0,
-    (await p2.locator('[data-whatsnew-modal] [data-whatsnew-older]').count()) + ' line(s)');
-  await p.close(); await p2.close();
+  t('the count really is zero there -- which is the defect this case exists for', first.n === 0, String(first.n));
+  t('so it says the true thing instead, and invents no number',
+    !!first.first && !/\d/.test(first.first), JSON.stringify(first.first));
+  t('and it does not ALSO print a count', first.counted === false, String(first.counted));
+  t('and it names the control it points at',
+    !!first.first && /See recent updates/.test(first.first), JSON.stringify(first.first));
+  await p.close();
 }
 
 // ---------------------------------------------------------------------------------------------

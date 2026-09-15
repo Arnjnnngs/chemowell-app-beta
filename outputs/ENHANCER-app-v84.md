@@ -135,3 +135,33 @@ dead end** — the line points at a control that is on the same screen, two rows
 
 E1–E6 above are still the list, unchanged and still Aaron's to pick from. **Explicitly: no new
 proposals from this addendum.** An explicit "nothing this time" is information; silence is not.
+
+
+---
+
+# ADDENDUM 2, 2026-09-15 — THE LINE ABOVE COULD NOT APPEAR ON ANY PHONE IN THIS ROLLOUT
+
+Addendum 1 read the notice's new line and passed it. **It never asked whether the line can fire**,
+and an audit measured that it cannot: app-v80 carries no What's New code, so no phone receiving
+app-v84 has a seen-version marker, the count is 0 on every one of them, and the line was invisible
+on the entire rollout.
+
+**That is this seat's own blind spot, exactly as Rule 2.6 describes it.** The Enhancer asks whether
+a screen is complete and whether what is on it is worth being there. It does not, by habit, ask
+**can the thing I just approved actually appear for the people receiving it** — and on this release
+the answer was no.
+
+## The question that was missing, now written down
+
+**For every control or line a release adds: which population sees it, and does that population exist
+in this rollout?** A control that only appears for users who already have state the release
+introduces is a control nobody sees on the release that adds it. It is not wrong; it is absent, and
+absent looks identical to done from inside a code review.
+
+## What changed
+
+The notice now handles both populations: a phone with a marker gets the count, and a phone with none
+— every phone in this rollout — is told the true thing that is knowable, that these notes have never
+been shown on it before. **No number is invented for the case where the number is unknowable.**
+
+**No new proposals.** E1–E6 are still the list.

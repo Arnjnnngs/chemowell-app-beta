@@ -9068,9 +9068,20 @@ function deviceHasPriorChemoWellData() {
   } catch (e) {}
   return false;
 }
+// SET ONCE, AT STARTUP, AND IT IS THE ONLY RECORD THAT THIS PHONE HAD NO MARKER.
+// `whatsNewShouldShow()` stamps the marker before anything renders -- it has to, or a caregiver who
+// force-quits the app before dismissing the notice is shown it again forever -- so by the time the
+// modal draws, "was there a marker" is unanswerable from storage. This remembers.
+let whatsNewFirstEver = false;
+
 function whatsNewShouldShow() {
   const seen = whatsNewSeenVersion();
-  if (!seen) { const prior = deviceHasPriorChemoWellData(); whatsNewMarkSeen(); return prior; }
+  if (!seen) {
+    const prior = deviceHasPriorChemoWellData();
+    whatsNewFirstEver = prior;
+    whatsNewMarkSeen();
+    return prior;
+  }
   return seen !== APP_VERSION;
 }
 
@@ -9115,13 +9126,30 @@ function renderWhatsNewModal() {
       whatsNewEntry(e, true),
       // Only when there is something to say. A line reading "0 earlier updates" is worse than
       // silence, and on the ordinary one-release-behind case this renders nothing at all.
+      // TWO POPULATIONS, AND THE FIRST VERSION OF THIS ONLY SERVED THE ONE THAT DOES NOT EXIST YET.
+      //
+      // An audit measured it: every phone receiving app-v84 is coming from app-v80, which carries no
+      // What's New code and therefore no marker at all -- so `whatsNewFirstEver` is the case that
+      // actually fires on this rollout, and the count was 0 on every single phone. The line written
+      // to stop a caregiver being told about one release out of four could not appear on any of them.
+      //
+      // For a phone with no marker the count is genuinely UNKNOWABLE -- nothing on it records which
+      // version it was running -- so this does not invent one. What IS known, and is worth saying, is
+      // that these notes have never been shown on this phone before, which makes everything under the
+      // newest entry new to whoever is holding it.
       (() => {
         const n = whatsNewOlderUnseenCount();
-        if (!n) return null;
-        return h('div', { 'data-whatsnew-older': String(n), style: { fontSize: '12.5px', color: '#7A6E76', lineHeight: '1.45', marginTop: '10px' } },
-          n === 1
-            ? 'One earlier update you have not seen is under \u201cSee recent updates\u201d.'
-            : (n + ' earlier updates you have not seen are under \u201cSee recent updates\u201d.'));
+        if (n) {
+          return h('div', { 'data-whatsnew-older': String(n), style: { fontSize: '12.5px', color: '#7A6E76', lineHeight: '1.45', marginTop: '10px' } },
+            n === 1
+              ? 'One earlier update you have not seen is under \u201cSee recent updates\u201d.'
+              : (n + ' earlier updates you have not seen are under \u201cSee recent updates\u201d.'));
+        }
+        if (whatsNewFirstEver && Array.isArray(CHANGELOG) && CHANGELOG.length > 1) {
+          return h('div', { 'data-whatsnew-firstever': 'true', style: { fontSize: '12.5px', color: '#7A6E76', lineHeight: '1.45', marginTop: '10px' } },
+            'ChemoWell has never shown you one of these before, so the earlier updates under \u201cSee recent updates\u201d will be new to you too.');
+        }
+        return null;
       })(),
       h('div', { style: { display: 'flex', gap: '9px', marginTop: '14px' } },
         h('button', { 'data-whatsnew-all': 'true', type: 'button',
@@ -12724,7 +12752,7 @@ if (typeof window !== 'undefined') {
     // was describing a file that no longer existed. The getter stays because it costs nothing and
     // keeps this hook correct if the block is ever moved back up; the position above is the guard.
     get version() { return APP_VERSION; } };
-  window.__whatsNewTest = { latest: whatsNewLatest, all: () => CHANGELOG, shouldShow: whatsNewShouldShow, key: WHATS_NEW_KEY, olderUnseen: whatsNewOlderUnseenCount };
+  window.__whatsNewTest = { latest: whatsNewLatest, all: () => CHANGELOG, shouldShow: whatsNewShouldShow, key: WHATS_NEW_KEY, olderUnseen: whatsNewOlderUnseenCount, firstEver: () => whatsNewFirstEver };
   // The temperature thresholds, so a suite can check that the line DRAWN on the chart carries
   // the number the app COLOURS from, rather than pattern-matching text that happens to sit
   // near it. The first version of that check matched "Fever" followed by an axis label and
