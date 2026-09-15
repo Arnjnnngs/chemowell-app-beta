@@ -542,3 +542,39 @@ directly above and below each other, which is the arrangement where an undersize
 likely to be mis-tapped into the wrong one.
 
 Logged rather than fixed so it is a deliberate decision and not re-found by a third audit.
+
+## The ceiling override prompt recomputes a label `status()` has already decided
+
+**Found by the app-v84 delta audit, 2026-09-15. Unreachable today; a one-line change when it is
+touched next.**
+
+`renderToday()`'s red override prompt decides between *"Up to the <label> reached"* and *"Daily
+limit of <label> reached"* by asking `dailyCeiling(med).windowH`, and `status()` decides whether to
+lock by asking the same thing. They agree in every reachable case — the auditor enumerated
+`ceilingUnit`, `ceilingGroup`, rolling and a null ceiling — with one residual: **the volume-cap
+path**, where the two would disagree. It cannot happen, because `volumeCeilingMl` is never assigned
+anywhere in the file, exactly like `ceilingGroup` and `rollingCeilingH` above.
+
+**The real fix is not another comparison, it is deleting the second opinion:** have the prompt read
+`st.ceilingLabel` off the status object rather than recomputing the label from the medication. Two
+pieces of code answering "which kind of limit is this" is the shape that produced the original
+defect — a screen and a lock disagreeing inside one tap — and it is still that shape, just with the
+two answers currently matching.
+
+**When it becomes a block: the release that makes any of `volumeCeilingMl`, `ceilingGroup` or
+`rollingCeilingH` settable.**
+
+## iOS: the focus nudge is guarded by gesture now, and nobody here can test the keyboard
+
+**Not a defect. A named risk with an owner, recorded so the next person does not re-litigate it.**
+
+The v28 `focusin` nudge (bring a focused field into view, written because an opening on-screen
+keyboard can leave it hidden) is skipped when a `wheel` or `touchmove` happened after focus landed.
+That is deliberately a question about CAUSE: the first version compared scroll positions with an
+8px tolerance, and the audit was right that an effect-based guard can mistake iOS's own
+viewport movement for a swipe and switch v28 off on the platform it was written for.
+
+A keyboard opening is not a wheel or a touchmove, so the gesture version cannot make that mistake —
+but **this sandbox is Chromium with no on-screen keyboard and cannot prove it.** Item on Aaron's
+phone checklist every release until it has been seen once: *open the medication editor on the
+iPhone, tap a field low down the form, and confirm the keyboard does not leave it hidden.*
