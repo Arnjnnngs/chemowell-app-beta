@@ -381,9 +381,19 @@ section('7d. THE FIRST-RUN GUIDE MUST NOT FREEZE THE PAGE -- THE PATH A NEW USER
   t('and the guide advances once the medication is saved',
     !/Fill out the form/i.test(advanced), advanced.replace(/\n/g, ' | ').slice(0, 90) || '(no banner)');
 
+  // REACHABLE MEANS TAPPABLE. This counted the control and called that "reachable" -- on the one
+  // release where the whole defect was a control that existed and could not be reached.
   const skip = page.getByRole('button', { name: 'Skip guide' });
   const seen = await skip.count();
   t('the guide still offers a way out', seen > 0, seen + ' control(s)');
+  let escapable = true;
+  if (seen) { try { await skip.first().click({ timeout: 5000 }); } catch (e) { escapable = false; } }
+  t('and that way out can actually be tapped', escapable,
+    escapable ? 'clicked' : 'CLICK TIMED OUT: a user cannot leave the guide');
+  await page.waitForTimeout(500);
+  t('and tapping it really does end the guide',
+    await page.locator('#tour-layer').count() === 0,
+    String(await page.locator('#tour-layer').count()));
   await page.close();
 }
 

@@ -205,7 +205,7 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
   // added by hand in the first pass were not the whole list, which is exactly why the list now
   // lives in one predicate instead of being copied per call site.
   pairs.push(['a medication whose treatment course has finished',
-    [gapMed({ id: 'm1', name: 'FinishedMed', treatmentOnly: true, treatmentMode: 'only' })],
+    [gapMed({ id: 'm1', name: 'FinishedMed', treatmentOnly: true, treatmentMode: 'only', __expectNoCard: true })],
     [{ id: 'c', medId: 'chemo_date', ts: now - 30 * 24 * HOUR, dose: 'Treatment scheduled', mg: 0, loggedAt: now - 30 * 24 * HOUR }]]);
   // THE LAST ACTIVE DAY OF A COURSE, which is a DIFFERENT gate and the sweep proved it. Removing
   // the `courseComplete` branch from the predicate changed nothing against the fixture above,
@@ -225,7 +225,7 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
        // window loop finds nothing open -- with an open window it returns early and the branch is
        // unreachable, which is why the first two versions of this fixture proved nothing.
        windows: [{ name: 'Early', start: 0, end: 1 }],
-       treatmentOnly: true, treatmentMode: 'only', treatmentDaysBefore: 0, treatmentDaysAfter: 0 }],
+       treatmentOnly: true, treatmentMode: 'only', treatmentDaysBefore: 0, treatmentDaysAfter: 0, __expectNoCard: true }],
     [{ id: 'c', medId: 'chemo_date', ts: now, dose: 'Treatment scheduled', mg: 0, loggedAt: now }]]);
   for (const [label, meds, entries] of pairs) {
     const p = await open({ meds, entries });
@@ -254,7 +254,10 @@ section('2. MEDS AND HOME CANNOT DISAGREE ABOUT WHETHER A DOSE MAY BE GIVEN');
     // filter passed 78/78. Two gates expect an INERT CARD THAT EXPLAINS ITSELF, and two expect the
     // card to be gone, and the difference is the whole point -- so each case now says which it
     // expects rather than accepting either.
-    const expectsNoCard = /course/i.test(label);
+    // THE CONTRACT IS DECLARED, NOT PARSED OUT OF THE LABEL. This read `/course/i.test(label)`, so
+    // rewording a human-readable case name silently flipped which shape the check demanded. A test
+    // whose meaning depends on its own prose is one edit away from asserting the opposite.
+    const expectsNoCard = !!meds[0].__expectNoCard;
     const homeSaysNo = expectsNoCard ? !cardForIt : (cardForIt && explainedAsHeld);
     await goto(p, 'Meds');
     const pill = (await p.locator('[data-med-status-pill]').innerText().catch(() => '')).trim();

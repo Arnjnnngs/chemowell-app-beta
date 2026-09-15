@@ -1809,7 +1809,15 @@ function anyOverlayOpen() {
     // guide's own step telling a new user to fill in the form and tap "Add medication", that
     // button sat 1,354px below a fold that could not be scrolled: A BRAND-NEW USER COULD NOT ADD
     // THEIR FIRST MEDICATION, and the step only advances when one is saved, so the guide could not
-    // move either. The same misdetection froze the loading splash on every cold start.
+    // move either.
+    //
+    // ONE CLAIM IS WITHDRAWN FROM THIS COMMENT AND FROM THE COMMIT THAT ADDED IT: it also said the
+    // same misdetection froze the loading splash on every cold start. THAT IS FALSE. The splash
+    // sets no `pointer-events` at all, so this line never fires on it, and polling
+    // `body.style.position` through a whole cold start never saw a lock, so it was not locking
+    // either. An audit pass asserted the splash DID lock and I repeated it without measuring it.
+    // A claim about behaviour that nobody measured does not become true by being written into the
+    // code next to a real fix.
     //
     // Whether something BLOCKS the screen is the actual question, and `pointer-events` is the
     // browser's own answer to it. Every real modal in this file intercepts taps and is unaffected.
@@ -2574,7 +2582,11 @@ function status(med) {
     // NOT trigger a flat gapH lockout the way a full dose does, since there's still 7.5 mg of room
     // left in the 4-hour window. Per-dose-button blocking (doseBlocked, in the render loop) still
     // prevents logging a dose that would push the rolling total over the ceiling.
-    if (med.rollingCeilingH) return { locked: false };
+    // Asks the CEILING that came back, not the medication's flag -- `dailyCeiling` short-circuits
+    // on `ceilingUnit` before its rolling branch, so the flag can be set on a medication whose
+    // figure is a plain daily count. Same misread as the ceiling bar had; this is one of the
+    // three sites the first fix did not reach.
+    if (Number((dailyCeiling(med) || {}).windowH) > 0) return { locked: false };
     const last = es[es.length - 1];
     if (!last) return { locked: false };
     const at = last.ts + med.gapH * 3600000;
@@ -6350,7 +6362,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
     let subStatus = '';
     const dc = med.ceiling ? dailyCeiling(med) : null;
     if (st.ceilingHit) {
-      subStatus = st.rollingCeiling ? ((dc ? dc.label : 'Limit') + ' reached in the last ' + med.rollingCeilingH + 'h') : ('Daily limit reached' + (dc ? ' (' + dc.label + ')' : ''));
+      subStatus = st.rollingCeiling ? ((dc ? dc.label : 'Limit') + ' reached in the last ' + ((dc && dc.windowH) || med.rollingCeilingH) + 'h') : ('Daily limit reached' + (dc ? ' (' + dc.label + ')' : ''));
     } else if (st.windowName) {
       subStatus = st.windowName + ' window open';
     }
