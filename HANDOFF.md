@@ -14,7 +14,7 @@ this up."*
 
 | # | App | Task | Status |
 |---|---|---|---|
-| 24 | ChemoWell app | Meds: status pill, daily-limit bar, doses-today line | DONE — pushed |
+| 24 | ChemoWell app | Meds: status pill, daily-limit bar, doses-today line | DONE — pushed, awaiting your word |
 | 29 | care-tracker | v77 back button — live on main | DONE — live |
 | 30 | ChemoWell app | Independent audit of app-v83 + app-v84 | IN PROGRESS |
 
@@ -149,3 +149,25 @@ authoritative version; follow TEAM.md where the two differ, and read its "Proces
 - **Verify what's actually live with `git show origin/main:<path>`**, not
   `raw.githubusercontent.com` — that CDN has been observed serving stale cached content even with
   a cache-busting query param.
+
+
+## RUNNING THE SUITES: one of them refuses to start in the default shell
+
+`test/v72-med-purpose.mjs` exits **3** with `REFUSING: HTTPS_PROXY set.` if any of `HTTPS_PROXY`,
+`https_proxy`, `HTTP_PROXY` or `http_proxy` is in the environment — and this sandbox sets them. It
+passes **65/65** only when run as:
+
+    env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy node test/v72-med-purpose.mjs
+
+The refusal is deliberate and correct: the suite records every request leaving the machine, and a
+proxy would make that recording meaningless. **The trap is what it looks like from outside.** Run the
+board the obvious way and this suite produces no `checks:` line, which is indistinguishable from a
+suite that ran and said nothing — and a figure for it still sits in `README.md`'s version history.
+A green number in a record, for a suite that refuses to run by default, is the shape of defect this
+project keeps paying for. Found by the app-v84 PM gate, which ran it rather than reading the number.
+
+Two sibling traps worth knowing at the same time: `test/v81-dose-parser.mjs` and
+`test/v82-back-button.mjs` print `227/227 passing` and `15/15 passing` rather than a `checks:` line,
+so a filter anchored on `checks:` reports nothing for them too. **Match on the figure, not on one
+spelling of the summary, and never read silence as a pass** — `falsify.sh` scores exactly that case
+as COULD NOT MEASURE for the same reason.

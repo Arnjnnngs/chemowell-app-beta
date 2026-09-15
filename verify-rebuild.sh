@@ -57,7 +57,7 @@ git show "$BASE_COMMIT:index.html" > "$WORK/index.html"
 # property that holds: the app moved one character twenty minutes after the lift and the rebuild
 # went quietly back to producing a file the app no longer is, with this gate green throughout.
 # A boot check cannot see that; only a comparison can.
-echo "→ checking all 17 pieces of app text the patch script carries are still the app's"
+echo "→ checking every piece of app text the patch script carries is still the app's"
 python3 test/harness-payload-matches-app.py || {
   echo "❌ $SCRIPT no longer copies the app. Re-extract what it names; do not hand-edit."
   exit 1

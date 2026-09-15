@@ -104,8 +104,33 @@ for what, text in inserts:
 print('')
 if len(payloads) < 4:
     print('  FAIL  only %d payload constant(s) found -- has the script been rewritten?' % len(payloads)); bad += 1
-if len(inserts) < 8:
-    print('  FAIL  only %d cut() insertion(s) found -- has the script been rewritten?' % len(inserts)); bad += 1
+# COUNTED, NOT GUESSED. This read `< 8`, a floor picked by hand -- so a thirteenth cut() whose
+# payload this checker could not resolve would drop out of coverage silently and leave the board
+# green, which is the failure this whole file exists to prevent. It is measured against the number
+# of cut() calls actually in the script, so an unresolvable payload is a red rather than a gap.
+_cut_calls = sum(1 for n in ast.walk(tree)
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == 'cut')
+# `value_of(...) or ''` WAS THE BUG IN THE FIRST VERSION OF THIS, and my own falsification caught
+# it: None (this checker cannot resolve the payload) and '' (the payload is genuinely empty, a
+# deletion) collapsed into the same value, so an INVISIBLE insertion was counted as a deletion and
+# the arithmetic balanced. Planting a cut() whose payload is built at runtime left the board green
+# -- the exact blindness this block was added to close. They are counted apart now.
+_deletions = _unresolved = 0
+for n in ast.walk(tree):
+    if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == 'cut' and len(n.args) >= 3:
+        v = value_of(n.args[2], env)
+        if v is None:
+            _unresolved += 1
+        elif not v.strip():
+            _deletions += 1
+if _unresolved:
+    print('  FAIL  %d cut() call(s) write a payload this check cannot resolve, so nothing compares '
+          'them against the app. Make the payload a literal or a named constant.' % _unresolved)
+    bad += 1
+if len(inserts) != _cut_calls - _deletions - _unresolved:
+    print('  FAIL  %d cut() call(s), %d deletion(s), %d unresolved, but %d payload(s) resolved -- '
+          'these must add up, or something is invisible here.'
+          % (_cut_calls, _deletions, _unresolved, len(inserts))); bad += 1
 if bad == 0:
     print('  ok    saw %d payload constant(s) and %d cut() insertion(s)' % (len(payloads), len(inserts)))
     ok += 1
