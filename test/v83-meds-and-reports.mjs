@@ -19,6 +19,17 @@
 //   SYMPTOM BARS. A list with no summary. "How often has the nausea been happening" had to be
 //   answered by counting rows by hand.
 //
+// WHY THIS SUITE FREEZES THE CLOCK AND `v84-whatsnew.mjs` DELIBERATELY DOES NOT.
+//
+// A frozen `Date` makes countdowns, gap expiry and the tour's pulse phase static, so a whole class
+// of defect -- anything that only appears as time passes, including the flicker this project has
+// shipped twice -- cannot reproduce under it. That is an acceptable trade HERE, where every check
+// is about a figure computed for a day, and unacceptable in the suite that owns the overlays, the
+// scroll lock and the guided tour, which runs on the live clock for exactly that reason.
+//
+// The split was right by accident before this note existed: two files, written at different times,
+// happened to divide that way. Written down, it is a decision.
+//
 // Run:  python3 -m http.server 8899 --directory <repo>   (then)  node test/v83-meds-and-reports.mjs
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);

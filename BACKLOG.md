@@ -510,3 +510,35 @@ every word. These lines come from a machine reading a web page, so:
 - **A sentence can be true, safe, and still wrong for this patient.** MedlinePlus answers for the
   drug's primary indication, which is not always the reason a chemotherapy patient is taking it.
   Read every new line against "why would SHE be on this?" before it ships.
+
+## A grouped ceiling counts only one medication, and nothing on screen says so
+
+**Found by the app-v84 audit, 2026-09-15. NOT reachable through the product today, which is the
+only reason it is here rather than in the release.**
+
+`dailyCeiling()` returns `group: false` on the `ceilingUnit` (pills) branch, so a grouped
+pills-unit medication counts only ITSELF against a limit that is meant to be shared — and the bar
+draws no "shared with other medications" line, because that line keys off the same flag. The figure
+is wrong and silent about being wrong.
+
+**Why it is not a block:** `ceilingGroup` is never assigned anywhere in `index.html`. No user can
+create a grouped medication of any unit, so nobody can be shown the number. It is unreachable
+through the product, not merely rare.
+
+**When it becomes a block: the release that makes `ceilingGroup` settable.** Whoever builds that
+feature needs to fix this in the same change, or the first grouped pills medication a user creates
+will under-count a shared safety limit. Same for `rollingCeilingH`, which is also never assigned —
+four call sites now read `dailyCeiling().windowH` rather than the raw flag, and they are correct,
+but none of them has ever run.
+
+## The Meds reorder arrows are 40x40, under the 44px touch target
+
+**Found by the app-v84 audit's width pass, 2026-09-15. Pre-existing, width-independent, and NOT
+caused by that release.**
+
+The up/down arrows that set Home's card order measure 40x40 at 320, 360 and 390. The rest of the
+app holds a 44px floor, and this file's own notes cite that floor repeatedly. Two of them sit
+directly above and below each other, which is the arrangement where an undersized target is most
+likely to be mis-tapped into the wrong one.
+
+Logged rather than fixed so it is a deliberate decision and not re-found by a third audit.

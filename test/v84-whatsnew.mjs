@@ -364,13 +364,33 @@ section('7d. THE FIRST-RUN GUIDE MUST NOT FREEZE THE PAGE -- THE PATH A NEW USER
     (await page.evaluate(() => window.scrollY)) + 'px');
 
   // THE WHOLE POINT: the button the guide names must be clickable, not merely present.
+  // PIN THE STEP BEFORE ASSERTING IT MOVES ON. "The guide advanced" was checked as
+  // `!/Fill out the form/`, and a negative assertion is satisfied by a guide that never said it --
+  // deleting the step from TOUR_STEPS entirely passed 48/48. So the step is asserted to be HERE
+  // first, and only then asserted to be gone.
+  const bannerBefore = await page.evaluate(() => {
+    const el = document.querySelector('#tour-banner, #tour-card');
+    return el ? (el.innerText || '') : '';
+  });
+  t('the guide is actually ON the fill-in-the-form step before we act on it',
+    /Fill out the form/i.test(bannerBefore), bannerBefore.replace(/\n/g, ' | ').slice(0, 90) || '(no banner)');
   await page.getByPlaceholder('Medication name').first().fill('FirstMed');
   await page.getByPlaceholder('For example, 4 hours').first().fill('4');
   const save = page.getByRole('button', { name: 'Add medication', exact: true }).first();
   t('the button the guide tells a new user to tap exists', await save.count() > 0);
+  // A PLAYWRIGHT CLICK IS NOT A FINGER, and taking it for one made this check decoration.
+  // Playwright scrolls an element into view over CDP, which walks straight through an
+  // `overflow: hidden` freeze that a thumb cannot -- so a build frozen that way let this "pass"
+  // while a real user was stuck. The question is whether the button is ON THE SCREEN the user is
+  // looking at, so that is what is measured, and only then is it tapped.
+  const box = await save.boundingBox();
+  const vh = page.viewportSize().height;
+  const onScreen = !!box && box.y >= 0 && box.y + box.height <= vh + 1;
+  t('the button the guide names is ON SCREEN, reachable by scrolling as a finger would',
+    onScreen, box ? ('top=' + Math.round(box.y) + ' of ' + vh + 'px viewport') : 'no box');
   let clicked = true;
   try { await save.click({ timeout: 6000 }); } catch (e) { clicked = false; }
-  t('and it can actually be TAPPED -- not merely found in the DOM', clicked,
+  t('and it can actually be TAPPED', clicked,
     clicked ? 'clicked' : 'CLICK TIMED OUT: a new user cannot add their first medication');
   await page.waitForTimeout(900);
   // And the guide must move on, or the user is stuck even having saved.
