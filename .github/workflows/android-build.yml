@@ -37,7 +37,19 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      # `packages` PINNED, because the action's DEFAULT is what broke this build.
+      #
+      # With no `packages:` input, setup-android@v3 installs its default set, which includes the
+      # obsolete `tools` SDK package. Google has removed it from the SDK repository, so sdkmanager
+      # now prints "Warning: Failed to find package 'tools'" and exits 1, and the job dies in ~20
+      # seconds having never touched a line of this app. Runs 80-84 passed; run 85 failed with no
+      # change to anything it builds -- the break is Google's, on their schedule, not this repo's.
+      #
+      # platform-tools is the only one worth naming here: the Android Gradle Plugin downloads the
+      # build-tools and platform it needs itself during `assembleDebug`.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - uses: actions/setup-node@v4
         with:
