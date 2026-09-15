@@ -43,7 +43,7 @@ git archive HEAD | tar -x -C "$WORK"
   # it always was; a trap the moment somebody sweeps with an edited suite, because this script
   # refuses a dirty index.html and says nothing about a dirty test/. Found by hand-running two
   # mutants and getting 96 checks where the suite has 95. Copy the CONTENTS.
-  cp -r test/. "$WORK/test/" 2>/dev/null || true
+  cp -r test/. "$WORK/test/" || { echo "❌ could not copy the suite into the clone -- the sweep would run whatever git archive left there"; exit 1; }
 
 ( cd "$WORK" && python3 -m http.server "$PORT" >/dev/null 2>&1 ) &
 SRV=$!
@@ -133,7 +133,7 @@ while declare -F "mutant_$i" >/dev/null; do
   # it always was; a trap the moment somebody sweeps with an edited suite, because this script
   # refuses a dirty index.html and says nothing about a dirty test/. Found by hand-running two
   # mutants and getting 96 checks where the suite has 95. Copy the CONTENTS.
-  cp -r test/. "$WORK/test/" 2>/dev/null || true
+  cp -r test/. "$WORK/test/" || { echo "❌ could not copy the suite into the clone -- the sweep would run whatever git archive left there"; exit 1; }
   i=$((i+1))
 done
 

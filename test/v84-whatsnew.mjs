@@ -75,6 +75,19 @@ async function freshPage(setUp, opts) {
 // Walk the real welcome screen. completeSetup() refuses without all three answers and only says so
 // in a toast, so a fixture that fills the name alone sits on that screen and a check after it
 // measures nothing -- which is precisely how section 1 below passed for three releases.
+// The first-run guide mounting is the app telling us the shell is up. A defective build puts the
+// notice on screen at that same moment -- "the UPDATED notice on top of GUIDE STEP 1 OF 10" is how
+// the audit described it -- so this is the right point to look, and it is a signal rather than a
+// guess about how long a machine takes. The 6s is a ceiling on waiting; if the guide never comes the
+// caller's own assertions fail on what is actually on screen.
+async function waitForGuide(page) {
+  try { await page.waitForSelector('#tour-layer', { timeout: 6000 }); } catch (e) {}
+  await page.waitForTimeout(400);
+}
+
+// Returns whether the WELCOME SCREEN IS GONE -- which is what it checks, and not the same claim as
+// "the app is on screen", which is what its name suggests. Kept as the weaker, true statement: the
+// callers assert what they actually need beside it.
 async function completeWelcome(page, name) {
   const field = page.getByPlaceholder('Enter patient name');
   if (!(await field.count())) return false;
@@ -101,13 +114,19 @@ section('1. A BRAND-NEW PHONE IS NOT GREETED WITH "HERE IS WHAT CHANGED"');
   t('a first-ever run starts on the welcome screen, so there is a setup to complete',
     await p.getByPlaceholder('Enter patient name').count() > 0,
     String(await p.getByPlaceholder('Enter patient name').count()));
-  t('and setup completes, so the app itself is on screen -- otherwise this measures nothing',
+  t('and setup completes, so the welcome screen is gone -- otherwise this measures nothing',
     await completeWelcome(p, 'First Ever'));
   // AN ABSENCE CHECK HAS TO WAIT PAST THE MOMENT THE THING WOULD APPEAR. Measured against a build
   // with the defect reinstated: the notice lands about 2.3 seconds after setup completes, so a
   // check that looked at 2.2 seconds reported a clean pass on a build that shows it. That is a
   // vacuous check made of nothing but a timeout, and it is the hardest kind to see.
-  await p.waitForTimeout(1600);
+  //
+  // SO IT IS NOT A BARE TIMEOUT ANY MORE. It waits for a signal from the app -- the first-run guide
+  // mounting -- which is the same moment the notice appears on a defective build: the audit's own
+  // description is "the UPDATED notice ON TOP OF GUIDE STEP 1 OF 10". Once the guide is up, the
+  // shell has rendered and anything that mounts beside it has mounted. The timeout is a ceiling on
+  // waiting, not the measurement.
+  await waitForGuide(p);
   t('nothing pops up on a first-ever run',
     await p.locator('[data-whatsnew-modal]').count() === 0,
     String(await p.locator('[data-whatsnew-modal]').count()));
@@ -147,8 +166,8 @@ section('1. A BRAND-NEW PHONE IS NOT GREETED WITH "HERE IS WHAT CHANGED"');
   t('after Start over the app is back on the welcome screen',
     await p.getByPlaceholder('Enter patient name').count() > 0,
     String(await p.getByPlaceholder('Enter patient name').count()));
-  t('and setting up again completes', await completeWelcome(p, 'Test Again'));
-  await p.waitForTimeout(1600);   // past the moment the notice would land -- see section 1 above
+  t('and setting up again clears the welcome screen', await completeWelcome(p, 'Test Again'));
+  await waitForGuide(p);   // the app's own signal, not a bare timeout -- see section 1 above
   t('a phone that started over is NOT greeted with "here is what changed"',
     await p.locator('[data-whatsnew-modal]').count() === 0,
     String(await p.locator('[data-whatsnew-modal]').count()));
