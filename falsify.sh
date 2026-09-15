@@ -77,8 +77,27 @@ while declare -F "mutant_$i" >/dev/null; do
   ( cd "$WORK" && "mutant_$i" )
   OUT=$(run_suite)
   echo "$OUT"
+  # THREE OUTCOMES, NOT TWO -- and the third is the one this script used to hide.
+  #
+  # Scoring on "is there a FAIL line" alone means a mutant that makes the suite DIE -- a page that
+  # never loads, a locator that times out and takes the process with it -- is scored CAUGHT, on the
+  # strength of nothing. Mutant 8 does exactly that today: it prints one correct red and then the
+  # section after it times out, so the run has no `checks:` summary at all. That red happens to be
+  # the right one, so the verdict was right by luck, and "right by luck" is how an instrument that
+  # reports success loudest when it can see nothing gets left in place. The same class as the clone
+  # that was never rebuilt, and as a check that passes on its own precondition.
+  #
+  # So: a summary line is what says the suite RAN. A red with no summary is still a catch, and says
+  # so in those words. NO red and NO summary is not a catch at all -- it is a measurement that did
+  # not happen, and it fails the sweep like a survivor, because that is what it is.
+  _ran=0; echo "$OUT" | grep -q "checks:" && _ran=1
   if echo "$OUT" | grep -q "^  FAIL"; then
     DEAD=$((DEAD+1))
+    [ "$_ran" = 1 ] || echo "  ℹ️  CAUGHT, but the suite ABORTED after its first red -- the counts above are partial."
+  elif [ "$_ran" = 0 ]; then
+    ALIVE=$((ALIVE+1))
+    echo "  ⚠️  COULD NOT MEASURE -- the suite produced neither a red nor a summary, so it never ran."
+    echo "      This is not a survivor and not a catch. Find out why before believing anything here."
   else
     ALIVE=$((ALIVE+1))
     echo "  ⚠️  SURVIVED -- no check went red. Either the check cannot fail, or this mutant is a no-op."
