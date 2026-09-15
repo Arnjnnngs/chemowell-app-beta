@@ -547,57 +547,67 @@ section('7g. THE SAME SWIPE WITH A FINGER -- THE ONLY INPUT THIS APP WILL SHIP W
   // `page.mouse.wheel`, which is a real wheel event and was the right fix for the `window.scrollTo`
   // version before it -- but this repo exists to be wrapped by Capacitor for iOS and Android
   // (CLAUDE.md, "What this repo is"), and a phone has no wheel. The guard listens for
-  // `['wheel', 'touchmove']`; delete `'touchmove'` and the whole 65-check suite still scored 65/65
-  // while, measured with real touch, the page went from holding at scrollY 535 to being yanked back
-  // to 1. Every real user would have had the defect back and the sweep would have said 8 caught,
+  // `['wheel', 'touchmove']`; delete `'touchmove'` and the whole suite still scored 65/65 while,
+  // measured with real touch, the page went from holding at scrollY 535 to being yanked back to 1.
+  // Every real user would have had the defect back and the sweep would have said 8 caught,
   // 0 survived.
   //
-  // Playwright's touchscreen API has only tap(), so the swipe is dispatched over CDP. Two things
-  // that make this measure something, both learned the hard way:
-  //   * Chromium's touch fling CONTINUES past touchEnd and will carry the page to the bottom on its
-  //     own, which looks like a pass whatever the app does. The finger holds still for ~80ms first,
-  //     which cancels the fling.
-  //   * The whole gesture must land INSIDE the 320ms window the nudge is scheduled in, or the nudge
-  //     fires mid-swipe and the measurement is about something else.
+  // NO TYPING IN THIS ONE, DELIBERATELY. The first version of this check filled the field first,
+  // and the debounced redraw that typing triggers fires a SECOND focusin part-way through the
+  // gesture -- which restarts the 320ms window mid-swipe and makes the measurement depend on how
+  // busy the machine is. It went green on a quiet machine and took the falsification sweep's
+  // baseline down under load, which is a flaky instrument, and a flaky instrument is the same
+  // class of defect as a vacuous one: nobody can tell what a red means. A tap alone schedules the
+  // nudge, which is all this check needs -- 7e covers the typing path. So: tap, swipe, wait.
+  //
+  // Playwright's touchscreen API has only tap(), so the gesture is dispatched over CDP. Chromium's
+  // touch fling CONTINUES past touchEnd and will carry the page to the bottom on its own, which
+  // looks like a pass whatever the app does -- the finger holds still for 60ms first, which
+  // cancels it.
   const p = await freshPage(true, { hasTouch: true, isMobile: true });
   await p.getByRole('button', { name: /^Meds/ }).first().click();
   await p.waitForTimeout(700);
   await p.locator('[data-tour="meds-add"]').first().click();
-  await p.waitForTimeout(700);
+  await p.waitForTimeout(900);
   t('the medication editor is open', await p.locator('#med-doses-text').count() > 0);
+  const vhG = p.viewportSize().height;
+  t('the form is taller than the screen, so a swipe has somewhere to go',
+    await p.evaluate(() => document.documentElement.scrollHeight) > vhG * 2,
+    (await p.evaluate(() => document.documentElement.scrollHeight)) + 'px in a ' + vhG + 'px viewport');
 
   const cdp = await p.context().newCDPSession(p);
   // A real touchmove has to reach the document, or this check is measuring a gesture that never
-  // happened. Counted from the page, not assumed from the API.
+  // happened. Counted in the page, from trusted events only. `__focusAt` is how the check proves
+  // the gesture landed inside the window the nudge is scheduled in, rather than hoping it did.
   await p.evaluate(() => {
-    window.__tm = 0;
+    window.__tm = 0; window.__focusAt = 0;
     document.addEventListener('touchmove', (e) => { if (e.isTrusted) window.__tm++; }, { passive: true, capture: true });
+    document.addEventListener('focusin', () => { window.__focusAt = Date.now(); }, true);
   });
 
-  await p.getByPlaceholder('Medication name').first().fill('TouchTest');
+  // Tap the field: that is the focusin a person produces, and it schedules the nudge 320ms out.
+  await p.locator('#med-name, [placeholder="Medication name"]').first().click();
+  await p.waitForTimeout(60);
   t('the caret is in a form field, which is what schedules the nudge',
     await p.evaluate(() => { const a = document.activeElement; return !!a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); }),
     await p.evaluate(() => (document.activeElement && (document.activeElement.id || document.activeElement.tagName)) || 'none'));
 
   const swipe = async (fromY, toY) => {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 195, y: fromY }] });
-    const steps = 8;
-    for (let i = 1; i <= steps; i++) {
-      const y = Math.round(fromY + (toY - fromY) * (i / steps));
+    for (let i = 1; i <= 3; i++) {
+      const y = Math.round(fromY + (toY - fromY) * (i / 3));
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 195, y }] });
     }
-    // Hold still: this is what stops Chromium flinging the page to the bottom after the finger
-    // lifts, which would move the page regardless of what the app decided.
-    await p.waitForTimeout(80);
+    await p.waitForTimeout(60);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   };
-  await p.waitForTimeout(100);
-  await swipe(760, 120);
-  await swipe(760, 120);
-  await p.waitForTimeout(120);
-
-  t('a real, trusted touchmove reached the page -- otherwise this check measures nothing',
-    await p.evaluate(() => window.__tm) > 0, (await p.evaluate(() => window.__tm)) + ' touchmove event(s)');
+  await swipe(720, 140);
+  const window320 = await p.evaluate(() => Date.now() - window.__focusAt);
+  t('the swipe finished inside the 320ms the nudge is scheduled in -- otherwise this measures nothing',
+    window320 <= 320, window320 + 'ms from focus to the finger lifting');
+  t('a real, trusted touchmove reached the page', await p.evaluate(() => window.__tm) > 0,
+    (await p.evaluate(() => window.__tm)) + ' touchmove event(s)');
+  await p.waitForTimeout(150);
   const before = await p.evaluate(() => window.scrollY);
   t('the finger moved the page away from the field', before > 300, before + 'px');
 
