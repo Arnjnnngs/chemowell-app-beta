@@ -72,41 +72,42 @@ async function freshPage(setUp, opts) {
   return page;
 }
 
+// Walk the real welcome screen. completeSetup() refuses without all three answers and only says so
+// in a toast, so a fixture that fills the name alone sits on that screen and a check after it
+// measures nothing -- which is precisely how section 1 below passed for three releases.
+async function completeWelcome(page, name) {
+  const field = page.getByPlaceholder('Enter patient name');
+  if (!(await field.count())) return false;
+  await field.first().fill(name);
+  for (const chip of ['Female', 'Chemo']) {
+    const c = page.getByRole('button', { name: chip, exact: true }).first();
+    if (await c.count()) { await c.click(); await page.waitForTimeout(220); }
+  }
+  const go = page.getByRole('button', { name: 'Get started', exact: true });
+  if (!(await go.count())) return false;
+  await go.first().click();
+  await page.waitForTimeout(2200);
+  return (await page.getByPlaceholder('Enter patient name').count()) === 0;
+}
+
 // ---------------------------------------------------------------------------------------------
 section('1. A BRAND-NEW PHONE IS NOT GREETED WITH "HERE IS WHAT CHANGED"');
 {
   // THIS CHECK MEASURED ON THE WELCOME SCREEN, WHERE THE NOTICE IS NEVER MOUNTED UNDER ANY
-  // CIRCUMSTANCES. It asserted "nothing pops up" on a page that could not pop anything up -- the
-  // exact trap this file's own header warns about, and it passed for three releases while a brand
-  // new phone WAS being greeted with "here is what changed". Mutant 17 (deviceHasPriorChemoWellData
-  // forced to `return true`) scored a clean 89/89 against it.
-  //
-  // So it walks the real welcome screen now. The decision is made once at module evaluation, so the
-  // question is what happens AFTER setup completes on that same first load -- which is the moment a
-  // person actually reaches the app.
+  // CIRCUMSTANCES -- it asserted "nothing pops up" on a page that could not pop anything up, the
+  // exact trap this file's own header documents, and passed for three releases while a brand-new
+  // phone WAS being greeted with "here is what changed".
   const p = await freshPage();
   t('a first-ever run starts on the welcome screen, so there is a setup to complete',
     await p.getByPlaceholder('Enter patient name').count() > 0,
     String(await p.getByPlaceholder('Enter patient name').count()));
-  await p.getByPlaceholder('Enter patient name').first().fill('First Ever');
-  // completeSetup() refuses without all three answers and only says so in a toast, so a check that
-  // filled the name alone would sit on the welcome screen and call it a pass.
-  for (const chip of ['Female', 'Chemo']) {
-    const c = p.getByRole('button', { name: chip, exact: true }).first();
-    t('the welcome screen offers "' + chip + '", which setup refuses to complete without',
-      await c.count() > 0, String(await c.count()));
-    if (await c.count()) { await c.click(); await p.waitForTimeout(250); }
-  }
-  // EXACT LABEL, NOT A LOOSE PATTERN. The first version of this used an alternation that matched
-  // several controls on the page and clicked the wrong one, so setup never completed and the check
-  // below it measured the welcome screen again -- the very thing this rewrite exists to stop.
-  const go = p.getByRole('button', { name: 'Get started', exact: true });
-  t('the welcome screen offers exactly one way forward', await go.count() === 1, (await go.count()) + ' control(s)');
-  await go.first().click();
-  await p.waitForTimeout(1800);
   t('and setup completes, so the app itself is on screen -- otherwise this measures nothing',
-    await p.getByPlaceholder('Enter patient name').count() === 0,
-    (await p.getByPlaceholder('Enter patient name').count()) + ' name field(s) left');
+    await completeWelcome(p, 'First Ever'));
+  // AN ABSENCE CHECK HAS TO WAIT PAST THE MOMENT THE THING WOULD APPEAR. Measured against a build
+  // with the defect reinstated: the notice lands about 2.3 seconds after setup completes, so a
+  // check that looked at 2.2 seconds reported a clean pass on a build that shows it. That is a
+  // vacuous check made of nothing but a timeout, and it is the hardest kind to see.
+  await p.waitForTimeout(1600);
   t('nothing pops up on a first-ever run',
     await p.locator('[data-whatsnew-modal]').count() === 0,
     String(await p.locator('[data-whatsnew-modal]').count()));
@@ -117,27 +118,35 @@ section('1. A BRAND-NEW PHONE IS NOT GREETED WITH "HERE IS WHAT CHANGED"');
   await p.close();
 }
 {
-  // AND THE PATH THE AUDIT ACTUALLY DROVE: Account -> Start over, then set up again. The wipe
-  // removes the marker, the app immediately re-creates a `chemowell-app` key of its own, and before
-  // the fix that re-fired the notice -- carrying "ChemoWell has never shown you one of these
-  // before" to somebody who had dismissed that exact notice minutes earlier. The sentence is this
-  // release's own copy and on that path it was false.
-  const p = await freshPage(true);
+  // AND THIS IS THE PATH THAT ACTUALLY DISCRIMINATES, which the block above does not -- measured,
+  // not assumed. On a browser profile that has never loaded the app, forcing the old behaviour back
+  // still produces no notice after setup, so that block alone scored a clean pass against a mutant
+  // that reinstates the defect. The path that catches it is the one the audit drove:
+  // Account -> Start over, then set up again.
+  //
+  // `eraseAllAppData()` wipes everything and PRESERVES THE LICENCE, deliberately -- a purchase is
+  // not patient data. So the licence is written here before the wipe: it is the one key that can
+  // make a started-over phone look like an upgrade forever, and without it in the fixture the
+  // exclusion in the snapshot is untested.
+  const p = await freshPage();
+  t('the phone sets up once, so there is something to start over from', await completeWelcome(p, 'Test'));
   await p.evaluate(() => {
-    // what eraseAllAppData() leaves behind: the licence, and nothing else
+    localStorage.setItem('chemowell-app-license-v1', JSON.stringify({ tier: 'plus' }));
     const keep = localStorage.getItem('chemowell-app-license-v1');
     localStorage.clear();
-    if (keep) localStorage.setItem('chemowell-app-license-v1', keep);
+    localStorage.setItem('chemowell-app-license-v1', keep);
   });
   await p.reload({ waitUntil: 'domcontentloaded' });
-  await p.waitForTimeout(1800);
-  t('after a full wipe the app is back on the welcome screen',
+  await p.waitForTimeout(1900);
+  t('after Start over the app is back on the welcome screen',
     await p.getByPlaceholder('Enter patient name').count() > 0,
     String(await p.getByPlaceholder('Enter patient name').count()));
-  t('and it does NOT greet a wiped phone with "here is what changed"',
+  t('and setting up again completes', await completeWelcome(p, 'Test Again'));
+  await p.waitForTimeout(1600);   // past the moment the notice would land -- see section 1 above
+  t('a phone that started over is NOT greeted with "here is what changed"',
     await p.locator('[data-whatsnew-modal]').count() === 0,
     String(await p.locator('[data-whatsnew-modal]').count()));
-  t('and it does not tell anybody it has never shown them one of these before',
+  t('and is not told ChemoWell has never shown them one of these before -- it just did',
     await p.locator('[data-whatsnew-firstever]').count() === 0,
     String(await p.locator('[data-whatsnew-firstever]').count()));
   await p.close();

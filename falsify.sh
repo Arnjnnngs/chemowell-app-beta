@@ -37,7 +37,13 @@ fi
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"; [ -n "${SRV:-}" ] && kill "$SRV" 2>/dev/null || true' EXIT
 git archive HEAD | tar -x -C "$WORK"
-cp -r test "$WORK/test" 2>/dev/null || true
+# `cp -r test "$WORK/test"` NESTS when the destination exists -- and it always exists, because
+  # `git archive HEAD` has just written it. So that line silently produced $WORK/test/test and the
+  # sweep ran the ARCHIVED suite, not the working tree's. Harmless while the tree is committed, which
+  # it always was; a trap the moment somebody sweeps with an edited suite, because this script
+  # refuses a dirty index.html and says nothing about a dirty test/. Found by hand-running two
+  # mutants and getting 96 checks where the suite has 95. Copy the CONTENTS.
+  cp -r test/. "$WORK/test/" 2>/dev/null || true
 
 ( cd "$WORK" && python3 -m http.server "$PORT" >/dev/null 2>&1 ) &
 SRV=$!
@@ -121,7 +127,13 @@ while declare -F "mutant_$i" >/dev/null; do
   # holds, so the same server serves the rebuilt files.
   find "$WORK" -mindepth 1 -delete
   git archive HEAD | tar -x -C "$WORK"
-  cp -r test "$WORK/test" 2>/dev/null || true
+# `cp -r test "$WORK/test"` NESTS when the destination exists -- and it always exists, because
+  # `git archive HEAD` has just written it. So that line silently produced $WORK/test/test and the
+  # sweep ran the ARCHIVED suite, not the working tree's. Harmless while the tree is committed, which
+  # it always was; a trap the moment somebody sweeps with an edited suite, because this script
+  # refuses a dirty index.html and says nothing about a dirty test/. Found by hand-running two
+  # mutants and getting 96 checks where the suite has 95. Copy the CONTENTS.
+  cp -r test/. "$WORK/test/" 2>/dev/null || true
   i=$((i+1))
 done
 
