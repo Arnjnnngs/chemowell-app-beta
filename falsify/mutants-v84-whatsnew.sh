@@ -181,7 +181,7 @@ MUTANT_DESC_18="the snapshot counts the licence key, so a device that bought Plu
 mutant_18() {
   python3 - <<'PY'
 p='index.html'; s=open(p,encoding='utf-8').read()
-old="      if (k === 'chemowell-app-license-v1') continue;      // survives a wipe on purpose\n"
+old="      if (WIPE_SURVIVORS.indexOf(k) !== -1) continue;         // survives a factory reset on purpose\n"
 assert s.count(old)==1
 open(p,'w',encoding='utf-8').write(s.replace(old,""))
 PY

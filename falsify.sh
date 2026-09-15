@@ -99,7 +99,22 @@ while declare -F "mutant_$i" >/dev/null; do
   desc_var="MUTANT_DESC_$i"
   echo ""
   echo "=== MUTANT $i: ${!desc_var:-（no description）}"
-  ( cd "$WORK" && "mutant_$i" )
+  # A MUTANT THAT DOES NOT APPLY IS NOT A MUTANT THAT PASSED. Each one asserts its anchor matches
+  # exactly once, which is right -- but under `set -e` a failed assert killed the sweep where it
+  # stood, with the log ending on this mutant's header and the pipeline exiting 0. That is how
+  # mutant 18 silently ended three consecutive sweeps after the line it anchors on was rewritten:
+  # the mutants file had gone stale against the code, which is worth knowing and is invisible if
+  # the sweep simply stops. Counted as NOT caught, because an unmeasured mutant is not a passed one.
+  if ! ( cd "$WORK" && "mutant_$i" ); then
+    echo "  ❌ DID NOT APPLY -- this mutant's anchor no longer matches the file, so the sweep cannot"
+    echo "     judge it. Update the mutant. Counted as not caught."
+    ALIVE=$((ALIVE+1))
+    find "$WORK" -mindepth 1 -delete
+    git archive HEAD | tar -x -C "$WORK"
+    cp -r test/. "$WORK/test/" || { echo "❌ could not copy the suite into the clone"; exit 1; }
+    i=$((i+1))
+    continue
+  fi
   OUT=$(run_suite)
   echo "$OUT"
   # THREE OUTCOMES, NOT TWO -- and the third is the one this script used to hide.
