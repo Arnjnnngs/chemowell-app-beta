@@ -21,3 +21,4 @@ android/
 # app and not meant to be edited/shipped as-is. Once a direction is chosen, the real color change
 # gets implemented as a clean edit to index.html itself, not by resurrecting one of these copies.
 color-mockups/
+__pycache__/
