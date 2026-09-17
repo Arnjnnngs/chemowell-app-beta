@@ -656,6 +656,14 @@ function deleteProfile(id) {
   // existing list with no behavior change to entries/prefs/med, so folding the appts fix in here
   // rather than opening a separate change for it.
   ['-entries-v1', '-prefs-v1', '-med-v1', '-appts-v1', '-notes-v1'].forEach(sfx => { try { localStorage.removeItem('chemowell-app-p-' + id + sfx); } catch (e) {} });
+  // DELETING A PROFILE MUST DISARM ITS REMINDERS, and until this release nothing did. It was
+  // invisible only because the reconcile loop used to cancel every other profile's notifications
+  // anyway -- the bug was hiding the leak. Now that the loop correctly leaves other profiles alone,
+  // a deleted patient's alarms would survive and fire on the lock screen for up to the full
+  // reminder horizon, naming a medication for somebody the app no longer has and with no screen
+  // able to explain or stop them. Fire-and-forget: deletion has already happened and must not be
+  // reported as failed because the notification bridge was unavailable.
+  cancelRemindersForProfile(id);
   setState({ confirmDeleteProfile: null });
   setToast('Profile deleted');
 }
@@ -9041,7 +9049,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v84';
+const APP_VERSION = 'app-v85';
 
 // ---- WHAT'S NEW ------------------------------------------------------------------------------
 //
@@ -9259,6 +9267,30 @@ function renderNativeNotifStatusCard() {
     h('div', { style: { ...muted, marginTop: '3px', overflowWrap: 'anywhere' } }, body)
   );
   const countLine = () => h('div', { style: muted }, notifScheduledCount + (notifScheduledCount === 1 ? ' reminder' : ' reminders') + ' scheduled over the next 3 days' + (notifNextAt ? ', next at ' + new Date(notifNextAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) + '.' : '.'));
+
+  // WHOSE REMINDERS THE NUMBER ABOVE IS COUNTING, SAID OUT LOUD WHEN IT COULD MEAN TWO THINGS.
+  //
+  // This is the half of app-v85 that is not a bug fix. The count line is arithmetically correct and
+  // leaves a false impression, which is the hardest shape to see: with a second profile on the
+  // phone it counts only the ACTIVE one, so the other patient reads "3 reminders scheduled, next at
+  // Wed 8:00 AM" -- a green tick, a real number, a real time -- and concludes they are covered.
+  // Aaron read exactly that and missed a dose.
+  //
+  // Reminders are still armed for the active profile only. That is a real limitation and it is
+  // now stated rather than implied. Silence here is what made the screen dishonest, not the number.
+  //
+  // Rendered only when a second profile exists, because on a one-profile phone -- which is every
+  // Free user -- "for this profile" answers a question nobody asked and adds noise to a card whose
+  // job is to be read at a glance.
+  const profileScopeLine = () => {
+    const ps = profilesState();
+    const others = (ps.list || []).filter(p => p.id !== ACTIVE_PROFILE_ID);
+    if (!others.length) return null;
+    const mine = (ps.list || []).find(p => p.id === ACTIVE_PROFILE_ID);
+    const myName = (mine && String(mine.name || '').trim()) || 'this profile';
+    return h('div', { 'data-notif-profile-scope': String(others.length), style: { ...muted, color: '#9A6419', fontWeight: '700', marginTop: '2px' } },
+      'For ' + myName + ' only. ' + (others.length === 1 ? 'The other profile on this phone has no reminders set while it is not the one you are in.' : 'The other ' + others.length + ' profiles on this phone have no reminders set while they are not the one you are in.') + ' Switch profile to arm theirs.');
+  };
   // A single top-level wrapper owns the gap from the section's intro sentence above AND the gap
   // between each state's own children, via flex+gap rather than a per-child marginTop -- so every
   // state lines up identically instead of drifting depending on which helper its first child came
@@ -9306,6 +9338,7 @@ function renderNativeNotifStatusCard() {
   if (status === 'on-exact') return card(
     pill('✓ Notifications are on'),
     countLine(),
+    profileScopeLine(),
     h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
       h('div', { style: { ...muted, color: '#9A6419', fontWeight: '700' } }, 'Exact timing isn’t allowed — reminders are scheduled a few minutes ahead so they land on time rather than late.'),
       helpIcon('About exact reminder timing', 'Most Android phones let any app request exact-time alarms once you allow it below — this isn’t limited to clock or calendar apps, and it’s worth turning on. A few phones (Samsung devices have reported this) can make the toggle harder to find or behave inconsistently, especially right after declining it once; if "Alarms & reminders" isn’t visible under Settings → Apps → ChemoWell, try again after closing and reopening the app, or check Settings → Apps → (three-dot menu) → Reset app preferences.\n\nEither way, ChemoWell already schedules reminders a few minutes ahead of their real time on your behalf when this is off, so ordinary Android delivery slop lands early rather than late — you don’t need to build in your own buffer. If one specific reminder truly can’t ever be late, setting it a few minutes ahead yourself is still the safest belt-and-suspenders option.'),
@@ -9314,10 +9347,14 @@ function renderNativeNotifStatusCard() {
     ...batteryOptBlock()
   );
 
-  if (status === 'empty') return card(h('div', { style: muted }, 'No reminders are currently due in the next 3 days.'), ...batteryOptBlock());
+  // 'empty' MEANS TWO DIFFERENT THINGS AND USED TO SAY ONLY ONE OF THEM. On the active profile it
+  // means nothing is due. On a phone with a second profile it is ALSO what that profile's owner
+  // would see about themselves -- nothing planned, not nothing due -- and the sentence below was
+  // read as the first when it was the second. The scope line disambiguates it.
+  if (status === 'empty') return card(h('div', { style: muted }, 'No reminders are currently due in the next 3 days.'), profileScopeLine(), ...batteryOptBlock());
 
   // 'on'
-  return card(pill('✓ Notifications are on'), countLine(), ...batteryOptBlock());
+  return card(pill('✓ Notifications are on'), countLine(), profileScopeLine(), ...batteryOptBlock());
 }
 
 // ---------- Help centre (app-v55) — replaces the standalone FAQ view ----------
@@ -12500,6 +12537,59 @@ async function refreshNativeNotifStatus(force) {
 // device's own record of what's armed -- rather than trusting notifPlanApplied, so a stale/partial
 // arm state left over from a reboot or app update self-heals the moment this runs. Cheap to call
 // often: the signature short-circuit below means an unchanged plan never touches the bridge at all.
+function notifCancelCandidates(pending, planIds, applied, nowTs) {
+  // EVERY OTHER PROFILE'S REMINDERS ARE NOT OURS TO CANCEL, AND THIS FUNCTION IS WHY app-v85
+  // EXISTS. Aaron, 2026-09-17: "I didn't get my notification for my medicine (because I was logged
+  // in under the wrong profile)."
+  //
+  // The plan is built from the ACTIVE profile alone, and this filter used to cancel everything
+  // armed that was not in it. Notification ids carry the profile (`notifDoseTag(profileId, ...)`),
+  // so the other patient's reminders never matched the plan and were DESTROYED -- not merely left
+  // unscheduled. And not only on a profile switch: the boot sync runs with `force: true`, so every
+  // cold start wiped the other profile's alarms, and nothing re-armed them until that profile was
+  // made active again. That is where "3 missed doses from previous days" came from.
+  //
+  // THE PROTECTION BAND BELOW DID NOT SAVE THEM, which is worth writing down because it looks as
+  // though it should have. Switching profiles ends in `location.reload()` -- that is how this app
+  // switches, since every storage key is bound at module load -- and a reload re-initialises
+  // `notifPlanApplied` to []. So `hit` is undefined for every id this fresh process did not arm
+  // itself, and the band waved through a cancel for a dose due five seconds later.
+  //
+  // A second profile is a PAID feature (`tierLimit`: free 1, plus 3, pro unlimited), so this
+  // silently broke what people upgraded for while Settings told them reminders were on.
+  const guardEnd = nowTs + NOTIF_MIN_LEAD_MS;
+  return (pending || []).filter(p => !planIds.has(p.id)).filter(p => {
+    const pid = p.extra && p.extra.profileId;
+    if (pid && pid !== ACTIVE_PROFILE_ID) return false;
+    // A pending notification with NO profileId predates profile-tagged ids, so it cannot belong to
+    // anyone else and stays cancellable -- otherwise it could never be cleaned up at all.
+    // Protection band: don't race a cancel against an id that may already be mid-fire.
+    const hit = (applied || []).find(a => a.id === p.id);
+    return !hit || hit.at > guardEnd;
+  });
+}
+
+// Disarm every reminder belonging to one profile, used when that profile is deleted.
+//
+// It asks the DEVICE what is armed (`getPending()`) rather than trusting any in-memory list: the
+// alarms being cleaned up were almost certainly armed by a DIFFERENT run of this app -- a previous
+// launch, under a different active profile -- so `notifPlanApplied` knows nothing about them. That
+// is the same mistake the reconcile loop's protection band makes, and it is why a reload made that
+// band vacuous.
+//
+// Deliberately tolerant: the profile is already gone from storage by the time this runs, so a
+// failure here must not surface as a failed deletion. It logs nothing and throws nothing.
+async function cancelRemindersForProfile(profileId) {
+  if (!profileId) return;
+  const ln = lnPlugin();
+  if (!ln) return;
+  try {
+    const res = await ln.getPending();
+    const mine = ((res && res.notifications) || []).filter(p => p.extra && p.extra.profileId === profileId);
+    if (mine.length) await ln.cancel({ notifications: mine.map(p => ({ id: p.id })) });
+  } catch (e) { /* the profile is deleted either way; a bridge failure must not block that */ }
+}
+
 async function syncNativeReminders(opts) {
   opts = opts || {};
   if (!isNativeApp()) return;
@@ -12531,11 +12621,12 @@ async function syncNativeReminders(opts) {
     // Reconcile against getPending(), never against notifPlanApplied -- getPending() reflects what
     // is truly armed on the device right now, which is the only thing safe to cancel or leave alone.
     const guardEnd = nowTs + NOTIF_MIN_LEAD_MS;
-    const toCancel = pending.filter(p => !planIds.has(p.id)).filter(p => {
-      // Protection band: don't race a cancel against an id that may already be mid-fire.
-      const applied = notifPlanApplied.find(a => a.id === p.id);
-      return !applied || applied.at > guardEnd;
-    });
+    // ONE PREDICATE, TWO CALLERS, AND THAT IS THE POINT. It is lifted out rather than written
+    // inline so the suite can drive the SHIPPED function instead of a copy of it. The first
+    // version of app-v85 exposed a re-implementation on the test hook and described it in its own
+    // comment as "the shipped predicate" -- a check against that proves only that the suite agrees
+    // with itself, which is the exact class this repo has been caught on about eight times.
+    const toCancel = notifCancelCandidates(pending, planIds, notifPlanApplied, nowTs);
     const pendingKeyById = new Map(pending.map(p => [p.id, (p.extra && p.extra.pk) || null]));
     const toSchedule = plan.filter(n => pendingKeyById.get(n.id) !== n.pk);
 
@@ -12831,6 +12922,17 @@ if (typeof window !== 'undefined') {
   // with every check green. It is the same function the Account screen's button calls; nothing here
   // is a test-only path.
   window.__eraseTest = eraseAllAppData;
+  // app-v85: the reminder-scoping fix, exported so the suite drives what actually ships.
+  window.__notifScopeTest = {
+    activeProfileId: () => ACTIVE_PROFILE_ID,
+    // THE SHIPPED FUNCTION ITSELF, not a copy of it. An earlier draft of app-v85 exported a
+    // re-implementation here and called it "the shipped predicate" in its own comment; a check
+    // against that proves only that the suite agrees with itself.
+    cancelCandidates: notifCancelCandidates,
+    cancelForProfile: cancelRemindersForProfile,
+    minLeadMs: () => NOTIF_MIN_LEAD_MS
+  };
+
 }
 </script>
 </body>
