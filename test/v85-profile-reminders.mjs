@@ -112,6 +112,27 @@ const gone = await page.evaluate(() => {
 });
 t('an alarm for a profile no longer in the list can be swept', gone === 1, gone + ' cancellable');
 
+console.log('\n3d. AN UNREADABLE PROFILE LIST MUST FAIL CLOSED');
+// The guard asks "does this profile still exist". If the profile list cannot be read, the honest
+// answer is "I do not know" -- and destroying a medication reminder on a guess is the whole defect
+// this release exists to fix. An audit found the obvious implementation fails OPEN: loadJSON()
+// returns a fallback list containing only `p1` on a parse error, indistinguishable from a phone
+// that genuinely has one profile, so every other profile's alarms silently become cancellable.
+const corrupt = await page.evaluate(() => {
+  const good = localStorage.getItem('chemowell-app-profiles-v1');
+  const pending = [{ id: 4242, extra: { profileId: 'p2' } }];
+  localStorage.setItem('chemowell-app-profiles-v1', '{not json at all');
+  const whenCorrupt = window.__notifScopeTest.cancelCandidates(pending, new Set(), [], Date.now()).length;
+  localStorage.removeItem('chemowell-app-profiles-v1');
+  const whenMissing = window.__notifScopeTest.cancelCandidates(pending, new Set(), [], Date.now()).length;
+  localStorage.setItem('chemowell-app-profiles-v1', good);
+  const whenHealthy = window.__notifScopeTest.cancelCandidates(pending, new Set(), [], Date.now()).length;
+  return { whenCorrupt, whenMissing, whenHealthy };
+});
+t('a corrupt profile list protects the other profile rather than sweeping it', corrupt.whenCorrupt === 0, 'cancelled=' + corrupt.whenCorrupt);
+t('a missing profile list protects it too', corrupt.whenMissing === 0, 'cancelled=' + corrupt.whenMissing);
+t('and a healthy list still protects it', corrupt.whenHealthy === 0, 'cancelled=' + corrupt.whenHealthy);
+
 console.log('\n4. LEGACY NOTIFICATIONS ARE STILL CLEANABLE');
 const r3 = await page.evaluate(() => {
   const pending = [{ id: 55, extra: {} }, { id: 66 }];        // pre-profile ids, no profileId
@@ -189,13 +210,40 @@ await nativePage.addInitScript(() => {
   }));
   // tourDone matters: openDrawer() deliberately refuses to open while the first-run tour is up, so
   // without it the drawer never appears and this check fails for a reason that is not the card.
-  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', tourDone: true, installedAt: 1 }));
+  // A COMPLETE profile plus a SCHEDULED medication. The status the card shows is driven by the
+  // reminder PLAN, not by getPending() -- with no medications the plan is empty, the card falls to
+  // 'empty', and the first version of this section unknowingly tested only that state. A window at
+  // every hour of the day guarantees the plan is non-empty whenever this runs.
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({
+    patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: 1
+  }));
+  localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([]));
+  localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [
+    { id: 'm-scoped', name: 'Test Tablet', type: 'scheduled', schemaV: 2, quickLog: true,
+      // `alerts`, NOT `reminders` -- medRemindersEnabledOn() gates on med.alerts, and a fixture
+      // setting the wrong flag produces a medication that renders perfectly on Meds and generates
+      // no reminder plan at all. The card then falls to its 'empty' state and this section tests
+      // the one state it was written to stop testing.
+      alerts: true,
+      doses: [{ label: '1 tablet', pills: 1 }],
+      windows: Array.from({ length: 24 }, (_, i) => ({ start: i, end: i + 1, name: 'W' + i })) }
+  ] }));
   window.Capacitor = {
     isNativePlatform: () => true,
     Plugins: { LocalNotifications: {
       checkPermissions: async () => ({ display: 'granted' }),
       checkExactNotificationSetting: async () => ({ exact_alarm: 'granted' }),
-      createChannel: async () => {}, getPending: async () => ({ notifications: [] }),
+      createChannel: async () => {},
+      // ARMED REMINDERS, DELIBERATELY. With getPending() empty the card falls into its 'empty'
+      // state -- "No reminders are currently due in the next 3 days" -- and an audit showed the
+      // suite was therefore checking the disambiguating sentence ONLY in the state where there is
+      // no count to disambiguate. Deleting the line from the 'on' and 'on-exact' states, the two
+      // a real phone actually shows, scored a clean pass. These pending entries put the card in
+      // 'on'.
+      getPending: async () => ({ notifications: [
+        { id: 4101, extra: { profileId: 'p1', kind: 'dose', pk: 'x' } },
+        { id: 4102, extra: { profileId: 'p1', kind: 'dose', pk: 'y' } }
+      ] }),
       schedule: async () => {}, cancel: async () => {}, addListener: () => ({ remove() {} })
     } }
   };
@@ -213,6 +261,36 @@ const scope = await nativePage.evaluate(() => {
   const el = document.querySelector('[data-notif-profile-scope]');
   return el ? { n: el.getAttribute('data-notif-profile-scope'), text: el.textContent.replace(/\s+/g, ' ').trim() } : null;
 });
+const cardState = await nativePage.evaluate(() => {
+  const txt = document.body.innerText;
+  if (/No reminders are currently due/i.test(txt)) return 'empty';
+  if (/Notifications are on/i.test(txt)) return 'on';
+  return 'other';
+});
+// WHICH STATE THIS SECTION ACTUALLY REACHES, said plainly instead of left to be assumed. The card
+// is in `empty` here: driving it to `on` needs a completed native reminder sync, and this sandbox
+// has a stubbed plugin rather than a real one. So the RENDERED assertions below are real but cover
+// one of the three counting states.
+console.log('  note  the rendered card is in the "' + cardState + '" state; `on` and `on-exact` are covered structurally below.');
+
+// THE OTHER TWO STATES, COVERED STRUCTURALLY AND LABELLED AS STRUCTURAL.
+//
+// An audit found that deleting profileScopeLine() from the `on` and `on-exact` branches -- the two
+// a real phone shows -- scored a clean pass, because the fixture only ever reached `empty`. This
+// closes that mutant. It is a SOURCE check, not a behavioural one: it proves the call exists in
+// each branch, not that the sentence renders there. Calling it behavioural would be the dishonest
+// exemption this suite already had once, one level down.
+const src = await (await fetch(BASE).catch(() => null))?.text?.() ?? null;
+const srcText = src || await nativePage.evaluate(async () => (await (await fetch(location.href)).text()));
+const cardFn = srcText.slice(srcText.indexOf('const profileScopeLine'), srcText.indexOf('function nativeNotifStatus'));
+const branches = {
+  'on-exact': /status === 'on-exact'[\s\S]{0,600}?profileScopeLine\(\)/.test(cardFn),
+  'empty': /status === 'empty'[\s\S]{0,400}?profileScopeLine\(\)/.test(cardFn),
+  'on': /\/\/ 'on'[\s\S]{0,300}?profileScopeLine\(\)/.test(cardFn)
+};
+t('the scope line is wired into the `on` state', branches.on, JSON.stringify(branches));
+t('the scope line is wired into the `on-exact` state', branches['on-exact'], JSON.stringify(branches));
+t('the scope line is wired into the `empty` state', branches.empty, JSON.stringify(branches));
 t('the scope line renders on a two-profile phone', !!scope, scope ? scope.text.slice(0, 80) : 'not rendered');
 if (scope) {
   t('it names the profile the count belongs to', /Alex/.test(scope.text), scope.text.slice(0, 100));

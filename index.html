@@ -9057,10 +9057,10 @@ const APP_VERSION = 'app-v85';
 // numbers in the prose, no file names, no function names. THEY/THEM throughout: this app has
 // never asked anyone's gender and most users are not women (CLAUDE.md Rule 0, leak shape 2).
 const CHANGELOG = [
-  { v: 'app-v85', date: 'Sep 17, 2026', title: 'Reminders no longer disappear when you switch profiles',
+  { v: 'app-v85', date: 'Sep 17, 2026', title: 'Reminders for one person no longer wipe out another\u2019s',
     points: [
-      'If this phone has more than one profile, setting up a reminder for one person could quietly remove the reminders already set for the other — so a dose could pass with nothing on screen and nothing in your hand buzzing.',
-      'That is fixed. Each person\u2019s reminders now stay put, and deleting a profile properly switches its reminders off instead of leaving them to go on ringing.',
+      'If this phone has more than one person set up, every time the app was opened it quietly removed the reminders belonging to whoever you were not currently in. A dose could pass with nothing on screen and nothing in your hand buzzing.',
+      'That is fixed — each person\u2019s reminders now stay put. Reminders are still only kept up to date for the person you are in, so open their profile to bring theirs in line with what has been logged.',
       'Settings now tells you which person the reminder count is about, so a tick on that screen no longer looks like it covers everyone on the phone.'
     ] },
   { v: 'app-v84', date: 'Sep 14, 2026', title: 'The app now tells you what changed',
@@ -12578,7 +12578,21 @@ function notifCancelCandidates(pending, planIds, applied, nowTs) {
   // silently broke what people upgraded for while Settings told them reminders were on.
   const guardEnd = nowTs + NOTIF_MIN_LEAD_MS;
   // Read once per call, not per notification: profilesState() parses JSON out of localStorage.
-  const knownProfileIds = new Set(((profilesState() || {}).list || []).map(x => x.id));
+  //
+  // AND IT MUST FAIL CLOSED, WHICH THE OBVIOUS VERSION OF THIS LINE DOES NOT. `loadJSON` returns
+  // its fallback -- a list containing only `p1` -- both when storage throws AND when the stored
+  // JSON will not parse, so an UNREADABLE profile list is indistinguishable from a phone that
+  // genuinely has one profile. Trusting that, every other profile's alarms become cancellable and
+  // this release's defect comes back silently and permanently. An audit measured exactly that:
+  // asking about a profile that really exists returned "cancellable" under both a throw and a
+  // corrupt value. So the list is read directly and a failure yields null, and null means PROTECT:
+  // if we cannot tell whose reminder this is, we do not destroy it.
+  let knownProfileIds = null;
+  try {
+    const raw = localStorage.getItem(PROFILES_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && Array.isArray(parsed.list)) knownProfileIds = new Set(parsed.list.map(x => x && x.id));
+  } catch (e) { knownProfileIds = null; }
   return (pending || []).filter(p => !planIds.has(p.id)).filter(p => {
     // THE TEST IS "DOES THIS PROFILE STILL EXIST", NOT "IS IT THE ACTIVE ONE", and the difference
     // is a defect the first version of this fix shipped into the erase path.
@@ -12600,7 +12614,7 @@ function notifCancelCandidates(pending, planIds, applied, nowTs) {
     // An id with NO profileId predates profile-tagged ids, cannot belong to anyone else, and stays
     // cancellable -- otherwise it could never be cleaned up at all.
     const pid = p.extra && p.extra.profileId;
-    if (pid && pid !== ACTIVE_PROFILE_ID && knownProfileIds.has(pid)) return false;
+    if (pid && pid !== ACTIVE_PROFILE_ID && (knownProfileIds === null || knownProfileIds.has(pid))) return false;
     // Protection band: don't race a cancel against an id that may already be mid-fire.
     const hit = (applied || []).find(a => a.id === p.id);
     return !hit || hit.at > guardEnd;

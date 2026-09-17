@@ -60,9 +60,30 @@ git show "$BASE_COMMIT:index.html" > "$WORK/index.html"
 # The payload is compared against the release the SCRIPT BUILDS, not against HEAD. Once the app
 # moves on (app-v85 shipped while this script still builds app-v84) HEAD is the wrong yardstick:
 # the script is not stale, it is simply historical. REBUILD_TARGET names that release's commit.
+# PINNED, NOT SEARCHED. The first version of this resolved the target with
+#   git rev-list -1 --grep='^app-v84' HEAD || echo HEAD
+# and an audit found three faults in that one line. It selects on the COMMIT MESSAGE, not on file
+# content: fifteen commits match, and one of them carries APP_VERSION 'app-v82' -- had it been the
+# most recent, the check would have compared an app-v84 payload against an app-v82 file and said
+# nothing. `git rev-list -1` exits 0 with EMPTY output when nothing matches, so the `|| echo HEAD`
+# fallback could never fire; the command degraded to `git show ":index.html"`, which git accepts as
+# index.html FROM THE STAGING AREA. Three ways to be quietly wrong in one clever line.
+#
+# EVERY RELEASE MUST ADVANCE THESE TWO. Both sides are immutable commits now, so this reads 17/17
+# for ever and can only fail if someone edits the historical patch script -- which means it says
+# nothing about THIS release unless REBUILD_SCRIPT and REBUILD_TARGET are moved to it. There is no
+# harness-v85-*.py yet, so app-v85's own reproducibility is currently unverified, and that is
+# stated rather than implied by a green tick.
+REBUILD_TARGET="${REBUILD_TARGET:-d38e36a}"   # the commit whose index.html IS app-v84
 TARGET_SRC="$WORK/.target-index.html"
-git show "${REBUILD_TARGET:-$(git rev-list -1 --grep='^app-v84' HEAD || echo HEAD)}:index.html" > "$TARGET_SRC" 2>/dev/null \
-  || git show HEAD:index.html > "$TARGET_SRC"
+git show "$REBUILD_TARGET:index.html" > "$TARGET_SRC" || {
+  echo "❌ REBUILD_TARGET=$REBUILD_TARGET does not resolve to a commit with an index.html."
+  echo "   It must name the release $SCRIPT builds. Do not fall back to HEAD -- comparing a"
+  echo "   patch script against a later release is how this check goes permanently red."
+  exit 1
+}
+_tgt_ver=$(grep -m1 -o "const APP_VERSION = 'app-v[0-9]*'" "$TARGET_SRC" || true)
+echo "→ patch script targets: $_tgt_ver (commit $REBUILD_TARGET)"
 echo "→ checking every piece of app text the patch script carries is still the app's"
 APP_SRC="$TARGET_SRC" python3 test/harness-payload-matches-app.py || {
   echo "❌ $SCRIPT no longer copies the app. Re-extract what it names; do not hand-edit."
