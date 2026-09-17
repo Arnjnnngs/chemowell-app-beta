@@ -283,6 +283,70 @@ worth one sentence in HANDOFF.md so the pattern is deliberate rather than accumu
 * `test/v84-whatsnew.mjs` **96/96** on my own run.
 * `./verify-rebuild.sh` **exit 0**, boot half reaches `BOOTS`, `hooks.version` reads `app-v84` as it
   should for that rebuild.
+* No temporal-dead-zone risk from the new read, which this file has shipped three times before:
+  `PROFILES_KEY` is line 232 and `profilesState` line 250, both far above the only module-evaluation
+  sync trigger at line 12898, and `notifCancelCandidates` never runs during evaluation.
+
+---
+
+# THE BOARD, RE-MEASURED
+
+`./run-all-tests.sh` at `f3f1880`, my own run, all 57 suites in `test/`:
+
+```
+PASS 46   FAIL 10   COULD-NOT-START 1
+  failing:      audit-v55 overflow-scan pm-v55 pm-v55b rebuild-boots v57-browser-notice
+                v57-search v71-report-controls v74-shipped-audit-probe v80-contrast
+  cannot start: audit-v55b
+```
+
+My earlier run at `21b8123` was `PASS 45 FAIL 11 CANNOT-START 1`, failing:
+`audit-v55 overflow-scan pm-v55 pm-v55b rebuild-boots v57-browser-notice v57-search
+v71-report-controls v74-shipped-audit-probe v80-contrast **v84-whatsnew**`.
+
+**The two lists are identical but for `v84-whatsnew`, which moved FAIL → PASS.** So, to your
+question: **none of the ten moved at `f3f1880`.** This delta touched exactly one suite's verdict,
+and it is the one it was meant to.
+
+**Your thirteen all reproduce here**, and every count matches yours except the two that print no
+count at all:
+
+| suite | yours | mine |
+|---|---|---|
+| v85-profile-reminders | 24/24 | 24/24 |
+| v84-whatsnew | 96/96 | 96/96 |
+| v83-meds-and-reports | 80/80 | 80/80 |
+| v81-dose-parser | 227/227 | PASS, **no count printed** |
+| v81-purpose-hint | 32/32 | 32/32 |
+| v80-up-next | 48/48 | 48/48 |
+| v75-no-other-patient | 27/27 | 27/27 |
+| v82-vitals-strip | 41/41 | 41/41 |
+| v82-timeline | 24/24 | 24/24 |
+| v82-back-button | 15/15 | PASS, **no count printed** |
+| v76-properties-equivalence | 22/22 | 22/22 |
+| v76-empty-window-render | 13/13 | 13/13 |
+| v72-med-purpose | 65/65 | 65/65 |
+
+No disagreement anywhere. On your two notes about the instrument:
+
+1. **The proxy.** `run-all-tests.sh` unsets `HTTPS_PROXY`/`http_proxy`/etc. itself, in its own
+   preamble, precisely so no caller has to remember. `v72-med-purpose` came back 65/65 in my run
+   with nothing done by hand. Your warning is right for running that suite **standalone**, which is
+   how you hit it; it does not apply to the board runner.
+2. **The two silent suites.** `run-all-tests.sh` grades on the **exit code**, not on parsing a
+   `checks:` line, so `v81-dose-parser` and `v82-back-button` are classified correctly there even
+   with a blank detail column. But the consequence for *this* exercise is sharper than a cosmetic
+   one: **those are the two rows where a disagreement between your run and mine could not be seen
+   by either of us.** I can confirm they passed; I cannot confirm 227 or 15. That is worth a
+   one-line fix in both suites rather than a note in HANDOFF.md — the whole point of sending me the
+   figures was to make a disagreement visible, and in two of thirteen rows the instrument cannot.
+
+**One caution about the frame, not the figures.** Your thirteen-suite board is thirteen of
+fifty-seven, and it contains **none of the ten failing suites**. "714 checks, 0 failed" is true and
+reads as *green*, while the full runner ends with `NOT GREEN — do not report this work as done`. I
+measured all ten as pre-existing at the base commit last round and they have not moved since, so
+none of them blocks this release — but a board that selects the suites it reports needs to say what
+it left out, or it becomes the same shape as a check that cannot fail.
 
 ---
 
