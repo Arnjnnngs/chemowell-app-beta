@@ -414,7 +414,54 @@ if (emptyCard.text) {
   t('it opens with "This is for" instead', /^This is for Alex only/.test(emptyCard.text), emptyCard.text.slice(0, 70));
 }
 
-console.log('\n6c. THE README\'S FIGURE FOR THIS SUITE MUST BE THIS SUITE\'S FIGURE');
+console.log('\n6d. THE ONE STATE WHERE THE TWO CONDITIONS DISAGREE');
+// THE LEAD CONDITION HAD ZERO COVERAGE. It was changed from `notifScheduledCount > 0` to
+// `status !== 'empty'` in answer to an audit, and reverting it scored a clean 41/41 -- the same
+// shape of hole as the one that change was made to close, in the very commit that closed it.
+//
+// The two conditions agree everywhere EXCEPT here: nativeNotifStatus() returns 'on-exact' BEFORE
+// it ever consults the count, and that branch renders countLine() unconditionally. So exact alarms
+// denied AND no medications puts a "0 reminders scheduled" line on screen in a state the count
+// test calls empty. A count IS on screen, so the sentence must say "This count is for" -- under
+// the old condition it says "This is for", describing a number that is right there above it.
+const leadPage = await ctx.newPage();
+await leadPage.addInitScript(() => {
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({
+    list: [{ id: 'p1', name: 'Alex', createdAt: 1 }, { id: 'p2', name: 'Sam', createdAt: 2 }], activeId: 'p1'
+  }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({
+    patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: 1
+  }));
+  localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([]));
+  // No medications AND exact alarms denied -- the only combination that splits the two conditions.
+  localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
+  window.Capacitor = { isNativePlatform: () => true, Plugins: { LocalNotifications: {
+    checkPermissions: async () => ({ display: 'granted' }),
+    checkExactNotificationSetting: async () => ({ exact_alarm: 'denied' }),
+    createChannel: async () => {}, getPending: async () => ({ notifications: [] }),
+    schedule: async () => {}, cancel: async () => {}, addListener: () => ({ remove() {} }) } } };
+});
+await leadPage.goto(BASE, { waitUntil: 'load' });
+await leadPage.waitForTimeout(2500);
+await leadPage.evaluate(() => { const b = document.querySelector('[data-tour="menu-btn"]'); if (b) b.click(); });
+await leadPage.waitForTimeout(700);
+await leadPage.evaluate(() => { const b = [...document.querySelectorAll('#app-drawer button, #app-drawer [role="button"]')].find(x => /Settings/i.test(x.textContent)); if (b) b.click(); });
+await leadPage.waitForTimeout(1600);
+const leadCard = await leadPage.evaluate(() => {
+  const el = document.querySelector('[data-notif-profile-scope]');
+  return { isExact: /Exact timing isn/i.test(document.body.innerText),
+           hasZeroCount: /0 reminders scheduled/i.test(document.body.innerText),
+           text: el ? el.textContent.replace(/\s+/g, ' ').trim() : null };
+});
+t('exact denied with no medications still lands in on-exact, not empty', leadCard.isExact === true, 'onExact=' + leadCard.isExact);
+t('and a count line really is on screen saying zero', leadCard.hasZeroCount === true, 'zeroCount=' + leadCard.hasZeroCount);
+t('so the sentence scopes the count that is showing', !!leadCard.text && /^This count is for Alex only/.test(leadCard.text),
+  leadCard.text ? leadCard.text.slice(0, 70) : 'scope line absent');
+
+console.log('\n7. NOTHING THREW');
+t('no page error at any point above', thrown.length === 0, thrown.join(' | ') || 'none');
+
+console.log('\n8. THE README\'S FIGURE FOR THIS SUITE MUST BE THIS SUITE\'S FIGURE');
 // FIVE WRONG VALUES FOR ONE NUMBER: 30/30 shipped, a PM caught it, the correction to 29/29 went
 // stale in the same commit that made it (6b added four checks alongside), and an audit found it
 // again. A number that has been wrong five times should not be typed a sixth -- it should be
@@ -426,16 +473,16 @@ const readmeClaim = await page.evaluate(async (base) => {
   const m = txt.match(/test\/v85-profile-reminders\.mjs`?\*{0,2}\s*\*{0,2}(\d+)\/(\d+)/);
   return m ? { claimed: Number(m[1]), of: Number(m[2]) } : null;
 }, BASE);
-t('README names a figure for this suite at all', !!readmeClaim, readmeClaim ? JSON.stringify(readmeClaim) : 'no figure found');
-if (readmeClaim) {
-  const actual = pass + fail + 2;   // +2: this check and the one below are counted after this runs
-  t('the README figure matches what this suite actually runs',
-    readmeClaim.of === actual && readmeClaim.claimed === actual,
-    'README says ' + readmeClaim.claimed + '/' + readmeClaim.of + ', suite runs ' + actual);
-}
-
-console.log('\n7. NOTHING THREW');
-t('no page error at any point above', thrown.length === 0, thrown.join(' | ') || 'none');
+// THIS IS THE LAST CHECK IN THE FILE, DELIBERATELY. The first version sat before section 7 and
+// carried a hand-typed `+2` for the checks that ran after it -- the same species of typed constant
+// this check exists to abolish. An audit proved it: delete any check after this one and the suite
+// prints a smaller number while the README keeps the old one and this check still passes. Being
+// last makes the offset exactly one -- this check itself -- with nothing after it to drift.
+const total = pass + fail + 1;
+t('the README figure for this suite is this suite\'s figure',
+  !!readmeClaim && readmeClaim.of === total && readmeClaim.claimed === total,
+  readmeClaim ? ('README says ' + readmeClaim.claimed + '/' + readmeClaim.of + ', this run counts ' + total)
+              : 'README names no figure for test/v85-profile-reminders.mjs at all');
 
 console.log('\n' + (pass + fail) + ' checks: ' + pass + ' passed, ' + fail + ' failed');
 await b.close();
