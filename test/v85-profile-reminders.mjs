@@ -317,6 +317,60 @@ await solo.waitForTimeout(1400);
 const soloScope = await solo.evaluate(() => !!document.querySelector('[data-notif-profile-scope]'));
 t('a one-profile phone is not told about profiles it does not have', soloScope === false, soloScope ? 'rendered anyway' : 'absent');
 
+console.log('\n6a. on-exact — THE STATE ANDROID USERS START IN');
+// DELETING THE STRUCTURAL STAND-IN WAS A TRADE, NOT AN ADDITION, and an audit caught the half I
+// lost: `on` gained behavioural coverage and `on-exact` was left with none. A mutant deleting
+// profileScopeLine() from on-exact ALONE scored a clean 33/33. This is not a rare state — it is
+// what the card shows whenever exact alarms are not granted, which is where Android users begin;
+// the app ships a whole help panel about getting that permission.
+//
+// THREE other profiles, because the plural branch has never been asserted by anything. The
+// Designer rendered it and read it; a render is not an assertion, and the tail of that sentence
+// was singular for two rounds while both branch bodies were edited around it.
+const exactPage = await ctx.newPage();
+await exactPage.addInitScript(() => {
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({
+    list: [{ id: 'p1', name: 'Alex', createdAt: 1 }, { id: 'p2', name: 'Sam', createdAt: 2 }, { id: 'p3', name: 'Jordan', createdAt: 3 }],
+    activeId: 'p1'
+  }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({
+    patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: 1
+  }));
+  localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([]));
+  localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [
+    { id: 'alpha', name: 'Alpha', type: 'win', schemaV: 2, quickLog: true,
+      doses: [{ label: '1 tablet', pills: 1 }], windows: [{ start: 9, end: 12, name: 'Morning' }] }
+  ] }));
+  window.Capacitor = { isNativePlatform: () => true, Plugins: { LocalNotifications: {
+    checkPermissions: async () => ({ display: 'granted' }),
+    checkExactNotificationSetting: async () => ({ exact_alarm: 'denied' }),   // <- the state under test
+    createChannel: async () => {}, getPending: async () => ({ notifications: [] }),
+    schedule: async () => {}, cancel: async () => {}, addListener: () => ({ remove() {} }) } } };
+});
+await exactPage.goto(BASE, { waitUntil: 'load' });
+await exactPage.waitForTimeout(2500);
+await exactPage.evaluate(() => { const b = document.querySelector('[data-tour="menu-btn"]'); if (b) b.click(); });
+await exactPage.waitForTimeout(700);
+await exactPage.evaluate(() => { const b = [...document.querySelectorAll('#app-drawer button, #app-drawer [role="button"]')].find(x => /Settings/i.test(x.textContent)); if (b) b.click(); });
+await exactPage.waitForTimeout(1600);
+const ex = await exactPage.evaluate(() => {
+  const el = document.querySelector('[data-notif-profile-scope]');
+  return { isExact: /Exact timing isn/i.test(document.body.innerText),
+           n: el ? el.getAttribute('data-notif-profile-scope') : null,
+           text: el ? el.textContent.replace(/\s+/g, ' ').trim() : null };
+});
+t('the card is in the on-exact state', ex.isExact === true, 'onExact=' + ex.isExact);
+t('the scope line renders in on-exact too', !!ex.text, ex.text ? ex.text.slice(0, 80) : 'ABSENT — on-exact has lost its coverage');
+if (ex.text) {
+  t('it counts two other profiles', ex.n === '2', 'data-notif-profile-scope=' + ex.n);
+  t('the plural branch agrees in number', /The other 2 profiles .* they already had/.test(ex.text), ex.text.slice(0, 120));
+  // THE TAIL IS THE ONLY INSTRUCTION IN THE SENTENCE. It sat outside the ternary and stayed
+  // singular while both branch bodies were edited twice, so a caregiver with two other profiles
+  // was told to "open that profile" and not told which.
+  t('the instruction is plural too — not "open that profile"', !/open that profile/.test(ex.text), ex.text.slice(-90));
+  t('it tells them to open each of them', /open each of them/.test(ex.text), ex.text.slice(-90));
+}
+
 console.log('\n6b. THE EMPTY STATE SAYS "THIS IS FOR", NOT "THIS COUNT IS FOR"');
 // THE ONLY CODE LINE IN THE POST-AUDIT COMMIT HAD ZERO COVERAGE, and a PM pass found it: section 6
 // asserts state=on, so the `empty` branch was never rendered by any check and reverting the fix
@@ -358,6 +412,26 @@ t('the scope line still renders there', !!emptyCard.text, emptyCard.text ? empty
 if (emptyCard.text) {
   t('it does NOT open with "This count is for" when no count is shown', !/^This count is for/.test(emptyCard.text), emptyCard.text.slice(0, 70));
   t('it opens with "This is for" instead', /^This is for Alex only/.test(emptyCard.text), emptyCard.text.slice(0, 70));
+}
+
+console.log('\n6c. THE README\'S FIGURE FOR THIS SUITE MUST BE THIS SUITE\'S FIGURE');
+// FIVE WRONG VALUES FOR ONE NUMBER: 30/30 shipped, a PM caught it, the correction to 29/29 went
+// stale in the same commit that made it (6b added four checks alongside), and an audit found it
+// again. A number that has been wrong five times should not be typed a sixth -- it should be
+// checked. This reads the claim out of README.md and compares it to what this run actually counts,
+// so the row cannot drift from the suite again without turning something red.
+const readmeClaim = await page.evaluate(async (base) => {
+  const url = base.replace(/index\.html.*$/, 'README.md');
+  const txt = await (await fetch(url)).text();
+  const m = txt.match(/test\/v85-profile-reminders\.mjs`?\*{0,2}\s*\*{0,2}(\d+)\/(\d+)/);
+  return m ? { claimed: Number(m[1]), of: Number(m[2]) } : null;
+}, BASE);
+t('README names a figure for this suite at all', !!readmeClaim, readmeClaim ? JSON.stringify(readmeClaim) : 'no figure found');
+if (readmeClaim) {
+  const actual = pass + fail + 2;   // +2: this check and the one below are counted after this runs
+  t('the README figure matches what this suite actually runs',
+    readmeClaim.of === actual && readmeClaim.claimed === actual,
+    'README says ' + readmeClaim.claimed + '/' + readmeClaim.of + ', suite runs ' + actual);
 }
 
 console.log('\n7. NOTHING THREW');

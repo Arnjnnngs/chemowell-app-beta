@@ -9314,12 +9314,23 @@ function renderNativeNotifStatusCard() {
     //    already had" is true for at most three days and then that profile silently has none.
     //    "Stay put" reads as "keep working"; saying so is the difference between a limitation and
     //    a trap.
-    const lead = notifScheduledCount > 0 ? 'This count is for ' + myName + ' only. ' : 'This is for ' + myName + ' only. ';
+    // THE CONDITION TRACKS WHAT THE CARD SHOWS, not the count on its own. `on-exact` renders
+    // countLine() unconditionally -- nativeNotifStatus() returns it BEFORE it ever tests the count
+    // -- so with exact alarms denied and no medications the card reads "0 reminders scheduled"
+    // under a lead that says there is no count. Awkward rather than false, and an audit measured
+    // it; `status !== 'empty'` is the question actually being asked.
+    const lead = status !== 'empty' ? 'This count is for ' + myName + ' only. ' : 'This is for ' + myName + ' only. ';
+    // THE TAIL LIVES INSIDE THE TERNARY, and it did not until an audit rendered the plural branch.
+    // It read "open that profile to set its reminders up again" for ANY number of other profiles --
+    // and it is the ONLY INSTRUCTION in the sentence, so a caregiver with two other profiles was
+    // told to open one and not told which. An earlier round fixed singular/plural agreement inside
+    // the branch bodies and left the shared tail singular; the commit after it edited both bodies
+    // again, to add the expiry clause, and still did not touch the tail. Number agreement is not
+    // decoration when the disagreeing clause is the instruction.
     return h('div', { 'data-notif-profile-scope': String(others.length), style: { ...muted, color: '#9A6419', fontWeight: '700', marginTop: '2px' } },
       lead + (others.length === 1
-        ? 'The other profile on this phone keeps the reminders it already had, but nothing adds to them while you are not in it, and they run out within about three days'
-        : 'The other ' + others.length + ' profiles on this phone keep the reminders they already had, but nothing adds to those while you are not in them, and they run out within about three days')
-      + ' — open that profile to set its reminders up again.');
+        ? 'The other profile on this phone keeps the reminders it already had, but nothing adds to them while you are not in it, and they run out within about three days — open that profile to set its reminders up again.'
+        : 'The other ' + others.length + ' profiles on this phone keep the reminders they already had, but nothing adds to those while you are not in them, and they run out within about three days — open each of them to set their reminders up again.'));
   };
   // A single top-level wrapper owns the gap from the section's intro sentence above AND the gap
   // between each state's own children, via flex+gap rather than a per-child marginTop -- so every
