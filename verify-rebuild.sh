@@ -57,8 +57,14 @@ git show "$BASE_COMMIT:index.html" > "$WORK/index.html"
 # property that holds: the app moved one character twenty minutes after the lift and the rebuild
 # went quietly back to producing a file the app no longer is, with this gate green throughout.
 # A boot check cannot see that; only a comparison can.
+# The payload is compared against the release the SCRIPT BUILDS, not against HEAD. Once the app
+# moves on (app-v85 shipped while this script still builds app-v84) HEAD is the wrong yardstick:
+# the script is not stale, it is simply historical. REBUILD_TARGET names that release's commit.
+TARGET_SRC="$WORK/.target-index.html"
+git show "${REBUILD_TARGET:-$(git rev-list -1 --grep='^app-v84' HEAD || echo HEAD)}:index.html" > "$TARGET_SRC" 2>/dev/null \
+  || git show HEAD:index.html > "$TARGET_SRC"
 echo "→ checking every piece of app text the patch script carries is still the app's"
-python3 test/harness-payload-matches-app.py || {
+APP_SRC="$TARGET_SRC" python3 test/harness-payload-matches-app.py || {
   echo "❌ $SCRIPT no longer copies the app. Re-extract what it names; do not hand-edit."
   exit 1
 }

@@ -9057,6 +9057,12 @@ const APP_VERSION = 'app-v85';
 // numbers in the prose, no file names, no function names. THEY/THEM throughout: this app has
 // never asked anyone's gender and most users are not women (CLAUDE.md Rule 0, leak shape 2).
 const CHANGELOG = [
+  { v: 'app-v85', date: 'Sep 17, 2026', title: 'Reminders no longer disappear when you switch profiles',
+    points: [
+      'If this phone has more than one profile, setting up a reminder for one person could quietly remove the reminders already set for the other — so a dose could pass with nothing on screen and nothing in your hand buzzing.',
+      'That is fixed. Each person\u2019s reminders now stay put, and deleting a profile properly switches its reminders off instead of leaving them to go on ringing.',
+      'Settings now tells you which person the reminder count is about, so a tick on that screen no longer looks like it covers everyone on the phone.'
+    ] },
   { v: 'app-v84', date: 'Sep 14, 2026', title: 'The app now tells you what changed',
     points: [
       'Until today ChemoWell updated quietly. A button could move or a number could start being counted differently and nothing on screen said so.',
@@ -9288,8 +9294,21 @@ function renderNativeNotifStatusCard() {
     if (!others.length) return null;
     const mine = (ps.list || []).find(p => p.id === ACTIVE_PROFILE_ID);
     const myName = (mine && String(mine.name || '').trim()) || 'this profile';
+    // THIS SENTENCE DESCRIBED THE BUG, AND THE BUG IS FIXED. The first draft said the other profile
+    // "has no reminders set" -- which was TRUE before this release only because the reconcile loop
+    // destroyed them, and became false the moment it stopped. An independent audit measured both
+    // builds: at the old commit a boot sync left zero of the other profile's alarms armed, at this
+    // one it leaves them standing. So the card would have claimed a profile had no reminders at the
+    // very moment one of its reminders could fire.
+    //
+    // What is actually true is narrower and more useful: another profile's reminders survive, but
+    // nothing UPDATES them while you are not in that profile -- a dose logged there will not clear
+    // its reminder, and a medication added there will not gain one, until that profile is opened.
     return h('div', { 'data-notif-profile-scope': String(others.length), style: { ...muted, color: '#9A6419', fontWeight: '700', marginTop: '2px' } },
-      'For ' + myName + ' only. ' + (others.length === 1 ? 'The other profile on this phone has no reminders set while it is not the one you are in.' : 'The other ' + others.length + ' profiles on this phone have no reminders set while they are not the one you are in.') + ' Switch profile to arm theirs.');
+      'This count is for ' + myName + ' only. ' + (others.length === 1
+        ? 'The other profile on this phone keeps the reminders it already had, but they stop being kept up to date while you are not in it'
+        : 'The other ' + others.length + ' profiles on this phone keep the reminders they already had, but those stop being kept up to date while you are not in them')
+      + ' — open that profile to bring its reminders in line with what has been logged.');
   };
   // A single top-level wrapper owns the gap from the section's intro sentence above AND the gap
   // between each state's own children, via flex+gap rather than a per-child marginTop -- so every
@@ -12558,11 +12577,30 @@ function notifCancelCandidates(pending, planIds, applied, nowTs) {
   // A second profile is a PAID feature (`tierLimit`: free 1, plus 3, pro unlimited), so this
   // silently broke what people upgraded for while Settings told them reminders were on.
   const guardEnd = nowTs + NOTIF_MIN_LEAD_MS;
+  // Read once per call, not per notification: profilesState() parses JSON out of localStorage.
+  const knownProfileIds = new Set(((profilesState() || {}).list || []).map(x => x.id));
   return (pending || []).filter(p => !planIds.has(p.id)).filter(p => {
+    // THE TEST IS "DOES THIS PROFILE STILL EXIST", NOT "IS IT THE ACTIVE ONE", and the difference
+    // is a defect the first version of this fix shipped into the erase path.
+    //
+    // THE OLD BUG WAS ALSO THE CLEANUP. Nothing else ever disarmed a non-active profile's alarms --
+    // not `eraseAllAppData()`, not `cwUndoRestore()` -- because this loop swept them on the next
+    // boot anyway. Protecting every non-active profile by id therefore ORPHANED them: wipe the
+    // phone from Settings and `initProfiles()` re-creates a single profile as `p1`, so `p1` alarms
+    // die by id collision and every alarm tagged with any other id is protected forever. The phone
+    // keeps firing a deleted patient's medication reminders for the full horizon, with nothing in
+    // the app able to explain or stop them -- while the erase modal says "there is no way to bring
+    // it back once it's gone."
+    //
+    // Keyed on existence, no deletion path has to remember anything: the moment a profile leaves
+    // the list its alarms become cancellable and the next sync sweeps them. That makes
+    // `cancelRemindersForProfile()` a promptness optimisation rather than the only defence, so its
+    // deliberately swallowed bridge error self-heals instead of orphaning an alarm permanently.
+    //
+    // An id with NO profileId predates profile-tagged ids, cannot belong to anyone else, and stays
+    // cancellable -- otherwise it could never be cleaned up at all.
     const pid = p.extra && p.extra.profileId;
-    if (pid && pid !== ACTIVE_PROFILE_ID) return false;
-    // A pending notification with NO profileId predates profile-tagged ids, so it cannot belong to
-    // anyone else and stays cancellable -- otherwise it could never be cleaned up at all.
+    if (pid && pid !== ACTIVE_PROFILE_ID && knownProfileIds.has(pid)) return false;
     // Protection band: don't race a cancel against an id that may already be mid-fire.
     const hit = (applied || []).find(a => a.id === p.id);
     return !hit || hit.at > guardEnd;
@@ -12930,6 +12968,11 @@ if (typeof window !== 'undefined') {
     // against that proves only that the suite agrees with itself.
     cancelCandidates: notifCancelCandidates,
     cancelForProfile: cancelRemindersForProfile,
+    // deleteProfile ITSELF, not just the helper it calls. Exporting only the helper let a mutant
+    // that DELETES THE CALL from deleteProfile score a clean pass -- the check proved the function
+    // works while saying nothing about whether anything invokes it. Testing a part is not testing
+    // the wiring, and the wiring is what shipped broken.
+    deleteProfile: deleteProfile,
     minLeadMs: () => NOTIF_MIN_LEAD_MS
   };
 

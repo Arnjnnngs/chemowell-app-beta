@@ -84,6 +84,34 @@ const r2 = await page.evaluate(() => {
 });
 t('a dose due seconds away on another profile survives a reload', r2 === 0, r2 + ' cancelled');
 
+console.log('\n3b. THE MID-FIRE PROTECTION BAND, ON OUR OWN PROFILE — the pre-existing guard');
+// THE SUITE USED TO CERTIFY A FUNCTION WITHOUT THIS. Every earlier check drives an OTHER-profile
+// id, which the new profile guard rejects one line before the band is reached, so deleting the
+// band outright scored a clean 10/10. An audit found it by mutating exactly that. These two drive
+// an id belonging to the ACTIVE profile, which is the only way to reach the band's arithmetic.
+const band = await page.evaluate(() => {
+  const now = Date.now();
+  const lead = window.__notifScopeTest.minLeadMs();
+  const mine = [{ id: 88, extra: { profileId: 'p1' } }];
+  // Armed by THIS process and about to fire: must be left alone.
+  const inBand = window.__notifScopeTest.cancelCandidates(mine, new Set(), [{ id: 88, at: now + lead - 1000 }], now);
+  // Armed by this process but far away: safe to cancel.
+  const outOfBand = window.__notifScopeTest.cancelCandidates(mine, new Set(), [{ id: 88, at: now + lead + 600000 }], now);
+  return { inBand: inBand.length, outOfBand: outOfBand.length };
+});
+t('our own reminder that is about to fire is NOT cancelled', band.inBand === 0, band.inBand + ' cancelled');
+t('our own reminder that is far off IS cancelled', band.outOfBand === 1, band.outOfBand + ' cancelled');
+
+console.log('\n3c. A PROFILE THAT NO LONGER EXISTS IS CANCELLABLE — the erase/undo path');
+// The guard keys on "does this profile still exist", not "is it the active one". Keying on the
+// latter orphaned alarms forever: eraseAllAppData() and cwUndoRestore() both remove a profile and
+// reload, and NOTHING disarms its alarms -- the old over-broad cancel was doing it by accident.
+const gone = await page.evaluate(() => {
+  const pending = [{ id: 99, extra: { profileId: 'p-deleted-9' } }];
+  return window.__notifScopeTest.cancelCandidates(pending, new Set(), [], Date.now()).length;
+});
+t('an alarm for a profile no longer in the list can be swept', gone === 1, gone + ' cancellable');
+
 console.log('\n4. LEGACY NOTIFICATIONS ARE STILL CLEANABLE');
 const r3 = await page.evaluate(() => {
   const pending = [{ id: 55, extra: {} }, { id: 66 }];        // pre-profile ids, no profileId
@@ -98,26 +126,122 @@ const r4 = await page.evaluate(() => {
 });
 t('an id that is in the plan is left alone', r4 === 0, r4 + ' cancelled');
 
-console.log('\n6. SETTINGS TELLS THE TRUTH ABOUT WHO IS COVERED');
-const scope = await page.evaluate(() => {
-  const el = document.querySelector('[data-notif-profile-scope]');
-  return el ? { n: el.getAttribute('data-notif-profile-scope'), text: el.textContent.trim() } : null;
+console.log('\n5b. DELETING A PROFILE DISARMS ITS REMINDERS');
+// There was NO check on this and an audit said so. Removing the cancelRemindersForProfile() call
+// from deleteProfile() scored a clean 10/10. It drives the SHIPPED function against a stub plugin
+// and asserts on what reached ln.cancel().
+const del = await page.evaluate(async () => {
+  const cancelled = [];
+  window.Capacitor = {
+    isNativePlatform: () => true,
+    Plugins: { LocalNotifications: {
+      getPending: async () => ({ notifications: [
+        { id: 1, extra: { profileId: 'p1' } },
+        { id: 2, extra: { profileId: 'p2' } },
+        { id: 3, extra: { profileId: 'p2' } }
+      ] }),
+      cancel: async (arg) => { (arg.notifications || []).forEach(n => cancelled.push(n.id)); }
+    } }
+  };
+  await window.__notifScopeTest.cancelForProfile('p2');
+  return cancelled;
 });
-// The card only renders on a native build; on web the status is 'web'. Assert the FUNCTION's
-// output rather than requiring a native shell the sandbox does not have.
-const scopeText = await page.evaluate(() => {
+t('the helper cancels exactly that profile\'s reminders', del.length === 2 && del.includes(2) && del.includes(3), 'cancelled=[' + del.join(',') + ']');
+t('and leaves the surviving profile\'s reminders alone', !del.includes(1), 'cancelled=[' + del.join(',') + ']');
+
+// AND THE WIRING, WHICH THE CHECK ABOVE DOES NOT COVER. Driving the helper proves the helper
+// works; it says nothing about whether deleteProfile calls it. A mutant that deleted the call
+// scored a clean pass against the version of this section that stopped at the line above.
+const wired = await page.evaluate(async () => {
+  const cancelled = [];
+  window.Capacitor = {
+    isNativePlatform: () => true,
+    Plugins: { LocalNotifications: {
+      getPending: async () => ({ notifications: [
+        { id: 1, extra: { profileId: 'p1' } }, { id: 2, extra: { profileId: 'p2' } }
+      ] }),
+      cancel: async (arg) => { (arg.notifications || []).forEach(n => cancelled.push(n.id)); }
+    } }
+  };
+  window.__notifScopeTest.deleteProfile('p2');
+  await new Promise(r => setTimeout(r, 400));   // the cancel is fire-and-forget by design
   const ps = JSON.parse(localStorage.getItem('chemowell-app-profiles-v1'));
-  const others = ps.list.filter(p => p.id !== 'p1');
-  return others.length;
+  return { cancelled, remaining: ps.list.map(x => x.id) };
 });
-t('the fixture really does have a second profile to be honest about', scopeText === 1, scopeText + ' other profile(s)');
+t('deleteProfile actually disarms that profile\'s reminders', wired.cancelled.includes(2), 'cancelled=[' + wired.cancelled.join(',') + ']');
+t('and does not disarm the surviving profile\'s', !wired.cancelled.includes(1), 'cancelled=[' + wired.cancelled.join(',') + ']');
+t('and the profile is really gone from the list', !wired.remaining.includes('p2'), 'remaining=[' + wired.remaining.join(',') + ']');
+
+console.log('\n6. SETTINGS TELLS THE TRUTH ABOUT WHO IS COVERED');
+// THE EXEMPTION THAT USED TO BE HERE WAS NOT HONEST, and an audit called it. It claimed this card
+// "renders only on a native build" and that its copy was "covered by the native smoke test" --
+// grep the repo for that test and there is exactly one hit: the sentence claiming it exists. The
+// premise was wrong too: the card needs isNativeApp() true, which a ten-line Capacitor stub
+// provides, so it was testable here all along and simply was not tested.
+//
+// It reads the RENDERED SENTENCE, not the data attribute beside it, because an audit once made
+// those two disagree while every check stayed green.
+const nativePage = await ctx.newPage();
+await nativePage.addInitScript(() => {
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({
+    list: [{ id: 'p1', name: 'Alex', createdAt: 1 }, { id: 'p2', name: 'Sam', createdAt: 2 }],
+    activeId: 'p1'
+  }));
+  // tourDone matters: openDrawer() deliberately refuses to open while the first-run tour is up, so
+  // without it the drawer never appears and this check fails for a reason that is not the card.
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', tourDone: true, installedAt: 1 }));
+  window.Capacitor = {
+    isNativePlatform: () => true,
+    Plugins: { LocalNotifications: {
+      checkPermissions: async () => ({ display: 'granted' }),
+      checkExactNotificationSetting: async () => ({ exact_alarm: 'granted' }),
+      createChannel: async () => {}, getPending: async () => ({ notifications: [] }),
+      schedule: async () => {}, cancel: async () => {}, addListener: () => ({ remove() {} })
+    } }
+  };
+});
+await nativePage.goto(BASE, { waitUntil: 'load' });
+await nativePage.waitForTimeout(2500);
+// Settings lives in the DRAWER, not the bottom nav -- the first version of this check clicked a
+// bottom-nav button that does not exist, found nothing, and reported "not rendered" as though the
+// card were broken. Open the menu the way a finger does, then tap the row.
+await nativePage.evaluate(() => { const b = document.querySelector('[data-tour="menu-btn"]'); if (b) b.click(); });
+await nativePage.waitForTimeout(700);
+await nativePage.evaluate(() => { const b = [...document.querySelectorAll('#app-drawer button, #app-drawer [role="button"]')].find(x => /Settings/i.test(x.textContent)); if (b) b.click(); });
+await nativePage.waitForTimeout(1600);
+const scope = await nativePage.evaluate(() => {
+  const el = document.querySelector('[data-notif-profile-scope]');
+  return el ? { n: el.getAttribute('data-notif-profile-scope'), text: el.textContent.replace(/\s+/g, ' ').trim() } : null;
+});
+t('the scope line renders on a two-profile phone', !!scope, scope ? scope.text.slice(0, 80) : 'not rendered');
 if (scope) {
-  t('the scope line names this profile', /Alex/.test(scope.text), scope.text.slice(0, 90));
-  t('the scope line says the other profile has none', /no reminders set/.test(scope.text), scope.text.slice(0, 90));
-} else {
-  console.log('  EXEMPT  the Settings notification card renders only on a native build; this sandbox is web.');
-  console.log('          Its copy is covered by the native smoke test, not here. Stated rather than skipped.');
+  t('it names the profile the count belongs to', /Alex/.test(scope.text), scope.text.slice(0, 100));
+  t('it counts the other profiles correctly', scope.n === '1', 'data-notif-profile-scope=' + scope.n);
+  // THE SENTENCE MUST NOT CLAIM THE OTHER PROFILE HAS NO REMINDERS. It said exactly that in the
+  // first draft -- true only while the bug destroyed them, and false the moment it was fixed.
+  t('it does NOT claim the other profile has no reminders', !/no reminders/i.test(scope.text), scope.text.slice(0, 120));
+  t('it says what is actually true — they stop being kept up to date', /kept up to date/i.test(scope.text), scope.text.slice(0, 120));
+  t('it does not claim the other profile is covered', !/(fully covered|will get every reminder|on time)/i.test(scope.text), scope.text.slice(0, 120));
 }
+// And it must stay quiet on a one-profile phone, which is every Free user.
+const solo = await ctx.newPage();
+await solo.addInitScript(() => {
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', tourDone: true, installedAt: 1 }));
+  window.Capacitor = { isNativePlatform: () => true, Plugins: { LocalNotifications: {
+    checkPermissions: async () => ({ display: 'granted' }),
+    checkExactNotificationSetting: async () => ({ exact_alarm: 'granted' }),
+    createChannel: async () => {}, getPending: async () => ({ notifications: [] }),
+    schedule: async () => {}, cancel: async () => {}, addListener: () => ({ remove() {} }) } } };
+});
+await solo.goto(BASE, { waitUntil: 'load' });
+await solo.waitForTimeout(2000);
+await solo.evaluate(() => { const b = document.querySelector('[data-tour="menu-btn"]'); if (b) b.click(); });
+await solo.waitForTimeout(700);
+await solo.evaluate(() => { const b = [...document.querySelectorAll('#app-drawer button, #app-drawer [role="button"]')].find(x => /Settings/i.test(x.textContent)); if (b) b.click(); });
+await solo.waitForTimeout(1400);
+const soloScope = await solo.evaluate(() => !!document.querySelector('[data-notif-profile-scope]'));
+t('a one-profile phone is not told about profiles it does not have', soloScope === false, soloScope ? 'rendered anyway' : 'absent');
 
 console.log('\n7. NOTHING THREW');
 t('no page error at any point above', thrown.length === 0, thrown.join(' | ') || 'none');

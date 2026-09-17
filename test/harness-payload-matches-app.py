@@ -24,7 +24,21 @@ to COPY is still a copy.
 import ast, sys, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-app = (ROOT / 'index.html').read_text()
+
+# COMPARED AGAINST THE RELEASE THE SCRIPT CLAIMS TO BUILD, NOT AGAINST HEAD.
+#
+# This read `index.html` at HEAD, which is the right question only while HEAD IS the release the
+# patch script produces. `harness-v84-whatsnew.py` builds app-v84. The moment app-v85 landed, four
+# payloads stopped matching HEAD -- correctly, in the sense that they genuinely differ, and
+# uselessly, because a script that builds v84 is not supposed to match v85. Left alone it would
+# have gone permanently red and been silenced or deleted, which is how a real guard dies.
+#
+# APP_SRC names the file to compare against; verify-rebuild.sh passes the commit whose APP_VERSION
+# the script actually writes. Absent, it falls back to HEAD's working copy, which is correct for a
+# script targeting the current release.
+import os
+_src = os.environ.get('APP_SRC')
+app = pathlib.Path(_src).read_text() if _src else (ROOT / 'index.html').read_text()
 script_path = ROOT / 'harness-v84-whatsnew.py'
 tree = ast.parse(script_path.read_text())
 
