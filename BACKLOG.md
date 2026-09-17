@@ -6,6 +6,40 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
+- **app-v85, F2 — `test/v85-profile-reminders.mjs` promises about six pages what it watches on one.**
+  `pageerror` is attached to the first `newPage()` only (line 40), and the suite opens six (37, 205,
+  301, 330, 380, 427). The check it feeds says *"no page error at any point above"* — a claim about all
+  six, backed by one. Measured by the delta-5 audit: a real uncaught throw on section 6d's page still
+  printed "none". Pre-existing, nothing in the record depends on it, and a fatal error would fail that
+  page's own card assertions anyway — but it is the same shape as the sentence this very release exists
+  to fix, one level up, so it goes first. One line: `ctx.on('page', p => p.on('pageerror', e => thrown.push(String(e))))`.
+
+- **app-v85, F1 — the check that reads this suite's figure out of README.md still types one number.**
+  Section 8 computes `pass + fail + 1`, the offset being itself, and it is the last check in the file.
+  Append anything below it and the README figure is wrong while the check stays green (measured: 44
+  checks, 44 passed, README says 43). Strictly better than the `+2` it replaced, which had this hole
+  AND the deletion hole it was written to close — but the residue is real. Fix: make the comparison
+  uncounted (set `process.exitCode = 1` and print, instead of a `t()`), and the offset disappears.
+
+- **app-v85, M7 — `deleteProfile()` refuses to delete the ACTIVE profile, and nothing tests that.**
+  Correct today, and the guard sits above the new `cancelRemindersForProfile(id)` call so the new code
+  cannot disarm the profile you are in. Untested since the delta-2 audit raised it. One line of
+  coverage: call `deleteProfile(activeId)` and assert it is still there.
+
+- **app-v85, Voice — "set its reminders up again" implies a before that may never have happened.**
+  The Settings scope line tells the caregiver to open the other profile *"to set its reminders up
+  again"*. For a profile that has never been opened there was no first time. Raised by the PM gate as
+  non-blocking and true in the common case (the bug destroyed reminders that DID exist). Worth a word
+  when stage 2 rewrites that sentence anyway.
+
+- **`HANDOFF.md` is four releases stale** — it names app-v80 as the live build, last touched at
+  `ffc7bff`. No repo rule requires it to move with a release, which is exactly why it drifted. Either
+  refresh it or make `release_check.sh` require it, but do not leave it saying something untrue.
+
+- **The APK is published to a Release tagged `app-v14-native-test`**, named *"ChemoWell native test
+  build (app-v14)"*. That is the page Aaron downloads from, and it names a version seventy-one
+  releases stale. Raised by the delta-3 audit; unrelated to any release it was found in.
+
 - **PM RULING, app-v66 gate, 2026-08-24 — the four-profile sweep runs on the next release that
   touches application code, however small it looks.** It has now been skipped three times running
   (audit round 1, audit round 2, and the PM itself), defensibly each time because none of those
