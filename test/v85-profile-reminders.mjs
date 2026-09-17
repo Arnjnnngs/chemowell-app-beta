@@ -290,7 +290,11 @@ if (scope) {
   // inactive profile and NOTIF_HORIZON_MS is 72h, so "keeps the reminders it already had" is true
   // for at most three days and then that profile silently has none. An audit found the sentence
   // saying the first half and not the second, while I had reported it fixed.
-  t('it says the other profile\'s reminders run out', /run out|three days/i.test(scope.text), scope.text.slice(0, 160));
+  // THE WHOLE CLAUSE, NOT AN ALTERNATION. This read /run out|three days/i, so "run out" alone
+  // satisfied it and the NUMBER was free: changing three days to thirty passed 29/29. A check
+  // named for catching a false coverage promise must not let the coverage figure vary.
+  t('it says the other profile\'s reminders run out within about three days',
+    /run out within about three days/i.test(scope.text), scope.text.slice(0, 170));
   t('it does not claim the other profile is covered', !/(fully covered|will get every reminder|on time)/i.test(scope.text), scope.text.slice(0, 120));
 }
 // And it must stay quiet on a one-profile phone, which is every Free user.
@@ -312,6 +316,49 @@ await solo.evaluate(() => { const b = [...document.querySelectorAll('#app-drawer
 await solo.waitForTimeout(1400);
 const soloScope = await solo.evaluate(() => !!document.querySelector('[data-notif-profile-scope]'));
 t('a one-profile phone is not told about profiles it does not have', soloScope === false, soloScope ? 'rendered anyway' : 'absent');
+
+console.log('\n6b. THE EMPTY STATE SAYS "THIS IS FOR", NOT "THIS COUNT IS FOR"');
+// THE ONLY CODE LINE IN THE POST-AUDIT COMMIT HAD ZERO COVERAGE, and a PM pass found it: section 6
+// asserts state=on, so the `empty` branch was never rendered by any check and reverting the fix
+// scored a clean 29/29. The card in that state reads "No reminders are currently due in the next 3
+// days" -- there is no count to scope, so opening with "This count is for" describes a number that
+// is not on screen.
+const emptyPage = await ctx.newPage();
+await emptyPage.addInitScript(() => {
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({
+    list: [{ id: 'p1', name: 'Alex', createdAt: 1 }, { id: 'p2', name: 'Sam', createdAt: 2 }], activeId: 'p1'
+  }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({
+    patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: 1
+  }));
+  // AN EXPLICIT EMPTY MEDICATION LIST. Omitting the key is not enough -- the app seeds a default
+  // list on first run, which produces a plan and lands the card in `on`. "No fixture" and "no
+  // medications" are different states, and the first attempt at this check confused them.
+  localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([]));
+  localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
+  window.Capacitor = { isNativePlatform: () => true, Plugins: { LocalNotifications: {
+    checkPermissions: async () => ({ display: 'granted' }),
+    checkExactNotificationSetting: async () => ({ exact_alarm: 'granted' }),
+    createChannel: async () => {}, getPending: async () => ({ notifications: [] }),
+    schedule: async () => {}, cancel: async () => {}, addListener: () => ({ remove() {} }) } } };
+});
+await emptyPage.goto(BASE, { waitUntil: 'load' });
+await emptyPage.waitForTimeout(2500);
+await emptyPage.evaluate(() => { const b = document.querySelector('[data-tour="menu-btn"]'); if (b) b.click(); });
+await emptyPage.waitForTimeout(700);
+await emptyPage.evaluate(() => { const b = [...document.querySelectorAll('#app-drawer button, #app-drawer [role="button"]')].find(x => /Settings/i.test(x.textContent)); if (b) b.click(); });
+await emptyPage.waitForTimeout(1600);
+const emptyCard = await emptyPage.evaluate(() => {
+  const el = document.querySelector('[data-notif-profile-scope]');
+  return { isEmptyState: /No reminders are currently due/i.test(document.body.innerText),
+           text: el ? el.textContent.replace(/\s+/g, ' ').trim() : null };
+});
+t('the card really is in the empty state', emptyCard.isEmptyState === true, 'emptyState=' + emptyCard.isEmptyState);
+t('the scope line still renders there', !!emptyCard.text, emptyCard.text ? emptyCard.text.slice(0, 80) : 'absent');
+if (emptyCard.text) {
+  t('it does NOT open with "This count is for" when no count is shown', !/^This count is for/.test(emptyCard.text), emptyCard.text.slice(0, 70));
+  t('it opens with "This is for" instead', /^This is for Alex only/.test(emptyCard.text), emptyCard.text.slice(0, 70));
+}
 
 console.log('\n7. NOTHING THREW');
 t('no page error at any point above', thrown.length === 0, thrown.join(' | ') || 'none');
