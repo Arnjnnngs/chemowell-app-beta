@@ -340,6 +340,43 @@ schedule was added. No new behaviour keyed to a medication id — `notifCancelCa
 
 ---
 
+# THE FULL BOARD — `./run-all-tests.sh` at 21b8123
+
+```
+PASS 45   FAIL 11   COULD-NOT-START 1
+  failing:      audit-v55 overflow-scan pm-v55 pm-v55b rebuild-boots v57-browser-notice
+                v57-search v71-report-controls v74-shipped-audit-probe v80-contrast v84-whatsnew
+  cannot start: audit-v55b
+NOT GREEN — do not report this work as done.
+```
+
+Green and load-bearing for this release:
+
+* `v85-profile-reminders` — **10/10** (and see the three mutants above, which is the problem).
+* `v75-no-other-patient` — **27/27**. The Rule 0 ratchet is intact; this commit adds no new
+  medication-id branch, no dose, no ceiling, no name and no gendered pronoun.
+* `v76-properties-equivalence` 22/22, `v77-legacy-migration-equivalence` 36/36,
+  `v79-warning-priority` 14/14, `v80-up-next` 48/48, `v83-meds-and-reports` 80/80 — all green.
+
+**Which failures belong to this commit.** Only one, and it is B3:
+
+* `v84-whatsnew` — **newly red here**. At `b9fa171`, `APP_VERSION` was `app-v84` and so was
+  `CHANGELOG[0].v`; the failure text at HEAD is literally
+  `{"running":"app-v85","newest":{"v":"app-v84"…}}`. The version bump alone did it.
+* `v57-browser-notice` — **pre-existing**, and I measured it rather than assuming: served
+  `b9fa171`'s own `index.html` on 8899 and ran the suite against it — **20 failures at the base**,
+  which is more than at HEAD. Not this commit's.
+* The remaining nine touch nothing this diff changes: contrast on a "Snooze" label, an unescaped
+  character in a MedlinePlus href, a "litre" keyword count, report controls, overflow scans, the
+  v55 family. `run-all-tests.sh`'s own header records that several of these have been red for many
+  releases. `rebuild-boots` fails standalone because it is meant to be driven by
+  `verify-rebuild.sh` with `BASE` set. None of them is a reason to hold this release; none of them
+  is a reason to call the board green either.
+
+The probe servers I started on 8899/8900/8901 are stopped; nothing is left serving a stale build.
+
+---
+
 # WHAT WOULD MAKE THIS SHIP
 
 1. Close B1 and B2 — preferably with the "profile still exists" guard, which closes both at once.
