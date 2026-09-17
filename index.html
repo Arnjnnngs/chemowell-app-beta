@@ -9059,8 +9059,8 @@ const APP_VERSION = 'app-v85';
 const CHANGELOG = [
   { v: 'app-v85', date: 'Sep 17, 2026', title: 'Reminders for one person no longer wipe out another\u2019s',
     points: [
-      'If this phone has more than one person set up, every time the app was opened it quietly removed the reminders belonging to whoever you were not currently in. A dose could pass with nothing on screen and nothing in your hand buzzing.',
-      'That is fixed — each person\u2019s reminders now stay put. Reminders are still only kept up to date for the person you are in, so open their profile to bring theirs in line with what has been logged.',
+      'If this phone has more than one person set up, every time you opened the ChemoWell app it quietly removed the reminders belonging to whoever you were not currently in. A dose could pass with nothing on screen and nothing in your hand buzzing.',
+      'That is fixed — each person\u2019s reminders are now left alone. Reminders are still only set up for the person you are in, and another person\u2019s run out after about three days, so open their profile to set theirs up again.',
       'Settings now tells you which person the reminder count is about, so a tick on that screen no longer looks like it covers everyone on the phone.'
     ] },
   { v: 'app-v84', date: 'Sep 14, 2026', title: 'The app now tells you what changed',
@@ -9304,11 +9304,22 @@ function renderNativeNotifStatusCard() {
     // What is actually true is narrower and more useful: another profile's reminders survive, but
     // nothing UPDATES them while you are not in that profile -- a dose logged there will not clear
     // its reminder, and a medication added there will not gain one, until that profile is opened.
+    // TWO THINGS AN AUDIT CAUGHT ME REPORTING AS FIXED WHILE THIS FUNCTION WAS BYTE-IDENTICAL.
+    //
+    // 1. "This count" was printed in the `empty` state too, where the card reads "No reminders are
+    //    currently due in the next 3 days" and THERE IS NO COUNT to be scoped. The opening clause
+    //    is chosen from what the card above it actually shows.
+    // 2. Neither this line nor the release note said the other profile's reminders EXPIRE. Nothing
+    //    re-arms an inactive profile, and the horizon is 72 hours, so "keeps the reminders it
+    //    already had" is true for at most three days and then that profile silently has none.
+    //    "Stay put" reads as "keep working"; saying so is the difference between a limitation and
+    //    a trap.
+    const lead = notifScheduledCount > 0 ? 'This count is for ' + myName + ' only. ' : 'This is for ' + myName + ' only. ';
     return h('div', { 'data-notif-profile-scope': String(others.length), style: { ...muted, color: '#9A6419', fontWeight: '700', marginTop: '2px' } },
-      'This count is for ' + myName + ' only. ' + (others.length === 1
-        ? 'The other profile on this phone keeps the reminders it already had, but they stop being kept up to date while you are not in it'
-        : 'The other ' + others.length + ' profiles on this phone keep the reminders they already had, but those stop being kept up to date while you are not in them')
-      + ' — open that profile to bring its reminders in line with what has been logged.');
+      lead + (others.length === 1
+        ? 'The other profile on this phone keeps the reminders it already had, but nothing adds to them while you are not in it, and they run out within about three days'
+        : 'The other ' + others.length + ' profiles on this phone keep the reminders they already had, but nothing adds to those while you are not in them, and they run out within about three days')
+      + ' — open that profile to set its reminders up again.');
   };
   // A single top-level wrapper owns the gap from the section's intro sentence above AND the gap
   // between each state's own children, via flex+gap rather than a per-child marginTop -- so every

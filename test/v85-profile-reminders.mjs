@@ -218,15 +218,20 @@ await nativePage.addInitScript(() => {
     patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: 1
   }));
   localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([]));
+  // `type: 'win'` IS THE WHOLE INGREDIENT, and three wrong theories died before an audit found it.
+  // normalizeMedication DERIVES alerts (`type === 'win' && mode !== 'asneeded'`) and DISCARDS a
+  // stored `alerts: true`; anything without type:'win' normalises to 'gap' and never enters the
+  // reminder plan. So a fixture can render a flawless medication card and produce no reminders at
+  // all -- which is how this section spent three rounds testing the `empty` state while believing
+  // it could not reach any other.
+  //
+  // ONE window, not twenty-four, and it works at any hour: buildReminderPlan walks days forward,
+  // so tomorrow's occurrence is always inside the 72h horizon. A suite that only passes in the
+  // morning is a suite this repo has shipped before.
   localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [
-    { id: 'm-scoped', name: 'Test Tablet', type: 'scheduled', schemaV: 2, quickLog: true,
-      // `alerts`, NOT `reminders` -- medRemindersEnabledOn() gates on med.alerts, and a fixture
-      // setting the wrong flag produces a medication that renders perfectly on Meds and generates
-      // no reminder plan at all. The card then falls to its 'empty' state and this section tests
-      // the one state it was written to stop testing.
-      alerts: true,
+    { id: 'alpha', name: 'Alpha', type: 'win', schemaV: 2, quickLog: true,
       doses: [{ label: '1 tablet', pills: 1 }],
-      windows: Array.from({ length: 24 }, (_, i) => ({ start: i, end: i + 1, name: 'W' + i })) }
+      windows: [{ start: 9, end: 12, name: 'Morning' }] }
   ] }));
   window.Capacitor = {
     isNativePlatform: () => true,
@@ -267,30 +272,12 @@ const cardState = await nativePage.evaluate(() => {
   if (/Notifications are on/i.test(txt)) return 'on';
   return 'other';
 });
-// WHICH STATE THIS SECTION ACTUALLY REACHES, said plainly instead of left to be assumed. The card
-// is in `empty` here: driving it to `on` needs a completed native reminder sync, and this sandbox
-// has a stubbed plugin rather than a real one. So the RENDERED assertions below are real but cover
-// one of the three counting states.
-console.log('  note  the rendered card is in the "' + cardState + '" state; `on` and `on-exact` are covered structurally below.');
-
-// THE OTHER TWO STATES, COVERED STRUCTURALLY AND LABELLED AS STRUCTURAL.
-//
-// An audit found that deleting profileScopeLine() from the `on` and `on-exact` branches -- the two
-// a real phone shows -- scored a clean pass, because the fixture only ever reached `empty`. This
-// closes that mutant. It is a SOURCE check, not a behavioural one: it proves the call exists in
-// each branch, not that the sentence renders there. Calling it behavioural would be the dishonest
-// exemption this suite already had once, one level down.
-const src = await (await fetch(BASE).catch(() => null))?.text?.() ?? null;
-const srcText = src || await nativePage.evaluate(async () => (await (await fetch(location.href)).text()));
-const cardFn = srcText.slice(srcText.indexOf('const profileScopeLine'), srcText.indexOf('function nativeNotifStatus'));
-const branches = {
-  'on-exact': /status === 'on-exact'[\s\S]{0,600}?profileScopeLine\(\)/.test(cardFn),
-  'empty': /status === 'empty'[\s\S]{0,400}?profileScopeLine\(\)/.test(cardFn),
-  'on': /\/\/ 'on'[\s\S]{0,300}?profileScopeLine\(\)/.test(cardFn)
-};
-t('the scope line is wired into the `on` state', branches.on, JSON.stringify(branches));
-t('the scope line is wired into the `on-exact` state', branches['on-exact'], JSON.stringify(branches));
-t('the scope line is wired into the `empty` state', branches.empty, JSON.stringify(branches));
+// THE STATE THIS SECTION REACHES IS ASSERTED, NOT HOPED FOR. Earlier versions silently landed in
+// `empty` -- the one state with no count to disambiguate -- so deleting the scope line from `on`
+// and `on-exact`, the two a real phone shows, scored a clean pass. An audit disproved the
+// impossibility claim that replaced it; this is behavioural now, and the structural stand-in is
+// gone rather than kept alongside.
+t('the card is in the `on` state, which is what a real phone shows', cardState === 'on', 'state=' + cardState);
 t('the scope line renders on a two-profile phone', !!scope, scope ? scope.text.slice(0, 80) : 'not rendered');
 if (scope) {
   t('it names the profile the count belongs to', /Alex/.test(scope.text), scope.text.slice(0, 100));
@@ -298,7 +285,12 @@ if (scope) {
   // THE SENTENCE MUST NOT CLAIM THE OTHER PROFILE HAS NO REMINDERS. It said exactly that in the
   // first draft -- true only while the bug destroyed them, and false the moment it was fixed.
   t('it does NOT claim the other profile has no reminders', !/no reminders/i.test(scope.text), scope.text.slice(0, 120));
-  t('it says what is actually true — they stop being kept up to date', /kept up to date/i.test(scope.text), scope.text.slice(0, 120));
+  t('it says nothing adds to the other profile\'s reminders', /nothing adds to/i.test(scope.text), scope.text.slice(0, 120));
+  // THE EXPIRY IS THE PART THAT MAKES IT A LIMITATION RATHER THAN A TRAP. Nothing re-arms an
+  // inactive profile and NOTIF_HORIZON_MS is 72h, so "keeps the reminders it already had" is true
+  // for at most three days and then that profile silently has none. An audit found the sentence
+  // saying the first half and not the second, while I had reported it fixed.
+  t('it says the other profile\'s reminders run out', /run out|three days/i.test(scope.text), scope.text.slice(0, 160));
   t('it does not claim the other profile is covered', !/(fully covered|will get every reminder|on time)/i.test(scope.text), scope.text.slice(0, 120));
 }
 // And it must stay quiet on a one-profile phone, which is every Free user.

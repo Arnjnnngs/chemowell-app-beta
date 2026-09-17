@@ -543,3 +543,33 @@ size AND his decision in section 3 before a line is written.**
 No code written, no app file edited, no commit other than this brief. `index.html`, `sw.js` and every test
 file are untouched. The reconcile-loop reproduction ran in the scratchpad against expressions copied out
 of `index.html`; nothing was executed against the repo's own files.
+
+---
+
+# AARON'S DECISIONS, 2026-09-17 — recorded here because this file is where the questions were asked
+
+This brief closed with four open questions and marked two tasks as blocked on them. Aaron answered
+the two that matter, in the session that reported the defect, and **nothing in the repo recorded
+it** — the app-v85 README row asserted the decision with no source, and an independent audit
+correctly refused to take it. A decision that lives only in a chat log is a decision the next
+session will re-ask or, worse, invent. So:
+
+**Q — ship order.** *"Stage 1 now, on its own."* Stop the destruction and make Settings honest
+first; stage 2 follows separately. Reason given: the active harm was happening on every cold start,
+so waiting to bundle it with the larger change would have left phones losing reminders meanwhile.
+
+**Q — the notification text (this brief's section 3, which blocked stage 2 entirely).**
+*"A label each profile chooses, default blank."* Each profile sets its own short label — a real
+name, an initial, a nickname, or nothing at all. **The default is blank so that no existing user is
+named on a lock screen merely by updating.** He also took the accompanying change: reminder contents
+hidden until the phone is unlocked (channel `visibility`), which this brief raised as a separate
+near-one-way decision on the same screen.
+
+**Still open, and NOT decided by the above:**
+  * whether the wrong-patient notification tap (no `addListener` handler exists anywhere) is fixed
+    inside stage 2 or shipped with a written exemption;
+  * whether iOS is on the roadmap before stage 2 ships — if it is, the 64-request cap sits below
+    `NOTIF_MAX_PENDING = 128` and the horizon or the cap has to come down as part of it.
+
+Both are engineering calls I can make and will put to him with a recommendation rather than a
+question, unless he wants them decided differently.
