@@ -13146,6 +13146,19 @@ if (typeof window !== 'undefined') {
   // is a test-only path.
   window.__eraseTest = eraseAllAppData;
   // app-v85: the reminder-scoping fix, exported so the suite drives what actually ships.
+  // app-v86. THE SHIPPED FUNCTIONS THEMSELVES, never copies -- same rule as __notifScopeTest
+  // below, and for the same reason: app-v85 shipped a draft that exported a re-implementation
+  // here and described it as "the shipped predicate", which proves only that a suite agrees with
+  // itself. openReport is exposed so the suite can reach a report screen without depending on the
+  // exact label text of a bottom-nav button.
+  window.__v86Test = {
+    openReport: (r) => openReport(r),
+    isDoseEntry,
+    isSymptomEntry,
+    supersedeStamp,
+    renameActiveProfile: (n) => renameActiveProfile(n),
+    where: () => ({ view: state.view, reportsView: state.reportsView })
+  };
   window.__notifScopeTest = {
     activeProfileId: () => ACTIVE_PROFILE_ID,
     // THE SHIPPED FUNCTION ITSELF, not a copy of it. An earlier draft of app-v85 exported a

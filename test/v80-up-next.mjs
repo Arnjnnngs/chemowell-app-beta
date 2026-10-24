@@ -187,7 +187,13 @@ console.log('\n4. THE BUTTON GOES TO A CARD THAT EXISTS');
   const labels = await page.evaluate(() =>
     [...document.querySelectorAll('[data-home="up-next"] button')].map(b => (b.innerText || '').trim()));
   t('the hero offers Log this dose for a single-strength medication', labels.indexOf('Log this dose') >= 0, JSON.stringify(labels));
-  t('and it offers Snooze beside it', labels.indexOf('Snooze') >= 0, JSON.stringify(labels));
+  // app-v86: the label gained its duration. Aaron: "Snoozing the UP NEXT banner gives no toast or
+  // indication of when it returns." This check is STRICTER than the exact-match it replaces -- it
+  // still requires a Snooze button, and now also requires that button to state how long, so the
+  // label cannot quietly revert to a bare "Snooze" without going red.
+  const snoozeLabel = labels.find(x => /^Snooze\b/.test(x));
+  t('and it offers Snooze beside it', !!snoozeLabel, JSON.stringify(labels));
+  t('and that button says how long it snoozes for', !!snoozeLabel && /\d+\s*m/.test(snoozeLabel), snoozeLabel || 'no Snooze button');
   t('and it does NOT also offer the scroll fallback, which would be two ways to do one thing',
     labels.indexOf('Show me the card') === -1, JSON.stringify(labels));
   // LOGGING GOES THROUGH THE ONE PATH THAT ALREADY EXISTS. The hero must open the same
@@ -225,7 +231,9 @@ console.log('\n4b. SNOOZE HIDES THE CARD AND CHANGES NOTHING ELSE');
     const mk = Object.keys(localStorage).find(k => /-med-v1$/.test(k));
     return { entries: localStorage.getItem(ek) || '[]', meds: localStorage.getItem(mk) || '' };
   });
-  await page.getByRole('button', { name: 'Snooze', exact: true }).first().click();
+  // Not exact: the label carries its duration since app-v86 ("Snooze 15m"). Anchored to the start
+  // so it still cannot match some other button that merely contains the word.
+  await page.getByRole('button', { name: /^Snooze\b/ }).first().click();
   await page.waitForTimeout(800);
   t('Snooze hides the hero', await page.locator('[data-home="up-next"]').count() === 0);
   // IT MUST NOT TOUCH THE RECORD OR THE SCHEDULE. Snooze is the caregiver saying "not now" — if it
