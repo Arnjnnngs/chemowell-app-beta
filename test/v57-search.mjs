@@ -446,8 +446,28 @@ t('app-v66 the paracentesis topic still carries it as an invisible search keywor
 // codeOnly(): comments are stripped first. That helper's own header records THREE false positives
 // across two releases from a comment mentioning the token its assertion forbade, and this check
 // walked straight into a fourth -- a source comment saying "litres" made it red for no defect.
-const rawLitre = (codeOnly(html).match(/litre/gi) || []).length;
-const keyedLitre = corpus.reduce((n, tp) => n + (tp.keywords || []).filter(k => /litre/i.test(k)).length, 0);
+// AS A WORD, NOT AS A SUBSTRING -- AND THE RECORD OF THIS RED WAS WRONG ABOUT WHY.
+//
+// It has been carried for several releases as "the check counts the word millilitre inside two
+// code comments". It is not in comments: `codeOnly()` strips those. The two hits are in LIVE CODE,
+// in the dose-unit regex at index.html:1431 -- `ml|millilitre|millilitres|milliliter|milliliters`
+// -- which is the parser that reads a dose someone typed, has nothing to do with Help search, and
+// must not be touched to settle a test. Three raw against one keyed, forever, and nobody could fix
+// it because the thing it was complaining about was correct.
+//
+// `millilitre` contains `litre` and always will. The assertion was always about the British
+// spelling of the UNIT NAME appearing as a word, so it asks that now: \blitres?\b does not match
+// inside `millilitre`, because there is no word boundary between `i` and `l`. What the check
+// exists to catch is unchanged -- prose containing the word raises the raw count without raising
+// the parsed one -- and it is now capable of passing on a correct app, which it has not been since
+// it was written.
+// Two patterns, not one shared /g: a global regex carries lastIndex between .test() calls, so one
+// object used for both the match and the per-keyword test skips every other keyword. That is a
+// silent undercount in a check whose whole job is counting.
+const LITRE_WORD_ALL = /\blitres?\b/gi;
+const LITRE_WORD = /\blitres?\b/i;
+const rawLitre = (codeOnly(html).match(LITRE_WORD_ALL) || []).length;
+const keyedLitre = corpus.reduce((n, tp) => n + (tp.keywords || []).filter(k => LITRE_WORD.test(k)).length, 0);
 t('app-v66 every "litre" in the shipped bytes is accounted for by a parsed search keyword',
   rawLitre === keyedLitre,
   rawLitre + ' in the file, ' + keyedLitre + ' in parsed keyword arrays');
