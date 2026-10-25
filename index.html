@@ -3104,7 +3104,12 @@ async function confirmTimeAndLog() {
   if (m.type !== 'period') {
     ts = new Date(m.timeValue).getTime();
     if (isNaN(ts)) { setToast('Invalid time'); return; }
-    if (ts > simNow() + 60000 && !m.futureOk) { state.timeModal.futureOk = true; setState({ timeModal: state.timeModal }); return; }
+    // 'daily' is excluded from the confirm-through: it refuses a future DAY outright in its own
+    // branch below. Leaving it here meant the first Confirm armed futureOk and returned with no
+    // message at all, so picking tomorrow looked like a dead button, and only a second tap
+    // reached the refusal. A guard that is right about the outcome and silent about the reason
+    // is the shape a caregiver reads as "the app is broken".
+    if (ts > simNow() + 60000 && !m.futureOk && m.type !== 'daily') { state.timeModal.futureOk = true; setState({ timeModal: state.timeModal }); return; }
   }
 
   if (m.type === 'daily') {
