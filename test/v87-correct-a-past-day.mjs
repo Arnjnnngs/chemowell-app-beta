@@ -140,9 +140,68 @@ const declineable = await everyControl.evaluate(() => {
 });
 t('the check-in sheet still lets a caregiver decline to answer', !!declineable && declineable.first === '',
   declineable ? ('first option = "' + declineable.firstText + '"') : 'sheet not open');
-t('and that option is first, so an unanswered day opens on it rather than blank',
+t('and the sheet offers exactly the app\u2019s values plus that one decline, nothing more',
   !!declineable && declineable.firstText.length > 0 && declineable.count === defined.length + 1,
   declineable ? (declineable.count + ' options for ' + defined.length + ' values + 1 decline') : 'n/a');
+
+console.log('\n1d. AN UNANSWERED DAY OPENS ON THE DECLINE OPTION, AND SAVING IT WRITES NOTHING');
+// THE NINTH VACUOUS CHECK WAS THE EIGHTH ONE'S FIX, AND THIS SECTION IS WHY IT EXISTS.
+//
+// The check above was named "an unanswered day opens on it rather than blank" and never opened an
+// unanswered day: its scenario has a standing `loose` entry, so openCheckinModal() takes its
+// truthy branch. The condition inspected the OPTION LIST and never the SELECTION. An audit put a
+// sentinel in the unanswered pre-fill -- option list untouched, decline option still present and
+// still first -- and scored 45/45, 87/87 and v58 10/10 while the sheet rendered selectedIndex -1,
+// BLANK, on every morning nobody had answered yet, and Save wrote a bowel_movement record for a
+// question the caregiver never answered.
+//
+// The previous round asked for two things. The first became the assertion; the second became the
+// assertion's NAME. A name is not a check. So this section drives the path: no entry for today,
+// open the sheet, read the SELECTION, then Save and count what was written.
+const unanswered = await freshPage(() => {
+  const day = new Date(); day.setHours(0, 0, 0, 0); const d = day.getTime();
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true,
+    installedAt: d - 7 * 86400000, dailyCheckinTime: '00:00', homeCards: { bowelCheckin: true, appetiteCheckin: true } }));
+  localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
+  // NOTHING FOR TODAY. Yesterday only, so the app is a going concern rather than a fresh install
+  // -- an empty store would take a different path through the Home screen entirely.
+  localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([
+    { id: 'u0', medId: 'bowel_movement', value: 'normal', dose: 'Normal', mg: 0, ts: d - 86400000 + 12 * 3600000 }
+  ]));
+});
+const blankDay = await unanswered.evaluate(async () => {
+  const start = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Start');
+  if (!start) return { ok: false, why: 'no Start button on Home' };
+  start.click();
+  await new Promise(r => setTimeout(r, 900));
+  const dlg = document.querySelector('[role="dialog"][aria-label="Daily check-in"]');
+  if (!dlg) return { ok: false, why: 'sheet did not open' };
+  const sel = [...dlg.querySelectorAll('select')].find(s2 => [...s2.options].some(o => /Diarrhea/i.test(o.textContent)));
+  if (!sel) return { ok: false, why: 'no bowel select in the sheet' };
+  return { ok: true, value: sel.value, index: sel.selectedIndex,
+           shown: sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].textContent.trim() : '(BLANK)' };
+});
+t('precondition: the sheet opens on a day with no bowel answer', blankDay.ok === true, JSON.stringify(blankDay.why || 'open'));
+if (blankDay.ok) {
+  // THE SELECTION, not the option list. This is the clause the previous version was missing.
+  t('an unanswered day opens ON the decline option, not on nothing',
+    blankDay.index === 0 && blankDay.value === '',
+    'value="' + blankDay.value + '" index=' + blankDay.index + ' shown="' + blankDay.shown + '"');
+  const beforeSave = await unanswered.evaluate(() => JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').length);
+  await unanswered.evaluate(async () => {
+    const dlg = document.querySelector('[role="dialog"][aria-label="Daily check-in"]');
+    const save = dlg && [...dlg.querySelectorAll('button')].find(x => /^Save$/i.test(x.textContent.trim()));
+    if (save) save.click();
+    await new Promise(r => setTimeout(r, 900));
+  });
+  await unanswered.waitForTimeout(600);
+  const afterSave = await unanswered.evaluate(() => JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').map(e => e.value));
+  // A FABRICATED DAILY ANSWER IS WORSE THAN A MISSING ONE -- a clinician reads these.
+  t('and saving without answering writes no bowel record at all',
+    afterSave.length === beforeSave, beforeSave + ' before -> ' + afterSave.length + ' after [' + afterSave.join(',') + ']');
+}
+await unanswered.close();
 
 await everyControl.evaluate(() => { const c = [...document.querySelectorAll('button')].find(x => /^Cancel$/i.test(x.textContent.trim())); if (c) c.click(); });
 await everyControl.waitForTimeout(500);
@@ -429,6 +488,91 @@ if (refused.ok) {
   t('and the next pick still works -- the busy flag was released', recovered.ok && recovered.n1 === recovered.n0 + 1,
     recovered.ok ? (recovered.n0 + ' -> ' + recovered.n1) : 'picker unreachable');
 }
+
+console.log('\n7c. THE HELP PROSE MUST MATCH THE CONTROLS IT DESCRIBES');
+// THE AUDIT'S HEADLINE, AND IT IS THIS RELEASE'S OWN DEFECT ONE SCREEN OVER.
+//
+// Help -> Symptoms -> "Should diarrhoea go in Symptoms or the bowel tracker?" answered "Either
+// works" and stated "The Symptoms list does include diarrhoea and constipation for exactly that
+// reason." The picker has not offered either since v57 -- the comment above SYMPTOM_TYPES says so
+// in terms. A second topic enumerated the choices and named them too. Both prose lists had been
+// copied from SYMPTOM_TYPES, which has ELEVEN entries, rather than from the control, which has
+// nine. A caregiver with diarrhoea at 2am was told Symptoms carries it and sent to a control it
+// was taken out of thirty releases ago.
+//
+// A positive claim about a deleted control is worse than an incomplete list, and it survived
+// every gate here because nothing tied a sentence to a picker. These checks are that tie. They
+// read the SHIPPED data, not a copy of it.
+const helpPage = await freshPage(() => {
+  const day = new Date(); day.setHours(0, 0, 0, 0); const d = day.getTime();
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: d - 7 * 86400000 }));
+  localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
+  localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([]));
+});
+const helpData = await helpPage.evaluate(() => {
+  const T = window.__v86Test;
+  const topics = T.helpTopics();
+  const text = tp => [tp.q, tp.a].concat(tp.steps || []).concat(tp.note ? [tp.note] : [])
+    .concat((tp.branches || []).flatMap(br => [br.when].concat(br.steps || [])))
+    .filter(v => typeof v === 'string').join(' \n ');
+  const byId = {};
+  topics.forEach(tp => { byId[tp.id] = text(tp); });
+  return { ids: T.selectableSymptomIds(), types: T.symptomTypes(), bowel: T.bowelLabels(),
+           symLog: byId['sym-log'] || '', symBowel: byId['sym-bowel-confusion'] || '',
+           all: topics.map(tp => text(tp)).join(' \n ') };
+});
+
+// A -- THE CONTROL ITSELF, driven, not read. It is generated from the id list now, so this is the
+// check that catches somebody hand-writing the options back in.
+const pickerValues = await helpPage.evaluate(async () => {
+  const sym = [...document.querySelectorAll('button')].find(x => /^Symptoms$/.test((x.innerText || '').trim()));
+  if (!sym) return { ok: false, why: 'no Symptoms tab' };
+  sym.click();
+  await new Promise(r => setTimeout(r, 700));
+  const plus = [...document.querySelectorAll('button')].find(x => (x.innerText || '').trim() === '+');
+  if (!plus) return { ok: false, why: 'no + button on Symptoms' };
+  plus.click();
+  await new Promise(r => setTimeout(r, 700));
+  const sel = [...document.querySelectorAll('[role="dialog"] select')].find(s2 => [...s2.options].some(o => /Nausea/i.test(o.textContent)));
+  if (!sel) return { ok: false, why: 'no symptom select in the dialog' };
+  return { ok: true, values: [...sel.options].map(o => o.value).filter(Boolean) };
+});
+t('precondition: the symptom picker opens', pickerValues.ok === true, JSON.stringify(pickerValues.why || 'open'));
+if (pickerValues.ok) {
+  t('the symptom picker offers exactly the app’s selectable list, in order',
+    JSON.stringify(pickerValues.values) === JSON.stringify(helpData.ids),
+    'picker=' + pickerValues.values.join(',') + '  list=' + helpData.ids.join(','));
+}
+
+// B -- the enumeration in Help names every selectable symptom and nothing else.
+const notSelectable = Object.keys(helpData.types).filter(k => helpData.ids.indexOf(k) < 0);
+const spokenMissing = helpData.ids.filter(id => {
+  const label = (helpData.types[id] || id).toLowerCase();
+  const head = label.split(' (')[0].split('/')[0].trim();
+  return helpData.symLog.toLowerCase().indexOf(head) < 0 && id !== 'neuropathy' && id !== 'skin_reaction';
+});
+t('precondition: the app has symptom types that are NOT selectable', notSelectable.length > 0, notSelectable.join(',') || 'none');
+t('Help’s list of what you can choose names every selectable symptom', spokenMissing.length === 0,
+  spokenMissing.length ? ('missing from sym-log: ' + spokenMissing.join(',')) : helpData.symLog.slice(0, 0) + 'all present');
+const wronglyNamed = notSelectable.filter(k => new RegExp('\\b' + (helpData.types[k] || k).toLowerCase().replace('diarrhea', 'diarrh(e|o)ea') + '\\b', 'i').test(helpData.symLog));
+t('and names none that the picker does not offer', wronglyNamed.length === 0,
+  wronglyNamed.length ? ('sym-log still offers: ' + wronglyNamed.join(',')) : 'none');
+
+// C -- no topic anywhere may ASSERT that Symptoms carries them. The bowel topic says the opposite,
+// on purpose, so this looks for the affirmative claim rather than for the words.
+const falseClaim = /(symptoms?[^.]{0,40}(list|picker|tab)[^.]{0,40}\b(does include|includes|offers|has)\b[^.]{0,40}(diarrh|constipation))|(\b(does include|includes)\b[^.]{0,30}(diarrh(o?)ea|constipation)[^.]{0,40}symptom)/i;
+t('no Help topic claims the Symptoms list carries diarrhoea or constipation',
+  !falseClaim.test(helpData.all), (helpData.all.match(falseClaim) || ['none'])[0]);
+
+// D -- F4: the bowel enumeration in prose, held to the map. The previous round fixed this
+// sentence by hand and nothing checked it: an audit reverted it to the four-of-five wording that
+// had just been refused and scored 45/45, 87/87 and v55-help green.
+const bowelWords = Object.keys(helpData.bowel).map(k => helpData.bowel[k].toLowerCase());
+const bowelMissing = bowelWords.filter(w => helpData.symBowel.toLowerCase().indexOf(w) < 0);
+t('the bowel topic names every value the app defines', bowelMissing.length === 0,
+  bowelMissing.length ? ('missing: ' + bowelMissing.join(',')) : bowelWords.join(', '));
+await helpPage.close();
 
 console.log('\n8. NOTHING THREW, ON ANY PAGE');
 t('no page error at any point above', thrown.length === 0, thrown.join(' | ') || 'none');

@@ -95,8 +95,16 @@ t('the bowel report renders a logger', bowelUi.present === true, 'present=' + bo
 // adding a sixth bowel value to the app -- with every control correctly generated from the map --
 // turned THIS check red while the app was right. A suite that fails on a correct app is the exact
 // anti-pattern the app-v87 row contrasts itself with, and it was sitting two files away.
+//
+// AND IT MUST COUNT, NOT JUST CONTAIN. The first version of this replacement was `.every(...)`
+// alone -- a SUBSET test, which catches a control that OMITS a value and not one that offers an
+// EXTRA. An audit measured the gap: a logger offering a sixth value the map has no label for
+// scored 87/87 and 45/45, and the option it rendered read `undefined`, a blank-faced button that
+// writes an unlabelled value into a clinician's record. The literal this replaced caught that.
+// So: every defined value is offered, AND nothing else is.
 const bowelDefined = await page.evaluate(() => Object.keys(window.__v86Test.bowelLabels()));
-t('it offers every bowel value the app defines', bowelDefined.every(v => bowelUi.values.includes(v)) && bowelUi.values.includes('diarrhea'),
+t('it offers every bowel value the app defines, and nothing the app does not',
+  bowelDefined.every(v => bowelUi.values.includes(v)) && bowelUi.values.length === bowelDefined.length && bowelUi.values.includes('diarrhea'),
   'app=' + bowelDefined.join(',') + '  logger=' + bowelUi.values.join(','));
 
 // THE CLOCK MUST NOT MATTER. This is the whole point: the Home card is correctly gated on the
