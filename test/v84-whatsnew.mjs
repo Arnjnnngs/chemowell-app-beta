@@ -637,6 +637,17 @@ section('7e. SCROLLING AWAY FROM A FIELD YOU JUST TYPED IN MUST STICK');
   // field whose top is 8px above the bottom edge and whose body is all below it is not visible by
   // any reading that matters, and the browser agrees -- focusing it scrolls. So the condition is
   // now the one the sentence always meant: NOT FULLY IN VIEW.
+  //
+  // FALSIFIED, which is the only reason this is allowed to be called fixed. A copy of index.html
+  // with the v28 nudge deleted outright, served on its own port and run through FALSIFY_BASE:
+  //
+  //   PASS  precondition ... top=836 bottom=879 in a 844px viewport
+  //   FAIL  and focusing it WITHOUT a swipe brings it into view -- v28 is not deleted by the guard
+  //         |  scrollY 0 -> 0, field top 836 -> 836 in 844px
+  //
+  // Against the shipped file the same pair reads scrollY 0 -> 436, field top 836 -> 400. Note that
+  // the PRECONDITION stays green on the mutant, which is the point of splitting it out: a
+  // precondition that went red alongside the assertion would be measuring the thing under test.
   t('precondition: the field is not fully in view, so there is something for the nudge to do',
     deepBoxBefore.bottom > vhE,
     'top=' + deepBoxBefore.top + ' bottom=' + deepBoxBefore.bottom + ' in a ' + vhE + 'px viewport');
