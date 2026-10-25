@@ -289,5 +289,37 @@ console.log('\n4. THE RATCHET: BEHAVIOUR KEYED TO ONE PERSON\'S PRESCRIPTION');
     /const schemaV = MED_CONFIG_VERSION;/.test(code), '');
 }
 
+// ---- RULE 0 SHAPE 2: A GENDERED PRONOUN. A RATCHET, BECAUSE THE DEBT IS REAL AND PRE-EXISTING.
+//
+// Rule 0 names four shapes the single-patient ancestry leaks in. Shape 1, the patient's NAME, is
+// checked above and is the shape that never actually occurs. **Shape 2 is the one that does**, and
+// until now nothing counted it: the file calls the caregiver "she" in roughly a dozen comments,
+// inherited from an app written for one family. Most users are not women, and the product has
+// never asked anyone's gender for this purpose.
+//
+// This is a COUNT, not a ban, because three categories of hit are legitimate and a ban would make
+// the suite unrunnable until all of them were rewritten:
+//   * Aaron by name in the same sentence -- "so Aaron can change his mind", "Aaron himself said".
+//     He is the owner, not a patient.
+//   * The search stop-word list, which necessarily contains `he she they them their his her`.
+//   * Search test fixtures that quote what a user might type.
+// The rest are debt and are logged as their own task. A ratchet is the right shape for debt: a new
+// one fails immediately, and clearing one requires lowering the number, so it cannot drift back up
+// quietly either.
+//
+// Found by the app-v88 audit, which caught TWO NEW ONES I had just written -- in the release whose
+// own brief quotes this rule. Counting it is cheaper than remembering it.
+{
+  const PRONOUNS_ALLOWED = 36;
+  const src = (files.find(f => f.name === 'index.html') || { raw: '' }).raw;
+  const hits = (src.match(/\b(?:she|her|hers|herself|his|him|himself)\b|\bhe\b/gi) || []).length;
+  t('no NEW gendered pronoun has been added to the file (Rule 0 shape 2)',
+    hits <= PRONOUNS_ALLOWED,
+    hits + ' found, ratchet allows ' + PRONOUNS_ALLOWED + (hits > PRONOUNS_ALLOWED ? ' -- write they/them' : ''));
+  t('and the ratchet is not slack -- lower it when the debt is cleared',
+    hits >= PRONOUNS_ALLOWED,
+    hits + ' found, ratchet set at ' + PRONOUNS_ALLOWED + (hits < PRONOUNS_ALLOWED ? ' -- lower it to ' + hits : ''));
+}
+
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed' + (fail ? '  <-- FAIL' : ''));
 process.exit(fail ? 1 : 0);
