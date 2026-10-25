@@ -374,6 +374,74 @@ if (ciState.open && ciState.picked) {
     after.latest === 'diarrhea', 'latest=' + after.latest + ' of ' + JSON.stringify(after.values));
 }
 
+console.log('\n12b. RE-CONFIRMING THE SAME ANSWER FROM THE CHECK-IN IS ALSO A NO-OP');
+// The no-op guard for duplicate picks was first written in the UI handler -- the exact shape the
+// F1 lesson had just warned about -- so the Home check-in could still write a duplicate. Once the
+// export marker runs over it, the doctor's file prints "X (corrected later -- superseded)"
+// directly above "X": a correction that did not happen. The guard lives in the writers now.
+// ITS OWN PAGE, with the answer already recorded and the check-in NOT yet completed. Reusing the
+// page from section 12 could not work: answering the check-in sets an explicit per-day completed
+// flag, so the Home card is gone and there is no Start button to press. An earlier version of
+// this check pressed nothing and reported the sheet as never opening.
+const dupPage = await freshPage(() => {
+  const day = new Date(); day.setHours(0, 0, 0, 0); const d = day.getTime();
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({
+    patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true,
+    // WEIGHT IS ENABLED AND LEFT UNANSWERED ON PURPOSE. With bowel and appetite both already
+    // recorded, checkinDoneForDay() is satisfied and the Home card correctly disappears -- there
+    // is no Start button to press. A third metric still outstanding keeps the card on screen so
+    // the other two can be re-confirmed, which is the case under test.
+    installedAt: d - 86400000, dailyCheckinTime: '00:00',
+    homeCards: { bowelCheckin: true, appetiteCheckin: true, dailyWeightCheckin: true }
+  }));
+  localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([
+    { id: 'd1', medId: 'bowel_movement', value: 'diarrhea', dose: 'Diarrhea', mg: 0, ts: d + 12 * 3600000 },
+    { id: 'd2', medId: 'appetite', value: 'little', dose: 'Little to none', mg: 0, ts: d + 12 * 3600000 }
+  ]));
+  localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
+});
+const dupCi = await dupPage.evaluate(async () => {
+  const seeded = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]');
+  const before = seeded.filter(e => e.medId === 'bowel_movement').length;
+  const appBefore = seeded.filter(e => e.medId === 'appetite').length;
+  const start = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Start');
+  if (!start) return { opened: false, before, why: 'no Start button on Home' };
+  start.click();
+  await new Promise(r => setTimeout(r, 900));
+  const dlg = document.querySelector('[role="dialog"][aria-label="Daily check-in"]');
+  if (!dlg) return { opened: false, before, why: 'sheet did not open' };
+  const sel = [...dlg.querySelectorAll('select')].find(s2 => [...s2.options].some(o => /Diarrhea/i.test(o.textContent)));
+  const opt = sel && [...sel.options].find(o => /Diarrhea/i.test(o.textContent));
+  if (!opt) return { opened: false, before, why: 'no Diarrhea option' };
+  // The sheet pre-fills with today's recorded answer, so this is literally "Save without
+  // changing anything" -- the ordinary case, not a contrived one.
+  sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 200));
+  // Re-confirm the appetite answer too. The check-in is the path that bypasses the Reports
+  // logger's own UI guard, which is exactly why the enforcement had to move into the writers.
+  const aSel = [...dlg.querySelectorAll('select')].find(s2 => [...s2.options].some(o => /Little to none/i.test(o.textContent)));
+  const aOpt = aSel && [...aSel.options].find(o => /Little to none/i.test(o.textContent));
+  if (aOpt) { aSel.value = aOpt.value; aSel.dispatchEvent(new Event('change', { bubbles: true })); }
+  await new Promise(r => setTimeout(r, 300));
+  const save = [...dlg.querySelectorAll('button')].find(x => /^Save$/i.test(x.textContent.trim()));
+  if (save) save.click();
+  await new Promise(r => setTimeout(r, 1000));
+  const raw = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]');
+  return { opened: true, before, after: raw.filter(e => e.medId === 'bowel_movement').length,
+           appBefore, appAfter: raw.filter(e => e.medId === 'appetite').length };
+});
+t('precondition: the check-in sheet opens with today\u2019s answer already recorded', dupCi.opened === true, JSON.stringify(dupCi));
+if (dupCi.opened) {
+  t('re-confirming the answer already recorded writes no second record', dupCi.after === dupCi.before, dupCi.before + ' -> ' + dupCi.after);
+  // THE CHECK-IN IS THE PATH THAT BYPASSES THE LOGGER'S OWN GUARD, which is exactly why the
+  // enforcement had to move into the writers. Removing the appetite writer's guard survived a
+  // whole suite run while the Reports logger's UI guard quietly stood in for it.
+  t('and the appetite answer is not duplicated either', dupCi.appAfter === dupCi.appBefore, dupCi.appBefore + ' -> ' + dupCi.appAfter);
+  const falseMark = await dupPage.evaluate(() => window.__v86Test.exportRows().filter(r => /(Bowel Movement|Appetite)/i.test(r[2] || '') && /superseded/i.test(r[3] || '')).map(r => r[3]));
+  t('so the export does not mark an identical answer as corrected', falseMark.length === 0, JSON.stringify(falseMark));
+}
+
 console.log('\n13. A DAY OF ONLY BOWEL / APPETITE / RADIATION IS NOT "NOTHING LOGGED"');
 // THE SECOND BLOCKER, and this release caused it: those three moved out of the dose count with no
 // counter of their own, so the summary announced "Nothing logged" directly above the records it
@@ -384,7 +452,10 @@ const nlPage = await freshPage(() => {
   localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: d - 86400000 }));
   localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([
     { id: 'n1', medId: 'bowel_movement', value: 'loose', dose: 'Loose', mg: 0, ts: d + 12 * 3600000 },
-    { id: 'n2', medId: 'appetite', value: 'little', dose: 'Little to none', mg: 0, ts: d + 12 * 3600000 }
+    { id: 'n2', medId: 'appetite', value: 'little', dose: 'Little to none', mg: 0, ts: d + 12 * 3600000 },
+    // RADIATION IS THE THIRD OF THE THREE and had no fixture, so deleting its counter scored a
+    // clean 60/60 while this section's own title claimed to cover it.
+    { id: 'n3', medId: 'radiation_session', dose: 'Session', mg: 0, ts: d + 14 * 3600000 }
   ]));
   localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
 });
@@ -394,7 +465,31 @@ const nlText = await nlPage.evaluate(() => document.body.innerText.replace(/\s+/
 const nlSummary = (nlText.match(/\d{1,2}\/\d{1,2}\s+(.*?)\s+(?:MORNING|AFTERNOON|EVENING|OVERNIGHT)/) || ['', ''])[1] || '';
 t('precondition: the day really does list those records', /Loose/.test(nlText) && /Little to none/.test(nlText), 'both entries on screen');
 t('the summary does NOT say "Nothing logged" above records it is summarising', !/Nothing logged/.test(nlSummary), 'summary="' + nlSummary.trim().slice(0, 70) + '"');
-t('it counts them under their own names', /1 BM/.test(nlSummary) && /1 appetite/.test(nlSummary), 'summary="' + nlSummary.trim().slice(0, 70) + '"');
+t('it counts them under their own names', /1 BM/.test(nlSummary) && /1 appetite/.test(nlSummary) && /1 radiation/.test(nlSummary), 'summary="' + nlSummary.trim().slice(0, 70) + '"');
+
+console.log('\n13b. A CORRECTION FROM REPORTS KEEPS THE NOTE THE ANSWER CARRIED');
+// logAppetite only attached a note when one was passed, and the Reports logger passes none, so a
+// correction silently dropped a note the caregiver had typed. Untested until a mutant reverting
+// the preservation scored a clean 60/60.
+const notePage = await freshPage(() => {
+  const day = new Date(); day.setHours(0, 0, 0, 0); const d = day.getTime();
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: d - 86400000 }));
+  localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([
+    { id: 'q1', medId: 'appetite', value: 'normal', dose: 'Normal', note: 'only managed toast', mg: 0, ts: d + 12 * 3600000 }
+  ]));
+  localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
+});
+await notePage.evaluate(() => window.__v86Test.openReport('appetite'));
+await notePage.waitForTimeout(1000);
+const notePick = await clickValue(notePage, 'appetite', 'none');
+await notePage.waitForTimeout(900);
+const noteAfter = await notePage.evaluate(() => {
+  const all = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'appetite').sort((a, c) => a.ts - c.ts);
+  return { n: all.length, latestValue: all.length ? all[all.length - 1].value : null, latestNote: all.length ? (all[all.length - 1].note || '') : null };
+});
+t('precondition: the correction was accepted', notePick && noteAfter.n === 2 && noteAfter.latestValue === 'none', JSON.stringify(noteAfter));
+t('and the note from the answer it replaced came with it', noteAfter.latestNote === 'only managed toast', 'note="' + noteAfter.latestNote + '"');
 
 console.log('\n14. RE-PICKING THE VALUE ALREADY SHOWN IS A NO-OP, NOT A DUPLICATE RECORD');
 await nlPage.evaluate(() => window.__v86Test.openReport('bowel_movement'));
@@ -404,6 +499,15 @@ for (let i = 0; i < 4; i++) { await clickValue(nlPage, 'bowel_movement', 'loose'
 await nlPage.waitForTimeout(600);
 const dupAfter = await nlPage.evaluate(() => JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').length);
 t('four taps on the value already showing add no records', dupAfter === dupBefore, dupBefore + ' -> ' + dupAfter);
+// AND THE SAME FOR APPETITE, which has its own guard because the note is part of the answer.
+// Removing the bowel guard was caught; removing the appetite one scored a clean 67/67 until this.
+await nlPage.evaluate(() => window.__v86Test.openReport('appetite'));
+await nlPage.waitForTimeout(900);
+const apBefore = await nlPage.evaluate(() => JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'appetite').length);
+for (let i = 0; i < 3; i++) { await clickValue(nlPage, 'appetite', 'little'); await nlPage.waitForTimeout(250); }
+await nlPage.waitForTimeout(600);
+const apAfter = await nlPage.evaluate(() => JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'appetite').length);
+t('and three taps on the appetite value already showing add none either', apAfter === apBefore, apBefore + ' -> ' + apAfter);
 
 console.log('\n15. A CORRECTED ANSWER IS MARKED IN THE DOCTOR-FACING EXPORT, NOT DELETED');
 await nlPage.evaluate(() => window.__v86Test.openReport('bowel_movement'));
@@ -440,6 +544,26 @@ t('the ACTIVE profile is the one renamed', /p2=Renamed Target/.test(rn.names), r
 t('the first profile in the list is untouched', /p1=First Person/.test(rn.names), rn.names);
 t('and the untouched profile keeps its own patientName', rn.p1 === 'First Person', 'p1 patientName=' + rn.p1);
 t('while the active profile\'s patientName moved with it', rn.p2 === 'Renamed Target', 'p2 patientName=' + rn.p2);
+
+console.log('\n16b. A FAILED RENAME LEAVES BOTH STORES AS THEY WERE');
+// The two writes land in different blobs. A quota failure between them would leave Settings and
+// the doctor's report disagreeing permanently -- and the first version of the guard called the
+// async write unawaited inside the try, so a failure of the FIRST write never reached the catch
+// at all and the app still said "Renamed to ...". Forced here with a throwing setItem.
+const failRename = await rnPage.evaluate(async () => {
+  const real = Storage.prototype.setItem;
+  Storage.prototype.setItem = function (k, v) { if (/-prefs-v1$/.test(k)) throw new Error('quota'); return real.call(this, k, v); };
+  let ok = null;
+  try { ok = await window.__v86Test.renameActiveProfile('Should Not Stick'); } catch (e) { ok = 'threw'; }
+  Storage.prototype.setItem = real;
+  await new Promise(r => setTimeout(r, 300));
+  const ps = JSON.parse(localStorage.getItem('chemowell-app-profiles-v1') || '{}');
+  const pr = JSON.parse(localStorage.getItem('chemowell-app-p-p2-prefs-v1') || '{}');
+  return { ok, listName: (ps.list || []).map(x => x.id + '=' + x.name).join(','), prefName: pr.patientName };
+});
+t('a rename whose prefs write fails reports failure rather than success', failRename.ok === false, 'returned ' + JSON.stringify(failRename.ok));
+t('and neither store is left holding the new name', !/Should Not Stick/.test(failRename.listName) && failRename.prefName !== 'Should Not Stick',
+  'list=' + failRename.listName + ' patientName=' + failRename.prefName);
 
 console.log('\n17. A NEW MEDICATION CANNOT TAKE A RECORD TYPE\'S ID');
 // The v78 fence that refused thirteen drug names is gone and should stay gone -- an id is just an

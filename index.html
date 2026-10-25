@@ -682,7 +682,7 @@ function deleteProfile(id) {
 // would mean reaching into another profile's storage from here, and cross-profile writes are
 // exactly what broke reminders in app-v85. To rename another profile, switch to it first; the
 // copy now says so instead of implying otherwise.
-function renameActiveProfile(rawName) {
+async function renameActiveProfile(rawName) {
   const name = String(rawName || '').trim();
   if (!name) { setToast('Enter a name'); return false; }
   const ps = profilesState();
@@ -693,13 +693,18 @@ function renameActiveProfile(rawName) {
   // failure between them would leave Settings showing one name and the doctor's report showing
   // another, permanently and silently. patientName goes first because it is the one a clinician
   // reads; if the list write then fails, the previous name is put back and the caregiver is told.
+  // setPrefsDB IS ASYNC. The first version of this guard called it unawaited inside the try, so a
+  // failure of the first of the two writes never reached the catch at all -- the audit measured
+  // it with a throwing Storage.setItem and got a split state plus the toast "Renamed to ...".
+  // A comment asserting an ordering guarantee that the code did not provide is worse than no
+  // guard. Awaited now, which is why this function is async.
   const previous = me.name;
   try {
-    setPrefsDB({ patientName: name });
+    await setPrefsDB({ patientName: name });
     me.name = name;
     saveJSON(PROFILES_KEY, ps);
   } catch (e) {
-    try { setPrefsDB({ patientName: previous }); me.name = previous; saveJSON(PROFILES_KEY, ps); } catch (e2) {}
+    try { me.name = previous; saveJSON(PROFILES_KEY, ps); await setPrefsDB({ patientName: previous }); } catch (e2) {}
     setToast('Could not save that name \u2014 nothing was changed.');
     return false;
   }
@@ -3727,7 +3732,10 @@ function latestBowelDay() {
 }
 function bowelMovementHistorySorted() { return [...bowelMovementEntriesByDay().values()].sort((a, b) => b.ts - a.ts); }
 async function logBowelMovement(value, dayStartTs) {
-  await addEntryDB({ medId: 'bowel_movement', value, dose: BOWEL_MOVEMENT_LABELS[value] || value, mg: 0, ts: supersedeStamp(bowelMovementFor(dayStartTs), dayStartTs) });
+  const prev = bowelMovementFor(dayStartTs);
+  if (prev && prev.value === value) return false;   // already today's answer -- not a correction
+  await addEntryDB({ medId: 'bowel_movement', value, dose: BOWEL_MOVEMENT_LABELS[value] || value, mg: 0, ts: supersedeStamp(prev, dayStartTs) });
+  return true;
 }
 function bowelIssueActive() {
   const byDay = bowelMovementEntriesByDay();
@@ -3809,11 +3817,16 @@ function appetiteEntriesByDay() {
 function appetiteFor(dayStartTs) { return appetiteEntriesByDay().get(dayStartTs) || null; }
 function appetiteHistorySorted() { return [...appetiteEntriesByDay().values()].sort((a, b) => b.ts - a.ts); }
 async function logAppetite(value, dayStartTs, note) {
-  const entry = { medId: 'appetite', value, dose: APPETITE_LABELS[value] || value, mg: 0, ts: supersedeStamp(appetiteFor(dayStartTs), dayStartTs) };
   const prev = appetiteFor(dayStartTs);
-  const trimmedNote = String(note === undefined || note === null ? (prev && prev.note) || '' : note).trim();
+  // The note is part of the answer: re-confirming the same value with the same note is a no-op,
+  // but the same value with a NEW note is a real correction and must be written.
+  const incoming = note === undefined || note === null ? (prev && prev.note) || '' : String(note);
+  const trimmedNote = incoming.trim();
+  if (prev && prev.value === value && ((prev.note || '').trim() === trimmedNote)) return false;
+  const entry = { medId: 'appetite', value, dose: APPETITE_LABELS[value] || value, mg: 0, ts: supersedeStamp(prev, dayStartTs) };
   if (trimmedNote) entry.note = trimmedNote;
   await addEntryDB(entry);
+  return true;
 }
 async function submitAppetite(dayStartTs) {
   const v = state.appetiteInput;
@@ -11508,7 +11521,7 @@ function renderHistory(now) {
     const paras = items.filter(e => e.medId === 'paracentesis' && !e.missed).length;
     const bms = items.filter(e => e.medId === 'bowel_movement' && !isSupersededEntry(e, state.entries)).length;
     const appetites = items.filter(e => e.medId === 'appetite' && !isSupersededEntry(e, state.entries)).length;
-    const rads = items.filter(e => e.medId === 'radiation_session').length;
+    const rads = items.filter(e => e.medId === 'radiation_session' && !e.missed).length;
     const wkday = new Date(k).toLocaleDateString([], { weekday: 'long' });
     const md = (new Date(k).getMonth() + 1) + '/' + new Date(k).getDate();
     const label = k === d0 ? ('Today - ' + wkday + ' ' + md) : (wkday + ', ' + md);
@@ -11692,10 +11705,10 @@ function renderDailyValueLogger(opts) {
           'aria-pressed': on ? 'true' : 'false',
           onClick: async () => {
             if (dailyLogBusy) return;
-            // RE-PICKING WHAT IS ALREADY SHOWN IS A NO-OP, not a second record. Without this,
-            // ten taps produced ten identical entries -- renameActiveProfile already had exactly
-            // this guard and the logger did not. The caregiver gets told nothing changed rather
-            // than nothing at all, so a tap that looks ignored is explained.
+            // The WRITERS refuse a duplicate; this only explains the refusal, so a tap that
+            // looks ignored is not a mystery. The enforcement deliberately does not live here --
+            // putting it in the handler is what left the Home check-in able to write duplicates
+            // after the same mistake had already been made once with supersedeStamp.
             if (opts.current && opts.current.value === val) {
               setToast('Already logged as ' + (opts.labels[val] || val) + ' for today.');
               return;
