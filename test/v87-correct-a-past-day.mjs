@@ -518,8 +518,19 @@ const helpData = await helpPage.evaluate(() => {
     .filter(v => typeof v === 'string').join(' \n ');
   const byId = {};
   topics.forEach(tp => { byId[tp.id] = text(tp); });
+  const stepsOf = id => { const tp = topics.find(x => x.id === id); return (tp && tp.steps) || []; };
   return { ids: T.selectableSymptomIds(), types: T.symptomTypes(), bowel: T.bowelLabels(),
            symLog: byId['sym-log'] || '', symBowel: byId['sym-bowel-confusion'] || '',
+           // THE GENERATED SENTENCES THEMSELVES, and the steps meant to carry them.
+           bowelSentence: T.bowelChoiceSentence(), symptomSentence: T.symptomChoiceSentence(),
+           spoken: T.selectableSymptomIds().map(id => T.symptomSpoken(id)),
+           bowelSteps: stepsOf('sym-bowel-confusion'), symLogSteps: stepsOf('sym-log'),
+           denial: T.nonSelectableSymptomDenial(),
+           // Split, because a QUESTION may raise one of these words and a CLAIM may not.
+           perTopic: topics.map(tp => ({ id: tp.id, q: String(tp.q || ''),
+             body: [tp.a].concat(tp.steps || []).concat(tp.note ? [tp.note] : [])
+               .concat((tp.branches || []).flatMap(br => [br.when].concat(br.steps || [])))
+               .filter(v => typeof v === 'string').join(' \n ') })),
            all: topics.map(tp => text(tp)).join(' \n ') };
 });
 
@@ -545,33 +556,147 @@ if (pickerValues.ok) {
     'picker=' + pickerValues.values.join(',') + '  list=' + helpData.ids.join(','));
 }
 
-// B -- the enumeration in Help names every selectable symptom and nothing else.
+// B -- THE GENERATED SENTENCE, AND NO EXEMPTIONS.
+//
+// The first version compared each id against its PICKER LABEL lowercased, which meant
+// `neuropathy` and `skin_reaction` could never match -- "Neuropathy (Numbness/Tingling)" is not
+// how the sentence says it -- so both were written out of the filter with `&& id !== ...`. An
+// audit measured the hole: dropping `neuropathy` from the sentence scored 55/55. The two
+// exempted were exactly the two whose spoken form differs from their label, which is the pair a
+// hand-edit gets wrong. This reads symptomSpoken(id), the function the sentence is built from,
+// so there is nothing left to exempt.
 const notSelectable = Object.keys(helpData.types).filter(k => helpData.ids.indexOf(k) < 0);
-const spokenMissing = helpData.ids.filter(id => {
-  const label = (helpData.types[id] || id).toLowerCase();
-  const head = label.split(' (')[0].split('/')[0].trim();
-  return helpData.symLog.toLowerCase().indexOf(head) < 0 && id !== 'neuropathy' && id !== 'skin_reaction';
-});
 t('precondition: the app has symptom types that are NOT selectable', notSelectable.length > 0, notSelectable.join(',') || 'none');
-t('Help’s list of what you can choose names every selectable symptom', spokenMissing.length === 0,
-  spokenMissing.length ? ('missing from sym-log: ' + spokenMissing.join(',')) : helpData.symLog.slice(0, 0) + 'all present');
-const wronglyNamed = notSelectable.filter(k => new RegExp('\\b' + (helpData.types[k] || k).toLowerCase().replace('diarrhea', 'diarrh(e|o)ea') + '\\b', 'i').test(helpData.symLog));
-t('and names none that the picker does not offer', wronglyNamed.length === 0,
+const spokenMissing = helpData.spoken.filter(w => helpData.symptomSentence.toLowerCase().indexOf(String(w).toLowerCase()) < 0);
+t('the generated symptom sentence names every selectable symptom', spokenMissing.length === 0,
+  spokenMissing.length ? ('missing: ' + spokenMissing.join(' | ')) : helpData.symptomSentence);
+// AND THE TOPIC MUST ACTUALLY PRINT IT. A sentence nobody prints is no better than a printed one
+// nobody generated.
+t('and the Help step prints that sentence rather than a hand-typed copy',
+  helpData.symLogSteps.some(st => typeof st === 'string' && st.indexOf(helpData.symptomSentence) >= 0),
+  helpData.symLogSteps.filter(st => /Choose the symptom/.test(st)).join(' / ') || 'no such step');
+// ONE PATTERN, AND IT HAD A BUG WORTH NAMING. Both of these built it as
+// `.replace('diarrhea', 'diarrh(e|o)ea')`, which matches "diarrhoea" and "diarrheea" and NOT
+// "diarrhea" -- the app's own spelling, the only one that now appears in Help. So the half of
+// this that was supposed to police the word the app actually uses had never once been able to
+// fire, and the check reported "none" on a corpus full of it. Found by reading a mutant's
+// failure line and noticing it named only `constipation`.
+const symRe = (name) => new RegExp('\\b' + String(name).toLowerCase().replace('diarrhea', 'diarrh(o)?ea') + '\\b', 'i');
+const wronglyNamed = notSelectable.filter(k => symRe(helpData.types[k] || k).test(helpData.symLog));
+t('and sym-log names none that the picker does not offer', wronglyNamed.length === 0,
   wronglyNamed.length ? ('sym-log still offers: ' + wronglyNamed.join(',')) : 'none');
 
-// C -- no topic anywhere may ASSERT that Symptoms carries them. The bowel topic says the opposite,
-// on purpose, so this looks for the affirmative claim rather than for the words.
-const falseClaim = /(symptoms?[^.]{0,40}(list|picker|tab)[^.]{0,40}\b(does include|includes|offers|has)\b[^.]{0,40}(diarrh|constipation))|(\b(does include|includes)\b[^.]{0,30}(diarrh(o?)ea|constipation)[^.]{0,40}symptom)/i;
-t('no Help topic claims the Symptoms list carries diarrhoea or constipation',
-  !falseClaim.test(helpData.all), (helpData.all.match(falseClaim) || ['none'])[0]);
+// C -- STRUCTURAL, AND NO TOPIC-LEVEL WHITELIST, BECAUSE THE WHITELIST WAS THE HOLE.
+//
+// Version one matched the sentence that had actually shipped; an audit defeated it in a line --
+// "Diarrhea and constipation can also be logged from the **Symptoms** tab, whichever you find
+// easier" -- equally false, 55/55 green. Chasing wordings is unwinnable, so version two forbade
+// NAMING a non-selectable type in any topic except the one that has to name it in order to deny
+// it. That survived the same mutant, because the mutant lives in exactly that topic: **a
+// whitelist on a topic exempts the sentence next to the one it was written for.**
+//
+// So the denial is generated by the app and subtracted by name. Exactly one occurrence of those
+// words is permitted anywhere in Help -- the generated string -- and everything else is a
+// finding, including a second sentence in the same topic.
+t('precondition: the app generates the denial sentence rather than it being typed',
+  typeof helpData.denial === 'string' && /not in the Symptoms list/i.test(helpData.denial), JSON.stringify(helpData.denial));
+t('and the topic prints that generated denial', helpData.bowelSteps.some(st => typeof st === 'string' && st.indexOf(helpData.denial) >= 0),
+  helpData.bowelSteps.filter(st => /Symptoms list/i.test(st)).join(' / ') || 'no step carries it');
+// WHAT IS SEARCHED, AND THE TWO THINGS SUBTRACTED FROM IT, EACH FOR A STATED REASON.
+//   * The generated DENIAL -- the one sentence that has to name them in order to say they are
+//     not offered.
+//   * The generated BOWEL sentence -- because `diarrhea` is also one of the app's five bowel
+//     values, so the word appears there as data, not as a claim about the Symptoms list.
+// Both are strings the APP generates, so neither can be used to smuggle a hand-written claim
+// past this check: altering either one changes the string being subtracted and the words fall
+// straight back into the haystack.
+// Questions are searched along with answers and steps. A question that NAMES one of these is how
+// a reader finds the topic that denies it -- and if the day comes that a question names one
+// without a denial beside it, that is worth a failure, not an exemption.
+// A QUESTION MAY RAISE ONE OF THESE WORDS. A CLAIM MAY NOT.
+// "Should diarrhea go in Symptoms or the bowel tracker?" is how a reader finds the topic, and
+// the honest answer lives underneath it. So the rule is not a blanket exemption for questions --
+// it is the invariant the situation actually has: a topic whose QUESTION names a symptom the
+// picker lacks must also print the generated denial. Raise it, then deny it.
+const strip = txt => txt.split(helpData.denial).join(' ').split(helpData.bowelSentence).join(' ');
+const nonSel = Object.keys(helpData.types).filter(k => helpData.ids.indexOf(k) < 0);
+const strayClaims = [];
+const raisedWithoutDenial = [];
+helpData.perTopic.forEach(tp => {
+  const body = strip(tp.body);
+  const carriesDenial = helpData.denial && tp.body.indexOf(helpData.denial) >= 0;
+  nonSel.forEach(k => {
+    const re = symRe(helpData.types[k] || k);
+    if (re.test(body)) strayClaims.push(tp.id + ':' + k);
+    if (re.test(strip(tp.q)) && !carriesDenial) raisedWithoutDenial.push(tp.id + ':' + k);
+  });
+});
+t('and outside the generated sentences, no Help ANSWER or STEP names a symptom the picker lacks',
+  strayClaims.length === 0,
+  strayClaims.length ? ('still named: ' + strayClaims.join(', ')) : 'only the generated sentences');
+t('and any topic whose QUESTION raises one carries the denial underneath it',
+  raisedWithoutDenial.length === 0,
+  raisedWithoutDenial.length ? ('raised with no denial: ' + raisedWithoutDenial.join(', ')) : 'none raised without it');
 
-// D -- F4: the bowel enumeration in prose, held to the map. The previous round fixed this
-// sentence by hand and nothing checked it: an audit reverted it to the four-of-five wording that
-// had just been refused and scored 45/45, 87/87 and v55-help green.
+// D -- AGAINST THE SENTENCE, NOT THE PAGE IT SITS ON. The first version searched the whole topic,
+// and the rewritten topic names "diarrhea" twice on its own account -- in its question and in
+// step 3's denial -- so a generator that dropped the value left the word in the haystack and
+// scored 55/55. Corroborated by this check's own failure line, which listed four words for a
+// five-word list when every sentence was emptied.
 const bowelWords = Object.keys(helpData.bowel).map(k => helpData.bowel[k].toLowerCase());
-const bowelMissing = bowelWords.filter(w => helpData.symBowel.toLowerCase().indexOf(w) < 0);
-t('the bowel topic names every value the app defines', bowelMissing.length === 0,
-  bowelMissing.length ? ('missing: ' + bowelMissing.join(',')) : bowelWords.join(', '));
+const bowelMissing = bowelWords.filter(w => helpData.bowelSentence.toLowerCase().indexOf(w) < 0);
+t('the generated bowel sentence names every value the app defines', bowelMissing.length === 0,
+  bowelMissing.length ? ('missing: ' + bowelMissing.join(',') + '  sentence="' + helpData.bowelSentence + '"') : helpData.bowelSentence);
+t('and the bowel topic prints that sentence rather than a hand-typed copy',
+  helpData.bowelSteps.some(st => typeof st === 'string' && st.indexOf(helpData.bowelSentence) >= 0),
+  helpData.bowelSteps.filter(st => /Daily check-in/.test(st)).join(' / ') || 'no such step');
+
+// E -- A HELP TOPIC MAY NOT PROMISE AN INPUT THE SYMPTOM PATH CANNOT RENDER.
+//
+// The FOURTH mismatch of this class, found one topic over from the two above after they were
+// rewritten: sym-severity said "For pain-type symptoms you get a 1 to 10 scale." The scale is a
+// MEDICATION feature -- showPainScale reads state.meds for a med entry and is null for every
+// symptom, so the block never renders and logSymptom has no field for it. Three of these have
+// now been found by reading; this one is measured. The claim is allowed back the moment the
+// control exists, which is the queued work to put severity on every symptom.
+const scaleClaim = /\b(1 ?(to|-) ?10|0 ?(to|-) ?10|pain scale)\b/i;
+const sevText = helpData.all.match(scaleClaim);
+const extraFields = await helpPage.evaluate(async (ids) => {
+  const out = {};
+  for (const id of ids) {
+    const sym = [...document.querySelectorAll('button')].find(x => /^Symptoms$/.test((x.innerText || '').trim()));
+    if (sym) { sym.click(); await new Promise(r => setTimeout(r, 450)); }
+    const plus = [...document.querySelectorAll('button')].find(x => (x.innerText || '').trim() === '+');
+    if (!plus) { out[id] = ['(no + button)']; continue; }
+    plus.click();
+    await new Promise(r => setTimeout(r, 450));
+    const dlg = document.querySelector('[role="dialog"]');
+    const sel = dlg && [...dlg.querySelectorAll('select')].find(s2 => [...s2.options].some(o => /Nausea/i.test(o.textContent)));
+    if (sel) {
+      sel.value = id;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 500));
+    }
+    const d2 = document.querySelector('[role="dialog"]');
+    out[id] = d2 ? (d2.innerText || '') : '';
+    const cancel = d2 && [...d2.querySelectorAll('button')].find(x => /^Cancel$/i.test((x.innerText || '').trim()));
+    if (cancel) { cancel.click(); await new Promise(r => setTimeout(r, 350)); }
+  }
+  return out;
+}, ['nausea', 'skin_reaction']);
+const scaleRendered = Object.keys(extraFields).some(k => scaleClaim.test(String(extraFields[k])));
+t('Help promises a 1-to-10 scale only if the symptom form actually renders one',
+  !sevText || scaleRendered,
+  sevText ? ('Help says "' + sevText[0] + '"; rendered on the symptom form: ' + scaleRendered) : 'Help claims no scale, and the form renders none');
+// The precondition for the check above, so it cannot pass by failing to look.
+t('precondition: the symptom form was actually opened and read',
+  Object.keys(extraFields).every(k => String(extraFields[k]).length > 40),
+  Object.keys(extraFields).map(k => k + '=' + String(extraFields[k]).length + 'ch').join(' '));
+// And the one promise that IS true must stay true -- otherwise this section only ever proves an
+// absence, which is the shape that let the APAP check pass on a page where the row was missing.
+t('and the severity boxes it does promise are on the skin-reaction form',
+  /how bad is it/i.test(String(extraFields.skin_reaction)) && /where on the body/i.test(String(extraFields.skin_reaction)),
+  String(extraFields.skin_reaction).slice(0, 0) + 'skin_reaction form length ' + String(extraFields.skin_reaction).length);
 await helpPage.close();
 
 console.log('\n8. NOTHING THREW, ON ANY PAGE');

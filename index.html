@@ -3512,9 +3512,21 @@ const BOWEL_MOVEMENT_LABELS = { normal: 'Normal', very_little: 'Very little', no
 // whether a TDZ error is possible is whether a CALL happens above the `const`, and the `const`
 // did not move. An audit proved it on the post-move file: inserting a module-evaluation caller
 // above the map still throws `Cannot access 'BOWEL_MOVEMENT_LABELS' before initialization` and
-// the app renders a blank page. The move is a readability change and nothing more. The hazard is
-// held off by there being no module-evaluation caller, which is what the two helpers below are
-// for: everything that wants these words goes through one of them, at render time.
+// the app renders a blank page. The move is a readability change and nothing more.
+//
+// AND THE FIRST VERSION OF THIS COMMENT THEN GOT THE SECOND HALF WRONG TOO. It said the hazard
+// was held off by there being "no module-evaluation caller". **There is one, and this release
+// added it.** `HELP_TOPICS` is a module-level const whose initializer calls
+// `bowelChoiceSentence()` and `symptomChoiceSentence()` to build two Help sentences out of this
+// data, so both run at load, before anybody opens Help -- an audit instrumented them and counted
+// two calls on a cold page. The hazard is therefore REAL rather than theoretical, and the only
+// thing holding it off is that these declarations sit above `HELP_TOPICS` in the file.
+//
+// SO: THESE CONSTS AND THE FOUR HELPERS BELOW THEM MUST STAY ABOVE `HELP_TOPICS`. Moving the
+// SELECTABLE_SYMPTOM_IDS line below it -- the same innocuous tidy-up that moved `bowelOptions()`
+// one release ago -- throws `Cannot access 'SELECTABLE_SYMPTOM_IDS' before initialization` and
+// serves a blank page. Measured, not reasoned. Every suite dies on it, so it cannot reach a
+// phone, but nothing warns the person doing the tidying except this paragraph.
 function bowelOptions() { return Object.keys(BOWEL_MOVEMENT_LABELS).map(v => h('option', { value: v }, BOWEL_MOVEMENT_LABELS[v])); }
 // THE WORDS, FOR PROSE THAT HAS TO LIST THEM. The Help FAQ enumerated four of the five in a
 // hand-typed sentence -- the banner's defect again, two screens away, in the surface whose only
@@ -3930,6 +3942,23 @@ const SELECTABLE_SYMPTOM_IDS = ['nausea', 'vomiting', 'fatigue', 'mouth_sores', 
 const SYMPTOM_SPOKEN = { mouth_sores: 'mouth sores', neuropathy: 'numbness or tingling', skin_reaction: 'a skin reaction or rash', other: 'Other' };
 function symptomSpoken(id) { return SYMPTOM_SPOKEN[id] || (SYMPTOM_TYPES[id] || id).toLowerCase(); }
 function symptomChoiceSentence() { return listSentence(SELECTABLE_SYMPTOM_IDS.map(symptomSpoken)); }
+// AND THE DENIAL IS GENERATED TOO, which is not tidiness -- it is the only way the check guarding
+// all this can be stated without a whitelist. The first version let one topic name a
+// non-selectable symptom, because one topic has to in order to say it is NOT offered; an audit
+// then put a fresh false claim INSIDE that topic ("can also be logged from the Symptoms tab,
+// whichever you find easier") and scored a clean pass. A whitelist on a topic exempts the
+// sentence next to the one it was written for. With the denial generated, the suite can subtract
+// exactly this string and forbid the words everywhere else, including the rest of this topic.
+function nonSelectableSymptomNames() {
+  return Object.keys(SYMPTOM_TYPES).filter(id => SELECTABLE_SYMPTOM_IDS.indexOf(id) < 0).map(id => SYMPTOM_TYPES[id]);
+}
+function nonSelectableSymptomDenial() {
+  const names = nonSelectableSymptomNames();
+  if (!names.length) return '';
+  const spoken = names.map((n, i) => i === 0 ? n : n.toLowerCase());
+  const joined = spoken.length === 1 ? spoken[0] : spoken.slice(0, -1).join(', ') + ' and ' + spoken[spoken.length - 1];
+  return '**' + joined + (names.length === 1 ? ' is' : ' are') + ' not in the Symptoms list.**';
+}
 function symptomEntries() { return state.entries.filter(e => e.medId && e.medId.indexOf('symptom_') === 0).sort((a, b) => b.ts - a.ts); }
 
 // Weight-change reasons (app-v21, per Aaron's request) — a quick-select list of the most common
@@ -4096,12 +4125,12 @@ const HELP_TOPICS = [
   { id: "vit-checkin-missing", cat: "vitals", q: "The Daily check-in card isn't showing / it's asking the wrong things", a: "Each question is a separate switch, and the card only appears if at least one is on.", steps: ["Menu → **Settings** → **Home screen**.", "Scroll to the **Daily check-in** part.", "Switch on or off: *Weight in daily check-in*, *Bowel movement in daily check-in*, *Appetite in daily check-in*.", "If you switch all three off, the card stops appearing entirely.", "If you've already done today's check-in, the card won't show again until tomorrow."], keywords: ["check-in missing", "not showing", "questions", "turn off"], related: ["vit-checkin-modal"] },
   { id: "vit-units", cat: "vitals", q: "I want pounds instead of kilograms, or Celsius instead of Fahrenheit", a: "Menu → Settings → Units.", steps: ["Tap the three lines in the top left, then **Settings**.", "Find **Units**.", "Choose °F or °C for temperature, and pounds or kilograms for weight.", "Every reading you've already logged is shown in the new unit straight away.", "Nothing you logged is changed — only how it's displayed."], keywords: ["units", "kg", "lbs", "celsius", "fahrenheit", "metric"], related: ["vit-temp-rejected"] },
   { id: "vit-period", cat: "vitals", q: "How do I track periods?", a: "It's an optional setting, and it's off unless you turn it on.", steps: ["Menu → **Settings** → **Home screen** → switch on **Menstrual cycle tracking**.", "A banner appears on **Home** to log a period start.", "When it ends, tap **Log Period End** on the same banner.", "The full record is under **Reports** → **Cycle**."], note: "This option is only offered on profiles where it applies, based on the answer given during setup.", keywords: ["period", "menstrual", "cycle", "tracking"], related: ["rep-cycle-missing"] },
-  { id: "sym-log", cat: "symptoms", q: "How do I record a symptom?", a: "The Symptoms tab at the bottom, then the + button.", steps: ["Tap **Symptoms** at the bottom of the screen.", "Tap the **+** in the top right.", "Choose the symptom from the list — " + symptomChoiceSentence() + ".", "Set the date and time if it wasn't just now.", "Add a note if there's anything worth remembering.", "Tap **Confirm**."], keywords: ["symptom", "side effect", "reaction", "nausea", "log"], related: ["sym-severity", "sym-severe"] },
-  { id: "sym-severity", cat: "symptoms", q: "Can I record how bad it was, or where on the body?", a: "Yes, for some symptoms — and it's optional.", steps: ["Log the symptom as normal.", "For a skin reaction or rash you also get **How bad is it?** (mild, moderate, severe) and **Where on the body?**.", "For pain-type symptoms you get a 1 to 10 scale.", "All of these are optional — a quick record is better than one you gave up on.", "Everything you fill in shows in History and in the exported records."], keywords: ["severity", "mild", "moderate", "severe", "where", "body", "pain scale"], related: ["sym-log"] },
+  { id: "sym-log", cat: "symptoms", q: "How do I record a symptom?", a: "The Symptoms tab at the bottom, then the + button.", steps: ["Tap **Symptoms** at the bottom of the screen.", "Tap the **+** in the top right.", "Choose the symptom from the list — " + symptomChoiceSentence() + ".", "Set the date and time if it wasn't just now.", "Add a note if there's anything worth remembering — and if you chose **Other**, the note is required, because the word \"Other\" on its own tells a clinician nothing.", "Tap **Confirm**."], keywords: ["symptom", "side effect", "reaction", "nausea", "log"], related: ["sym-severity", "sym-severe"] },
+  { id: "sym-severity", cat: "symptoms", q: "Can I record how bad it was, or where on the body?", a: "For a skin reaction or rash, yes — and it's optional.", steps: ["Log the symptom as normal.", "For a skin reaction or rash you also get **How bad is it?** (mild, moderate, severe) and **Where on the body?**.", "Other symptoms do not have those two boxes yet — say how bad it was in the note, in your own words. That is what a clinician reads.", "All of these are optional — a quick record is better than one you gave up on.", "Everything you fill in shows in History and in the exported records."], keywords: ["severity", "mild", "moderate", "severe", "where", "body", "pain scale"], related: ["sym-log"] },
   { id: "sym-edit-delete", cat: "symptoms", q: "I need to fix or delete a symptom I logged", a: "Symptoms can be edited or removed at any time, however old.", steps: ["Tap **Symptoms** at the bottom.", "Tap the entry you want to change.", "Change the time, note, severity or site, then confirm.", "To delete it, use the remove option on that entry and confirm."], keywords: ["edit symptom", "delete", "fix", "wrong"], related: ["log-remove"] },
   { id: "sym-severe", cat: "symptoms", q: "The symptom is severe, or something new and frightening is happening", a: "**Contact the care team, or emergency services if it's urgent.** Do that first. Logging it in the app can wait — this app has no way to judge how serious something is, and it will never try to.", steps: ["If the person is very unwell, struggling to breathe, confused, or you're frightened, call your local emergency number.", "Otherwise call the care team or the on-call number they gave you.", "Once they've been contacted, come back and log the symptom with the time it started, so there's an accurate record.", "Use the note field to write down exactly what you saw, in your own words. That's genuinely useful to the care team later."], note: "ChemoWell is a record-keeping tool, not medical advice. Never delay care because of anything shown in this app.", keywords: ["severe", "bad", "worse", "emergency", "frightened", "help"], related: ["sym-log", "vit-temp-high"], medical: true, careLead: true },
   { id: "sym-medical-question", cat: "symptoms", q: "Side effects — hair loss, sickness, tiredness: is this normal?", a: "**This is a question for the care team, and ChemoWell will not try to answer it.** The app keeps a record of what happened and when. It can show a short, general description of what a medication is usually for, but it knows nothing about this person's treatment, has no idea what is normal for them, and would be guessing if it said otherwise.", steps: ["Write the question down, along with what you have actually seen and when it started.", "Ask the care team, or the pharmacist who dispensed the medication \u2014 they have the person's actual treatment plan in front of them.", "Anything sudden, severe, or frightening is a phone call now, not a question for later.", "Log the symptom here with a note in your own words. Turning up to an appointment with dates and times is worth far more than trying to remember."], note: "ChemoWell is a record-keeping tool. The medication descriptions it shows are general information, not advice about this person's care. Never delay care because of anything shown in this app.", keywords: ["side effect", "side effects", "hair", "hair loss", "sickness", "tiredness", "fatigue", "normal", "expect", "is that normal", "should i worry", "worried", "dangerous", "interact", "interaction", "safe to take", "what does it do"], related: ["sym-severe", "sym-log", "vit-temp-high"], medical: true, careLead: true, careTone: "calm" },
-  { id: "sym-bowel-confusion", cat: "symptoms", q: "Should diarrhea go in Symptoms or the bowel tracker?", a: "The bowel tracker. Symptoms deliberately does not offer it.", steps: ["Use the **Daily check-in** bowel question for the day's pattern — " + bowelChoiceSentence() + ".", "You can also set or change any day's answer from **Reports** → **Bowel movements**, at any hour — you do not have to wait for the check-in.", "**Diarrhea and constipation are not in the Symptoms list.** They were taken out on purpose, so the same thing is never recorded in two places that then disagree.", "If there is something specific worth remembering about an episode — the time, what helped — write it in **Notes**, from the menu.", "Both the daily answers and your notes show up in your exported records."], keywords: ["diarrhea", "diarrhoea", "constipation", "bowel", "where"], related: ["vit-checkin-modal", "sym-log"] },
+  { id: "sym-bowel-confusion", cat: "symptoms", q: "Should diarrhea go in Symptoms or the bowel tracker?", a: "The bowel tracker. Symptoms deliberately does not offer it.", steps: ["Use the **Daily check-in** bowel question for the day's pattern — " + bowelChoiceSentence() + ".", "You can also set or change any day's answer from **Reports** → **Bowel movements**, at any hour — you do not have to wait for the check-in.", nonSelectableSymptomDenial() + " They were taken out on purpose, so the same thing is never recorded in two places that then disagree.", "If there is something specific worth remembering about an episode — the time, what helped — write it in **Notes**, from the menu.", "Both the daily answers and your notes show up in your exported records."], keywords: ["diarrhea", "diarrhoea", "constipation", "bowel", "where"], related: ["vit-checkin-modal", "sym-log"] },
   { id: "ip-start-end", cat: "inpatient", q: "How do I record a hospital stay?", a: "The In-Patient tab at the bottom, with a start and an end.", steps: ["Tap **In-Patient** at the bottom of the screen.", "When the stay begins, tap **Log In-Patient Start**.", "A banner appears on Home showing which day of the stay you're on.", "When the person is discharged, tap **Log In-Patient End** — on that banner or on the In-Patient tab.", "Every past stay is kept in the **In-Patient History** list below."], keywords: ["hospital", "admitted", "in-patient", "stay", "discharged"], related: ["ip-meds-restricted", "ip-forgot-end"] },
   { id: "ip-meds-restricted", cat: "inpatient", q: "Can I still log medications during a hospital stay?", a: "Yes. Everything stays loggable the whole time a stay is active.", steps: ["Log doses exactly as you normally would — nothing is locked.", "Doses the hospital gave are not counted as missed: any dose window that opened while the stay was running is treated as theirs.", "If they come home part-way through a day, the windows after that point are yours again and are tracked normally. You do NOT need to end the stay early to log them.", "End the stay when it actually ends, on the **In-Patient** tab."], note: "This used to work the other way round. Medications showed as 'Restricted' and could not be logged at all while a stay was active, and this page told you to end the stay early to unlock them — which meant falsifying when they came home in order to record a dose that was really taken. Fixed 2026-08-26 after Aaron hit exactly that on a half-day stay.", keywords: ["restricted", "can't log", "hospital", "paused", "greyed", "half day", "discharged"], related: ["ip-start-end", "log-button-locked"], medical: true },
   { id: "ip-forgot-end", cat: "inpatient", q: "I forgot to end a hospital stay and it still says Active", a: "End it now — the stay keeps its real start date.", steps: ["Tap **In-Patient** at the bottom.", "Tap **Log In-Patient End**.", "The stay closes and moves into In-Patient History with its length.", "The end time is recorded as now. If the real discharge was earlier, add a note — menu → **Notes** — so the record is accurate."], keywords: ["still active", "forgot", "end", "discharge", "ongoing"], related: ["ip-start-end"] },
@@ -9207,7 +9236,10 @@ const CHANGELOG = [
     points: [
       'The bowel movement box on the Home banner offered four answers when the app has five \u2014 \u201cLoose\u201d was missing from it entirely, so you had to go to Reports to record it and nothing said so.',
       'A day you logged earlier could only be deleted, not changed. Both the bowel movement and appetite lists now have a Correct button on every day, and picking a new answer keeps the old one in your records rather than removing it.',
-      'The box on the banner used to say \u201cUpdate status if back to normal\u201d, which only invited one of the answers. It now says it is for changing the day.'
+      'The box on the banner used to say \u201cUpdate status if back to normal\u201d, which only invited one of the answers. It now says it is for changing the day.',
+      'The daily check-in could open with the bowel box blank on a day you had already answered “Loose”, because that sheet had its own shorter list of answers. Both boxes are built from the same list now, so they cannot disagree.',
+      'A Loose day looked exactly like a normal day in your history — same green dot. It now shows amber: worth seeing, not an alarm.',
+      'Help said the Symptoms list includes diarrhea and constipation. It has not for a long time, so Help now says so and points you to the bowel question instead. Help also promised a 1-to-10 scale on symptoms that was never built; that promise is gone until it is.'
     ] },
   { v: 'app-v86', date: 'Oct 24, 2026', title: 'Bowel and appetite can be logged any time, and History stops calling everything a dose',
     points: [
@@ -13348,7 +13380,16 @@ if (typeof window !== 'undefined') {
     // tell. These three are what lets a suite hold the prose to the data.
     symptomTypes: () => SYMPTOM_TYPES,
     selectableSymptomIds: () => SELECTABLE_SYMPTOM_IDS.slice(),
-    helpTopics: () => HELP_TOPICS
+    helpTopics: () => HELP_TOPICS,
+    // THE GENERATORS THEMSELVES, because the first version of the ratchet above them read the
+    // whole topic instead of the sentence and could not fail: the rewritten bowel topic names
+    // "diarrhea" twice on its own account, so a generator that dropped the value still left the
+    // word in the text being searched. A check must read the thing under test, not the page it
+    // sits on.
+    bowelChoiceSentence: () => bowelChoiceSentence(),
+    nonSelectableSymptomDenial: () => nonSelectableSymptomDenial(),
+    symptomChoiceSentence: () => symptomChoiceSentence(),
+    symptomSpoken: (id) => symptomSpoken(id)
   };
   window.__notifScopeTest = {
     activeProfileId: () => ACTIVE_PROFILE_ID,
