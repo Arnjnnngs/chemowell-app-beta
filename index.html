@@ -3486,6 +3486,18 @@ function fmtCyclePeriod(p) {
 // (a Diarrhea/Constipation entry there can start/continue this same tracker, but only a genuine
 // daily answer of normal/very_little can end it).
 const BOWEL_ISSUE_VALUES = new Set(['none', 'diarrhea']);
+// EVERY CONTROL THAT OFFERS BOWEL VALUES BUILDS ITS OPTIONS FROM THE MAP. There used to be two
+// hand-written option lists -- the daily check-in sheet and the Home banner -- and app-v87 fixed
+// one of them, which is how `Loose` ended up reachable from the banner and absent from the sheet
+// that pre-fills with the standing answer, rendering blank. A copy of a list is a thing that
+// drifts; this is the list.
+function bowelOptions() { return Object.keys(BOWEL_MOVEMENT_LABELS).map(v => h('option', { value: v }, BOWEL_MOVEMENT_LABELS[v])); }
+// Loose sits with Very little: a variation worth seeing, not an alarm. It is deliberately NOT in
+// BOWEL_ISSUE_VALUES -- that set drives the red banner, and promoting Loose would start alarming
+// on something the app has never alarmed on, which is Aaron's call rather than a side effect of
+// making it reachable. But it must not look like Normal either: before this it fell through to
+// the green dot, so a Loose day and a Normal day were indistinguishable in the history list.
+const BOWEL_WATCH_VALUES = new Set(['very_little', 'loose']);
 const BOWEL_MOVEMENT_LABELS = { normal: 'Normal', very_little: 'Very little', none: 'None', loose: 'Loose', diarrhea: 'Diarrhea' };
 function yesterdayStart(now) { return dayStart(now) - 86400000; }
 // Shared "must be answered today" escalation rules — quiet reminder in the morning, firmer by
@@ -3697,10 +3709,7 @@ function renderCheckinModal() {
         fieldLabel('Bowel movement'),
         h('select', { value: m.bowel, onChange: (e) => { state.checkinModal.bowel = e.target.value; setState({ checkinModal: state.checkinModal }); }, className: 'mono', style: selectFix({ width: '100%', minHeight: '48px', border: '1px solid rgba(246,108,49,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '15px', background: '#FFFFFF', color: answerColor(m.bowel) }) },
           h('option', { value: '' }, 'Not answered'),
-          h('option', { value: 'normal' }, 'Normal'),
-          h('option', { value: 'very_little' }, 'Very little'),
-          h('option', { value: 'none' }, 'None'),
-          h('option', { value: 'diarrhea' }, 'Diarrhea')
+          ...bowelOptions()
         )
       ) : null,
       homePref('dailyWeightCheckin') ? h('div', { style: { marginBottom: '16px' } },
@@ -3839,7 +3848,12 @@ async function logAppetite(value, dayStartTs, note) {
   const prev = appetiteFor(dayStartTs);
   // The note is part of the answer: re-confirming the same value with the same note is a no-op,
   // but the same value with a NEW note is a real correction and must be written.
-  const incoming = note === undefined || note === null ? (prev && prev.note) || '' : String(note);
+  // Inherit the previous note ONLY when the answer itself is unchanged. A correction from the
+  // Reports screen passes no note, and carrying one across a CHANGED value put "ate a full dinner"
+  // under "No Appetite" in the doctor's export. The superseded entry keeps its own note, so the
+  // description is still in the record, attached to the answer it actually described.
+  const sameValue = !!prev && prev.value === value;
+  const incoming = note === undefined || note === null ? (sameValue ? (prev && prev.note) || '' : '') : String(note);
   const trimmedNote = incoming.trim();
   if (prev && prev.value === value && ((prev.note || '').trim() === trimmedNote)) return false;
   const entry = { medId: 'appetite', value, dose: APPETITE_LABELS[value] || value, mg: 0, ts: supersedeStamp(prev, dayStartTs) };
@@ -6003,12 +6017,8 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         h('div', { style: { ...TYPE.label, color: bTone.chipFg } }, 'Update status for ' + bannerDayLabel),
         h('div', { style: { display: 'flex', gap: '8px' } },
           h('select', { value: bBannerValue, onChange: (e) => { state.bowelBannerInput = e.target.value; }, className: 'mono', style: selectFix({ flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #E9D8D1', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: '#FFFFFF', color: '#2A2127' }) },
-            h('option', { value: '' }, 'Change today\u2019s answer\u2026'),
-            h('option', { value: 'normal' }, 'Normal'),
-            h('option', { value: 'very_little' }, 'Very little'),
-            h('option', { value: 'none' }, 'None'),
-            h('option', { value: 'loose' }, 'Loose'),
-            h('option', { value: 'diarrhea' }, 'Diarrhea')
+            h('option', { value: '' }, 'Change the answer for ' + bannerDayLabel + '\u2026'),
+            ...bowelOptions()
           ),
           h('button', { onClick: submitBowelBannerUpdate, style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: bTone.accent, color: '#fff', fontSize: '13px', fontWeight: '700' } }, 'Update')
         )
@@ -11715,8 +11725,11 @@ function supersedeStamp(prev, d0) {
   return prev ? Math.max(prev.ts + 1000, base) : base;
 }
 let dailyLogBusy = false;
-// Which past row is open for correction: { kind, day }. Not persisted -- it is a draft, and
-// setState's persistence list deliberately excludes drafts.
+// Which past row is open for correction: { kind, day }. It is never written to storage, because
+// nothing writes it there -- persistence in this app is explicit, through setPrefsDB. An earlier
+// version of this comment claimed setState kept a "persistence list" that excluded drafts. There
+// is no such list; setState is Object.assign plus a render. Right conclusion, invented mechanism,
+// and an invented mechanism is the kind of thing a later reader builds on.
 function renderDayCorrector(kind, dayTs, labels, current, onPick) {
   const open = state.editingDaily && state.editingDaily.kind === kind && state.editingDaily.day === dayTs;
   if (!open) {
@@ -11833,7 +11846,7 @@ function renderBowelMovementReport(now) {
     h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '10px' } }, 'Bowel Movement History'),
     entries.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
       ...entries.map(e => h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '13px 15px', display: 'flex', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', boxShadow: '0 4px 24px rgba(203,122,87,0.10)' } },
-        h('span', { style: { flexShrink: '0', width: '10px', height: '10px', marginTop: '6px', borderRadius: '50%', background: BOWEL_ISSUE_VALUES.has(e.value) ? '#C0453B' : e.value === 'very_little' ? '#C77800' : '#0F9D6B', display: 'inline-block' } }),
+        h('span', { style: { flexShrink: '0', width: '10px', height: '10px', marginTop: '6px', borderRadius: '50%', background: BOWEL_ISSUE_VALUES.has(e.value) ? '#C0453B' : BOWEL_WATCH_VALUES.has(e.value) ? '#C77800' : '#0F9D6B', display: 'inline-block' } }),
         h('div', { style: { flex: '1', minWidth: '0' } },
           h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#2A2127' } }, new Date(e.ts).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ' — ' + (BOWEL_MOVEMENT_LABELS[e.value] || e.value))
         ),

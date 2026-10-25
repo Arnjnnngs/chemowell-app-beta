@@ -33,12 +33,13 @@ control sitting under a row of safe ones. Nothing is mis-tappable (it is a plain
 clear separation) but moving it back up beside the date when the picker is open would read better.
 Backlog, not this release.
 
-## Three screens not re-captured, and why
+## One screen not re-captured, at its three widths, and why
 
 `03-history-summary` is **not in this set**. It fails to screenshot at device scale 2 within the
 timeout — a long page, documented in app-v86's pass as an instrument limit rather than a defect.
 **This release does not touch `renderHistory`**, so there is nothing new to look at there; saying
-that is better than quietly shipping a set with three gaps in it.
+that is better than quietly shipping a set with three files missing. (The heading on this section
+said “three screens” and named one; the audit caught it. It is one screen at three widths.)
 
 ## What the Voice reads on the new surfaces
 

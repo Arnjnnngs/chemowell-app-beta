@@ -517,7 +517,17 @@ const noteAfter = await notePage.evaluate(() => {
   return { n: all.length, latestValue: all.length ? all[all.length - 1].value : null, latestNote: all.length ? (all[all.length - 1].note || '') : null };
 });
 t('precondition: the correction was accepted', notePick && noteAfter.n === 2 && noteAfter.latestValue === 'none', JSON.stringify(noteAfter));
-t('and the note from the answer it replaced came with it', noteAfter.latestNote === 'only managed toast', 'note="' + noteAfter.latestNote + '"');
+// CHANGED IN app-v87, AND THE RULE IS NARROWER NOW. This used to assert that a note followed a
+// CHANGED answer, which produced "No Appetite" above "ate a full dinner" in the clinician's
+// export -- a kept record reading as a contradiction. A note describes the answer it was written
+// about: it stays on that answer, which survives as the superseded entry, and does not follow a
+// different one. Nothing is lost from the record; it is attached where it is true.
+t('the note describing the OLD answer does not follow a CHANGED one', noteAfter.latestNote === '', 'note="' + noteAfter.latestNote + '"');
+const keptOnOld = await notePage.evaluate(() => {
+  const a = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'appetite').sort((x, y) => x.ts - y.ts);
+  return a.length ? (a[0].note || '') : null;
+});
+t('and the answer it DID describe still carries it', keptOnOld === 'only managed toast', 'superseded note="' + keptOnOld + '"');
 // THE NOTE IS PART OF THE ANSWER. The appetite guard differs from the bowel one only in also
 // comparing the note, and nothing verified that half -- a mutant ignoring the note scored a clean
 // pass. Same value with a NEW note is a real correction and must be written.
