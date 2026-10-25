@@ -6,6 +6,15 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
+- **app-v87, after the final audit verdict.** Commit `04b8cc2` lands AFTER the sixth audit's
+  clearance and changes a guard, so no auditor has seen it. Test code and `BACKLOG.md` only, and it
+  implements the sixth audit's own named remedy — but the trade should be on the record: the Help
+  enumeration guard's **bowel side is unchanged** (three of five values still caught), while the
+  **symptom side relaxed from three to five of nine**, so a hand-typed four-of-nine list now passes
+  and five is caught. The alternative went red on a correct app (`sym-severity` gaining the word
+  *headache* is an ordinary edit), so the trade is right — but it is a trade, and the next person
+  tightening this should know which side gave way. Found by the PM, not by an auditor.
+
 - **app-v87 audit, DEFERRED DELIBERATELY — the sixth Help surface.** `renderHelpView()`
   (`index.html` ~10022-10252) is the only `renderHelp*` function and it writes **eight prose
   literals straight into the DOM**. None is in any of the five data arrays `__v86Test.helpProse()`
