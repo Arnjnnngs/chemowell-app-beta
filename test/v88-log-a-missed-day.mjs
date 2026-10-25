@@ -17,6 +17,17 @@
 // where the alarm never re-reads it -- which is the whole question, because a caregiver filling in
 // Tuesday on Saturday is told something about today by that fill.
 //
+// FALSIFIED. Three mutants, each against a byte copy served on its own port via FALSIFY_BASE,
+// the repo file never touched:
+//   M1  the back-fill writes to TODAY instead of the day picked, and the future guard disabled
+//       -> 4 red, including "0 days back" and a future day writing an entry.
+//   M2  supersedeStamp returns the colliding base stamp, so a back-filled answer may not win its
+//       day -> 4 red, AND section 5 goes "banner still showing", which is the proof that check
+//       discriminates rather than restating that an entry exists. M1 did NOT turn section 5 red,
+//       because writing `normal` to today also ends the alarm -- noted here so nobody reads M1's
+//       4 reds as covering it.
+//   M3  the appetite note field removed, everything else intact -> 5 red.
+//
 // Run:  python3 -m http.server 8899 --directory <repo>   (then)  node test/v88-log-a-missed-day.mjs
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
