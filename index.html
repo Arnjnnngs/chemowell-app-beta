@@ -3124,17 +3124,27 @@ async function confirmTimeAndLog() {
     // on one extra tap.
     const d0 = dayStart(ts);
     if (d0 > dayStart(simNow())) { setToast('That day has not happened yet.'); return; }
+    // CLOSE FIRST, AND GUARD THE SECOND TAP. Every other branch here closes the modal before it
+    // awaits, so the button is gone before a second tap can land. This one awaited first and had
+    // no busy flag, where both other daily surfaces do -- so three taps wrote three rows with the
+    // SAME timestamp, which `isSupersededEntry` (strictly newer wins) then marks as none of them
+    // superseding anything: three identical rows in the clinician's export, each presented as a
+    // separate answer. That is the collision `supersedeStamp` exists to prevent, reached from the
+    // one direction it does not cover.
+    if (dailyLogBusy) return;
+    dailyLogBusy = true;
+    const kind = m.kind, value = m.value, valueLabel = m.valueLabel, note = m.note;
+    setState({ timeModal: null });
     try {
-      const wrote = m.kind === 'appetite'
-        ? await logAppetite(m.value, d0, m.note === undefined ? undefined : String(m.note))
-        : await logBowelMovement(m.value, d0);
-      setState({ timeModal: null });
+      const wrote = kind === 'appetite'
+        ? await logAppetite(value, d0, note === undefined ? undefined : String(note))
+        : await logBowelMovement(value, d0);
       const dayLabel = new Date(d0).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
-      setToast(wrote ? ((m.valueLabel || m.value) + ' · ' + dayLabel)
-                     : ('Already logged as ' + (m.valueLabel || m.value) + ' for ' + dayLabel + '.'));
+      setToast(wrote ? ((valueLabel || value) + ' · ' + dayLabel)
+                     : ('Already logged as ' + (valueLabel || value) + ' for ' + dayLabel + '.'));
     } catch (e) {
       setToast('Could not save that — nothing was changed.');
-    }
+    } finally { dailyLogBusy = false; }
     return;
   }
 
@@ -5682,7 +5692,12 @@ function renderTimeModal() {
         ),
         m.kind === 'appetite' ? h('div', { style: { marginTop: '14px' } },
           h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '8px' } }, 'Note (optional)'),
-          h('input', { 'data-daily-modal-note': 'true', type: 'text', value: m.note === undefined ? '' : String(m.note),
+          // SHOWS the picked day's note when nothing has been typed, so a day that already
+          // carries one does not look empty. What is SENT is still `m.note`, which stays
+          // undefined until the box is touched -- display and intent are different questions and
+          // conflating them is what made this modal delete notes on every confirm.
+          h('input', { 'data-daily-modal-note': 'true', type: 'text',
+            value: m.note === undefined ? (((appetiteFor(dayStart(new Date(m.timeValue).getTime())) || {}).note) || '') : String(m.note),
             placeholder: 'Anything worth remembering',
             onInput: (e) => { state.timeModal.note = e.target.value; },
             style: { width: '100%', minHeight: '48px', border: '1px solid #E9D8D1', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } })
@@ -11897,7 +11912,10 @@ function renderDayCorrector(kind, dayTs, labels, current, onPick, noteable) {
             background: on ? 'rgba(200,83,32,0.12)' : '#FFFFFF',
             color: on ? '#8E3818' : '#2A2127' } }, labels[val]);
       }),
-      h('button', { onClick: () => setState({ editingDaily: null }),
+      // CANCEL DISCARDS. The draft used to be deleted only on a successful write, so typing a
+      // note, backing out, then later picking an answer for that day resurrected the abandoned
+      // text as the standing note in the clinician's export. Cancel has to mean cancel.
+      h('button', { onClick: () => { delete dailyNoteDraft[kind + ':' + dayTs]; setState({ editingDaily: null }); },
         style: { minHeight: '46px', padding: '0 11px', color: '#745649', fontSize: '13px', fontWeight: '800' } }, 'Cancel')
     ));
 }
@@ -11916,7 +11934,7 @@ function dailyNoteFor(key, current) {
 // clinician's export. That is the exact contradiction app-v86 and app-v87 wrote the inheritance
 // rule for, reintroduced by the fix that gave the rule something to govern.
 //
-// So: send the draft only if she TOUCHED the box. Untouched sends undefined, and the writer
+// So: send the draft only if it was TOUCHED. Untouched sends undefined, and the writer
 // applies its own rule -- keep the note when the answer is unchanged, drop it when it changes.
 // Touched sends the string, which is what makes clearing possible and what lets a new note be
 // written alongside a new answer. One line, and it is the difference between a field that edits
@@ -11948,9 +11966,9 @@ function renderDailyValueLogger(opts) {
             }
             dailyLogBusy = true;
             try {
-              await opts.onPick(val, d0, opts.noteable ? dailyNoteToSend(opts.key) : undefined);
-              // Released only on success, so a refused write leaves what she typed on screen.
-              if (opts.noteable) delete dailyNoteDraft[opts.key];
+              await opts.onPick(val, d0, opts.noteable ? dailyNoteToSend(opts.key + ':' + d0) : undefined);
+              // Released only on success, so a refused write leaves the typed text on screen.
+              if (opts.noteable) delete dailyNoteDraft[opts.key + ':' + d0];
               setToast(opts.toastPrefix + ' \u00b7 ' + (opts.labels[val] || val));
             } catch (e) {
               setToast('Could not save that \u2014 nothing was changed.');
@@ -11975,9 +11993,12 @@ function renderDailyValueLogger(opts) {
     // a note was submitAppetite(), which nothing called; it is deleted in this release.
     opts.noteable ? h('div', { style: { marginTop: '12px' } },
       h('div', { style: { fontSize: '11.5px', color: '#915E48', fontWeight: '700', marginBottom: '6px' } }, 'Note (optional)'),
-      h('input', { 'data-daily-note': opts.key, type: 'text', value: dailyNoteFor(opts.key, current),
+      // Keyed by screen AND day, like the corrector. Keyed by screen alone it would ride a
+      // midnight rollover: a note typed at 23:58 and not saved would still be sitting there at
+      // 00:01, now belonging to a different day.
+      h('input', { 'data-daily-note': opts.key, type: 'text', value: dailyNoteFor(opts.key + ':' + d0, current),
         placeholder: 'Anything worth remembering',
-        onInput: (e) => { dailyNoteDraft[opts.key] = e.target.value; },
+        onInput: (e) => { dailyNoteDraft[opts.key + ':' + d0] = e.target.value; },
         style: { width: '100%', minHeight: '46px', border: '1px solid #E9D8D1', borderRadius: '12px', padding: '0 13px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } })
     ) : null,
     h('div', { style: { fontSize: '11.5px', color: '#9A8C92', marginTop: '10px', lineHeight: '1.45' } },
@@ -11989,7 +12010,12 @@ function renderDailyValueLogger(opts) {
     h('button', { 'data-log-another-day': opts.key,
       onClick: () => setState({ timeModal: { type: 'daily', kind: opts.key, dateOnly: true,
         value: Object.keys(opts.labels)[0], valueLabel: opts.labels[Object.keys(opts.labels)[0]],
-        note: opts.noteable ? '' : undefined, timeValue: nowLocalISO() } }),
+        // `undefined`, NOT ''. The writer reads '' as the deliberate "clear it" signal, so
+        // opening with '' made every confirm from this modal send "delete the note" -- re-pick
+        // the answer already standing for a day that carries a note and the note vanished, with
+        // the superseded line left holding the only copy of the truth. The rule the two other
+        // surfaces follow is "untouched sends undefined"; this was the third place and it did not.
+        note: undefined, timeValue: nowLocalISO() } }),
       style: { marginTop: '12px', minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1.5px solid rgba(200,83,32,0.35)', color: '#A83D0F', fontSize: '13px', fontWeight: '800' } },
       'Log another day')
   );

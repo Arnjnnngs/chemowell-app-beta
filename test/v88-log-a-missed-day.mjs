@@ -183,13 +183,24 @@ t('precondition: the modal opened over a day that already has an answer', r3.ok,
 {
   const rows = await entriesOf(p3, 'bowel_movement');
   t('both answers are kept -- nothing was deleted', rows.length === 2, JSON.stringify(rows.map(x => x.v)));
-  const shown = await p3.evaluate(() => {
-    const el = [...document.querySelectorAll('[data-correct-day]')].length;
-    return document.body.innerText;
-  });
-  t('and the newer one is what the screen shows for that day',
-    /Normal/.test(shown) && !/\bNone\b[\s\S]{0,40}(Correct|Remove)[\s\S]{0,40}Normal/.test(shown),
-    shown.slice(0, 0) + 'screen names Normal for the corrected day');
+  // THE DAY'S OWN ROW, NOT THE WHOLE PAGE -- the first version of this was vacuous and an audit
+  // proved it. Clause one tested /Normal/ against document.body.innerText, which is
+  // unconditionally true because the logger's own buttons are on that page; clause two only
+  // fired because the TOAST happened to sit within 40 characters of the word "Remove". Reword
+  // the toast and an oldest-wins build scored this green. So: find the row for that day by its
+  // own Correct button and read only that container.
+  const rowText = await p3.evaluate((target) => {
+    const btn = [...document.querySelectorAll('[data-correct-day]')]
+      .find(x => String(x.getAttribute('data-correct-day')) === String(target));
+    if (!btn) return null;
+    let row = btn.parentElement;
+    for (let i = 0; i < 4 && row && !/\d/.test(row.innerText || ''); i++) row = row.parentElement;
+    return row ? (row.innerText || '') : null;
+  }, (() => { const n = new Date(); n.setHours(0,0,0,0); return n.getTime() - 2 * DAY; })());
+  t('precondition: that day has a row on screen with its own Correct button', !!rowText, rowText === null ? 'no row found' : 'found');
+  t('and the newer answer is what that row shows',
+    !!rowText && /Normal/.test(rowText) && !/None/.test(rowText),
+    rowText ? JSON.stringify(rowText.replace(/\s+/g, ' ').slice(0, 90)) : 'n/a');
 }
 await p3.close();
 
@@ -283,6 +294,114 @@ console.log('\n7. EMPTYING THE BOX CLEARS THE NOTE -- the reason it is passed ve
   t('and the earlier answer still keeps its own', rows.some(r => r.note === 'ate a full dinner'), JSON.stringify(rows.map(r => r.note)));
 }
 await p6.close();
+
+console.log('\n7b. THE UNTOUCHED NOTE BOX MUST NOT CLEAR A NOTE -- the path the rule exists for');
+// NEITHER SECTION 6 NOR 7 EXERCISED THIS, which an audit found and which is how the release's
+// worst defect got in: both of them TYPE in the box, so the untouched path that
+// dailyNoteToSend() exists for was never driven. The modal opened with note: '' -- the
+// touched-and-emptied signal -- so confirming it without going near the note box sent "delete
+// the note", and re-picking the answer already standing for a day silently removed the note
+// while the superseded line kept the only copy of it.
+const p7b = await freshPage(new Function(seed(
+  '[{ id: "a1", medId: "appetite", value: "normal", dose: "Normal", mg: 0, note: "ate a full dinner", ts: d - 2*86400000 + 12*3600000 }]')));
+await p7b.evaluate(() => window.__v86Test.openReport('appetite'));
+await p7b.waitForTimeout(900);
+{
+  const before = await entriesOf(p7b, 'appetite');
+  t('precondition: that day already carries a note', before.length === 1 && before[0].note === 'ate a full dinner', JSON.stringify(before));
+  // Same answer, same day, note box NEVER touched.
+  const r = await logAnotherDay(p7b, 'appetite', 2, 'normal');
+  t('precondition: the modal was driven over that day', r.ok, r.ok ? 'open' : r.why);
+  t('and the modal shows the note that day already has, rather than an empty box',
+    r.ok && r.shape.hasNote === true, r.ok ? ('note field present=' + r.shape.hasNote) : 'n/a');
+  const after = await entriesOf(p7b, 'appetite');
+  const latest = after.slice().sort((a, c) => c.ts - a.ts)[0];
+  t('confirming without touching the note box does not delete the note',
+    !!latest && latest.note === 'ate a full dinner',
+    JSON.stringify(after.map(x => ({ v: x.v, note: x.note }))));
+}
+await p7b.close();
+
+console.log('\n7c. A DOUBLE TAP ON CONFIRM WRITES ONE ROW, NOT THREE');
+// Every other branch of this modal closes before it awaits; the daily branch awaited first and
+// had no busy flag, so three taps wrote three rows WITH THE SAME TIMESTAMP -- which
+// isSupersededEntry, being strictly-newer-wins, marks as none of them superseding anything.
+// Three identical lines in the clinician's export, each presented as a separate answer.
+const p7c = await freshPage(new Function(seed('[]')));
+await p7c.evaluate(() => window.__v86Test.openReport('bowel_movement'));
+await p7c.waitForTimeout(900);
+{
+  await p7c.evaluate(() => { const b2 = document.querySelector('[data-log-another-day="bowel_movement"]'); if (b2) b2.click(); });
+  await p7c.waitForTimeout(700);
+  await p7c.evaluate(() => {
+    const d = document.querySelector('[role="dialog"]');
+    const go = d && [...d.querySelectorAll('button')].find(x => /^Confirm$/i.test((x.innerText || '').trim()));
+    if (go) { go.click(); go.click(); go.click(); }
+  });
+  await p7c.waitForTimeout(1400);
+  const rows = await entriesOf(p7c, 'bowel_movement');
+  t('three taps on Confirm write exactly one entry', rows.length === 1, rows.length + ' rows: ' + JSON.stringify(rows.map(r => r.ts)));
+  const stamps = new Set(rows.map(r => r.ts));
+  t('and no two entries share a timestamp, so supersede can always tell them apart',
+    stamps.size === rows.length, rows.length + ' rows, ' + stamps.size + ' distinct stamps');
+}
+await p7c.close();
+
+console.log('\n7d. THE CORRECTOR\u2019S OWN NOTE FIELD -- never queried until now');
+const p7d = await freshPage(new Function(seed(
+  '[{ id: "a2", medId: "appetite", value: "normal", dose: "Normal", mg: 0, ts: d - 1*86400000 + 12*3600000 }]')));
+await p7d.evaluate(() => window.__v86Test.openReport('appetite'));
+await p7d.waitForTimeout(900);
+{
+  const opened = await p7d.evaluate(() => {
+    const btn = document.querySelector('[data-correct-day]');
+    if (!btn) return false;
+    btn.click(); return true;
+  });
+  await p7d.waitForTimeout(600);
+  const hasField = await p7d.evaluate(() => !!document.querySelector('[data-correct-note]'));
+  t('precondition: the corrector opened', opened, String(opened));
+  t('the corrector carries a note field', hasField, hasField ? 'present' : 'MISSING');
+  await p7d.evaluate(() => {
+    const inp = document.querySelector('[data-correct-note]');
+    if (inp) { inp.value = 'only managed toast'; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+    const b2 = document.querySelector('[data-correct-value="little"]');
+    if (b2) b2.click();
+  });
+  await p7d.waitForTimeout(1100);
+  const rows = await entriesOf(p7d, 'appetite');
+  const latest = rows.slice().sort((a, c) => c.ts - a.ts)[0];
+  t('and a note typed there reaches the record alongside the new answer',
+    !!latest && latest.v === 'little' && latest.note === 'only managed toast', JSON.stringify(latest));
+}
+await p7d.close();
+
+console.log('\n7e. CANCEL ON THE CORRECTOR DISCARDS WHAT WAS TYPED');
+const p7e = await freshPage(new Function(seed(
+  '[{ id: "a3", medId: "appetite", value: "normal", dose: "Normal", mg: 0, ts: d - 1*86400000 + 12*3600000 }]')));
+await p7e.evaluate(() => window.__v86Test.openReport('appetite'));
+await p7e.waitForTimeout(900);
+{
+  await p7e.evaluate(() => { const b2 = document.querySelector('[data-correct-day]'); if (b2) b2.click(); });
+  await p7e.waitForTimeout(500);
+  await p7e.evaluate(() => {
+    const inp = document.querySelector('[data-correct-note]');
+    if (inp) { inp.value = 'abandoned text'; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+    const c = [...document.querySelectorAll('button')].find(x => /^Cancel$/i.test((x.innerText || '').trim()));
+    if (c) c.click();
+  });
+  await p7e.waitForTimeout(500);
+  // Reopen the same day and pick an answer. The abandoned text must NOT come back.
+  await p7e.evaluate(() => { const b2 = document.querySelector('[data-correct-day]'); if (b2) b2.click(); });
+  await p7e.waitForTimeout(500);
+  await p7e.evaluate(() => { const b2 = document.querySelector('[data-correct-value="little"]'); if (b2) b2.click(); });
+  await p7e.waitForTimeout(1100);
+  const rows = await entriesOf(p7e, 'appetite');
+  const latest = rows.slice().sort((a, c) => c.ts - a.ts)[0];
+  t('a note typed and then cancelled does not come back as the standing note',
+    !!latest && latest.note !== 'abandoned text', JSON.stringify(latest));
+}
+await p7e.close();
 
 console.log('\n8. THE DEAD DELETE-THEN-RELOG WRITERS ARE GONE FROM THE SHIPPED FILE');
 {
