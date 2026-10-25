@@ -13387,6 +13387,27 @@ if (typeof window !== 'undefined') {
     // and scored 63/63 with every other suite green. A guard that reads one of the two arrays
     // the screen renders is a guard with a door next to it.
     helpTopics: () => helpAllTopics(),
+    // EVERY SURFACE THE HELP CENTRE PUTS IN FRONT OF A CAREGIVER, IN ONE SHAPE.
+    //
+    // The hook above was `HELP_TOPICS` and an audit showed the screen renders
+    // `HELP_TOPICS.concat(helpFaqTopics())`, so the guards were reading a little over half of
+    // Help. Widening it to `helpAllTopics()` fixed that instance and left the CLASS open: the
+    // Help centre also renders a blurb under every category tile, a pointer row, and the
+    // care-team line above every medical topic. None of those was being read either. A guard
+    // that reads SOME of what a screen shows is the shape this release keeps being refused for,
+    // so this returns all of it.
+    //
+    // DELIBERATELY EXCLUDED, with the reason, because an exemption nobody wrote down is
+    // indistinguishable from an oversight: the What's New changelog. It is a record of what
+    // CHANGED, so it has to be able to say "Help used to claim X" about a claim that is now
+    // gone -- holding it to the same rule would forbid describing the fix.
+    helpProse: () => helpAllTopics().map(tp => ({ id: tp.id, q: String(tp.q || ''),
+      body: [tp.a].concat(tp.steps || []).concat(tp.note ? [tp.note] : [])
+        .concat((tp.branches || []).flatMap(br => [br.when].concat(br.steps || [])))
+        .filter(v => typeof v === 'string').join(' \n ') }))
+      .concat(HELP_CATEGORIES.map(c => ({ id: 'cat:' + c.id, q: '', body: String(c.label || '') + ' \n ' + String(c.blurb || '') })))
+      .concat(HELP_POINTERS.map(pt => ({ id: 'pointer:' + pt.id, q: String(pt.q || ''), body: '' })))
+      .concat([{ id: 'care-team-line', q: '', body: HELP_CARE_TEAM_LINE }]),
     // THE GENERATORS THEMSELVES, because the first version of the ratchet above them read the
     // whole topic instead of the sentence and could not fail: the rewritten bowel topic names
     // "diarrhea" twice on its own account, so a generator that dropped the value still left the

@@ -519,6 +519,7 @@ const helpData = await helpPage.evaluate(() => {
   const byId = {};
   topics.forEach(tp => { byId[tp.id] = text(tp); });
   const stepsOf = id => { const tp = topics.find(x => x.id === id); return (tp && tp.steps) || []; };
+  const prose = T.helpProse();
   return { ids: T.selectableSymptomIds(), types: T.symptomTypes(), bowel: T.bowelLabels(),
            symLog: byId['sym-log'] || '', symBowel: byId['sym-bowel-confusion'] || '',
            // THE GENERATED SENTENCES THEMSELVES, and the steps meant to carry them.
@@ -526,12 +527,13 @@ const helpData = await helpPage.evaluate(() => {
            spoken: T.selectableSymptomIds().map(id => T.symptomSpoken(id)),
            bowelSteps: stepsOf('sym-bowel-confusion'), symLogSteps: stepsOf('sym-log'),
            denial: T.nonSelectableSymptomDenial(),
-           // Split, because a QUESTION may raise one of these words and a CLAIM may not.
-           perTopic: topics.map(tp => ({ id: tp.id, q: String(tp.q || ''),
-             body: [tp.a].concat(tp.steps || []).concat(tp.note ? [tp.note] : [])
-               .concat((tp.branches || []).flatMap(br => [br.when].concat(br.steps || [])))
-               .filter(v => typeof v === 'string').join(' \n ') })),
-           all: topics.map(tp => text(tp)).join(' \n ') };
+           // EVERY SURFACE THE HELP CENTRE RENDERS, from the app's own hook -- topics, the
+           // Common-questions tiles, the blurb under each category, the pointer row and the
+           // care-team line. Split into q and body, because a QUESTION may raise one of these
+           // words and a CLAIM may not.
+           perTopic: T.helpProse(),
+           // `all` is now EVERY Help surface, not just the topic array.
+           all: prose.map(x => x.q + ' \n ' + x.body).join(' \n ') };
 });
 
 // A -- THE CONTROL ITSELF, driven, not read. It is generated from the id list now, so this is the
