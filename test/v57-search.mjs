@@ -82,6 +82,20 @@ function sliceLine(re) {
 
 const src = [
   sliceBlock('const HELP_CATEGORIES = [', '[', ']'),
+  // THE HELP LITERAL IS NO LONGER SELF-CONTAINED, AND THAT IS DELIBERATE IN THE APP.
+  // app-v87's second delta stopped hand-typing two enumerations into Help prose: the symptom list
+  // and the bowel list are now GENERATED from the data the controls are built from, because both
+  // hand-typed copies had drifted -- one of them into telling a caregiver that Symptoms offers an
+  // option deleted in v57. A string built from the data cannot drift from it, and the price is
+  // that this file's static extraction has to bring the four tiny helpers along.
+  sliceLine(/const BOWEL_MOVEMENT_LABELS = \{[^\n]*\};/),
+  sliceLine(/const SELECTABLE_SYMPTOM_IDS = \[[^\n]*\];/),
+  sliceLine(/const SYMPTOM_SPOKEN = \{[^\n]*\};/),
+  sliceLine(/const SYMPTOM_TYPES = \{[^\n]*\};/),
+  sliceFn('listSentence'),
+  sliceLine(/function bowelChoiceSentence\(\)[^\n]*/),
+  sliceLine(/function symptomSpoken\(id\)[^\n]*/),
+  sliceLine(/function symptomChoiceSentence\(\)[^\n]*/),
   sliceBlock('const HELP_POINTERS = [', '[', ']'),
   sliceLine(/const HELP_CARE_TEAM_LINE = '[^']*';/),
   sliceBlock('const HELP_TOPICS = [', '[', ']'),
