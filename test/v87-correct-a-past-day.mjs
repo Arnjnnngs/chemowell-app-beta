@@ -641,7 +641,13 @@ helpData.perTopic.forEach(tp => {
     // this branch only ever asked whether the topic also carried the denial. A `q` that does not
     // end in a question mark is prose on the same screen as everything else, so it is held to
     // the claim rule instead.
-    const qIsAQuestion = /\?\s*$/.test(tp.q);
+    // A QUESTION MARK IS NOT A QUESTION. An audit put a declarative claim in a `q` and simply
+    // ended it with one -- "Diarrhea can be logged from the Symptoms tab too -- or should it go
+    // in the bowel tracker?" -- and the raise rule let it through. So the exemption needs the
+    // sentence to OPEN as a question as well as close as one. The one legitimate case in the
+    // corpus is "Should diarrhea go in...?", and nothing else in Help names these words at all,
+    // so this costs nothing and closes the dressing-up.
+    const qIsAQuestion = /\?\s*$/.test(tp.q) && /^(?:should|can|could|do|does|did|is|are|was|were|will|would|how|what|why|where|when|which|who|whose|am)\b/i.test(String(tp.q).trim());
     if (re.test(strip(tp.q))) {
       if (!qIsAQuestion) strayClaims.push(tp.id + ':q:' + k);
       else if (!carriesDenial) raisedWithoutDenial.push(tp.id + ':' + k);
@@ -676,22 +682,43 @@ t('and the bowel topic prints that sentence rather than a hand-typed copy',
 // is an ENUMERATION that is a second copy.
 const enumerators = [];
 helpData.perTopic.forEach(tp => {
+  const topicHits = {};
   [['bowel', bowelWords], ['symptom', helpData.spoken.map(String)]].forEach(pair => {
     const kind = pair[0], words = pair[1];
     [tp.q].concat(String(tp.body).split(' \n ')).forEach(piece => {
-      const left = strip(String(piece));
-      if (left.indexOf(helpData.symptomSentence) >= 0) return;
+      // STRIPPED, NOT SKIPPED. This used to `return` on any piece containing the generated
+      // symptom sentence, which dropped the WHOLE piece from both scans -- so a hand-typed list
+      // appended to the very step that prints the generated one scored clean. The bowel sentence
+      // was already being removed surgically by strip(); this is the same treatment for the
+      // other one, and it removes the asymmetry rather than patching the symptom.
+      const left = strip(String(piece)).split(helpData.symptomSentence).join(' ');
       // AN ENUMERATION, NOT A WORD COUNT. The first version of this counted distinct label
       // words in a piece of text and immediately fired on `rem-none-scheduled`, which says
       // "This is normal if..." in one step and "...and none of them..." in another: two bowel
       // labels, because `normal` and `none` are ordinary English. The thing being hunted is a
       // LIST -- values joined by commas and an "or" -- so that is what it matches: two or more
       // of the labels strung together by a separator, within one run of text.
+      // TWO SHAPES, BECAUSE AN AUDIT WROTE BOTH AND BOTH SCORED CLEAN.
+      //   * A RUN: values joined by a separator. The first version allowed only `, or and`, so a
+      //     slash-separated list walked through -- and index.html's own comment block used to
+      //     carry exactly that shape, so it is not exotic. Semicolons, middots and dashes join
+      //     lists too.
+      //   * A SPREAD: one value per step, six steps, no two adjacent. The most natural way a
+      //     person writes a list into a walkthrough, and a run-matcher cannot see it. Counted
+      //     per TOPIC rather than per piece, at three or more distinct values -- three, not two,
+      //     because `normal` and `none` are ordinary English and a future topic saying "normal
+      //     and none" in passing is not a copy of anything.
       const alt = words.map(w => escRe(String(w).toLowerCase())).join('|');
-      const listRe = new RegExp('\\b(?:' + alt + ')\\b(?:\\s*(?:,|or|and)\\s*\\b(?:' + alt + ')\\b)+', 'i');
+      const listRe = new RegExp('\\b(?:' + alt + ')\\b(?:\\s*(?:,|;|/|\u00b7|\u2013|\u2014|-|or|and|then)\\s*\\b(?:' + alt + ')\\b)+', 'i');
       const m = left.match(listRe);
       if (m) enumerators.push(tp.id + ' [' + kind + ']: "' + m[0] + '"');
+      topicHits[kind] = topicHits[kind] || {};
+      words.forEach(w => { if (new RegExp('\\b' + escRe(String(w).toLowerCase()) + '\\b', 'i').test(left)) topicHits[kind][String(w).toLowerCase()] = 1; });
     });
+  });
+  Object.keys(topicHits).forEach(kind => {
+    const spread = Object.keys(topicHits[kind]);
+    if (spread.length >= 3) enumerators.push(tp.id + ' [' + kind + ', spread across steps]: ' + spread.join(', '));
   });
 });
 t('and no other sentence in Help enumerates either list by hand',

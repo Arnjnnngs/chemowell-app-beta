@@ -13400,7 +13400,17 @@ if (typeof window !== 'undefined') {
     // DELIBERATELY EXCLUDED, with the reason, because an exemption nobody wrote down is
     // indistinguishable from an oversight: the What's New changelog. It is a record of what
     // CHANGED, so it has to be able to say "Help used to claim X" about a claim that is now
-    // gone -- holding it to the same rule would forbid describing the fix.
+    // gone -- holding it to the same rule would forbid describing the fix. **THE EXEMPTION IS
+    // FOR THE PAST TENSE, NOT FOR THE SURFACE.** A PRESENT-tense false claim in What's New is
+    // unguarded by anything here, and What's New is pushed to every user after an update, so it
+    // is the one place a wrong sentence reaches people without their going looking for it.
+    //
+    // AND WHAT THIS HOOK STILL DOES NOT COVER, measured by an audit rather than assumed:
+    // `renderHelpView()` writes eight prose literals straight into the DOM, among them the
+    // standing safety notice on the Help SEARCH screen, and none of them is in any array this
+    // returns. Listing data sources can never close that -- a ninth literal appears the next
+    // time somebody types a sentence into the renderer. The version with no next surface reads
+    // the rendered screen instead, and that is its own task rather than another hook.
     helpProse: () => helpAllTopics().map(tp => ({ id: tp.id, q: String(tp.q || ''),
       body: [tp.a].concat(tp.steps || []).concat(tp.note ? [tp.note] : [])
         .concat((tp.branches || []).flatMap(br => [br.when].concat(br.steps || [])))
