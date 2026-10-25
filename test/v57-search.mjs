@@ -96,6 +96,14 @@ const src = [
   sliceLine(/function bowelChoiceSentence\(\)[^\n]*/),
   sliceLine(/function symptomSpoken\(id\)[^\n]*/),
   sliceLine(/function symptomChoiceSentence\(\)[^\n]*/),
+  // AND THE DENIAL GENERATOR, added when the ratchet guarding all this stopped using a
+  // topic-level whitelist: the one sentence allowed to name a symptom the picker does not offer
+  // is generated, so the suite can subtract exactly it. This list is itself a hand-maintained
+  // copy of a dependency set and has now broken twice for the same reason -- but it breaks
+  // LOUDLY, with exit 1 and run-all-tests.sh's COULD-NOT-START bucket, which is the property
+  // that matters. A silent green here would be far worse than a crash.
+  sliceFn('nonSelectableSymptomNames'),
+  sliceFn('nonSelectableSymptomDenial'),
   sliceBlock('const HELP_POINTERS = [', '[', ']'),
   sliceLine(/const HELP_CARE_TEAM_LINE = '[^']*';/),
   sliceBlock('const HELP_TOPICS = [', '[', ']'),
