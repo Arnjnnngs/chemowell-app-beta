@@ -91,7 +91,13 @@ const bowelUi = await page.evaluate(() => {
   return { present: !!el, values: el ? [...el.querySelectorAll('[data-daily-log-value]')].map(x => x.getAttribute('data-daily-log-value')) : [] };
 });
 t('the bowel report renders a logger', bowelUi.present === true, 'present=' + bowelUi.present);
-t('it offers every bowel value', bowelUi.values.length === 5 && bowelUi.values.includes('diarrhea'), bowelUi.values.join(','));
+// COUNTED AGAINST THE APP'S OWN MAP, not a number typed here. This read `length === 5`, so
+// adding a sixth bowel value to the app -- with every control correctly generated from the map --
+// turned THIS check red while the app was right. A suite that fails on a correct app is the exact
+// anti-pattern the app-v87 row contrasts itself with, and it was sitting two files away.
+const bowelDefined = await page.evaluate(() => Object.keys(window.__v86Test.bowelLabels()));
+t('it offers every bowel value the app defines', bowelDefined.every(v => bowelUi.values.includes(v)) && bowelUi.values.includes('diarrhea'),
+  'app=' + bowelDefined.join(',') + '  logger=' + bowelUi.values.join(','));
 
 // THE CLOCK MUST NOT MATTER. This is the whole point: the Home card is correctly gated on the
 // check-in time, so the report control has to work regardless of what hour it is.

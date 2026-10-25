@@ -128,6 +128,22 @@ if (sheet.ok) {
   t('and a Loose day pre-fills it rather than rendering blank', sheet.prefilled === 'loose' && sheet.index >= 0,
     'value="' + sheet.prefilled + '" index=' + sheet.index + ' shown="' + sheet.shown + '"');
 }
+// THE EIGHTH, and it is the release's own headline in mirror image. Deleting the sheet's
+// ''/"Not answered" option scores a clean pass on every suite -- and would render the select
+// BLANK on every morning nobody has answered yet, which is exactly the failure this release
+// exists to have fixed, arrived at from the other side.
+const declineable = await everyControl.evaluate(() => {
+  const dlg = document.querySelector('[role="dialog"][aria-label="Daily check-in"]');
+  const sel = dlg && [...dlg.querySelectorAll('select')].find(s2 => [...s2.options].some(o => /Diarrhea/i.test(o.textContent)));
+  if (!sel) return null;
+  return { first: sel.options[0].value, firstText: sel.options[0].textContent.trim(), count: sel.options.length };
+});
+t('the check-in sheet still lets a caregiver decline to answer', !!declineable && declineable.first === '',
+  declineable ? ('first option = "' + declineable.firstText + '"') : 'sheet not open');
+t('and that option is first, so an unanswered day opens on it rather than blank',
+  !!declineable && declineable.firstText.length > 0 && declineable.count === defined.length + 1,
+  declineable ? (declineable.count + ' options for ' + defined.length + ' values + 1 decline') : 'n/a');
+
 await everyControl.evaluate(() => { const c = [...document.querySelectorAll('button')].find(x => /^Cancel$/i.test(x.textContent.trim())); if (c) c.click(); });
 await everyControl.waitForTimeout(500);
 await everyControl.evaluate(() => window.__v86Test.openReport('bowel_movement'));
@@ -191,8 +207,6 @@ if (oldDay) {
     'heading="' + headingDay + '" box="' + boxDay + '"');
   t('and it is the same day in both', !!headingDay && !!boxDay && headingDay.trim() === boxDay.trim(),
     'heading="' + (headingDay || '').trim() + '" box="' + (boxDay || '').trim() + '"');
-}
-if (opts) {
 }
 
 console.log('\n2. E-2 -- AND LOGGING LOOSE FROM THE BANNER ACTUALLY WORKS');
