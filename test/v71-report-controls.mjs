@@ -114,18 +114,42 @@ const clickText = (re) => page.evaluate((src) => {
   if (b) { b.click(); return true; }
   return false;
 }, re.source);
-const modalOpen = () => page.evaluate(() => !!document.querySelector('[role="dialog"]'));
-const modalTitle = () => page.evaluate(() => {
-  const d = document.querySelector('[role="dialog"]');
+// WHICH DIALOG. THIS SUITE SPENT SEVERAL RELEASES ABORTING BECAUSE IT NEVER ASKED.
+//
+// These two read `[role="dialog"]`, the FIRST one in document order, and the What's New sheet is
+// earlier in the document than anything a report screen opens. `whatsNewShouldShow()` returns true
+// for a device that has ChemoWell data and no seen-version marker -- which is exactly this
+// fixture, and is correct app behaviour: somebody upgrading across the release that added the
+// marker is meant to be told what changed. So the sheet was open from load, every report dialog
+// opened and closed correctly behind it, and `confirmModal` reported "modal did not close after
+// Confirm at: para-add" about a dialog that HAD closed. The run then aborted and every check below
+// section 1 went unreported for months.
+//
+// Measured 2026-10-25 against app-v87: before Confirm the first dialog is "Log Paracentesis ·
+// 2.5 L"; the click lands; after Confirm the first dialog is "What's new in this update"; zero
+// page errors. The app was never wrong here.
+//
+// Two changes, because dismissing the sheet alone would fix today and leave the trap armed: the
+// fixture now closes What's New through the app's own button, AND these helpers ignore it by name,
+// so a THIRD sheet appearing above a report dialog produces a named failure rather than this one.
+const OTHER_DIALOG = '[role="dialog"]:not([data-whatsnew-modal])';
+const modalOpen = () => page.evaluate((sel) => !!document.querySelector(sel), OTHER_DIALOG);
+const modalTitle = () => page.evaluate((sel) => {
+  const d = document.querySelector(sel);
   return d ? (d.getAttribute('aria-label') || '') : '';
-});
+}, OTHER_DIALOG);
+// Everything that is open and is NOT the dialog under test. Named in a failure so the next person
+// reading "modal did not close" is told WHICH modal, instead of inferring it from a stack trace.
+const strayDialogs = () => page.evaluate(() => [...document.querySelectorAll('[role="dialog"]')]
+  .map(d => d.getAttribute('aria-label') || '(unlabelled)'));
 // CONFIRM AND PROVE IT CLOSED. A helper that cannot tell success from failure moves the error
 // rather than finding it -- a silently-open modal swallows every later click and the suite then
 // dies far from the real cause.
 const confirmModal = async (where) => {
   await clickText(/^Confirm$/);
   for (let i = 0; i < 30 && await modalOpen(); i++) await page.waitForTimeout(100);
-  if (await modalOpen()) throw new Error('modal did not close after Confirm at: ' + where);
+  if (await modalOpen()) throw new Error('modal did not close after Confirm at: ' + where
+    + ' -- dialogs open: ' + JSON.stringify(await strayDialogs()));
   await page.waitForTimeout(400);
 };
 const openReport = async (label) => {
@@ -136,6 +160,20 @@ const openReport = async (label) => {
 };
 const back = async () => { await clickText(/Back/); await page.waitForTimeout(500); };
 const paraRows = () => page.evaluate(() => document.querySelectorAll('[data-para-edit]').length);
+
+// Through the app's own button, not by writing the marker: the seed would have to name a version,
+// and a version literal in a suite is the thing that breaks every legitimate release here.
+{
+  const closed = await page.evaluate(() => {
+    const b = document.querySelector('[data-whatsnew-close]');
+    if (b) { b.click(); return true; }
+    return false;
+  });
+  if (closed) await page.waitForTimeout(400);
+}
+t('the What\u2019s New sheet is not left open over the screens under test',
+  !(await page.evaluate(() => !!document.querySelector('[data-whatsnew-modal]'))),
+  JSON.stringify(await strayDialogs()));
 
 console.log('\n1. Paracentesis — the screen that could delete but not add');
 await openReport('Paracentesis');
