@@ -699,12 +699,23 @@ async function renameActiveProfile(rawName) {
   // A comment asserting an ordering guarantee that the code did not provide is worse than no
   // guard. Awaited now, which is why this function is async.
   const previous = me.name;
+  // ONE TRY PER WRITE, and only the write that SUCCEEDED is ever rolled back. The first version of
+  // this guard bundled the rollback with a retry of the write that had just thrown, which made the
+  // prefs rollback unreachable in exactly the case it exists for: a failing LIST write left
+  // patientName holding the new name while the app said "nothing was changed" -- a false
+  // reassurance about the field that titles the printed report and names the CSV file.
   try {
     await setPrefsDB({ patientName: name });
+  } catch (e) {
+    setToast('Could not save that name \u2014 nothing was changed.');
+    return false;
+  }
+  try {
     me.name = name;
     saveJSON(PROFILES_KEY, ps);
   } catch (e) {
-    try { me.name = previous; saveJSON(PROFILES_KEY, ps); await setPrefsDB({ patientName: previous }); } catch (e2) {}
+    me.name = previous;
+    try { await setPrefsDB({ patientName: previous }); } catch (e2) {}
     setToast('Could not save that name \u2014 nothing was changed.');
     return false;
   }
@@ -3636,7 +3647,11 @@ async function confirmCheckinModal() {
   try {
     const todayStart = dayStart(simNow());
     const midday = todayStart + 12 * 3600000;
-    if (homePref('appetiteCheckin') && m.appetite) await logAppetite(m.appetite, todayStart, '');
+    // NO THIRD ARGUMENT. The check-in has no appetite-note field, so '' must not be read as the
+    // caregiver deliberately clearing a note: it made re-confirming an unchanged answer that
+    // carried a note count as a correction, write a duplicate, and strip the note from the
+    // answer that stands.
+    if (homePref('appetiteCheckin') && m.appetite) await logAppetite(m.appetite, todayStart);
     if (homePref('bowelCheckin') && m.bowel) await logBowelMovement(m.bowel, todayStart);
     // Audit fix (v37, F2): only write a weight entry if it's new information -- either nothing was
     // logged yet today, or the caregiver actually changed the pre-filled value (a real correction).
@@ -3789,11 +3804,15 @@ async function submitBowelBannerUpdate() {
   if (day === null) return;
   if (!v) { setToast('Select a bowel movement status first'); return; }
   try {
-    const existing = bowelMovementFor(day);
-    if (existing) await removeEntryDB(existing.id);
-    await logBowelMovement(v, day);
+    // A LIVE DELETE-BASED CORRECTION, on the path the app pushes hardest. This removed the day's
+    // entry and wrote a new one -- the correction pattern this project has shipped and undone
+    // twice -- reachable straight from the bowel-issue banner, and it made app-v86's own changelog
+    // line ("keeps the earlier one in your records") false on the most-used route. The writer
+    // already supersedes and already refuses a no-op, so the deletion had nothing left to do.
+    const changed = await logBowelMovement(v, day);
     setState({ bowelBannerInput: undefined });
-    setToast('Bowel movement updated — ' + (BOWEL_MOVEMENT_LABELS[v] || v));
+    setToast(changed ? ('Bowel movement updated — ' + (BOWEL_MOVEMENT_LABELS[v] || v))
+                     : ('Already logged as ' + (BOWEL_MOVEMENT_LABELS[v] || v) + ' for that day.'));
   } catch (e) {
     setToast('Could not save — please try again');
   }
@@ -13223,7 +13242,8 @@ if (typeof window !== 'undefined') {
     snoozeUntil: () => Number(state.heroSnoozeUntil) || 0,
     isSuperseded: (e) => isSupersededEntry(e, state.entries),
     exportRows: () => buildExportRows(),
-    nextMedicationId: (n) => nextMedicationId(n)
+    nextMedicationId: (n) => nextMedicationId(n),
+    logAppetite: (v, d, n) => logAppetite(v, d, n)
   };
   window.__notifScopeTest = {
     activeProfileId: () => ACTIVE_PROFILE_ID,

@@ -397,7 +397,10 @@ const dupPage = await freshPage(() => {
   }));
   localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([
     { id: 'd1', medId: 'bowel_movement', value: 'diarrhea', dose: 'Diarrhea', mg: 0, ts: d + 12 * 3600000 },
-    { id: 'd2', medId: 'appetite', value: 'little', dose: 'Little to none', mg: 0, ts: d + 12 * 3600000 }
+    // WITH A NOTE. Without one this case passed while the bug was live: the check-in passed ''
+    // for the note, the guard read that as a deliberate clearing, and re-confirming an unchanged
+    // answer still wrote a duplicate and stripped the note from the answer that stands.
+    { id: 'd2', medId: 'appetite', value: 'little', dose: 'Little to none', note: 'only managed toast', mg: 0, ts: d + 12 * 3600000 }
   ]));
   localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
 });
@@ -438,6 +441,11 @@ if (dupCi.opened) {
   // enforcement had to move into the writers. Removing the appetite writer's guard survived a
   // whole suite run while the Reports logger's UI guard quietly stood in for it.
   t('and the appetite answer is not duplicated either', dupCi.appAfter === dupCi.appBefore, dupCi.appBefore + ' -> ' + dupCi.appAfter);
+  const keptNote = await dupPage.evaluate(() => {
+    const a = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'appetite').sort((x, y) => x.ts - y.ts);
+    return a.length ? (a[a.length - 1].note || '') : null;
+  });
+  t('and the note on that answer survives the re-confirmation', keptNote === 'only managed toast', 'note="' + keptNote + '"');
   const falseMark = await dupPage.evaluate(() => window.__v86Test.exportRows().filter(r => /(Bowel Movement|Appetite)/i.test(r[2] || '') && /superseded/i.test(r[3] || '')).map(r => r[3]));
   t('so the export does not mark an identical answer as corrected', falseMark.length === 0, JSON.stringify(falseMark));
 }
@@ -467,6 +475,26 @@ t('precondition: the day really does list those records', /Loose/.test(nlText) &
 t('the summary does NOT say "Nothing logged" above records it is summarising', !/Nothing logged/.test(nlSummary), 'summary="' + nlSummary.trim().slice(0, 70) + '"');
 t('it counts them under their own names', /1 BM/.test(nlSummary) && /1 appetite/.test(nlSummary) && /1 radiation/.test(nlSummary), 'summary="' + nlSummary.trim().slice(0, 70) + '"');
 
+console.log('\n13a. A RADIATION-ONLY DAY IS NOT "NOTHING LOGGED" EITHER');
+// Section 13's fixture carries bowel and appetite as well, so dropping radiation from the
+// nothingElseLogged clause could not change its outcome and a mutant doing exactly that scored a
+// clean pass. A day holding ONLY a radiation session is the shape that makes the clause matter.
+const radPage = await freshPage(() => {
+  const day = new Date(); day.setHours(0, 0, 0, 0); const d = day.getTime();
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'radiation', tourDone: true, installedAt: d - 86400000 }));
+  localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([
+    { id: 'r1', medId: 'radiation_session', dose: 'Session', mg: 0, ts: d + 14 * 3600000 }
+  ]));
+  localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
+});
+await radPage.evaluate(() => window.__v86Test.openReport('history'));
+await radPage.waitForTimeout(1300);
+const radText = await radPage.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
+const radSummary = (radText.match(/\d{1,2}\/\d{1,2}\s+(.*?)\s+(?:MORNING|AFTERNOON|EVENING|OVERNIGHT)/) || ['', ''])[1] || '';
+t('precondition: the day holds a radiation session and nothing else', /1 radiation/.test(radSummary), 'summary="' + radSummary.trim().slice(0, 60) + '"');
+t('and the summary does not also say "Nothing logged"', !/Nothing logged/.test(radSummary), 'summary="' + radSummary.trim().slice(0, 60) + '"');
+
 console.log('\n13b. A CORRECTION FROM REPORTS KEEPS THE NOTE THE ANSWER CARRIED');
 // logAppetite only attached a note when one was passed, and the Reports logger passes none, so a
 // correction silently dropped a note the caregiver had typed. Untested until a mutant reverting
@@ -490,6 +518,61 @@ const noteAfter = await notePage.evaluate(() => {
 });
 t('precondition: the correction was accepted', notePick && noteAfter.n === 2 && noteAfter.latestValue === 'none', JSON.stringify(noteAfter));
 t('and the note from the answer it replaced came with it', noteAfter.latestNote === 'only managed toast', 'note="' + noteAfter.latestNote + '"');
+// THE NOTE IS PART OF THE ANSWER. The appetite guard differs from the bowel one only in also
+// comparing the note, and nothing verified that half -- a mutant ignoring the note scored a clean
+// pass. Same value with a NEW note is a real correction and must be written.
+const sameValNewNote = await notePage.evaluate(async () => {
+  const d0 = (() => { const n = new Date(); n.setHours(0, 0, 0, 0); return n.getTime(); })();
+  const before = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'appetite');
+  const cur = before.sort((a, c) => a.ts - c.ts)[before.length - 1];
+  const wroteSame = await window.__v86Test.logAppetite(cur.value, d0, cur.note || '');
+  const wroteNew = await window.__v86Test.logAppetite(cur.value, d0, 'kept everything down today');
+  await new Promise(r => setTimeout(r, 300));
+  const after = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'appetite').sort((a, c) => a.ts - c.ts);
+  return { wroteSame, wroteNew, n: after.length, latestNote: after[after.length - 1].note || '' };
+});
+t('the same value with the same note is refused', sameValNewNote.wroteSame === false, 'returned ' + sameValNewNote.wroteSame);
+t('but the same value with a NEW note is a real correction and is written', sameValNewNote.wroteNew === true, 'returned ' + sameValNewNote.wroteNew);
+t('and the new note is the one that stands', sameValNewNote.latestNote === 'kept everything down today', 'note="' + sameValNewNote.latestNote + '"');
+
+console.log('\n13c. THE BOWEL-ISSUE BANNER CORRECTS BY SUPERSEDING, NOT BY DELETING');
+// A LIVE DELETE-BASED CORRECTION, found by the second delta audit on the path the app pushes
+// hardest. submitBowelBannerUpdate removed the day's entry and wrote a new one -- the pattern
+// this project has shipped and undone twice -- which made app-v86's own changelog line, "keeps
+// the earlier one in your records", false on the most-used route. Dead code was on the backlog;
+// this one was live and reachable from the banner the app puts in front of the caregiver.
+const bannerPage = await freshPage(() => {
+  const day = new Date(); day.setHours(0, 0, 0, 0); const d = day.getTime();
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: d - 86400000, homeCards: { bowelCheckin: true } }));
+  // 'diarrhea' is one of BOWEL_ISSUE_VALUES, which is what puts the banner on Home.
+  localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([
+    { id: 'b1', medId: 'bowel_movement', value: 'diarrhea', dose: 'Diarrhea', mg: 0, ts: d + 12 * 3600000 }
+  ]));
+  localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
+});
+const banner = await bannerPage.evaluate(async () => {
+  const before = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').length;
+  const sels = [...document.querySelectorAll('select')];
+  const sel = sels.find(s2 => [...s2.options].some(o => /Normal/i.test(o.textContent)) && [...s2.options].some(o => /Diarrhea/i.test(o.textContent)));
+  if (!sel) return { found: false, before, why: 'no bowel select on Home' };
+  const opt = [...sel.options].find(o => /^Normal$/i.test(o.textContent.trim()));
+  if (!opt) return { found: false, before, why: 'no Normal option' };
+  sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 300));
+  let btn = null, node = sel.parentElement;
+  for (let i = 0; i < 5 && node && !btn; i++) { btn = [...node.querySelectorAll('button')].find(x => /update|save|log/i.test(x.textContent)); node = node.parentElement; }
+  if (!btn) return { found: false, before, why: 'no update button beside the select' };
+  btn.click();
+  await new Promise(r => setTimeout(r, 1000));
+  const all = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').sort((a, c) => a.ts - c.ts);
+  return { found: true, before, after: all.length, values: all.map(e => e.value) };
+});
+t('precondition: the banner offers a correction control on Home', banner.found === true, JSON.stringify(banner));
+if (banner.found) {
+  t('correcting from the banner KEEPS the earlier answer', banner.after === banner.before + 1, JSON.stringify(banner.values));
+  t('and the corrected value is the one that stands', banner.values[banner.values.length - 1] === 'normal', JSON.stringify(banner.values));
+}
 
 console.log('\n14. RE-PICKING THE VALUE ALREADY SHOWN IS A NO-OP, NOT A DUPLICATE RECORD');
 await nlPage.evaluate(() => window.__v86Test.openReport('bowel_movement'));
@@ -564,6 +647,24 @@ const failRename = await rnPage.evaluate(async () => {
 t('a rename whose prefs write fails reports failure rather than success', failRename.ok === false, 'returned ' + JSON.stringify(failRename.ok));
 t('and neither store is left holding the new name', !/Should Not Stick/.test(failRename.listName) && failRename.prefName !== 'Should Not Stick',
   'list=' + failRename.listName + ' patientName=' + failRename.prefName);
+// THE OTHER ARM, and the one that was missing. The first guard only ever threw on the prefs
+// write, where the rollback is dead code by construction -- so a change that made the PREFS
+// ROLLBACK UNREACHABLE passed a full run, and shipped a state where patientName held the new
+// name while the app said "nothing was changed". patientName titles the printed report.
+const failList = await rnPage.evaluate(async () => {
+  const real = Storage.prototype.setItem;
+  Storage.prototype.setItem = function (k, v) { if (/-profiles-v1$/.test(k)) throw new Error('quota'); return real.call(this, k, v); };
+  let ok = null;
+  try { ok = await window.__v86Test.renameActiveProfile('List Fail Name'); } catch (e) { ok = 'threw'; }
+  Storage.prototype.setItem = real;
+  await new Promise(r => setTimeout(r, 300));
+  const ps = JSON.parse(localStorage.getItem('chemowell-app-profiles-v1') || '{}');
+  const pr = JSON.parse(localStorage.getItem('chemowell-app-p-p2-prefs-v1') || '{}');
+  return { ok, listName: (ps.list || []).map(x => x.id + '=' + x.name).join(','), prefName: pr.patientName };
+});
+t('a rename whose LIST write fails also reports failure', failList.ok === false, 'returned ' + JSON.stringify(failList.ok));
+t('and patientName is rolled back, not left holding the new name', failList.prefName !== 'List Fail Name',
+  'patientName=' + failList.prefName + ' list=' + failList.listName);
 
 console.log('\n17. A NEW MEDICATION CANNOT TAKE A RECORD TYPE\'S ID');
 // The v78 fence that refused thirteen drug names is gone and should stay gone -- an id is just an
