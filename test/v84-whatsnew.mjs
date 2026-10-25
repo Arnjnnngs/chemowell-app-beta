@@ -613,7 +613,8 @@ section('7e. SCROLLING AWAY FROM A FIELD YOU JUST TYPED IN MUST STICK');
   // locator.focus() lets the browser scroll the element into view, which is precisely how the
   // first version of this check scored 57/57 against a mutant that deleted the nudge outright.
   const deep = p.locator('#med-doses-text').first();
-  const deepTopBefore = await deep.evaluate(el => Math.round(el.getBoundingClientRect().top));
+  const deepBoxBefore = await deep.evaluate(el => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom) }; });
+  const deepTopBefore = deepBoxBefore.top;
   const yBeforeFocus = await p.evaluate(() => window.scrollY);
   await deep.evaluate(el => el.focus({ preventScroll: true }));
   await p.waitForTimeout(1400);
@@ -623,8 +624,22 @@ section('7e. SCROLLING AWAY FROM A FIELD YOU JUST TYPED IN MUST STICK');
   // together, the first of which ("the field started below the fold") is true before the app does
   // anything at all -- so mutant 3, which deletes the nudge outright, passed 57/57. A precondition
   // belongs in its own check; OR-ing it into the assertion is how an assertion stops asserting.
-  t('precondition: the field is below the fold, so there is something for the nudge to do',
-    deepTopBefore > vhE, 'top=' + deepTopBefore + ' in a ' + vhE + 'px viewport');
+  // MEASURED ON THE FIELD'S BOX, NOT ON ITS TOP EDGE, AND THAT IS THE WHOLE FIX.
+  //
+  // This precondition read `deepTopBefore > vhE` and failed every run from app-v84 to app-v87 at
+  // top=836 in an 844px viewport -- eight pixels, with the field's own body entirely below the
+  // fold. It was recorded release after release as a pre-existing red and treated as cosmetic. It
+  // was not: a FAILING precondition means the assertion underneath it has not been exercised on
+  // ANY of those releases, and that assertion is the one guarding v28's nudge against deletion.
+  // Eight pixels bought four releases of an unchecked feature.
+  //
+  // "Below the fold" is a question about whether the caregiver can see and type in the field. A
+  // field whose top is 8px above the bottom edge and whose body is all below it is not visible by
+  // any reading that matters, and the browser agrees -- focusing it scrolls. So the condition is
+  // now the one the sentence always meant: NOT FULLY IN VIEW.
+  t('precondition: the field is not fully in view, so there is something for the nudge to do',
+    deepBoxBefore.bottom > vhE,
+    'top=' + deepBoxBefore.top + ' bottom=' + deepBoxBefore.bottom + ' in a ' + vhE + 'px viewport');
   t('and focusing it WITHOUT a swipe brings it into view -- v28 is not deleted by the guard',
     yAfterFocus > yBeforeFocus + 100 && deepTopAfter >= 0 && deepTopAfter <= vhE - 40,
     'scrollY ' + yBeforeFocus + ' -> ' + yAfterFocus + ', field top ' + deepTopBefore + ' -> ' + deepTopAfter + ' in ' + vhE + 'px');
