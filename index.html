@@ -13380,7 +13380,13 @@ if (typeof window !== 'undefined') {
     // tell. These three are what lets a suite hold the prose to the data.
     symptomTypes: () => SYMPTOM_TYPES,
     selectableSymptomIds: () => SELECTABLE_SYMPTOM_IDS.slice(),
-    helpTopics: () => HELP_TOPICS,
+    // helpAllTopics(), NOT HELP_TOPICS. The Help centre renders
+    // HELP_TOPICS.concat(helpFaqTopics()) -- the second array is the "Common questions" tiles --
+    // and the ratchets built on this hook were therefore policing a little over half of what a
+    // caregiver can read. An audit appended a false claim to an existing Common-questions answer
+    // and scored 63/63 with every other suite green. A guard that reads one of the two arrays
+    // the screen renders is a guard with a door next to it.
+    helpTopics: () => helpAllTopics(),
     // THE GENERATORS THEMSELVES, because the first version of the ratchet above them read the
     // whole topic instead of the sentence and could not fail: the rewritten bowel topic names
     // "diarrhea" twice on its own account, so a generator that dropped the value still left the

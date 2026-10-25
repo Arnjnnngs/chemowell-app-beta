@@ -581,7 +581,13 @@ t('and the Help step prints that sentence rather than a hand-typed copy',
 // this that was supposed to police the word the app actually uses had never once been able to
 // fire, and the check reported "none" on a corpus full of it. Found by reading a mutant's
 // failure line and noticing it named only `constipation`.
-const symRe = (name) => new RegExp('\\b' + String(name).toLowerCase().replace('diarrhea', 'diarrh(o)?ea') + '\\b', 'i');
+// ESCAPED, because two of the labels contain regex metacharacters. `Neuropathy
+// (Numbness/Tingling)` and `Skin Reaction/Rash` are selectable today so this pattern is never
+// built from them -- but the comment in index.html invites exactly the product decision that
+// would make one of them non-selectable, and on that day the parentheses would quietly become a
+// capture group and the check would stop matching. A third dead pattern waiting on a decision.
+const escRe = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const symRe = (name) => new RegExp('\\b' + escRe(String(name).toLowerCase()).replace('diarrhea', 'diarrh(o)?ea') + '\\b', 'i');
 const wronglyNamed = notSelectable.filter(k => symRe(helpData.types[k] || k).test(helpData.symLog));
 t('and sym-log names none that the picker does not offer', wronglyNamed.length === 0,
   wronglyNamed.length ? ('sym-log still offers: ' + wronglyNamed.join(',')) : 'none');
@@ -628,7 +634,16 @@ helpData.perTopic.forEach(tp => {
   nonSel.forEach(k => {
     const re = symRe(helpData.types[k] || k);
     if (re.test(body)) strayClaims.push(tp.id + ':' + k);
-    if (re.test(strip(tp.q)) && !carriesDenial) raisedWithoutDenial.push(tp.id + ':' + k);
+    // A QUESTION MAY RAISE THE WORD. A STATEMENT PARKED IN THE QUESTION FIELD IS A CLAIM.
+    // An audit put a declarative lie in the denying topic's own `q` and scored 63/63, because
+    // this branch only ever asked whether the topic also carried the denial. A `q` that does not
+    // end in a question mark is prose on the same screen as everything else, so it is held to
+    // the claim rule instead.
+    const qIsAQuestion = /\?\s*$/.test(tp.q);
+    if (re.test(strip(tp.q))) {
+      if (!qIsAQuestion) strayClaims.push(tp.id + ':q:' + k);
+      else if (!carriesDenial) raisedWithoutDenial.push(tp.id + ':' + k);
+    }
   });
 });
 t('and outside the generated sentences, no Help ANSWER or STEP names a symptom the picker lacks',
@@ -650,6 +665,36 @@ t('the generated bowel sentence names every value the app defines', bowelMissing
 t('and the bowel topic prints that sentence rather than a hand-typed copy',
   helpData.bowelSteps.some(st => typeof st === 'string' && st.indexOf(helpData.bowelSentence) >= 0),
   helpData.bowelSteps.filter(st => /Daily check-in/.test(st)).join(' / ') || 'no such step');
+// AND NOTHING ELSE IN HELP MAY ENUMERATE THE LIST. "The generated sentence cannot drift" is
+// true and was not enough: an audit added a SECOND, hand-typed step beside the correct one --
+// "The four answers are normal, very little, none, or loose." -- and scored 63/63. A copy of a
+// list is a thing that drifts, one array element away from the sentence guarding it. So: strip
+// the generated sentences, and no remaining string in Help may name two or more values of
+// either list. Two, not one, because a topic naturally mentions a single value in passing; it
+// is an ENUMERATION that is a second copy.
+const enumerators = [];
+helpData.perTopic.forEach(tp => {
+  [['bowel', bowelWords], ['symptom', helpData.spoken.map(String)]].forEach(pair => {
+    const kind = pair[0], words = pair[1];
+    [tp.q].concat(String(tp.body).split(' \n ')).forEach(piece => {
+      const left = strip(String(piece));
+      if (left.indexOf(helpData.symptomSentence) >= 0) return;
+      // AN ENUMERATION, NOT A WORD COUNT. The first version of this counted distinct label
+      // words in a piece of text and immediately fired on `rem-none-scheduled`, which says
+      // "This is normal if..." in one step and "...and none of them..." in another: two bowel
+      // labels, because `normal` and `none` are ordinary English. The thing being hunted is a
+      // LIST -- values joined by commas and an "or" -- so that is what it matches: two or more
+      // of the labels strung together by a separator, within one run of text.
+      const alt = words.map(w => escRe(String(w).toLowerCase())).join('|');
+      const listRe = new RegExp('\\b(?:' + alt + ')\\b(?:\\s*(?:,|or|and)\\s*\\b(?:' + alt + ')\\b)+', 'i');
+      const m = left.match(listRe);
+      if (m) enumerators.push(tp.id + ' [' + kind + ']: "' + m[0] + '"');
+    });
+  });
+});
+t('and no other sentence in Help enumerates either list by hand',
+  enumerators.length === 0,
+  enumerators.length ? enumerators.join('  |  ') : 'only the two generated sentences');
 
 // E -- A HELP TOPIC MAY NOT PROMISE AN INPUT THE SYMPTOM PATH CANNOT RENDER.
 //
@@ -659,7 +704,14 @@ t('and the bowel topic prints that sentence rather than a hand-typed copy',
 // symptom, so the block never renders and logSymptom has no field for it. Three of these have
 // now been found by reading; this one is measured. The claim is allowed back the moment the
 // control exists, which is the queued work to put severity on every symptom.
-const scaleClaim = /\b(1 ?(to|-) ?10|0 ?(to|-) ?10|pain scale)\b/i;
+// THE DASH. This read `(1 ?(to|-) ?10|...)` and the control renders `PAIN LEVEL (1\u201310)` with
+// an EN DASH, so the half of this that looks at the rendered form could never match -- the check
+// was really "Help may never say 1-to-10", and it would have gone red on a correct app the day
+// the queued severity work landed. That is the `values.length === 5` anti-pattern again and the
+// same root cause as the `diarrh(e|o)ea` pattern two sections up: a pattern written from how the
+// string is said rather than from how the app writes it. The app's own dose parser already
+// spells this `[-\u2013]`; this did not.
+const scaleClaim = /\b[01] ?(?:to|[-\u2013\u2014]) ?10\b|\bpain\s+(?:scale|level)\b/i;
 const sevText = helpData.all.match(scaleClaim);
 const extraFields = await helpPage.evaluate(async (ids) => {
   const out = {};
