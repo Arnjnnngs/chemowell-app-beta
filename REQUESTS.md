@@ -966,6 +966,34 @@ reconstruct it from history.
   Added `release_check.sh`, which now hard-blocks any future push where that's forgotten,
   wired into `TEAM.md` as a mandatory step — tested against the exact failure that shipped
   today to confirm it actually catches it.
+## 2026-10-23 — Aaron's testing pass, twelve items. LOGGED LATE, 2026-10-25.
+
+**This file carried nothing after 2026-09-15.** Aaron's twelve items lived only inside a README
+cell, which is the failure this file exists to prevent and which two audits and the PM gate each
+named. Logged here now, with what happened to each.
+
+Aaron chose the first batch himself on 2026-10-24: the four needing no decision from him. He also
+decided backup gating that day: **saving stays free, restore goes to Plus**, so nobody loses data
+for not paying.
+
+- [x] Daily check-in card never appears on Home for bowel/appetite — **app-v86**
+- [x] History day summary counts everything that isn't temperature or weight as a "dose" — **app-v86**
+- [x] Account says "Rename or delete profiles in Settings" with no such control — **app-v86**
+- [x] Snoozing UP NEXT gives no indication of when it returns — **app-v86**
+- [x] (found alongside) a daily mg total labelled "APAP" whatever the medication — **app-v86**
+- [ ] Backup works on Free although Plus advertises it — **decided, queued**: saving free, restore Plus
+- [ ] Weight and Temperature chart x-axes repeat dates and run into the future
+- [ ] Treatment date set on Home does not appear in Calendar — needs a decision on whether it should sync
+- [ ] In-Patient "Still ongoing (no end yet)" checkbox would not toggle off; past-stay entry may be blocked
+- [ ] Early-dose warning is a soft prompt rather than a hard block — needs Aaron's decision
+- [ ] Logging a fever temperature gives no warning at log time — needs Aaron's decision
+- [ ] Symptoms log has no severity scale although Help describes one — fix the app or fix the Help
+- [ ] Polish, four items: "paracentesis" casing; Temperature placeholder 98.5 vs last reading 98.6;
+      Blood Pressure report has no chart or inline log form; Reports card total doesn't reconcile
+
+**Everything Aaron tested was in the web preview**, so phone-only behaviour on all of it is still
+unconfirmed on a real device.
+
 - [x] **This file** — a durable, cross-session request tracker, read at the start of every
   session and shown to Aaron (as a checklist, in chat) at the end of every completed one, so
   nothing gets lost to a context reset or an easily-forgotten ask. Added 2026-08-07 per
