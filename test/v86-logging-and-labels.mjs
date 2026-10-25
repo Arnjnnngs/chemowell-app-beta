@@ -49,6 +49,23 @@ const thrown = [];
 ctx.on('page', (p) => p.on('pageerror', (e) => thrown.push(String(e))));
 const page = await ctx.newPage();
 
+
+// EACH SCENARIO GETS ITS OWN CONTEXT, NOT JUST ITS OWN PAGE. localStorage is per ORIGIN, shared
+// by every page in a context -- and these pages stay open, each running a one-second tick that
+// writes. Section 16 renamed the wrong profile for exactly this reason: its two-profile fixture
+// was overwritten by an earlier page's single-profile app before the rename ran, and the suite
+// reported a bug in the app that was a bug in the suite. Separate contexts make the fixtures mean
+// what they say.
+const freshPage = async (seedFn) => {
+  const c = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  c.on('page', (pg) => pg.on('pageerror', (e) => thrown.push(String(e))));
+  const pg = await c.newPage();
+  await pg.addInitScript(seedFn);
+  await pg.goto(BASE, { waitUntil: 'load' });
+  await pg.waitForTimeout(2400);
+  return pg;
+};
+
 const seed = () => {
   localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
   localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({
@@ -152,8 +169,7 @@ console.log('\n7. #2 -- AND THE RENDERED SUMMARY SAYS SO');
 // reloaded several times by the sections before it. Rather than tune waits until it happens to
 // agree, this opens its own page with the fixture already in storage, which is also how a real
 // phone reaches History: open the app, tap Reports, tap History.
-const histPage = await ctx.newPage();
-await histPage.addInitScript(() => {
+const histPage = await freshPage(() => {
   const day = new Date(); day.setHours(0, 0, 0, 0); const d = day.getTime();
   localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
   localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: 1 }));
@@ -164,8 +180,6 @@ await histPage.addInitScript(() => {
     { id: 'x4', medId: 'temp', temp: 98.6, unit: 'Fahrenheit', dose: '98.6 F', mg: 0, ts: d + 8 * 3600000 }
   ]));
 });
-await histPage.goto(BASE, { waitUntil: 'load' });
-await histPage.waitForTimeout(2400);
 await histPage.evaluate(() => window.__v86Test.openReport('history'));
 await histPage.waitForTimeout(1400);
 const onHistory = await histPage.evaluate(() => { const w = window.__v86Test.where(); return w.view === 'reports' && w.reportsView === 'history'; });
@@ -184,8 +198,7 @@ console.log('\n8. #13 -- A mg TOTAL NAMES ITS OWN MEDICATION, NOT "APAP"');
 // mgTotals was empty and the string under test never rendered at all. An absence check only means
 // something when the thing could have been present. This page has an mg medication with a logged
 // dose, so the summary genuinely carries an mg row.
-const mgPage = await ctx.newPage();
-await mgPage.addInitScript(() => {
+const mgPage = await freshPage(() => {
   const day = new Date(); day.setHours(0, 0, 0, 0); const d = day.getTime();
   localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
   localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: 1 }));
@@ -201,8 +214,6 @@ await mgPage.addInitScript(() => {
     { id: 'm1', medId: 'ibu', dose: '600 mg', mg: 600, ts: d + 9 * 3600000 }
   ]));
 });
-await mgPage.goto(BASE, { waitUntil: 'load' });
-await mgPage.waitForTimeout(2400);
 await mgPage.evaluate(() => window.__v86Test.openReport('history'));
 await mgPage.waitForTimeout(1400);
 const mgText = await mgPage.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
@@ -256,8 +267,7 @@ console.log('\n11. #8 -- SNOOZE SAYS HOW LONG, ON THE BUTTON AND IN THE TOAST');
 // A scheduled medication due now is what puts the Up Next card on Home. `type: 'win'` is required
 // -- normalizeMedication DERIVES `alerts` from it and discards a stored alerts:true, so a fixture
 // without it renders a perfect med card and never produces an Up Next.
-const snoozePage = await ctx.newPage();
-await snoozePage.addInitScript(() => {
+const snoozePage = await freshPage(() => {
   localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
   localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: 1 }));
   localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([]));
@@ -268,8 +278,6 @@ await snoozePage.addInitScript(() => {
       windows: [{ start: Math.max(0, h - 1), end: Math.min(23.9, h + 2), name: 'Now' }] }
   ] }));
 });
-await snoozePage.goto(BASE, { waitUntil: 'load' });
-await snoozePage.waitForTimeout(2400);
 const snooze = await snoozePage.evaluate(() => {
   const el = [...document.querySelectorAll('button')].find(x => /^Snooze/.test(x.textContent.trim()));
   return { found: !!el, label: el ? el.textContent.trim() : null };
@@ -283,12 +291,182 @@ if (snooze.found) {
   const toast = await snoozePage.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
   t('tapping it says when the card comes back', /back in 15 minutes/i.test(toast), (toast.match(/.{0,20}back in 15 minutes.{0,45}/) || ['no toast found'])[0]);
   t('and it says the dose itself was not changed', /Nothing about the dose has changed/i.test(toast), /Nothing about the dose/i.test(toast) ? 'stated' : 'not stated');
+  // AND THE BEHAVIOUR, NOT ONLY THE THREE STRINGS ABOUT IT. A mutant setting the handler to 90
+  // minutes while the label and the toast still read 15 scored a clean 38/38 -- the suite checked
+  // what the app SAID and never what it DID. Read in the same breath as the click, because this
+  // is in-memory state and a later section is a later second.
+  const snoozeMins = await snoozePage.evaluate(() => (window.__v86Test.snoozeUntil() - Date.now()) / 60000);
+  t('the snooze really is set ~15 minutes out, not just labelled that way',
+    snoozeMins > 14 && snoozeMins < 15.5, 'handler set it ' + snoozeMins.toFixed(2) + ' minutes out');
 }
 
-console.log('\n12. NOTHING THREW, ON ANY PAGE');
+console.log('\n12. THE HOME CHECK-IN MUST NOT LOSE TO THE REPORTS LOGGER');
+// THE BLOCKER THE AUDIT FOUND, and it was a design shape rather than arithmetic: supersedeStamp
+// was an OPTIONAL fourth argument that only the new Reports logger passed. confirmCheckinModal()
+// still wrote at dayStart+12h, so after two picks from Reports the check-in's own answer landed
+// BEHIND them in the latest-wins comparison, was never displayed anywhere, and the app said
+// "Check-in saved." The stamp is computed inside the writers now, so there is no argument to
+// forget. dailyCheckinTime is set to 00:00 here purely so the Home card is reachable at whatever
+// hour this suite runs -- the window gate is correct and is not what is under test.
+const ciPage = await freshPage(() => {
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({
+    patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true,
+    installedAt: Date.now() - 86400000, dailyCheckinTime: '00:00',
+    homeCards: { bowelCheckin: true, appetiteCheckin: true }
+  }));
+  localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([]));
+  localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
+});
+await ciPage.evaluate(() => window.__v86Test.openReport('bowel_movement'));
+await ciPage.waitForTimeout(1000);
+const pick1 = await clickValue(ciPage, 'bowel_movement', 'normal'); await ciPage.waitForTimeout(700);
+const pick2 = await clickValue(ciPage, 'bowel_movement', 'loose');  await ciPage.waitForTimeout(800);
+t('two picks from the Reports logger land, in order', pick1 && pick2, 'both clicked');
+const before = await ciPage.evaluate(() => JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').map(e => e.value));
+t('precondition: two bowel answers exist before the check-in is opened', before.length === 2, JSON.stringify(before));
+
+// Answer the Home check-in with a THIRD, different value.
+// BACK TO HOME FIRST. The two picks above happened on Reports > Bowel Movement, and the check-in
+// card lives on Home -- an earlier version looked for the card without leaving the report screen
+// and reported the sheet as never opening.
+await ciPage.evaluate(() => { const nav = [...document.querySelectorAll('button, [role="button"]')].find(x => x.textContent.trim() === 'Home'); if (nav) nav.click(); });
+await ciPage.waitForTimeout(1200);
+// The Home check-in card's own button is labelled "Start". Matching it exactly rather than
+// hunting for the words "check-in" -- an earlier version of this looked for a button whose text
+// mentioned a check-in, found none, and reported the sheet as not opening.
+const opened = await ciPage.evaluate(() => {
+  const btn = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Start');
+  if (btn) { btn.click(); return true; }
+  return false;
+});
+await ciPage.waitForTimeout(900);
+// THE CHECK-IN USES SELECTS, NOT BUTTONS. An earlier version of this hunted for a button
+// labelled "Diarrhea" and reported the sheet as offering no values -- the dialog carries exactly
+// two buttons, Cancel and Save. Setting .value alone does nothing; the app reads the value in an
+// onChange handler, so the event has to be dispatched.
+const ciState = await ciPage.evaluate(() => {
+  const dlg = document.querySelector('[role="dialog"][aria-label="Daily check-in"]');
+  if (!dlg) return { open: false };
+  const sels = [...dlg.querySelectorAll('select')];
+  const bowelSel = sels.find(s2 => [...s2.options].some(o => /Diarrhea/i.test(o.textContent)));
+  if (!bowelSel) return { open: true, picked: false, selects: sels.length };
+  const opt = [...bowelSel.options].find(o => /Diarrhea/i.test(o.textContent));
+  bowelSel.value = opt.value;
+  bowelSel.dispatchEvent(new Event('change', { bubbles: true }));
+  return { open: true, picked: true, chose: opt.value };
+});
+t('the Home check-in sheet opens and offers the bowel values', ciState.open === true && ciState.picked === true, JSON.stringify({ opened, ciState }));
+if (ciState.open && ciState.picked) {
+  await ciPage.waitForTimeout(300);
+  await ciPage.evaluate(() => {
+    const dlg = document.querySelector('[role="dialog"][aria-label="Daily check-in"]');
+    const save = [...dlg.querySelectorAll('button')].find(x => /^(Save|Done|Confirm)/i.test(x.textContent.trim()));
+    if (save) save.click();
+  });
+  await ciPage.waitForTimeout(1100);
+  const after = await ciPage.evaluate(() => {
+    const all = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').sort((a, c) => a.ts - c.ts);
+    return { values: all.map(e => e.value), latest: all.length ? all[all.length - 1].value : null };
+  });
+  t('the check-in answer is written', after.values.length === 3, JSON.stringify(after.values));
+  t('AND IT IS THE ONE THAT STANDS -- it does not lose to the earlier picks',
+    after.latest === 'diarrhea', 'latest=' + after.latest + ' of ' + JSON.stringify(after.values));
+}
+
+console.log('\n13. A DAY OF ONLY BOWEL / APPETITE / RADIATION IS NOT "NOTHING LOGGED"');
+// THE SECOND BLOCKER, and this release caused it: those three moved out of the dose count with no
+// counter of their own, so the summary announced "Nothing logged" directly above the records it
+// was summarising. Before app-v86 it said "3 doses" -- the wrong label, but present.
+const nlPage = await freshPage(() => {
+  const day = new Date(); day.setHours(0, 0, 0, 0); const d = day.getTime();
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: d - 86400000 }));
+  localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([
+    { id: 'n1', medId: 'bowel_movement', value: 'loose', dose: 'Loose', mg: 0, ts: d + 12 * 3600000 },
+    { id: 'n2', medId: 'appetite', value: 'little', dose: 'Little to none', mg: 0, ts: d + 12 * 3600000 }
+  ]));
+  localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
+});
+await nlPage.evaluate(() => window.__v86Test.openReport('history'));
+await nlPage.waitForTimeout(1300);
+const nlText = await nlPage.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
+const nlSummary = (nlText.match(/\d{1,2}\/\d{1,2}\s+(.*?)\s+(?:MORNING|AFTERNOON|EVENING|OVERNIGHT)/) || ['', ''])[1] || '';
+t('precondition: the day really does list those records', /Loose/.test(nlText) && /Little to none/.test(nlText), 'both entries on screen');
+t('the summary does NOT say "Nothing logged" above records it is summarising', !/Nothing logged/.test(nlSummary), 'summary="' + nlSummary.trim().slice(0, 70) + '"');
+t('it counts them under their own names', /1 BM/.test(nlSummary) && /1 appetite/.test(nlSummary), 'summary="' + nlSummary.trim().slice(0, 70) + '"');
+
+console.log('\n14. RE-PICKING THE VALUE ALREADY SHOWN IS A NO-OP, NOT A DUPLICATE RECORD');
+await nlPage.evaluate(() => window.__v86Test.openReport('bowel_movement'));
+await nlPage.waitForTimeout(1000);
+const dupBefore = await nlPage.evaluate(() => JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').length);
+for (let i = 0; i < 4; i++) { await clickValue(nlPage, 'bowel_movement', 'loose'); await nlPage.waitForTimeout(250); }
+await nlPage.waitForTimeout(600);
+const dupAfter = await nlPage.evaluate(() => JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').length);
+t('four taps on the value already showing add no records', dupAfter === dupBefore, dupBefore + ' -> ' + dupAfter);
+
+console.log('\n15. A CORRECTED ANSWER IS MARKED IN THE DOCTOR-FACING EXPORT, NOT DELETED');
+await nlPage.evaluate(() => window.__v86Test.openReport('bowel_movement'));
+await nlPage.waitForTimeout(800);
+await clickValue(nlPage, 'bowel_movement', 'diarrhea');
+await nlPage.waitForTimeout(900);
+const ex = await nlPage.evaluate(() => {
+  const rows = window.__v86Test.exportRows().filter(r => /Bowel Movement/i.test(r[2] || ''));
+  return rows.map(r => ({ time: r[1], detail: r[3] }));
+});
+t('precondition: both answers are in the export -- the original is not deleted', ex.length === 2, JSON.stringify(ex));
+t('the superseded one says so', ex.some(r => /superseded/i.test(r.detail)), JSON.stringify(ex.map(r => r.detail)));
+t('and the current one does not', ex.filter(r => !/superseded/i.test(r.detail)).length === 1, JSON.stringify(ex.map(r => r.detail)));
+
+console.log('\n16. RENAME TARGETS THE ACTIVE PROFILE, NOT WHICHEVER IS FIRST IN THE LIST');
+// A mutant replacing find(x => x.id === ACTIVE_PROFILE_ID) with list[0] SURVIVED 38/38, because
+// every fixture had one profile and the two are indistinguishable there. Two profiles, and the
+// SECOND one active, is the only shape that can tell them apart.
+const rnPage = await freshPage(() => {
+  localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'First Person', createdAt: 1 }, { id: 'p2', name: 'Second Person', createdAt: 2 }], activeId: 'p2' }));
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'First Person', onboarded: true, sex: 'female', treatmentType: 'chemo', tourDone: true, installedAt: Date.now() - 86400000 }));
+  localStorage.setItem('chemowell-app-p-p2-prefs-v1', JSON.stringify({ patientName: 'Second Person', onboarded: true, sex: 'male', treatmentType: 'chemo', tourDone: true, installedAt: Date.now() - 86400000 }));
+});
+const rn = await rnPage.evaluate(async () => {
+  const active = window.__v86Test.activeId ? window.__v86Test.activeId() : null;
+  window.__v86Test.renameActiveProfile('Renamed Target');
+  await new Promise(r => setTimeout(r, 400));
+  const ps = JSON.parse(localStorage.getItem('chemowell-app-profiles-v1') || '{}');
+  return { active, names: (ps.list || []).map(x => x.id + '=' + x.name).join(','),
+           p1: JSON.parse(localStorage.getItem('chemowell-app-p-p1-prefs-v1') || '{}').patientName,
+           p2: JSON.parse(localStorage.getItem('chemowell-app-p-p2-prefs-v1') || '{}').patientName };
+});
+t('the ACTIVE profile is the one renamed', /p2=Renamed Target/.test(rn.names), rn.names);
+t('the first profile in the list is untouched', /p1=First Person/.test(rn.names), rn.names);
+t('and the untouched profile keeps its own patientName', rn.p1 === 'First Person', 'p1 patientName=' + rn.p1);
+t('while the active profile\'s patientName moved with it', rn.p2 === 'Renamed Target', 'p2 patientName=' + rn.p2);
+
+console.log('\n17. A NEW MEDICATION CANNOT TAKE A RECORD TYPE\'S ID');
+// The v78 fence that refused thirteen drug names is gone and should stay gone -- an id is just an
+// id. But `weight`, `appetite`, `paracentesis` and the rest are not drug names, they are the ids
+// this app stores its own vitals and daily metrics under. Name a medication "Weight" and it took
+// `weight`, at which point isDoseEntry stopped counting its doses because that id is on the
+// not-a-dose list. Found by the app-v86 audit; nothing asserted it until this check, which a
+// mutant proved by removing the guard and still scoring a clean 55/55.
+const ids = await page.evaluate(() => ({
+  weight: window.__v86Test.nextMedicationId('Weight'),
+  appetite: window.__v86Test.nextMedicationId('Appetite'),
+  para: window.__v86Test.nextMedicationId('Paracentesis'),
+  temp: window.__v86Test.nextMedicationId('Temperature'),
+  ordinary: window.__v86Test.nextMedicationId('Ondansetron')
+}));
+t('a medication named Weight does not take the id `weight`', ids.weight !== 'weight', 'got ' + ids.weight);
+t('nor Appetite the id `appetite`', ids.appetite !== 'appetite', 'got ' + ids.appetite);
+t('nor Paracentesis, nor Temperature', ids.para !== 'paracentesis' && ids.temp !== 'temp', 'para=' + ids.para + ' temp=' + ids.temp);
+t('and an ordinary medication still gets its plain id -- the fence is not back',
+  ids.ordinary === 'ondansetron', 'got ' + ids.ordinary);
+const stillDose = await page.evaluate((i) => window.__v86Test.isDoseEntry({ medId: i }), ids.weight);
+t('so its doses are still counted as doses', stillDose === true, 'isDoseEntry(' + ids.weight + ')=' + stillDose);
+
+console.log('\n18. NOTHING THREW, ON ANY PAGE');
 t('no page error at any point above', thrown.length === 0, thrown.join(' | ') || 'none');
 
-console.log('\n13. THE README FIGURE FOR THIS SUITE MUST BE THIS SUITE\'S FIGURE');
+console.log('\n19. THE README FIGURE FOR THIS SUITE MUST BE THIS SUITE\'S FIGURE');
 // Last check in the file, deliberately. app-v85 carried this check with a hand-typed `+2` offset
 // for the checks that ran after it, and a delta audit proved that deleting any of those left the
 // README wrong and the check green. Being last makes the offset exactly one -- itself.

@@ -6,6 +6,19 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
+- **app-v86 audit, not fixed in that release.** `submitBowelMovement` / `submitAppetite` are dead
+  code — nothing calls either, and both still carry the delete-then-relog correction pattern this
+  project has shipped and had to undo twice. Delete them before somebody wires one up.
+- **app-v86 audit.** Settings can show two "Patient name" inputs at once — the rename field and the
+  add-profile field render independently. Opening one should close the other.
+- **app-v86 audit.** The rename field renders below the whole profile list rather than inside the
+  row it edits. Fine with one profile; visually detached with two or three. Worth moving into the
+  row when rename grows to cover non-active profiles.
+- **app-v86.** `renameActiveProfile` deliberately renames only the ACTIVE profile, because renaming
+  another means writing into that profile's own prefs blob from here and cross-profile writes are
+  what broke reminders in app-v85. To rename another profile you switch to it first, and the copy
+  says so. Worth revisiting with a safe cross-profile write.
+
 - **app-v85, F2 — `test/v85-profile-reminders.mjs` promises about six pages what it watches on one.**
   `pageerror` is attached to the first `newPage()` only (line 40), and the suite opens six (37, 205,
   301, 330, 380, 427). The check it feeds says *"no page error at any point above"* — a claim about all

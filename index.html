@@ -689,9 +689,20 @@ function renameActiveProfile(rawName) {
   const me = (ps.list || []).find(x => x.id === ACTIVE_PROFILE_ID);
   if (!me) { setToast('Could not find this profile'); return false; }
   if (me.name === name) { setState({ renamingProfile: null }); return true; }
-  me.name = name;
-  saveJSON(PROFILES_KEY, ps);
-  setPrefsDB({ patientName: name });
+  // BOTH WRITES OR NEITHER, as far as this can manage without a transaction. A storage quota
+  // failure between them would leave Settings showing one name and the doctor's report showing
+  // another, permanently and silently. patientName goes first because it is the one a clinician
+  // reads; if the list write then fails, the previous name is put back and the caregiver is told.
+  const previous = me.name;
+  try {
+    setPrefsDB({ patientName: name });
+    me.name = name;
+    saveJSON(PROFILES_KEY, ps);
+  } catch (e) {
+    try { setPrefsDB({ patientName: previous }); me.name = previous; saveJSON(PROFILES_KEY, ps); } catch (e2) {}
+    setToast('Could not save that name \u2014 nothing was changed.');
+    return false;
+  }
   setState({ renamingProfile: null });
   setToast('Renamed to ' + name);
   return true;
@@ -3715,8 +3726,8 @@ function latestBowelDay() {
   return days[0];
 }
 function bowelMovementHistorySorted() { return [...bowelMovementEntriesByDay().values()].sort((a, b) => b.ts - a.ts); }
-async function logBowelMovement(value, dayStartTs, tsOverride) {
-  await addEntryDB({ medId: 'bowel_movement', value, dose: BOWEL_MOVEMENT_LABELS[value] || value, mg: 0, ts: tsOverride || (dayStartTs + 12 * 3600000) });
+async function logBowelMovement(value, dayStartTs) {
+  await addEntryDB({ medId: 'bowel_movement', value, dose: BOWEL_MOVEMENT_LABELS[value] || value, mg: 0, ts: supersedeStamp(bowelMovementFor(dayStartTs), dayStartTs) });
 }
 function bowelIssueActive() {
   const byDay = bowelMovementEntriesByDay();
@@ -3797,9 +3808,10 @@ function appetiteEntriesByDay() {
 }
 function appetiteFor(dayStartTs) { return appetiteEntriesByDay().get(dayStartTs) || null; }
 function appetiteHistorySorted() { return [...appetiteEntriesByDay().values()].sort((a, b) => b.ts - a.ts); }
-async function logAppetite(value, dayStartTs, note, tsOverride) {
-  const entry = { medId: 'appetite', value, dose: APPETITE_LABELS[value] || value, mg: 0, ts: tsOverride || (dayStartTs + 12 * 3600000) };
-  const trimmedNote = String(note || '').trim();
+async function logAppetite(value, dayStartTs, note) {
+  const entry = { medId: 'appetite', value, dose: APPETITE_LABELS[value] || value, mg: 0, ts: supersedeStamp(appetiteFor(dayStartTs), dayStartTs) };
+  const prev = appetiteFor(dayStartTs);
+  const trimmedNote = String(note === undefined || note === null ? (prev && prev.note) || '' : note).trim();
   if (trimmedNote) entry.note = trimmedNote;
   await addEntryDB(entry);
 }
@@ -7581,7 +7593,12 @@ function nextMedicationId(name, existingId) {
   // medication holding one of those ids would have inherited another patient's regimen. Phases 1
   // and 2 moved every one of those rules onto properties the medication owns, so an id is just an
   // id now. The only thing still refused is a collision with a medication that actually exists.
-  const taken = id => ids.has(id);
+  // AND A COLLISION WITH A RECORD TYPE. The v78 fence that refused thirteen drug names is gone
+  // and should stay gone -- an id is just an id. But `weight`, `appetite`, `paracentesis` and the
+  // rest are not drug names, they are the ids this app's own vitals and daily metrics are stored
+  // under. A medication named "Weight" took `weight`, and from app-v86 `isDoseEntry` would stop
+  // counting its doses because that id is on the not-a-dose list. Found by the app-v86 audit.
+  const taken = id => ids.has(id) || NON_DOSE_MED_IDS.has(id) || id.indexOf('symptom_') === 0;
   if (!taken(base)) return base;
   let suffix = 2;
   while (taken(base + '-' + suffix)) suffix += 1;
@@ -9111,7 +9128,9 @@ const CHANGELOG = [
       'Both Reports screens now let you log today\u2019s answer directly, whatever the time. Picking again replaces today\u2019s answer and keeps the earlier one in the record.',
       'The History day summary counted blood pressure readings, symptoms and paracentesis entries as \u201cdoses\u201d. Each is now counted and named for what it actually is.',
       'A daily milligram total was labelled with one specific painkiller\u2019s abbreviation no matter which medication it was counting. It now uses the medication\u2019s own name.',
-      'You can rename the person you are currently in, from Settings. The Account screen pointed at a rename control that had never been built.',
+      'You can rename the profile you\u2019re in, from Settings. The Account screen pointed at a rename control that had never been built.',
+      'Changing today\u2019s bowel or appetite answer keeps the earlier one in your records rather than deleting it, and the exported file and the printed report mark it as corrected \u2014 so a nurse reading two answers for the same day can tell which one stands.',
+      'Picking the answer that is already showing does nothing instead of adding a second identical record.',
       'Snooze on the Up Next card now says it is fifteen minutes, on the button and again when you tap it.'
     ] },
   { v: 'app-v85', date: 'Sep 17, 2026', title: 'Reminders for one person no longer wipe out another\u2019s',
@@ -10317,6 +10336,12 @@ function buildExportRows() {
   return all.map(e => {
     const d = new Date(e.ts);
     let detail = '', note = e.note || '';
+    // A DAILY ANSWER THAT WAS LATER CORRECTED STAYS IN THE EXPORT AND SAYS SO. Both rows print the
+    // same Date, Time and Type -- fmtTime is hour and minute, and a correction lands a second
+    // later -- so without this a clinician saw "Normal" and "Diarrhea" on the same line of the day
+    // with no way to tell which one stands. Removing the original instead would be the
+    // delete-based correction this project has twice shipped and twice had to undo.
+    const superseded = isSupersededEntry(e, all);
     if (e.medId === 'temp') detail = e.dose || (e.temp + ' ' + (e.unit === 'Celsius' ? '°C' : '°F'));
     else if (e.medId === 'blood_pressure') detail = e.sys + '/' + e.dia + ' mmHg';
     else if (e.medId === 'weight') { detail = e.dose || (e.weight + ' ' + (e.unit || '')); if (e.weightReason) detail += ' (' + e.weightReason + (e.litersDrained ? ', ' + e.litersDrained + 'L drained' : '') + ')'; note = e.weightNote || note; }
@@ -10326,6 +10351,7 @@ function buildExportRows() {
     else if (e.medId === 'appetite') detail = (typeof APPETITE_LABELS === 'object' && APPETITE_LABELS[e.value]) || e.value || '';
     else if (e.medId && e.medId.indexOf('symptom_') === 0) { const bits = []; if (e.severity) bits.push(e.severity); if (e.site) bits.push('site: ' + e.site); if (e.freq) bits.push(e.freq + ' episodes'); detail = bits.join(', '); }
     else if (e.medId === 'cycle_start' || e.medId === 'cycle_end' || e.medId === 'inpatient_start' || e.medId === 'inpatient_end' || e.medId === 'inpatient') detail = '';
+    if (superseded) detail = detail + ' (corrected later \u2014 superseded)';
     // v52 (audit H-3, Aaron-reported: "the detail column had 500mg, 500 pills. the med was Tylenol
     // for 500 mg"). `e.pills` is NOT a pill count -- parseDoseOptions deliberately stores any leading
     // number from a free-text dosage label there as "the amount in the non-mg limit unit" (see the
@@ -11480,13 +11506,16 @@ function renderHistory(now) {
     const bps = items.filter(e => e.medId === 'blood_pressure' && !e.missed).length;
     const symptoms = items.filter(e => isSymptomEntry(e) && !e.missed).length;
     const paras = items.filter(e => e.medId === 'paracentesis' && !e.missed).length;
+    const bms = items.filter(e => e.medId === 'bowel_movement' && !isSupersededEntry(e, state.entries)).length;
+    const appetites = items.filter(e => e.medId === 'appetite' && !isSupersededEntry(e, state.entries)).length;
+    const rads = items.filter(e => e.medId === 'radiation_session').length;
     const wkday = new Date(k).toLocaleDateString([], { weekday: 'long' });
     const md = (new Date(k).getMonth() + 1) + '/' + new Date(k).getDate();
     const label = k === d0 ? ('Today - ' + wkday + ' ' + md) : (wkday + ', ' + md);
     // v52 (Designer D-4): on a day seeded purely because it has missed doses, `doses` is 0 and
     // "0 doses · 2 MISSED" put a zero directly beside a red count -- which reads for a half second as
     // "0 missed". Nobody says "I had zero doses yesterday"; they say nothing was logged.
-    const nothingElseLogged = !doses && !temps && !weights && !bps && !symptoms && !paras && !mgTotals.length;
+    const nothingElseLogged = !doses && !temps && !weights && !bps && !symptoms && !paras && !bms && !appetites && !rads && !mgTotals.length;
     let summary = nothingElseLogged ? 'Nothing logged' : '';
     const seg = (txt) => { summary += (summary ? ' · ' : '') + txt; };
     if (doses) seg(doses + ' dose' + (doses === 1 ? '' : 's'));
@@ -11495,6 +11524,9 @@ function renderHistory(now) {
     if (bps) seg(bps + ' BP');
     if (symptoms) seg(symptoms + ' symptom' + (symptoms === 1 ? '' : 's'));
     if (paras) seg(paras + ' para');
+    if (bms) seg(bms + ' BM');
+    if (appetites) seg(appetites + ' appetite');
+    if (rads) seg(rads + ' radiation');
     // ONE ROW PER MEDICATION, NAMED. This read "N mg APAP" for whichever medication the caregiver
     // gave an mg daily-total card -- APAP is acetaminophen, so anyone whose mg-limited medication
     // is something else read a different drug's name on their own record. The app-v77 rename fixed
@@ -11631,6 +11663,14 @@ function renderCycle(now) {
 // both latest-wins, so the new value shows and the original survives in the record. Both existing
 // entries for a day carry the identical stamp dayStart+12h, so "strictly newer" has to be
 // computed rather than assumed -- an equal stamp would leave which one wins down to array order.
+// Is this entry an older answer for its day that a later one has replaced? Only the day-keyed
+// daily metrics can be superseded; everything else is one record per event.
+const SUPERSEDABLE_MED_IDS = new Set(['bowel_movement', 'appetite']);
+function isSupersededEntry(e, allEntries) {
+  if (!e || !SUPERSEDABLE_MED_IDS.has(e.medId)) return false;
+  const d0 = dayStart(e.ts);
+  return (allEntries || state.entries).some(o => o && o.medId === e.medId && dayStart(o.ts) === d0 && o.ts > e.ts);
+}
 function supersedeStamp(prev, d0) {
   const base = d0 + 12 * 3600000;
   return prev ? Math.max(prev.ts + 1000, base) : base;
@@ -11652,9 +11692,17 @@ function renderDailyValueLogger(opts) {
           'aria-pressed': on ? 'true' : 'false',
           onClick: async () => {
             if (dailyLogBusy) return;
+            // RE-PICKING WHAT IS ALREADY SHOWN IS A NO-OP, not a second record. Without this,
+            // ten taps produced ten identical entries -- renameActiveProfile already had exactly
+            // this guard and the logger did not. The caregiver gets told nothing changed rather
+            // than nothing at all, so a tap that looks ignored is explained.
+            if (opts.current && opts.current.value === val) {
+              setToast('Already logged as ' + (opts.labels[val] || val) + ' for today.');
+              return;
+            }
             dailyLogBusy = true;
             try {
-              await opts.onPick(val, d0, supersedeStamp(opts.current, d0));
+              await opts.onPick(val, d0);
               setToast(opts.toastPrefix + ' \u00b7 ' + (opts.labels[val] || val));
             } catch (e) {
               setToast('Could not save that \u2014 nothing was changed.');
@@ -11675,7 +11723,7 @@ function renderAppetite(now) {
   const entries = appetiteHistorySorted();
   const logger = renderDailyValueLogger({ key: 'appetite', title: 'Log today\u2019s appetite',
     labels: APPETITE_LABELS, current: appetiteFor(dayStart(simNow())), toastPrefix: 'Appetite logged',
-    onPick: (v, d0, ts) => logAppetite(v, d0, '', ts) });
+    onPick: (v, d0) => logAppetite(v, d0) });
   const history = h('section', null,
     h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '10px' } }, 'Appetite History'),
     entries.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
@@ -11703,7 +11751,7 @@ function renderBowelMovementReport(now) {
   const entries = bowelMovementHistorySorted();
   const logger = renderDailyValueLogger({ key: 'bowel_movement', title: 'Log today\u2019s bowel movement',
     labels: BOWEL_MOVEMENT_LABELS, current: bowelMovementFor(dayStart(simNow())), toastPrefix: 'Bowel movement logged',
-    onPick: (v, d0, ts) => logBowelMovement(v, d0, ts) });
+    onPick: (v, d0) => logBowelMovement(v, d0) });
   const history = h('section', null,
     h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '10px' } }, 'Bowel Movement History'),
     entries.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
@@ -13157,7 +13205,12 @@ if (typeof window !== 'undefined') {
     isSymptomEntry,
     supersedeStamp,
     renameActiveProfile: (n) => renameActiveProfile(n),
-    where: () => ({ view: state.view, reportsView: state.reportsView })
+    where: () => ({ view: state.view, reportsView: state.reportsView }),
+    activeId: () => ACTIVE_PROFILE_ID,
+    snoozeUntil: () => Number(state.heroSnoozeUntil) || 0,
+    isSuperseded: (e) => isSupersededEntry(e, state.entries),
+    exportRows: () => buildExportRows(),
+    nextMedicationId: (n) => nextMedicationId(n)
   };
   window.__notifScopeTest = {
     activeProfileId: () => ACTIVE_PROFILE_ID,
