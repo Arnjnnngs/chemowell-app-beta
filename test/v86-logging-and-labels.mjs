@@ -551,27 +551,44 @@ const bannerPage = await freshPage(() => {
   ]));
   localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
 });
-const banner = await bannerPage.evaluate(async () => {
-  const before = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').length;
-  const sels = [...document.querySelectorAll('select')];
-  const sel = sels.find(s2 => [...s2.options].some(o => /Normal/i.test(o.textContent)) && [...s2.options].some(o => /Diarrhea/i.test(o.textContent)));
-  if (!sel) return { found: false, before, why: 'no bowel select on Home' };
-  const opt = [...sel.options].find(o => /^Normal$/i.test(o.textContent.trim()));
-  if (!opt) return { found: false, before, why: 'no Normal option' };
+// ORDER MATTERS HERE, and the first version got it wrong. The banner only shows while the
+// standing answer is one of BOWEL_ISSUE_VALUES, so correcting to Normal makes it disappear --
+// after which there is no control left to test the "already logged" branch with, and a mutant
+// forcing the toast to always claim an update scored a clean pass. The no-op goes first, while
+// Diarrhea still stands; the real correction second.
+const bannerSelect = async (value) => bannerPage.evaluate(async (v) => {
+  const n0 = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').length;
+  const sel = [...document.querySelectorAll('select')].find(s2 =>
+    [...s2.options].some(o => /Diarrhea/i.test(o.textContent)) && [...s2.options].some(o => /Normal/i.test(o.textContent)));
+  if (!sel) return { ok: false, why: 'no bowel select on Home' };
+  const opt = [...sel.options].find(o => o.textContent.trim().toLowerCase() === v);
+  if (!opt) return { ok: false, why: 'no option ' + v };
   sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 300));
+  await new Promise(r => setTimeout(r, 250));
   let btn = null, node = sel.parentElement;
   for (let i = 0; i < 5 && node && !btn; i++) { btn = [...node.querySelectorAll('button')].find(x => /update|save|log/i.test(x.textContent)); node = node.parentElement; }
-  if (!btn) return { found: false, before, why: 'no update button beside the select' };
+  if (!btn) return { ok: false, why: 'no update button beside the select' };
   btn.click();
   await new Promise(r => setTimeout(r, 1000));
   const all = JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').sort((a, c) => a.ts - c.ts);
-  return { found: true, before, after: all.length, values: all.map(e => e.value) };
-});
-t('precondition: the banner offers a correction control on Home', banner.found === true, JSON.stringify(banner));
-if (banner.found) {
-  t('correcting from the banner KEEPS the earlier answer', banner.after === banner.before + 1, JSON.stringify(banner.values));
+  return { ok: true, n0, n1: all.length, values: all.map(e => e.value), text: document.body.innerText.replace(/\s+/g, ' ') };
+}, value);
+
+const noop = await bannerSelect('diarrhea');
+t('precondition: the banner offers a correction control on Home', noop.ok === true, JSON.stringify(noop.why || 'control found'));
+if (noop.ok) {
+  t('re-submitting the value already standing writes nothing', noop.n1 === noop.n0, noop.n0 + ' -> ' + noop.n1);
+  t('and says so, rather than claiming an update that did not happen',
+    /Already logged as Diarrhea/.test(noop.text) && !/Bowel movement updated/.test(noop.text),
+    (noop.text.match(/.{0,8}(Already logged|Bowel movement updated).{0,34}/) || ['no toast'])[0]);
+}
+const banner = await bannerSelect('normal');
+if (banner.ok) {
+  t('correcting from the banner KEEPS the earlier answer', banner.n1 === banner.n0 + 1, JSON.stringify(banner.values));
   t('and the corrected value is the one that stands', banner.values[banner.values.length - 1] === 'normal', JSON.stringify(banner.values));
+  t('and the toast says it was updated, not that it was already logged',
+    /Bowel movement updated/.test(banner.text) && !/Already logged/.test(banner.text),
+    (banner.text.match(/.{0,8}(Bowel movement updated|Already logged).{0,30}/) || ['no toast'])[0]);
 }
 
 console.log('\n14. RE-PICKING THE VALUE ALREADY SHOWN IS A NO-OP, NOT A DUPLICATE RECORD');
@@ -604,6 +621,30 @@ const ex = await nlPage.evaluate(() => {
 t('precondition: both answers are in the export -- the original is not deleted', ex.length === 2, JSON.stringify(ex));
 t('the superseded one says so', ex.some(r => /superseded/i.test(r.detail)), JSON.stringify(ex.map(r => r.detail)));
 t('and the current one does not', ex.filter(r => !/superseded/i.test(r.detail)).length === 1, JSON.stringify(ex.map(r => r.detail)));
+
+// Correct the APPETITE answer too, so the counter filter below has a superseded pair of each
+// kind to be wrong about. With only the bowel pair, dropping the filter from the appetite counter
+// scored a clean pass.
+await nlPage.evaluate(() => window.__v86Test.openReport('appetite'));
+await nlPage.waitForTimeout(900);
+await clickValue(nlPage, 'appetite', 'none');
+await nlPage.waitForTimeout(900);
+
+console.log('\n15b. A CORRECTED DAY COUNTS ONE ANSWER, NOT TWO');
+// nlPage now holds a superseded bowel pair from section 15. The counters filter superseded
+// answers out, and nothing checked that filter -- deleting it from either the BM or the appetite
+// counter scored a clean 80/80. Same shape as the radiation gap, on the path this release made
+// ordinary: correcting an answer is now a normal thing to do.
+await nlPage.evaluate(() => window.__v86Test.openReport('history'));
+await nlPage.waitForTimeout(1300);
+const corrText = await nlPage.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
+const corrSummary = (corrText.match(/\d{1,2}\/\d{1,2}\s+(.*?)\s+(?:MORNING|AFTERNOON|EVENING|OVERNIGHT)/) || ['', ''])[1] || '';
+const corrRaw = await nlPage.evaluate(() => JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'bowel_movement').length);
+t('precondition: the day really holds two bowel answers, one superseding the other', corrRaw === 2, corrRaw + ' entries');
+const corrApp = await nlPage.evaluate(() => JSON.parse(localStorage.getItem('chemowell-app-p-p1-entries-v1') || '[]').filter(e => e.medId === 'appetite').length);
+t('and two appetite answers', corrApp === 2, corrApp + ' entries');
+t('but the summary counts one of each', /1 BM/.test(corrSummary) && !/2 BM/.test(corrSummary) && /1 appetite/.test(corrSummary) && !/2 appetite/.test(corrSummary),
+  'summary="' + corrSummary.trim().slice(0, 70) + '"');
 
 console.log('\n16. RENAME TARGETS THE ACTIVE PROFILE, NOT WHICHEVER IS FIRST IN THE LIST');
 // A mutant replacing find(x => x.id === ACTIVE_PROFILE_ID) with list[0] SURVIVED 38/38, because
