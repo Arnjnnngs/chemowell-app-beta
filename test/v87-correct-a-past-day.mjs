@@ -683,6 +683,7 @@ t('and the bowel topic prints that sentence rather than a hand-typed copy',
 const enumerators = [];
 helpData.perTopic.forEach(tp => {
   const topicHits = {};
+  const topicTotals = {};
   [['bowel', bowelWords], ['symptom', helpData.spoken.map(String)]].forEach(pair => {
     const kind = pair[0], words = pair[1];
     [tp.q].concat(String(tp.body).split(' \n ')).forEach(piece => {
@@ -713,12 +714,22 @@ helpData.perTopic.forEach(tp => {
       const m = left.match(listRe);
       if (m) enumerators.push(tp.id + ' [' + kind + ']: "' + m[0] + '"');
       topicHits[kind] = topicHits[kind] || {};
+      topicTotals[kind] = words.length;
       words.forEach(w => { if (new RegExp('\\b' + escRe(String(w).toLowerCase()) + '\\b', 'i').test(left)) topicHits[kind][String(w).toLowerCase()] = 1; });
     });
   });
   Object.keys(topicHits).forEach(kind => {
+    // THREE, AND A MAJORITY OF THE LIST. Three alone was the right answer to `normal and none`
+    // and the wrong shape for the longer list: an audit counted this across all 153 Help pieces
+    // and found the corpus maximum is TWO, one short of firing -- and the nearest piece is
+    // `sym-severity`, the topic about how bad a symptom was, where gaining the word `headache`
+    // is an ordinary edit that would turn this red with nothing wrong. The weak side is also
+    // the side with the smaller margin: three of five bowel values is a majority and a real
+    // signal, three of nine symptom forms is a third, and one of those nine is `Other`, which
+    // already appears in eight unrelated topics. A majority leaves bowel behaviour identical
+    // and takes the symptom-side false alarm off the table.
     const spread = Object.keys(topicHits[kind]);
-    if (spread.length >= 3) enumerators.push(tp.id + ' [' + kind + ', spread across steps]: ' + spread.join(', '));
+    if (spread.length >= 3 && spread.length * 2 > (topicTotals[kind] || 0)) enumerators.push(tp.id + ' [' + kind + ', spread across steps]: ' + spread.join(', '));
   });
 });
 t('and no other sentence in Help enumerates either list by hand',

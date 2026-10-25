@@ -6,6 +6,33 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
+- **app-v87 audit, DEFERRED DELIBERATELY — the sixth Help surface.** `renderHelpView()`
+  (`index.html` ~10022-10252) is the only `renderHelp*` function and it writes **eight prose
+  literals straight into the DOM**. None is in any of the five data arrays `__v86Test.helpProse()`
+  returns, so none is read by the app-v87 Help ratchets. The substantial one is the **standing
+  safety notice on the Help SEARCH screen** — the screen whose own comment says it exists *"so
+  that whatever this list says, the one true sentence is above it"*. Measured: a false claim
+  appended to that notice is read by a caregiver who searches `diarrhea`, and scores 64/64 with
+  v55-help green. The others are the empty-results hint (itself a hand-typed enumeration), the
+  landing caption, the walkthrough privacy footer, the three `careHeading` values and the section
+  labels. **The surface is clean today** — all eight re-read, none makes a claim about a control.
+  **Widening the hook again cannot close this**: the hook lists DATA SOURCES and the renderer is
+  not one, so a ninth literal arrives the next time somebody types a sentence into it. The version
+  with no next surface reads the rendered screen: section 7c already drives the Help UI, so it can
+  walk landing → category → topic plus the search screen, scrape `innerText`, and apply the
+  existing rules to that. Minor, same area: `HELP_POINTERS` rows are mapped with `body: ''`, so a
+  pointer that ever gains a description is unread. **Pairs with the next item — one "hold Help to
+  what the app renders" pass, not two.**
+- **app-v87, found by sweep.** Every `**bolded**` control name in Help, checked against the rest of
+  the file: **134 distinct, 40 appearing nowhere else** by exact match, **5** by substring — so the
+  real number is between the two and most of the 40 is matching artefact. The five unmatched by
+  substring are all emphasis sentences (*"Contact the care team now."*, *"Tap this one first"*) and
+  name no control. This sweep is how the **fifth** Help/control mismatch of app-v87 was found
+  (`**Bowel movements**` against a tile labelled `**Bowel Movement**`), after three independent
+  audits read past it. Make it a ratchet rather than a triage: exact, then substring, then a
+  declared allow-list for the phone's own settings and for emphasis; the triage falls out of the
+  first run. It must read the RENDERED screen, per the item above.
+
 - **app-v86 audit.** The in-app History list still shows a corrected bowel/appetite answer and the
   answer it replaced as two rows at the same minute, unmarked. The CSV and the printed report mark
   them; the on-screen list does not. Nothing untrue is said — the changelog scopes its claim to the
