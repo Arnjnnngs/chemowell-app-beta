@@ -22,7 +22,23 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # PINNED 2026-10-25. GitHub moved `ubuntu-latest` to Ubuntu 26.04 and Playwright 1.56.1 cannot
+    # install a browser there:
+    #
+    #   BEWARE: your OS is not officially supported by Playwright; installing dependencies for
+    #   ubuntu26.04-x64 as a fallback.
+    #   Cannot install dependencies for ubuntu26.04-x64 with Playwright 1.56.1!
+    #   Error: ERROR: Playwright does not support chromium on ubuntu26.04-x64
+    #
+    # The job died in 14 seconds, in the browser install, BEFORE it reached either the chain check
+    # or the live fetch -- so app-v86 went out with its deployment unverified by this gate. That is
+    # the failure this file exists to catch, and it is the second time in two months that a
+    # platform moved underneath a pinned-to-latest runner (the Android SDK `tools` package was the
+    # first). A gate that is always red says nothing; a gate that dies before it runs says less.
+    #
+    # Pinned rather than bumping Playwright, because the version here must keep matching the one
+    # the suites are written against -- that agreement is the reason this step exists at all.
+    runs-on: ubuntu-24.04
     steps:
       # FULL HISTORY, NOT A SHALLOW CLONE. PUBLISHED.json records the commit the last release went
       # live at, and release_check.sh measures the service-worker cache bump against it. On the
