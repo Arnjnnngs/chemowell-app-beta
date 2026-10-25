@@ -32,8 +32,8 @@ audit rounds removing from every other path. **On the very screens it rebuilt.**
 
 `BOWEL_MOVEMENT_LABELS` carries five values. The bowel-issue banner's select offers four:
 `Normal`, `Very little`, `None`, `Diarrhea`. **`Loose` is missing.** A caregiver watching for
-diarrhoea during chemotherapy, correcting the day from the banner the app puts in front of them,
-cannot record the value that sits between normal and diarrhoea — the one that most often matters
+diarrhea during chemotherapy, correcting the day from the banner the app puts in front of them,
+cannot record the value that sits between normal and diarrhea — the one that most often matters
 first. They must leave the banner and use the Reports screen, and nothing tells them so.
 
 **Pre-existing** — identical at `87d1784`, so this release did not cause it. But app-v86 rewrote
@@ -59,9 +59,13 @@ every profile.
 
 The new logger does today only. In-Patient has log-now, log-for-another-day and edit; this screen
 has log-now. Checklist item 5 — *where a sibling screen already got it right, why didn't this
-one?* — and the honest answer is that this release was scoped to the missing door, not the whole
-room. Worth it only if Aaron has actually wanted it; a caregiver catching up after a bad night is
-the case that would need it.
+one?* — and the sibling to point at is **Symptoms**, not In-Patient: Symptoms sits on this same
+Reports screen and carries Edit, Remove and a `+` for a past entry, which is the exact three-way
+symmetry E-1 and E-5 are arguing for. (The first version of this item named In-Patient, which has
+log-now and a `+` for a past stay but no edit — a weaker example, found by the PM.) The honest
+answer for why this release does not have it is that it was scoped to the missing door, not the
+whole room. Worth it only if Aaron has wanted it; a caregiver catching up after a bad night is the
+case that needs it.
 
 ## What is already there and worth keeping
 
@@ -74,9 +78,15 @@ time, which is the trap Rule 2.7 question 3 exists for.
 
 ## Empty states, read out loud
 
-Both report screens' empty states now describe something reachable from the screen the reader is
-on. That was the self-reported bug in the old copy — *"logged from Home"* on a screen with no way
-to get there — and it is gone.
+**Corrected after the PM checked it.** The first version of this paragraph claimed these empty
+states had been fixed by this release. They were not: *"No bowel movement entries logged yet."* is
+byte-identical at `87d1784`, and *"logged from Home"* was never in an empty state at all — it was
+in the Reports **card description**, which this release did fix. The conclusion was right (nothing
+to propose here) and the route to it was wrong, which is exactly the kind of thing that gets
+believed later because it was written down.
+
+What is actually true: the empty states say nothing false, and the card descriptions that used to
+send a reader to a screen they could not act on now describe what this screen does.
 
 ## Recommendation to Aaron
 
