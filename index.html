@@ -3107,6 +3107,32 @@ async function confirmTimeAndLog() {
     if (ts > simNow() + 60000 && !m.futureOk) { state.timeModal.futureOk = true; setState({ timeModal: state.timeModal }); return; }
   }
 
+  if (m.type === 'daily') {
+    // ROUTED TO THE SHIPPED WRITERS, never to a new one. logBowelMovement and logAppetite own the
+    // supersede stamp and the no-op guard, which is the whole reason back-filling a day that
+    // already carries an answer is safe here by construction, rather than by a second guard that
+    // would then have to be kept in step with theirs.
+    //
+    // A FUTURE DAY IS REFUSED OUTRIGHT, not confirmed through the way a future TIME is. A dose
+    // logged a few minutes ahead is two clocks disagreeing; a daily answer about tomorrow is not
+    // a record of anything, and letting `futureOk` apply would turn a mis-tap into a kept entry
+    // on one extra tap.
+    const d0 = dayStart(ts);
+    if (d0 > dayStart(simNow())) { setToast('That day has not happened yet.'); return; }
+    try {
+      const wrote = m.kind === 'appetite'
+        ? await logAppetite(m.value, d0, m.note === undefined ? undefined : String(m.note))
+        : await logBowelMovement(m.value, d0);
+      setState({ timeModal: null });
+      const dayLabel = new Date(d0).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+      setToast(wrote ? ((m.valueLabel || m.value) + ' · ' + dayLabel)
+                     : ('Already logged as ' + (m.valueLabel || m.value) + ' for ' + dayLabel + '.'));
+    } catch (e) {
+      setToast('Could not save that — nothing was changed.');
+    }
+    return;
+  }
+
   if (m.type === 'med') {
     const med = state.meds.find(x => x.id === m.medId);
     if (med.painScale && !m.painLevel) { setToast('Select a pain level before logging ' + med.name); return; }
@@ -3829,20 +3855,16 @@ function daysSinceBowelIssueStart() {
 // Overwrites (rather than appends to) a given day's retrospective answer, so there's always at
 // most one bowel_movement entry per day — keeps the "last daily answer wins" derivation above
 // unambiguous even when the user changes their mind and hits Update.
-async function submitBowelMovement(dayStartTs) {
-  const v = state.bowelInput;
-  if (!v) { setToast('Select a bowel movement status first'); return; }
-  try {
-    const existing = bowelMovementFor(dayStartTs);
-    if (existing) await removeEntryDB(existing.id);
-    await logBowelMovement(v, dayStartTs);
-    setState({ bowelInput: undefined });
-    setToast('Bowel movement logged — ' + (BOWEL_MOVEMENT_LABELS[v] || v));
-  } catch (e) {
-    setToast('Could not save — please try again');
-  }
-}
-// Quick-update from the pinned "Bowel Issue Active" banner (mirrors submitBowelMovement, but
+// DELETED IN app-v88: submitBowelMovement() and submitAppetite(). Nothing called either -- the
+// app-v86 audit found them dead and they went on BACKLOG.md, and three releases later they were
+// still here. Both still carried `if (existing) await removeEntryDB(existing.id)` -- the
+// DELETE-THEN-RELOG correction this project has shipped and had to undo twice, most recently from
+// the Home banner in app-v86, which made that release's own changelog line false on the route the
+// app pushes hardest. Leaving a dead function that does the wrong thing beside live functions that
+// do the right one is not harmless: it is a working example, and the next person needing this
+// behaviour finds it first. The live writers are logBowelMovement() and logAppetite() above, which
+// supersede.
+// Quick-update from the pinned "Bowel Issue Active" banner (it used to mirror a submit* helper
 // targets whichever day is currently driving the active streak — not necessarily "yesterday" —
 // and uses its own input field so it never fights with the retrospective card's dropdown.
 async function submitBowelBannerUpdate() {
@@ -3898,19 +3920,6 @@ async function logAppetite(value, dayStartTs, note) {
   if (trimmedNote) entry.note = trimmedNote;
   await addEntryDB(entry);
   return true;
-}
-async function submitAppetite(dayStartTs) {
-  const v = state.appetiteInput;
-  if (!v) { setToast('Select an appetite level first'); return; }
-  try {
-    const existing = appetiteFor(dayStartTs);
-    if (existing) await removeEntryDB(existing.id);
-    await logAppetite(v, dayStartTs, state.appetiteNoteInput);
-    setState({ appetiteInput: undefined, appetiteNoteInput: undefined });
-    setToast('Appetite logged — ' + (APPETITE_LABELS[v] || v));
-  } catch (e) {
-    setToast('Could not save — please try again');
-  }
 }
 
 // ---- Symptoms tracking ----
@@ -4121,7 +4130,7 @@ const HELP_TOPICS = [
   { id: "proc-para", cat: "vitals", q: "How do I record a paracentesis (fluid drained)?", a: "It has its own card and its own report, kept separate from weight on purpose.", steps: ["Menu → **Settings** → **Procedures** → switch on **Paracentesis tracking**.", "A **Paracentesis** card appears on **Home**. Type how many liters were drained and tap **Log**.", "The full list, the total drained and the number of procedures live under **Reports** → **Paracentesis**.", "The **Weight** report marks each drain on the chart and adds up the liters for whatever range you're viewing."], note: "It used to be an option inside the weight card's reason list. It was moved out because a drain is a procedure, not a reason a number moved — and tying it to a weigh-in meant a drain on a day nobody weighed in couldn't be recorded at all. Anything logged the old way was moved across automatically; nothing was lost. Weight readings are still shown exactly as the scale reported them and are never adjusted for drainage.", keywords: ["paracentesis", "para", "fluid", "drained", "liters", "litres", "ascites", "tap"], related: ["vit-weight-log", "rep-weight"] },
   { id: "vit-weight-change", cat: "vitals", q: "The weight has changed a lot in a few days", a: "**Tell the care team.** A fast weight change during treatment is something they want to know about, and what it means depends entirely on the person's situation.", steps: ["Contact the care team and tell them what you're seeing.", "In the app, record the reading and, if you know it, pick the **Reason for change** — that gives the trend chart context so a drop after fluid was drained doesn't look like the same thing as a drop from not eating.", "Look at **Reports** → **Weight** for the trend and the list of readings with their reasons.", "Take that report with you to the next appointment, or export it — menu → **Settings** → **Download CSV**."], note: "ChemoWell does not interpret weight changes and has no \"concerning\" threshold.", keywords: ["weight loss", "dropping", "gaining", "fast", "worried"], related: ["vit-weight-log", "exp-csv"], medical: true, careLead: true },
   { id: "vit-bp-log", cat: "vitals", q: "How do I record blood pressure?", a: "The Blood pressure card on Home. It records straight away with no time screen.", steps: ["Go to **Home** and find the **Blood pressure** card. If it isn't there, switch it on: menu → **Settings** → **Home screen** → **Blood pressure card**.", "Type the top number, then the bottom number.", "Tap **Log**.", "It records immediately, at the current time.", "See all readings under **Reports** → **Blood Pressure**."], note: "Unlike temperature and weight, blood pressure can't be backdated from Home — it always records as now. If you need a reading on an earlier day, log it and then remove and re-add it isn't possible either; note the real time in **Notes** instead.", keywords: ["blood pressure", "bp", "systolic", "diastolic", "120 over 80"], related: [] },
-  { id: "vit-checkin-modal", cat: "vitals", q: "What is the Daily check-in?", a: "One short screen that asks about today, once a day.", steps: ["On **Home**, tap the **Daily check-in** card when it appears.", "Answer whichever of appetite, bowel movement, and weight are switched on. Skip anything that doesn't apply.", "There's a free-text box at the bottom — anything you write there goes into today's **Notes**.", "Tap **Save**.", "Once saved, the card stops appearing for the rest of the day."], keywords: ["check-in", "daily", "appetite", "bowel", "questions"], related: ["vit-checkin-missing", "rem-checkin-time"] },
+  { id: "vit-checkin-modal", cat: "vitals", q: "What is the Daily check-in?", a: "One short screen that asks about today, once a day.", steps: ["On **Home**, tap the **Daily check-in** card when it appears.", "Answer whichever of appetite, bowel movement, and weight are switched on. Skip anything that doesn't apply.", "There's a free-text box at the bottom — anything you write there goes into today's **Notes**.", "Tap **Save**.", "Once saved, the card stops appearing for the rest of the day.", "If you missed a day entirely, open **Reports**, pick **Bowel Movement** or **Appetite**, and tap **Log another day** \u2014 you do not have to wait for the card."], keywords: ["check-in", "daily", "appetite", "bowel", "questions"], related: ["vit-checkin-missing", "rem-checkin-time"] },
   { id: "vit-checkin-missing", cat: "vitals", q: "The Daily check-in card isn't showing / it's asking the wrong things", a: "Each question is a separate switch, and the card only appears if at least one is on.", steps: ["Menu → **Settings** → **Home screen**.", "Scroll to the **Daily check-in** part.", "Switch on or off: *Weight in daily check-in*, *Bowel movement in daily check-in*, *Appetite in daily check-in*.", "If you switch all three off, the card stops appearing entirely.", "If you've already done today's check-in, the card won't show again until tomorrow."], keywords: ["check-in missing", "not showing", "questions", "turn off"], related: ["vit-checkin-modal"] },
   { id: "vit-units", cat: "vitals", q: "I want pounds instead of kilograms, or Celsius instead of Fahrenheit", a: "Menu → Settings → Units.", steps: ["Tap the three lines in the top left, then **Settings**.", "Find **Units**.", "Choose °F or °C for temperature, and pounds or kilograms for weight.", "Every reading you've already logged is shown in the new unit straight away.", "Nothing you logged is changed — only how it's displayed."], keywords: ["units", "kg", "lbs", "celsius", "fahrenheit", "metric"], related: ["vit-temp-rejected"] },
   { id: "vit-period", cat: "vitals", q: "How do I track periods?", a: "It's an optional setting, and it's off unless you turn it on.", steps: ["Menu → **Settings** → **Home screen** → switch on **Menstrual cycle tracking**.", "A banner appears on **Home** to log a period start.", "When it ends, tap **Log Period End** on the same banner.", "The full record is under **Reports** → **Cycle**."], note: "This option is only offered on profiles where it applies, based on the answer given during setup.", keywords: ["period", "menstrual", "cycle", "tracking"], related: ["rep-cycle-missing"] },
@@ -4130,7 +4139,7 @@ const HELP_TOPICS = [
   { id: "sym-edit-delete", cat: "symptoms", q: "I need to fix or delete a symptom I logged", a: "Symptoms can be edited or removed at any time, however old.", steps: ["Tap **Symptoms** at the bottom.", "Tap the entry you want to change.", "Change the time, note, severity or site, then confirm.", "To delete it, use the remove option on that entry and confirm."], keywords: ["edit symptom", "delete", "fix", "wrong"], related: ["log-remove"] },
   { id: "sym-severe", cat: "symptoms", q: "The symptom is severe, or something new and frightening is happening", a: "**Contact the care team, or emergency services if it's urgent.** Do that first. Logging it in the app can wait — this app has no way to judge how serious something is, and it will never try to.", steps: ["If the person is very unwell, struggling to breathe, confused, or you're frightened, call your local emergency number.", "Otherwise call the care team or the on-call number they gave you.", "Once they've been contacted, come back and log the symptom with the time it started, so there's an accurate record.", "Use the note field to write down exactly what you saw, in your own words. That's genuinely useful to the care team later."], note: "ChemoWell is a record-keeping tool, not medical advice. Never delay care because of anything shown in this app.", keywords: ["severe", "bad", "worse", "emergency", "frightened", "help"], related: ["sym-log", "vit-temp-high"], medical: true, careLead: true },
   { id: "sym-medical-question", cat: "symptoms", q: "Side effects — hair loss, sickness, tiredness: is this normal?", a: "**This is a question for the care team, and ChemoWell will not try to answer it.** The app keeps a record of what happened and when. It can show a short, general description of what a medication is usually for, but it knows nothing about this person's treatment, has no idea what is normal for them, and would be guessing if it said otherwise.", steps: ["Write the question down, along with what you have actually seen and when it started.", "Ask the care team, or the pharmacist who dispensed the medication \u2014 they have the person's actual treatment plan in front of them.", "Anything sudden, severe, or frightening is a phone call now, not a question for later.", "Log the symptom here with a note in your own words. Turning up to an appointment with dates and times is worth far more than trying to remember."], note: "ChemoWell is a record-keeping tool. The medication descriptions it shows are general information, not advice about this person's care. Never delay care because of anything shown in this app.", keywords: ["side effect", "side effects", "hair", "hair loss", "sickness", "tiredness", "fatigue", "normal", "expect", "is that normal", "should i worry", "worried", "dangerous", "interact", "interaction", "safe to take", "what does it do"], related: ["sym-severe", "sym-log", "vit-temp-high"], medical: true, careLead: true, careTone: "calm" },
-  { id: "sym-bowel-confusion", cat: "symptoms", q: "Should diarrhea go in Symptoms or the bowel tracker?", a: "The bowel tracker. Symptoms deliberately does not offer it.", steps: ["Use the **Daily check-in** bowel question for the day's pattern — " + bowelChoiceSentence() + ".", "You can also set or change any day's answer from **Reports** → **Bowel Movement**, at any hour — you do not have to wait for the check-in.", nonSelectableSymptomDenial() + " They were taken out on purpose, so the same thing is never recorded in two places that then disagree.", "If there is something specific worth remembering about an episode — the time, what helped — write it in **Notes**, from the menu.", "Both the daily answers and your notes show up in your exported records."], keywords: ["diarrhea", "diarrhoea", "constipation", "bowel", "where"], related: ["vit-checkin-modal", "sym-log"] },
+  { id: "sym-bowel-confusion", cat: "symptoms", q: "Should diarrhea go in Symptoms or the bowel tracker?", a: "The bowel tracker. Symptoms deliberately does not offer it.", steps: ["Use the **Daily check-in** bowel question for the day's pattern — " + bowelChoiceSentence() + ".", "You can also set or change any day's answer from **Reports** → **Bowel Movement**, at any hour — you do not have to wait for the check-in. **Log another day** on that screen fills in a day you missed.", nonSelectableSymptomDenial() + " They were taken out on purpose, so the same thing is never recorded in two places that then disagree.", "If there is something specific worth remembering about an episode — the time, what helped — write it in **Notes**, from the menu.", "Both the daily answers and your notes show up in your exported records."], keywords: ["diarrhea", "diarrhoea", "constipation", "bowel", "where"], related: ["vit-checkin-modal", "sym-log"] },
   { id: "ip-start-end", cat: "inpatient", q: "How do I record a hospital stay?", a: "The In-Patient tab at the bottom, with a start and an end.", steps: ["Tap **In-Patient** at the bottom of the screen.", "When the stay begins, tap **Log In-Patient Start**.", "A banner appears on Home showing which day of the stay you're on.", "When the person is discharged, tap **Log In-Patient End** — on that banner or on the In-Patient tab.", "Every past stay is kept in the **In-Patient History** list below."], keywords: ["hospital", "admitted", "in-patient", "stay", "discharged"], related: ["ip-meds-restricted", "ip-forgot-end"] },
   { id: "ip-meds-restricted", cat: "inpatient", q: "Can I still log medications during a hospital stay?", a: "Yes. Everything stays loggable the whole time a stay is active.", steps: ["Log doses exactly as you normally would — nothing is locked.", "Doses the hospital gave are not counted as missed: any dose window that opened while the stay was running is treated as theirs.", "If they come home part-way through a day, the windows after that point are yours again and are tracked normally. You do NOT need to end the stay early to log them.", "End the stay when it actually ends, on the **In-Patient** tab."], note: "This used to work the other way round. Medications showed as 'Restricted' and could not be logged at all while a stay was active, and this page told you to end the stay early to unlock them — which meant falsifying when they came home in order to record a dose that was really taken. Fixed 2026-08-26 after Aaron hit exactly that on a half-day stay.", keywords: ["restricted", "can't log", "hospital", "paused", "greyed", "half day", "discharged"], related: ["ip-start-end", "log-button-locked"], medical: true },
   { id: "ip-forgot-end", cat: "inpatient", q: "I forgot to end a hospital stay and it still says Active", a: "End it now — the stay keeps its real start date.", steps: ["Tap **In-Patient** at the bottom.", "Tap **Log In-Patient End**.", "The stay closes and moves into In-Patient History with its length.", "The end time is recorded as now. If the real discharge was earlier, add a note — menu → **Notes** — so the record is accurate."], keywords: ["still active", "forgot", "end", "discharge", "ongoing"], related: ["ip-start-end"] },
@@ -5598,6 +5607,11 @@ function renderTimeModal() {
     // When editing, the liters are editable below, so the heading states the action and the field
     // states the value -- otherwise the heading shows a stale number the moment she types.
     title = m.editId ? 'Edit Paracentesis' : ('Log Paracentesis · ' + paraFmtLiters(m.paraValue) + ' L');
+  } else if (m.type === 'daily') {
+    // THE DAY IS THE RECORD HERE, not a moment in it. Bowel and appetite are one answer per day,
+    // so this modal opens date-only (see m.dateOnly below) and the heading names the answer the
+    // caregiver already picked, the way the paracentesis heading names the litres.
+    title = 'Log ' + (m.kind === 'appetite' ? 'appetite' : 'bowel movement') + ' · ' + (m.valueLabel || m.value);
   } else if (m.type === 'weight') {
     title = 'Log Weight · ' + m.weightValue + ' ' + weightSuffix();
   } else {
@@ -5647,6 +5661,27 @@ function renderTimeModal() {
           className: 'mono',
           // 16px is the iOS floor -- anything smaller makes Safari zoom the page on focus.
           style: { width: '100%', minHeight: '52px', border: '1px solid #E9D8D1', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#3A2F33' } })
+      ) : null,
+      // THE ANSWER AND, FOR APPETITE, THE NOTE -- in the same dialog as the day, because a
+      // back-filled entry is one write and splitting it across two screens is how a half-finished
+      // one gets left behind. The options come from the same maps every other control reads, so
+      // this cannot be the fifth place that offers four of five values.
+      m.type === 'daily' ? h('div', { style: { marginBottom: '16px' } },
+        h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '8px' } },
+          m.kind === 'appetite' ? 'Appetite' : 'Bowel movement'),
+        h('select', { 'data-daily-modal-value': 'true', value: m.value || '',
+          onChange: (e) => { state.timeModal.value = e.target.value; state.timeModal.valueLabel = (m.kind === 'appetite' ? APPETITE_LABELS : BOWEL_MOVEMENT_LABELS)[e.target.value] || e.target.value; setState({ timeModal: state.timeModal }); },
+          className: 'mono', style: selectFix({ width: '100%', minHeight: '52px', border: '1px solid rgba(246,108,49,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' }) },
+          ...Object.keys(m.kind === 'appetite' ? APPETITE_LABELS : BOWEL_MOVEMENT_LABELS)
+            .map(v => h('option', { value: v }, (m.kind === 'appetite' ? APPETITE_LABELS : BOWEL_MOVEMENT_LABELS)[v]))
+        ),
+        m.kind === 'appetite' ? h('div', { style: { marginTop: '14px' } },
+          h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '8px' } }, 'Note (optional)'),
+          h('input', { 'data-daily-modal-note': 'true', type: 'text', value: m.note === undefined ? '' : String(m.note),
+            placeholder: 'Anything worth remembering',
+            onInput: (e) => { state.timeModal.note = e.target.value; },
+            style: { width: '100%', minHeight: '48px', border: '1px solid #E9D8D1', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } })
+        ) : null
       ) : null,
       m.type === 'symptom' ? h('div', { style: { marginBottom: '16px' } },
         h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '8px' } }, 'Symptom'),
@@ -5749,9 +5784,15 @@ function renderTimeModal() {
             (delta) => { const cur = state.timeModal.calCursor || state.timeModal.timeValue.slice(0, 7); state.timeModal.calCursor = calShift(cur, delta); setState({ timeModal: state.timeModal }); }
           )
         ) : null,
-        h('div', { style: { ...TYPE.label, color: '#915E48', margin: '14px 0 8px' } }, 'Time'),
-        h('input', { type: 'time', value: m.timeValue.slice(11), onInput: (e) => { state.timeModal.timeValue = state.timeModal.timeValue.slice(0, 10) + 'T' + e.target.value; }, className: 'mono', style: { width: '100%', minHeight: '48px', border: '1px solid rgba(246,108,49,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127', colorScheme: 'light' } }),
-        h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '6px' } }, 'Defaults to now — edit if logging a past time')
+        // DATE ONLY, FOR A QUESTION THAT HAS NO TIME. A daily bowel or appetite answer is about a
+        // DAY; the entry's stamp is computed from that day by supersedeStamp, and nothing reads a
+        // clock time off it. Showing a time field here would ask the caregiver a question the
+        // record cannot answer, and invite them to believe the answer was kept.
+        m.dateOnly ? h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '10px' } },
+          'One answer per day — picking a day you have already answered replaces it, and the earlier answer stays in the record.') : null,
+        m.dateOnly ? null : h('div', { style: { ...TYPE.label, color: '#915E48', margin: '14px 0 8px' } }, 'Time'),
+        m.dateOnly ? null : h('input', { type: 'time', value: m.timeValue.slice(11), onInput: (e) => { state.timeModal.timeValue = state.timeModal.timeValue.slice(0, 10) + 'T' + e.target.value; }, className: 'mono', style: { width: '100%', minHeight: '48px', border: '1px solid rgba(246,108,49,0.2)', borderRadius: '13px', padding: '0 14px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127', colorScheme: 'light' } }),
+        m.dateOnly ? null : h('div', { style: { fontSize: '12px', color: '#7A6E76', marginTop: '6px' } }, 'Defaults to now — edit if logging a past time')
       ),
       showPainScale ? h('div', { style: { marginTop: '16px' } },
         h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '8px' } }, 'Pain level (1–10)'),
@@ -9224,7 +9265,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v87';
+const APP_VERSION = 'app-v88';
 
 // ---- WHAT'S NEW ------------------------------------------------------------------------------
 //
@@ -9232,6 +9273,13 @@ const APP_VERSION = 'app-v87';
 // numbers in the prose, no file names, no function names. THEY/THEM throughout: this app has
 // never asked anyone's gender and most users are not women (CLAUDE.md Rule 0, leak shape 2).
 const CHANGELOG = [
+  { v: 'app-v88', date: 'Oct 25, 2026', title: 'Filling in a day you missed, and a note box that finally exists',
+    points: [
+      'You could fix a day you got wrong, but there was no way to fill in a day you missed entirely — two days in hospital simply had no answer and nothing on screen said why. Both the bowel movement and appetite screens now have **Log another day**: pick the day, pick the answer, done. One answer per day still, so choosing a day you have already answered replaces it and keeps the earlier answer in your records.',
+      'A day in the future is refused rather than saved.',
+      'The appetite note box did not exist. The app showed a note on each day and put it in the records you share with the care team, and there was no way to write one. There is now, on the appetite screen and on any day you correct — and emptying the box clears the note.',
+      'Two unused pieces of the old correction code are gone. Neither was reachable, and both still did it the old way, by deleting the day and writing a new one.'
+    ] },
   { v: 'app-v87', date: 'Oct 25, 2026', title: 'Fixing a day you got wrong, and the answer the banner would not let you give',
     points: [
       'The bowel movement box on the Home banner offered four answers when the app has five \u2014 \u201cLoose\u201d was missing from it entirely, so you had to go to Reports to record it and nothing said so.',
@@ -11800,7 +11848,7 @@ let dailyLogBusy = false;
 // version of this comment claimed setState kept a "persistence list" that excluded drafts. There
 // is no such list; setState is Object.assign plus a render. Right conclusion, invented mechanism,
 // and an invented mechanism is the kind of thing a later reader builds on.
-function renderDayCorrector(kind, dayTs, labels, current, onPick) {
+function renderDayCorrector(kind, dayTs, labels, current, onPick, noteable) {
   const open = state.editingDaily && state.editingDaily.kind === kind && state.editingDaily.day === dayTs;
   if (!open) {
     return h('button', { 'data-correct-day': String(dayTs),
@@ -11811,6 +11859,16 @@ function renderDayCorrector(kind, dayTs, labels, current, onPick) {
   return h('div', { 'data-correcting-day': String(dayTs), style: { width: '100%', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #F0E2DC' } },
     h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginBottom: '9px' } },
       'Change this day\u2019s answer. The earlier one stays in the record.'),
+    // Same rule as the logger's field: pre-filled with this day's note, passed verbatim, so it can
+    // be cleared. Keyed by kind AND day, because two open correctors on one screen sharing a draft
+    // would quietly write one day's note onto another.
+    noteable ? h('div', { style: { marginBottom: '11px' } },
+      h('div', { style: { fontSize: '11.5px', color: '#915E48', fontWeight: '700', marginBottom: '6px' } }, 'Note (optional)'),
+      h('input', { 'data-correct-note': String(dayTs), type: 'text', value: dailyNoteFor(kind + ':' + dayTs, current),
+        placeholder: 'Anything worth remembering',
+        onInput: (e) => { dailyNoteDraft[kind + ':' + dayTs] = e.target.value; },
+        style: { width: '100%', minHeight: '46px', border: '1px solid #E9D8D1', borderRadius: '12px', padding: '0 13px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } })
+    ) : null,
     h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } },
       ...Object.keys(labels).map(val => {
         const on = !!current && current.value === val;
@@ -11819,7 +11877,8 @@ function renderDayCorrector(kind, dayTs, labels, current, onPick) {
             if (dailyLogBusy) return;
             dailyLogBusy = true;
             try {
-              const wrote = await onPick(val, dayTs);
+              const wrote = await onPick(val, dayTs, noteable ? dailyNoteFor(kind + ':' + dayTs, current) : undefined);
+              if (noteable) delete dailyNoteDraft[kind + ':' + dayTs];
               setState({ editingDaily: null });
               setToast(wrote ? ('Changed to ' + (labels[val] || val)) : ('Already logged as ' + (labels[val] || val) + ' for that day.'));
             } catch (e) {
@@ -11834,6 +11893,14 @@ function renderDayCorrector(kind, dayTs, labels, current, onPick) {
       h('button', { onClick: () => setState({ editingDaily: null }),
         style: { minHeight: '46px', padding: '0 11px', color: '#745649', fontSize: '13px', fontWeight: '800' } }, 'Cancel')
     ));
+}
+// Per-screen note drafts. Keyed by logger key so bowel and appetite cannot overwrite each other --
+// the app-v86 audit found a shared browser context doing exactly that to two fixtures, and the
+// same mistake in state is cheaper to make and harder to see.
+const dailyNoteDraft = {};
+function dailyNoteFor(key, current) {
+  if (dailyNoteDraft[key] !== undefined) return dailyNoteDraft[key];
+  return (current && current.note) || '';
 }
 function renderDailyValueLogger(opts) {
   const d0 = dayStart(simNow());
@@ -11861,7 +11928,9 @@ function renderDailyValueLogger(opts) {
             }
             dailyLogBusy = true;
             try {
-              await opts.onPick(val, d0);
+              await opts.onPick(val, d0, opts.noteable ? dailyNoteFor(opts.key, opts.current) : undefined);
+              // Released only on success, so a refused write leaves what she typed on screen.
+              if (opts.noteable) delete dailyNoteDraft[opts.key];
               setToast(opts.toastPrefix + ' \u00b7 ' + (opts.labels[val] || val));
             } catch (e) {
               setToast('Could not save that \u2014 nothing was changed.');
@@ -11874,15 +11943,42 @@ function renderDailyValueLogger(opts) {
         }, opts.labels[val]);
       })
     ),
+    // THE NOTE, ONE RULE IN BOTH PLACES. The field is PRE-FILLED with the day's current note and
+    // its value is passed verbatim on save, here and in the row corrector. That is what makes
+    // clearing one possible -- empty the box -- and it means the field always shows the truth
+    // rather than a blank that silently means "keep whatever was there". The alternative, passing
+    // undefined when empty, cannot clear and was rejected for that reason.
+    //
+    // There was nothing to pre-fill from until now: the note has been rendered on the row and
+    // carried into the clinician's CSV since app-v86, two releases wrote rules about what happens
+    // to it when the answer changes, and NOTHING COULD ENTER ONE. The only writer that ever passed
+    // a note was submitAppetite(), which nothing called; it is deleted in this release.
+    opts.noteable ? h('div', { style: { marginTop: '12px' } },
+      h('div', { style: { fontSize: '11.5px', color: '#915E48', fontWeight: '700', marginBottom: '6px' } }, 'Note (optional)'),
+      h('input', { 'data-daily-note': opts.key, type: 'text', value: dailyNoteFor(opts.key, current),
+        placeholder: 'Anything worth remembering',
+        onInput: (e) => { dailyNoteDraft[opts.key] = e.target.value; },
+        style: { width: '100%', minHeight: '46px', border: '1px solid #E9D8D1', borderRadius: '12px', padding: '0 13px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } })
+    ) : null,
     h('div', { style: { fontSize: '11.5px', color: '#9A8C92', marginTop: '10px', lineHeight: '1.45' } },
-      'Picking again replaces today\u2019s answer. The earlier one stays in the record.')
+      'Picking again replaces today\u2019s answer. The earlier one stays in the record.'),
+    // A DAY YOU MISSED, which is a different job from a day you got wrong. `Correct` renders on a
+    // row that EXISTS; a day nobody answered has no row and had no way in at all -- so two days in
+    // hospital were simply absent from the record with nothing on screen saying why. Paracentesis
+    // and Weight, two screens along the same tab, have had a date step all along.
+    h('button', { 'data-log-another-day': opts.key,
+      onClick: () => setState({ timeModal: { type: 'daily', kind: opts.key, dateOnly: true,
+        value: Object.keys(opts.labels)[0], valueLabel: opts.labels[Object.keys(opts.labels)[0]],
+        note: opts.noteable ? '' : undefined, timeValue: nowLocalISO() } }),
+      style: { marginTop: '12px', minHeight: '44px', padding: '0 14px', borderRadius: '11px', background: 'rgba(255,255,255,0.75)', border: '1.5px solid rgba(200,83,32,0.35)', color: '#A83D0F', fontSize: '13px', fontWeight: '800' } },
+      'Log another day')
   );
 }
 function renderAppetite(now) {
   const entries = appetiteHistorySorted();
   const logger = renderDailyValueLogger({ key: 'appetite', title: 'Log today\u2019s appetite',
     labels: APPETITE_LABELS, current: appetiteFor(dayStart(simNow())), toastPrefix: 'Appetite logged',
-    onPick: (v, d0) => logAppetite(v, d0) });
+    noteable: true, onPick: (v, d0, note) => logAppetite(v, d0, note) });
   const history = h('section', null,
     h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '10px' } }, 'Appetite History'),
     entries.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
@@ -11892,7 +11988,7 @@ function renderAppetite(now) {
           h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#2A2127' } }, new Date(e.ts).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ' — ' + (APPETITE_LABELS[e.value] || e.value)),
           e.note ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px', lineHeight: '1.4' } }, e.note) : null
         ),
-        renderDayCorrector('appetite', dayStart(e.ts), APPETITE_LABELS, e, (v, d) => logAppetite(v, d)),
+        renderDayCorrector('appetite', dayStart(e.ts), APPETITE_LABELS, e, (v, d, note) => logAppetite(v, d, note), true),
         removeBtn(e)
       ))
     ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(246,108,49,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No appetite entries logged yet.')
@@ -11909,6 +12005,9 @@ function renderAppetite(now) {
 // closed. Both screens now carry their own logger (see renderDailyValueLogger above).
 function renderBowelMovementReport(now) {
   const entries = bowelMovementHistorySorted();
+  // NOT noteable: the data layer would take a bowel note, but nothing displays or exports one, so
+  // adding the field would mean adding the display and an export column too -- a third change
+  // nobody asked for. Written down so the omission is a decision rather than an oversight.
   const logger = renderDailyValueLogger({ key: 'bowel_movement', title: 'Log today\u2019s bowel movement',
     labels: BOWEL_MOVEMENT_LABELS, current: bowelMovementFor(dayStart(simNow())), toastPrefix: 'Bowel movement logged',
     onPick: (v, d0) => logBowelMovement(v, d0) });
