@@ -1832,7 +1832,7 @@ function restoreView() {
   catch (e) { return 'home'; }
 }
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
-let state = { heroSnoozeUntil: 0, whatsNewOpen: false, vitalOpen: null, symptomFilter: null, symptomRange: 'weeks', medFlash: null, entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, renamingProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
+let state = { heroSnoozeUntil: 0, whatsNewOpen: false, vitalOpen: null, symptomFilter: null, symptomRange: 'weeks', medFlash: null, entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, renamingProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, editingDaily: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
 let toastTimer = null;
 let unsub = null;
 let unsubPrefs = null;
@@ -6003,10 +6003,11 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         h('div', { style: { ...TYPE.label, color: bTone.chipFg } }, 'Update status for ' + bannerDayLabel),
         h('div', { style: { display: 'flex', gap: '8px' } },
           h('select', { value: bBannerValue, onChange: (e) => { state.bowelBannerInput = e.target.value; }, className: 'mono', style: selectFix({ flex: '1', minWidth: '0', minHeight: '44px', border: '1px solid #E9D8D1', borderRadius: '11px', padding: '0 10px', fontSize: '13.5px', background: '#FFFFFF', color: '#2A2127' }) },
-            h('option', { value: '' }, 'Update status if back to normal...'),
+            h('option', { value: '' }, 'Change today\u2019s answer\u2026'),
             h('option', { value: 'normal' }, 'Normal'),
             h('option', { value: 'very_little' }, 'Very little'),
             h('option', { value: 'none' }, 'None'),
+            h('option', { value: 'loose' }, 'Loose'),
             h('option', { value: 'diarrhea' }, 'Diarrhea')
           ),
           h('button', { onClick: submitBowelBannerUpdate, style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: bTone.accent, color: '#fff', fontSize: '13px', fontWeight: '700' } }, 'Update')
@@ -9146,7 +9147,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v86';
+const APP_VERSION = 'app-v87';
 
 // ---- WHAT'S NEW ------------------------------------------------------------------------------
 //
@@ -9154,6 +9155,12 @@ const APP_VERSION = 'app-v86';
 // numbers in the prose, no file names, no function names. THEY/THEM throughout: this app has
 // never asked anyone's gender and most users are not women (CLAUDE.md Rule 0, leak shape 2).
 const CHANGELOG = [
+  { v: 'app-v87', date: 'Oct 25, 2026', title: 'Fixing a day you got wrong, and the answer the banner would not let you give',
+    points: [
+      'The bowel movement box on the Home banner offered four answers when the app has five \u2014 \u201cLoose\u201d was missing from it entirely, so you had to go to Reports to record it and nothing said so.',
+      'A day you logged earlier could only be deleted, not changed. Both the bowel movement and appetite lists now have a Correct button on every day, and picking a new answer keeps the old one in your records rather than removing it.',
+      'The box on the banner used to say \u201cUpdate status if back to normal\u201d, which only invited one of the answers. It now says it is for changing the day.'
+    ] },
   { v: 'app-v86', date: 'Oct 24, 2026', title: 'Bowel and appetite can be logged any time, and History stops calling everything a dose',
     points: [
       'Bowel movement and appetite could only be logged from the once-a-day check-in card on Home, and that card only appears from your chosen check-in time onwards \u2014 7pm unless you changed it. Before then there was no way in at all, even though the Reports screens said those entries were logged from Home.',
@@ -11708,6 +11715,43 @@ function supersedeStamp(prev, d0) {
   return prev ? Math.max(prev.ts + 1000, base) : base;
 }
 let dailyLogBusy = false;
+// Which past row is open for correction: { kind, day }. Not persisted -- it is a draft, and
+// setState's persistence list deliberately excludes drafts.
+function renderDayCorrector(kind, dayTs, labels, current, onPick) {
+  const open = state.editingDaily && state.editingDaily.kind === kind && state.editingDaily.day === dayTs;
+  if (!open) {
+    return h('button', { 'data-correct-day': String(dayTs),
+      onClick: () => setState({ editingDaily: { kind, day: dayTs } }),
+      'aria-label': 'Correct ' + new Date(dayTs).toLocaleDateString([], { month: 'short', day: 'numeric' }),
+      style: { flexShrink: '0', minHeight: '44px', padding: '0 11px', borderRadius: '10px', background: 'rgba(200,83,32,0.10)', border: '1px solid rgba(200,83,32,0.22)', color: '#8E3818', fontSize: '13px', fontWeight: '800' } }, 'Correct');
+  }
+  return h('div', { 'data-correcting-day': String(dayTs), style: { width: '100%', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #F0E2DC' } },
+    h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginBottom: '9px' } },
+      'Change this day\u2019s answer. The earlier one stays in the record.'),
+    h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } },
+      ...Object.keys(labels).map(val => {
+        const on = !!current && current.value === val;
+        return h('button', { 'data-correct-value': val,
+          onClick: async () => {
+            if (dailyLogBusy) return;
+            dailyLogBusy = true;
+            try {
+              const wrote = await onPick(val, dayTs);
+              setState({ editingDaily: null });
+              setToast(wrote ? ('Changed to ' + (labels[val] || val)) : ('Already logged as ' + (labels[val] || val) + ' for that day.'));
+            } catch (e) {
+              setToast('Could not save that \u2014 nothing was changed.');
+            } finally { dailyLogBusy = false; }
+          },
+          style: { minHeight: '46px', padding: '0 13px', borderRadius: '12px', fontSize: '14px', fontWeight: '800',
+            border: on ? '1px solid rgba(200,83,32,0.45)' : '1px solid #E9D8D1',
+            background: on ? 'rgba(200,83,32,0.12)' : '#FFFFFF',
+            color: on ? '#8E3818' : '#2A2127' } }, labels[val]);
+      }),
+      h('button', { onClick: () => setState({ editingDaily: null }),
+        style: { minHeight: '46px', padding: '0 11px', color: '#745649', fontSize: '13px', fontWeight: '800' } }, 'Cancel')
+    ));
+}
 function renderDailyValueLogger(opts) {
   const d0 = dayStart(simNow());
   const current = opts.current;
@@ -11759,12 +11803,13 @@ function renderAppetite(now) {
   const history = h('section', null,
     h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '10px' } }, 'Appetite History'),
     entries.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-      ...entries.map(e => h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '13px 15px', display: 'flex', alignItems: 'flex-start', gap: '12px', boxShadow: '0 4px 24px rgba(203,122,87,0.10)' } },
+      ...entries.map(e => h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '13px 15px', display: 'flex', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', boxShadow: '0 4px 24px rgba(203,122,87,0.10)' } },
         h('span', { style: { flexShrink: '0', width: '10px', height: '10px', marginTop: '6px', borderRadius: '50%', background: e.value === 'normal' ? '#0F9D6B' : e.value === 'little' ? '#C77800' : '#C0453B', display: 'inline-block' } }),
         h('div', { style: { flex: '1', minWidth: '0' } },
           h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#2A2127' } }, new Date(e.ts).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ' — ' + (APPETITE_LABELS[e.value] || e.value)),
           e.note ? h('div', { style: { fontSize: '12.5px', color: '#7A6E76', marginTop: '3px', lineHeight: '1.4' } }, e.note) : null
         ),
+        renderDayCorrector('appetite', dayStart(e.ts), APPETITE_LABELS, e, (v, d) => logAppetite(v, d)),
         removeBtn(e)
       ))
     ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(246,108,49,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No appetite entries logged yet.')
@@ -11787,11 +11832,12 @@ function renderBowelMovementReport(now) {
   const history = h('section', null,
     h('div', { style: { ...TYPE.label, color: '#915E48', marginBottom: '10px' } }, 'Bowel Movement History'),
     entries.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
-      ...entries.map(e => h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '13px 15px', display: 'flex', alignItems: 'flex-start', gap: '12px', boxShadow: '0 4px 24px rgba(203,122,87,0.10)' } },
+      ...entries.map(e => h('div', { style: { background: '#FFFFFF', border: '1px solid #E9D8D1', borderRadius: '16px', padding: '13px 15px', display: 'flex', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', boxShadow: '0 4px 24px rgba(203,122,87,0.10)' } },
         h('span', { style: { flexShrink: '0', width: '10px', height: '10px', marginTop: '6px', borderRadius: '50%', background: BOWEL_ISSUE_VALUES.has(e.value) ? '#C0453B' : e.value === 'very_little' ? '#C77800' : '#0F9D6B', display: 'inline-block' } }),
         h('div', { style: { flex: '1', minWidth: '0' } },
           h('div', { style: { fontSize: '15px', fontWeight: '700', color: '#2A2127' } }, new Date(e.ts).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ' — ' + (BOWEL_MOVEMENT_LABELS[e.value] || e.value))
         ),
+        renderDayCorrector('bowel_movement', dayStart(e.ts), BOWEL_MOVEMENT_LABELS, e, (v, d) => logBowelMovement(v, d)),
         removeBtn(e)
       ))
     ) : h('div', { style: { background: 'rgba(255,255,255,0.4)', border: '1px dashed rgba(246,108,49,0.2)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: '#7A6E76', fontSize: '14px', lineHeight: '1.5' } }, 'No bowel movement entries logged yet.')
@@ -13243,7 +13289,8 @@ if (typeof window !== 'undefined') {
     isSuperseded: (e) => isSupersededEntry(e, state.entries),
     exportRows: () => buildExportRows(),
     nextMedicationId: (n) => nextMedicationId(n),
-    logAppetite: (v, d, n) => logAppetite(v, d, n)
+    logAppetite: (v, d, n) => logAppetite(v, d, n),
+    bowelLabels: () => BOWEL_MOVEMENT_LABELS
   };
   window.__notifScopeTest = {
     activeProfileId: () => ACTIVE_PROFILE_ID,
