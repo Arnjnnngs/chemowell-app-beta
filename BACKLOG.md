@@ -6,6 +6,15 @@ can be an easy fix... make sure that is in the notes"). Read this at the start o
 this repo — it's the durable, in-repo version of a running punch list. Pull items into a real task
 when you're about to touch the relevant code; delete the line once it's actually fixed and shipped.
 
+- **app-v86 audit.** The in-app History list still shows a corrected bowel/appetite answer and the
+  answer it replaced as two rows at the same minute, unmarked. The CSV and the printed report mark
+  them; the on-screen list does not. Nothing untrue is said — the changelog scopes its claim to the
+  export and the report, and the Reports screen states the current value — but the two surfaces
+  disagree in presentation.
+- **app-v86 audit.** `isSupersededEntry` is quadratic over the export: measured +44ms at 2,190
+  entries, +318ms at 6,570 and +1,232ms at 13,140 on desktop Chromium. Correct, and invisible at
+  realistic sizes today, but it runs once per row over every row. A per-day index built once would
+  make it linear.
 - **app-v86 audit, not fixed in that release.** `submitBowelMovement` / `submitAppetite` are dead
   code — nothing calls either, and both still carry the delete-then-relog correction pattern this
   project has shipped and had to undo twice. Delete them before somebody wires one up.
