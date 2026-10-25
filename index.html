@@ -11867,7 +11867,9 @@ function renderDayCorrector(kind, dayTs, labels, current, onPick, noteable) {
       h('input', { 'data-correct-note': String(dayTs), type: 'text', value: dailyNoteFor(kind + ':' + dayTs, current),
         placeholder: 'Anything worth remembering',
         onInput: (e) => { dailyNoteDraft[kind + ':' + dayTs] = e.target.value; },
-        style: { width: '100%', minHeight: '46px', border: '1px solid #E9D8D1', borderRadius: '12px', padding: '0 13px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } })
+        style: { width: '100%', minHeight: '46px', border: '1px solid #E9D8D1', borderRadius: '12px', padding: '0 13px', fontSize: '16px', background: '#FFFFFF', color: '#2A2127' } }),
+      (current && current.note) ? h('div', { style: { fontSize: '11.5px', color: '#9A8C92', marginTop: '6px', lineHeight: '1.4' } },
+        'This note belongs to the answer above it. Pick a different answer and it is cleared, unless you write a new one here.') : null
     ) : null,
     h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } },
       ...Object.keys(labels).map(val => {
@@ -11877,7 +11879,7 @@ function renderDayCorrector(kind, dayTs, labels, current, onPick, noteable) {
             if (dailyLogBusy) return;
             dailyLogBusy = true;
             try {
-              const wrote = await onPick(val, dayTs, noteable ? dailyNoteFor(kind + ':' + dayTs, current) : undefined);
+              const wrote = await onPick(val, dayTs, noteable ? dailyNoteToSend(kind + ':' + dayTs) : undefined);
               if (noteable) delete dailyNoteDraft[kind + ':' + dayTs];
               setState({ editingDaily: null });
               setToast(wrote ? ('Changed to ' + (labels[val] || val)) : ('Already logged as ' + (labels[val] || val) + ' for that day.'));
@@ -11902,6 +11904,19 @@ function dailyNoteFor(key, current) {
   if (dailyNoteDraft[key] !== undefined) return dailyNoteDraft[key];
   return (current && current.note) || '';
 }
+// WHAT GETS SENT TO THE WRITER, WHICH IS NOT WHAT IS ON SCREEN, AND THE SUITES CAUGHT ME GETTING
+// THIS WRONG. The field is pre-filled with the day's current note so the caregiver can see and
+// edit it. The first version then passed that value verbatim on every save -- which carried the
+// old note onto a CHANGED answer and put "ate a full dinner" under "No Appetite" in the
+// clinician's export. That is the exact contradiction app-v86 and app-v87 wrote the inheritance
+// rule for, reintroduced by the fix that gave the rule something to govern.
+//
+// So: send the draft only if she TOUCHED the box. Untouched sends undefined, and the writer
+// applies its own rule -- keep the note when the answer is unchanged, drop it when it changes.
+// Touched sends the string, which is what makes clearing possible and what lets a new note be
+// written alongside a new answer. One line, and it is the difference between a field that edits
+// the note and a field that silently re-asserts it.
+function dailyNoteToSend(key) { return dailyNoteDraft[key]; }
 function renderDailyValueLogger(opts) {
   const d0 = dayStart(simNow());
   const current = opts.current;
@@ -11928,7 +11943,7 @@ function renderDailyValueLogger(opts) {
             }
             dailyLogBusy = true;
             try {
-              await opts.onPick(val, d0, opts.noteable ? dailyNoteFor(opts.key, opts.current) : undefined);
+              await opts.onPick(val, d0, opts.noteable ? dailyNoteToSend(opts.key) : undefined);
               // Released only on success, so a refused write leaves what she typed on screen.
               if (opts.noteable) delete dailyNoteDraft[opts.key];
               setToast(opts.toastPrefix + ' \u00b7 ' + (opts.labels[val] || val));
