@@ -28,6 +28,15 @@
 //       4 reds as covering it.
 //   M3  the appetite note field removed, everything else intact -> 5 red.
 //
+// SECOND ROUND. The three mutants that walked through the first set, re-run here and now caught:
+//   M5   the row corrector sends what is DISPLAYED instead of what was TYPED  -> 1 red (7d2 row)
+//   M6   the logger does the same                                            -> 1 red (7d2 logger)
+//   M16  the display expression always returns blank, sent value left correct -> 3 red (7b, 7f A+B)
+// All three survived the first set for one reason: no section used the only fixture that
+// distinguishes displayed from typed -- a day that ALREADY HAS a note, a box NOBODY TOUCHED, and
+// a DIFFERENT answer picked. One section typed first, the other cleared the draft, so in both of
+// them the two agreed. 7d2 is that fixture, on both surfaces.
+//
 // Run:  python3 -m http.server 8899 --directory <repo>   (then)  node test/v88-log-a-missed-day.mjs
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
