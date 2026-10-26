@@ -89,6 +89,10 @@ const logAnotherDay = async (pg, key, backDays, value, note) => {
              values: sel ? [...sel.options].map(o => o.value).filter(Boolean) : [],
              hasTimeInput: !!d.querySelector('input[type="time"]'),
              hasNote: !!d.querySelector('[data-daily-modal-note]'),
+             // THE VALUE, not just the element. Asserting `!!element` tests that a box is
+             // rendered, which is true on a build whose display expression always returns blank
+             // -- an audit reverted exactly that and scored the whole gate green.
+             noteShown: (d.querySelector('[data-daily-modal-note]') || {}).value,
              text: (d.innerText || '') };
   });
   if (!shape) return { ok: false, why: 'modal did not open' };
@@ -111,6 +115,14 @@ const logAnotherDay = async (pg, key, backDays, value, note) => {
     return true;
   }, backDays);
   await pg.waitForTimeout(400);
+  // RE-READ AFTER THE DAY IS PICKED. The first version captured `shape` at open time, when the
+  // modal still held today -- so the "shows that day's note" check was reading a day with no
+  // note and reported an empty box as a defect in the app. The box is a function of the day.
+  shape.noteShown = await pg.evaluate(() => {
+    const d = document.querySelector('[role="dialog"]');
+    const inp = d && d.querySelector('[data-daily-modal-note]');
+    return inp ? inp.value : null;
+  });
   await pg.evaluate((v) => {
     const d = document.querySelector('[role="dialog"]');
     const sel = d.querySelector('[data-daily-modal-value]');
@@ -313,7 +325,8 @@ await p7b.waitForTimeout(900);
   const r = await logAnotherDay(p7b, 'appetite', 2, 'normal');
   t('precondition: the modal was driven over that day', r.ok, r.ok ? 'open' : r.why);
   t('and the modal shows the note that day already has, rather than an empty box',
-    r.ok && r.shape.hasNote === true, r.ok ? ('note field present=' + r.shape.hasNote) : 'n/a');
+    r.ok && r.shape.noteShown === 'ate a full dinner',
+    r.ok ? ('box contained ' + JSON.stringify(r.shape.noteShown)) : 'n/a');
   const after = await entriesOf(p7b, 'appetite');
   const latest = after.slice().sort((a, c) => c.ts - a.ts)[0];
   t('confirming without touching the note box does not delete the note',
@@ -375,6 +388,119 @@ await p7d.waitForTimeout(900);
     !!latest && latest.v === 'little' && latest.note === 'only managed toast', JSON.stringify(latest));
 }
 await p7d.close();
+
+console.log('\n7d2. THE UNTOUCHED BOX ON A DAY THAT HAS A NOTE, PICKING A DIFFERENT ANSWER');
+// THE DISCRIMINATING FIXTURE, and neither 7d nor 7e was it. An audit kept two mutants alive
+// through both of them -- the corrector and the logger each sending dailyNoteFor (what is
+// DISPLAYED) instead of dailyNoteToSend (what was TYPED). The two functions only disagree in one
+// situation: a day that already carries a note, a box nobody touched, and a DIFFERENT answer
+// picked. 7d typed first and seeded no note, 7e deleted the draft, so in both of them the two
+// agreed and the mutants walked. This is that case, on both surfaces.
+for (const surface of ['row', 'logger']) {
+  const pg = await freshPage(new Function(seed(
+    '[{ id: "n1", medId: "appetite", value: "normal", dose: "Normal", mg: 0, note: "ate a full dinner", ts: d + 12*3600000 }]')));
+  await pg.evaluate(() => window.__v86Test.openReport('appetite'));
+  await pg.waitForTimeout(900);
+  const started = await pg.evaluate((sf) => {
+    if (sf === 'row') {
+      const btn = document.querySelector('[data-correct-day]');
+      if (!btn) return false;
+      btn.click(); return true;
+    }
+    return !!document.querySelector('[data-daily-note="appetite"]');
+  }, surface);
+  await pg.waitForTimeout(500);
+  t('precondition: the ' + surface + ' surface is open on a day that carries a note', started === true, String(started));
+  // NOTHING IS TYPED. A different answer is picked.
+  await pg.evaluate((sf) => {
+    const b2 = sf === 'row' ? document.querySelector('[data-correct-value="little"]')
+                            : document.querySelector('[data-daily-log-value="little"]');
+    if (b2) b2.click();
+  }, surface);
+  await pg.waitForTimeout(1100);
+  const rows = await entriesOf(pg, 'appetite');
+  const latest = rows.slice().sort((a, c) => c.ts - a.ts)[0];
+  // The writer's own rule: a note survives an UNCHANGED answer and is dropped when the answer
+  // changes, because "ate a full dinner" under "Little to none" is a kept record that contradicts
+  // itself. Sending the DISPLAYED text instead of the typed text carries it across.
+  t('the ' + surface + ' does not carry the old note onto the new answer',
+    !!latest && latest.v === 'little' && latest.note === '',
+    JSON.stringify(latest));
+  t('and the superseded answer still keeps the note that described it',
+    rows.some(r => r.v === 'normal' && r.note === 'ate a full dinner'),
+    JSON.stringify(rows.map(r => ({ v: r.v, note: r.note }))));
+  await pg.close();
+}
+
+console.log('\n7f. THE DAY UNDER THE NOTE CAN CHANGE, AND THE NOTE MUST NOT FOLLOW IT');
+// THE BLOCKER THIS SECTION EXISTS FOR, and it is the modal's note defect rotated one axis. The
+// modal holds ONE note and the calendar stays open after a pick, so a second pick used to inherit
+// the first day's typing. Two shapes, both reachable by ordinary use of a date picker:
+//   A  empty the box meaning to clear Thursday, change your mind to Tuesday, Confirm
+//      -> TUESDAY's note is deleted, having never been shown.
+//   B  type a note for Thursday, switch to Tuesday, Confirm
+//      -> Thursday's words become Tuesday's record.
+for (const shape of ['A', 'B']) {
+  const pg = await freshPage(new Function(seed(
+    '[{ id: "d1", medId: "appetite", value: "normal", dose: "Normal", mg: 0, note: "ate a full dinner", ts: d - 1*86400000 + 12*3600000 },' +
+    ' { id: "d2", medId: "appetite", value: "normal", dose: "Normal", mg: 0, note: "soup", ts: d - 3*86400000 + 12*3600000 }]')));
+  await pg.evaluate(() => window.__v86Test.openReport('appetite'));
+  await pg.waitForTimeout(900);
+  await pg.evaluate(() => { const b2 = document.querySelector('[data-log-another-day="appetite"]'); if (b2) b2.click(); });
+  await pg.waitForTimeout(700);
+  // TRY, THEN OPEN, THEN TRY AGAIN. The calendar collapses behind its pill after a pick, so the
+  // second pick found no day cells and reported false -- which looked like the app refusing a
+  // second pick when it was the harness not reopening the control.
+  const pickDay = async (back) => {
+    const attempt = (n) => pg.evaluate((k) => {
+      const target = new Date(); target.setHours(0,0,0,0); target.setTime(target.getTime() - k * 86400000);
+      const want = String(target.getDate());
+      const d = document.querySelector('[role="dialog"]');
+      const cells = [...d.querySelectorAll('button')].filter(x => (x.innerText || '').trim() === want);
+      if (!cells.length) return false;
+      cells[cells.length - 1].click();
+      return true;
+    }, n);
+    if (await attempt(back)) return true;
+    await pg.evaluate(() => {
+      const d = document.querySelector('[role="dialog"]');
+      const pill = [...d.querySelectorAll('button')].find(x => /\d/.test(x.innerText || '') && !/^(Cancel|Confirm)$/i.test((x.innerText || '').trim()));
+      if (pill) pill.click();
+    });
+    await pg.waitForTimeout(450);
+    return attempt(back);
+  };
+  const first = await pickDay(1);
+  await pg.waitForTimeout(400);
+  await pg.evaluate((sh) => {
+    const d = document.querySelector('[role="dialog"]');
+    const inp = d && d.querySelector('[data-daily-modal-note]');
+    if (inp) { inp.value = sh === 'A' ? '' : 'vomited after lunch'; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+  }, shape);
+  await pg.waitForTimeout(300);
+  const second = await pickDay(3);
+  await pg.waitForTimeout(400);
+  const boxNow = await pg.evaluate(() => {
+    const d = document.querySelector('[role="dialog"]');
+    const inp = d && d.querySelector('[data-daily-modal-note]');
+    return inp ? inp.value : null;
+  });
+  t('precondition (shape ' + shape + '): two different days were picked in one open calendar',
+    first === true && second === true, 'first=' + first + ' second=' + second);
+  t('shape ' + shape + ': changing the day re-reads that day’s own note',
+    boxNow === 'soup', 'box shows ' + JSON.stringify(boxNow) + ', that day’s note is "soup"');
+  await pg.evaluate(() => {
+    const d = document.querySelector('[role="dialog"]');
+    const go = d && [...d.querySelectorAll('button')].find(x => /^Confirm$/i.test((x.innerText || '').trim()));
+    if (go) go.click();
+  });
+  await pg.waitForTimeout(1100);
+  const rows = await entriesOf(pg, 'appetite');
+  const d3 = rows.filter(r => r.ts < Date.now() - 2 * DAY).slice().sort((a, c) => c.ts - a.ts)[0];
+  t('shape ' + shape + ': and the day that was never typed into keeps its own note',
+    !!d3 && d3.note === 'soup', JSON.stringify(rows.map(r => ({ ts: r.ts, note: r.note }))));
+  await pg.close();
+}
 
 console.log('\n7e. CANCEL ON THE CORRECTOR DISCARDS WHAT WAS TYPED');
 const p7e = await freshPage(new Function(seed(
