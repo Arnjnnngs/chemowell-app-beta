@@ -15,6 +15,41 @@ when you're about to touch the relevant code; delete the line once it's actually
   *headache* is an ordinary edit), so the trade is right — but it is a trade, and the next person
   tightening this should know which side gave way. Found by the PM, not by an auditor.
 
+- **app-v88 audit, ten deferrals, written here because hard rule 8 says fixed or logged.** The PM
+  refused app-v88 partly for this: they existed only inside four long audit documents, which is not
+  a list anybody reads. Strongest first.
+  * **M19 — the `surface` component of `noteKey` is unguarded, and it was VERIFIED to reproduce a
+    real defect.** Drop it and the logger's note draft collides with TODAY's row corrector, which
+    renders directly beneath it: type in the logger, open Correct on today's row, tap Cancel, and
+    the logger's box silently empties. One check would hold it. **The strongest of these if one
+    ever gets picked up.**
+  * **M20 / M15 — the `day` component is unguarded.** Without it a note typed at 23:58 and left
+    unsaved belongs to a different day at 00:01. Fixed in the code; nothing proves it stays fixed.
+  * **M21 — the `kind` component is unguarded**, reachable only by a future edit: bowel is
+    `noteable: false`, so no bowel draft is ever written. Correct defence for the day that changes.
+  * **M22 — `dailyLogBusy` back outside the `try`.** Future-only; exercising it needs a throwing
+    render.
+  * **M11 — renaming a control leaves the Help prose behind.** Pairs with the bolded-name sweep
+    above; same fix.
+  * **M1 — the appetite day-map going oldest-wins.** Still caught by `v86`, but it stopped being
+    named from audit round three and is in no carry-forward list. **A finding that drops out of the
+    record while its guard survives is how a guard gets deleted later as "unused".**
+  * **`pickDay` / `tapDay` are fragile across a month boundary** (`test/v88-log-a-missed-day.mjs`).
+    They match a day cell by `String(getDate())`, which fails loudly but confusingly on the first
+    days of a month. Assert the date pill's label names the expected date.
+  * **`test/v75-no-other-patient.mjs` reads the repo from disk and ignores `FALSIFY_BASE`.** An
+    auditor's first falsification of the pronoun ratchet reported the same count for a +1 and a −1
+    mutant and looked like a dead ratchet when it was a harness that never reached the mutated
+    file. Re-run in a copied tree it is correct both ways. **Worth one line in the suite so nobody
+    repeats it.**
+  * **7g's `'reopened'` escape** — closed in the code, recorded because the class is not: a
+    precondition that tolerates *"I did not do the thing"* passes for the wrong reason.
+  * **Two instruments disagree about overflow and nobody noticed.** `overflow-scan` reports three
+    overflows on Home at 320px — proven pre-existing against app-v87's published file — while the
+    last two Designer passes recorded *"overflow — clean"*. One of them is wrong and it is not
+    known which. **A pass that says clean while a committed suite says otherwise is a false
+    reassurance in the record**, which is worse than no pass.
+
 - **app-v87 audit, DEFERRED DELIBERATELY — the sixth Help surface.** `renderHelpView()`
   (`index.html` ~10022-10252) is the only `renderHelp*` function and it writes **eight prose
   literals straight into the DOM**. None is in any of the five data arrays `__v86Test.helpProse()`
