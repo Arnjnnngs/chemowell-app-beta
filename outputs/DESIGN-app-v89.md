@@ -46,3 +46,20 @@ message.
 * **The What's New notice stacking above the plans sheet** (z-index) is pre-existing, unchanged by
   this release, and only reachable by opening the plans sheet without dismissing an update notice
   first. Not charged here; worth a look when the stacking order is next touched.
+
+---
+
+## Re-measured after the audit's copy fixes (same day)
+
+The blockers and majors rewrote `priv-lost-phone` end to end and lengthened both paid cards'
+middle bullets ("Each **person** kept completely separate", "…or a professional caregiver **with
+several patients**"), so the two screens were measured again rather than assumed unchanged.
+
+| Width | Export section | Plans sheet |
+|---|---|---|
+| 320 | no control under 44px · no horizontal overflow | content 935px (was 914), scrolls internally · clean |
+| 360 | same | 896px (was 875) · clean |
+| 390 | same | 875px (unchanged) · clean |
+
+21px taller at the narrow end, still inside its own scroll, still nothing under 44px and no
+horizontal overflow at any width. Screenshots in `outputs/design-app-v89/` are the re-shot set.

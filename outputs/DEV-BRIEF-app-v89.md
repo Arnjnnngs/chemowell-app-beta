@@ -80,3 +80,39 @@ export already uses and which free users already run. Nothing new is reachable.
 Free tier, from a cold profile: the printable report opens and produces the report; no PLUS pill
 anywhere; the plans sheet names no feature as paid; adding a second profile still opens the plans
 sheet; `tierLimit` still 1/3/∞; Help agrees with all of it; every existing suite still green.
+
+---
+
+## Falsification record (filled in after the fact, as the brief said it would be)
+
+**First round — eight mutants, each a byte copy served on its own port.** Every one red on the
+section written for it: the paywall restored (4 red, including the toast nudge once check 1.5 was
+fixed to sample at the click rather than after a 6-second popup timeout), the free cap widened to
+3 (1), the Plus cap made unlimited (1), the report bullet back on the Plus card (1), the PLUS pill
+back (1), Help's "not built yet" claim back (1), the Free card stripped of what it names (1), the
+"Most popular" badge back (1).
+
+**Second round — the Zero Day Auditor wrote four of its own and all four walked through.** Closed,
+and re-falsified along with guards for its two blockers. Eight mutants, every server md5-verified
+against its own tree before the run:
+
+| # | Mutant | Red |
+|---|---|---|
+| N1 | the `if (superseded)` line back above the `else` — the live export defect, exactly as it shipped | 5 |
+| N2 | free users served only the last 3 rows of the printable report (the auditor's A11) | 2 |
+| N3 | one of the two Add-profile cap guards loosened (A9) | 2 |
+| N4 | the Plus card sells two features again, one of them a promise (A10) | 2 |
+| N5 | the two prices swapped (A12) | 2 |
+| N6 | Help stops naming the protected-save button label | 1 |
+| N7 | Help drops the set-up-first caveat — blocker B1 restored | 2 |
+| N8 | the password step back to position 3, after the file is shared — blocker B2 restored | 2 |
+
+**Three of those reported clean on the first pass and were not detected — they were unmutated**,
+because a setup script had aborted before reaching them. The md5 check caught it. That is the third
+instrument failure of this release, after a check that ran too late and a mutant served from the
+wrong directory, and it is why verifying the server before believing a falsification result is now
+written into `TEAM.md` rather than remembered.
+
+**N1's failure message is the clearest statement of what was live for three releases:**
+*BLANK Detail for: Temperature, Blood Pressure, Weight, paracentesis, Radiation Session, Bowel
+Movement, Appetite, Nausea.*
