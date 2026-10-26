@@ -765,3 +765,17 @@ missing audit report hides the delete ratchet, the 16px floor, the README-row ch
 chain state and report everything at the end, which is a restructure of a 790-line script. The
 four prerequisite stops (unresolvable baseline, unparseable `CACHE`) must **stay** hard: a gate
 that claims to have checked something it could not is the failure that rule exists for.
+
+### M26 — Mutant servers are leaked, and the next run inherits the mess (S)
+
+Found twice in one release, once by each auditor. Falsification rounds start
+`python3 -m http.server <port>` per mutant and nothing stops them. By the end of app-v89 **38
+abandoned servers held ports 8891–8928**, so a later round's servers never bound — and that round
+read the *previous* mutant's bytes, which looks exactly like a check that cannot fail. One auditor
+nearly reported four bogus escapes on the strength of it.
+
+The md5 comparison added in app-v89 catches it after the fact. What is missing is not leaking them
+in the first place: a helper that allocates a free port, serves a directory, and kills the server
+on exit, used by every falsification round instead of a hand-rolled `nohup setsid`. The delta audit
+also suggests verifying `/proc/<pid>/cwd` rather than only comparing md5 after the fact, which
+catches the case where the right bytes are served by the wrong process.

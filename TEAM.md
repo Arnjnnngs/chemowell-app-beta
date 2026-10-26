@@ -605,3 +605,52 @@ reached the browser.** It is the same shape as app-v88's *a mutant that does not
 under test looks exactly like a defect*, and app-v89's *a check that runs too late looks exactly
 like a check that passed*: three releases running, the failure has been the instrument rather than
 the thing measured.
+
+---
+
+## A fixture that omits a field the app always writes is a different program (app-v89)
+
+**The most expensive error of this release was a sentence, and a test fixture put it there.**
+
+A real defect was found in `buildExportRows()` and correctly fixed. A new suite section was written
+to prove it, seeding one entry of every kind — and every fixture left out `dose`, because the
+branch under test does not read `dose` and it seemed irrelevant. **Every writer in the app sets it.**
+
+So the section proved the fix against a shape the app never produces, and it reported the defect as
+total. From there the overstatement spread, in this order:
+
+1. into the suite's own failure message, which named eight entry types as blank;
+2. into an eighteen-line code comment describing the defect;
+3. into a commit message;
+4. into the **CHANGELOG**, where it told patients that reports handed to a care team were missing
+   every reading, and asked them to send fresh copies;
+5. into a status message to Aaron saying the same thing.
+
+The delta audit measured it against the build that was actually live instead of reasoning about it.
+**Four of the five categories named were never affected**: their writers store a duplicate of the
+value in `dose`, which the broken fallback printed. Only two entry types — radiation sessions and
+symptoms — write `dose: null`, and those two were the entire user-visible footprint.
+
+### The rules
+
+1. **A fixture must carry every field the app's writer sets, including ones the code under test
+   does not read.** "Irrelevant to this branch" is a claim about the branch, not about the program.
+   Before seeding an entry, open the function that creates it and copy its shape.
+2. **A failure message that overstates is a defect in the check.** Not cosmetic: this one was
+   quoted verbatim into a comment, a commit, a changelog and a message to the owner, by somebody
+   who trusted it — and that somebody was the person who wrote it.
+3. **Before writing the blast radius of a defect into anything a user reads, MEASURE it against the
+   build that is actually live.** `git archive origin/main`, serve it, drive it. The fix is proven
+   by the suite; the *scope* is proven only by the old build, and scope is what the user acts on.
+4. **Narrower is not weaker.** "Radiation sessions and symptoms printed no detail" is a smaller
+   claim than "every vital was blank" and it is worth more, because it is true and because the
+   person reading it can tell whether it applies to them.
+
+### Why it belongs beside the other three
+
+This release produced four instrument failures: a check that ran too late to see what it was
+looking for; a mutant served from the wrong directory; three mutants that were never applied; and
+thirty-eight abandoned servers holding the ports a later run needed. Each wasted time. **This one
+was different in kind — it did not hide a defect, it manufactured one, and shipped it to patients
+as fact.** A broken instrument that reads zero gets noticed. A broken instrument that reads high
+gets believed and repeated.
