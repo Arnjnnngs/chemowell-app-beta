@@ -1,6 +1,6 @@
 # HANDOFF.md — start here in a brand-new chat
 
-Written 2026-08-08, last refreshed 2026-09-14 at app-v80. If you're a fresh Claude session and Aaron just
+Written 2026-08-08, last refreshed 2026-10-26 at app-v89. If you're a fresh Claude session and Aaron just
 pointed you at this repo, read this file first — it tells you what order to read everything else
 in, what's actually true right now, and what to do next. Nothing here should be taken on faith;
 every claim below is backed by a file in this repo, cite it back to Aaron if he asks.
@@ -91,9 +91,10 @@ authoritative version; follow TEAM.md where the two differ, and read its "Proces
 
 ## What's actually true right now (verify before trusting, this can go stale)
 
-- Live build: https://arnjnnngs.github.io/chemowell-app-beta/ — currently `app-v80`. The
-  version line in this file has been stale before; `README.md`'s version history is the record,
-  and `PUBLISHED.json` is what `release_check.sh` compares against.
+- Live build: https://arnjnnngs.github.io/chemowell-app-beta/ — `app-v88` as of 2026-10-26,
+  with `app-v89` built and in the chain. **This line has been stale before and was stale again**:
+  it read `app-v80` for eight releases. `README.md`'s version history is the record and
+  `PUBLISHED.json` is what `release_check.sh` compares against — trust those two, not this.
 - Native Android debug APK: auto-built by `.github/workflows/android-build.yml` on every push
   that touches native-relevant files; published to the GitHub Release tagged
   `app-v14-native-test` (stable public URL, no login needed) once CI finishes. Check
@@ -104,8 +105,20 @@ authoritative version; follow TEAM.md where the two differ, and read its "Proces
   "Allow background activity" battery control, and CSV/PDF export reaching the native share sheet
   (this one broke silently once already, see REQUESTS.md's export item and README's app-v51
   entry — don't mark it Completed until he confirms it on the actual app-v51 build).
-- **Next build priority: multi-device/multi-user sync.** Confirmed by Aaron as the top priority,
-  App Store blocker, and explicitly told to use the full team (not solo) given the stakes. Fully
+- **NEXT BUILD PRIORITY IS THE GOOGLE PLAY LAUNCH, NOT SYNC. Corrected 2026-10-26, and this
+  paragraph is why the line above carries a warning.** Aaron bought the LLC and is waiting on a
+  DUNS number to register the Play Console account; his words, 2026-10-25: *"I don't want to rush
+  this, but I would like to be in a good position when its ready... don't speed it up and it will
+  just break on play store."* The store blockers are tracked as tasks and in `BACKLOG.md`: bundle
+  the app instead of pointing `server.url` at GitHub Pages, a privacy policy and Data Safety
+  declaration, a signed AAB rather than a debug APK, `TEST_MODE` off, Play Billing, and **M20, a
+  Restore purchases control, which Apple requires and Google expects**. **Sync is deliberately NOT
+  on the v1 path**: it has crypto but no UI, so nothing leaves the device, which keeps the privacy
+  lawyer's review off the launch critical path. The sync material below is still accurate and
+  still worth reading — it is simply not what to build next. A session that reads it as a
+  priority and starts building pairing UI is doing the wrong work.
+- **Sync, for whenever it IS the priority.** Confirmed by Aaron as a top priority back in August,
+  and explicitly told to use the full team (not solo) given the stakes. Fully
   scoped in `outputs/SYNC_DEVELOPER_BRIEF_v2.md`. **No longer blocked as of 2026-08-09** — the
   three Vercel dashboard steps are done. They were done directly in Aaron's own browser via
   Claude-in-Chrome, which is the only reason they were possible: this sandbox's Vercel API token
