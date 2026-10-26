@@ -1024,6 +1024,60 @@ section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT 
 }
 
 // ---------------------------------------------------------------------------------------------
+section('7z. WHAT’S NEW IS PLAIN PROSE, AND IT MUST BE READ RENDERED');
+// app-v88 SHIPPED `**Log another day**` INTO THIS NOTICE AND FOUR AUDIT ROUNDS READ PAST IT.
+//
+// Help topics are parsed for markdown; the changelog is not -- it is the one caregiver-facing
+// array whose strings go to the screen as typed. So a pair of asterisks that reads as emphasis in
+// the source renders as literal asterisks on the phone, in the notice every user is shown after
+// an update, and it was the only markdown in thirty-seven changelog points.
+//
+// Why nobody caught it: every reviewer read the array as SOURCE, where `**Log another day**` looks
+// like formatting doing its job. The defect only exists on the rendered page. That is the same
+// hole as this release's Designer seat never running, one surface over, so this check does it the
+// expensive way on purpose -- it opens the notice and reads innerText.
+{
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  page.on('pageerror', (e) => allErrors.push('7z: ' + e.message));
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
+    localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, tourDone: true }));
+    localStorage.setItem('chemowell-app-seen-version', 'app-v1');
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2200);
+  const seen = await page.evaluate(() => {
+    const d = document.querySelector('[data-whatsnew-modal]');
+    return d ? (d.innerText || '') : null;
+  });
+  t('precondition: the What’s New notice is on screen to be read', !!seen && seen.length > 60,
+    seen === null ? 'notice not open' : (seen.length + ' chars'));
+  if (seen) {
+    const marks = (seen.match(/\*\*|`|^\s*[*_]\s/gm) || []);
+    t('and it contains no literal markdown -- this array is not parsed, it is printed',
+      marks.length === 0, marks.length ? (marks.length + ' found: ' + JSON.stringify(seen.match(/.{0,30}(\*\*|`).{0,30}/) || [])) : 'none');
+  }
+  // AND THE SOURCE SIDE, over every entry rather than only the one on screen, because the notice
+  // shows the newest release and the older ones are reachable from "See recent updates".
+  const allPoints = await page.evaluate(() => {
+    const T = window.__v86Test;
+    return (T && T.helpTopics) ? null : null;
+  });
+  const srcBad = await page.evaluate(() => {
+    const out = [];
+    const scan = (txt) => { if (typeof txt === 'string' && (/\*\*/.test(txt) || /`/.test(txt))) out.push(txt.slice(0, 70)); };
+    const nodes = [...document.querySelectorAll('[data-whatsnew-entry]')];
+    nodes.forEach(n => scan(n.innerText || ''));
+    return out;
+  });
+  t('and no entry reachable from the notice carries any either', srcBad.length === 0,
+    srcBad.length ? JSON.stringify(srcBad) : 'all entries clean');
+  await page.close();
+}
+
+// ---------------------------------------------------------------------------------------------
 section('8. AND NOTHING THREW');
 t('no page error at any point above', allErrors.length === 0, allErrors.slice(0, 3).join(' / ') || 'none');
 
