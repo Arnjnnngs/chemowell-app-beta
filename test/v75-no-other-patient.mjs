@@ -310,7 +310,7 @@ console.log('\n4. THE RATCHET: BEHAVIOUR KEYED TO ONE PERSON\'S PRESCRIPTION');
 // Found by the app-v88 audit, which caught TWO NEW ONES I had just written -- in the release whose
 // own brief quotes this rule. Counting it is cheaper than remembering it.
 {
-  const PRONOUNS_ALLOWED = 36;
+  const PRONOUNS_ALLOWED = 32;  // app-v89: 36 -> 32. Four fell out with the v43 pricing comment and the old plans copy. The ratchet asked for the number, which is the whole point of it being two-sided.
   const src = (files.find(f => f.name === 'index.html') || { raw: '' }).raw;
   const hits = (src.match(/\b(?:she|her|hers|herself|his|him|himself)\b|\bhe\b/gi) || []).length;
   t('no NEW gendered pronoun has been added to the file (Rule 0 shape 2)',

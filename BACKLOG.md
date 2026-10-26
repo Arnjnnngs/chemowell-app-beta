@@ -705,3 +705,43 @@ A keyboard opening is not a wheel or a touchmove, so the gesture version cannot 
 but **this sandbox is Chromium with no on-screen keyboard and cannot prove it.** Item on Aaron's
 phone checklist every release until it has been seen once: *open the medication editor on the
 iPhone, tap a field low down the form, and confirm the keyboard does not leave it hidden.*
+
+---
+
+## app-v89 — the Enhancer pass, and one store blocker it found
+
+Everything below is PROPOSED. Nothing was built in app-v89 beyond the pricing change itself.
+Full write-up: `outputs/ENHANCER-app-v89.md`.
+
+### M20 — **No "Restore purchases" control. This is a store blocker.** (M, blocked on #31)
+
+A person who buys Plus, changes phone and reinstalls **cannot get their purchase back**. The only
+route to a non-free tier in the app today is the `TEST_MODE` reset button, which does not exist in a
+store build. **Apple requires a restore control; Google expects one.** It belongs with Play Billing
+(#31) and must not be allowed to arrive after it — an app that takes money and cannot return the
+entitlement is the kind of thing a store review rejects and a customer writes a one-star review
+about.
+
+### M21 — The tier pill should count people, not name a plan (S)
+
+Account and Profiles both show a pill reading `Free plan`. With every feature free, that badge tells
+the reader nothing except that they have not paid — and Aaron's whole decision here is that free must
+not feel like a penalty. `1 of 1 person` says the only thing the plan still governs, and makes the
+upgrade legible at the moment it would actually matter.
+
+### M22 — No way back down a tier, and Help does not say so (S, Help only)
+
+Buying Pro when Plus was meant is unwindable only by the beta reset button. Store purchases are
+refunded through the store rather than the app, which is correct — but Help should say it, so nobody
+hunts for a control that should not exist.
+
+### M23 — The plans sheet is reachable only from Profiles (S)
+
+Both "View plans" buttons live on profile screens. Someone wondering what the app costs before
+committing their records to it has no path to the answer from Home, Settings or About.
+
+### M24 — What's New stacks above the plans sheet (S, pre-existing)
+
+Noticed during the Designer pass, not charged to app-v89 and not introduced by it: the update notice
+renders over an open plans sheet. Only reachable by opening the sheet without dismissing an update
+notice first. Worth looking at when the stacking order is next touched.
