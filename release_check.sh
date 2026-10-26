@@ -774,21 +774,56 @@ fi
 # was already running -- true on a developer's machine, false on a CI runner, so the gate failed on a
 # correct build and said "release check failed" about a missing web server. A gate that cries wolf is
 # a gate someone turns off. It starts its own if nothing is listening, and cleans up after itself.
+# ---- AND THE SUITES ACTUALLY HAVE TO RUN AGAINST THAT EXPORT. (app-v89) -----------------------
+# This gate printed "Suites will run against a clean export of HEAD ... (not the working tree)" and
+# then ran every suite against the working tree. `RELEASE_CHECK_TREE` was computed, announced and
+# exported, and NO SUITE HAS EVER READ IT -- each resolves index.html relative to its own file, and
+# the browser one hardcoded 127.0.0.1:8899, which on any machine with a dev server up is whatever
+# that server happens to be serving.
+#
+# The dirty-tree refusal at the top of this script meant index.html and sw.js were equal to HEAD
+# anyway, so the hole was never as wide as the claim was wrong. But `test/` is NOT covered by that
+# refusal: an edited-and-uncommitted suite was run by this gate while a different one sat in the
+# commit, which is app-v82's lesson ("what is on disk is not what ships") arriving through the one
+# door that was left open. A gate that overstates what it checked is worse than one that checks
+# less and says so.
+#
+# Fixed by making the claim true rather than by deleting it: the server is started INSIDE the
+# export on a dedicated port, FALSIFY_BASE points there, and each suite is run with the export as
+# its working directory so `HERE/..` resolves to the exported tree. Port 8897 rather than 8899 so
+# this can never collide with -- or silently inherit -- a developer's own server.
+RC_PORT=8897
 RC_SERVER_PID=""
-if ! curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:8899/index.html" 2>/dev/null; then
-  python3 -m http.server 8899 >/dev/null 2>&1 &
-  RC_SERVER_PID=$!
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:8899/index.html" 2>/dev/null && break
-    sleep 1
-  done
+if [ -n "${RELEASE_CHECK_TREE:-}" ] && [ -d "$RELEASE_CHECK_TREE" ]; then
+  RC_SUITE_DIR="$RELEASE_CHECK_TREE"
+else
+  RC_SUITE_DIR="$PWD"
+  echo "⚠️  WARNING: no clean export available; suites will run against the working tree."
 fi
+python3 -m http.server "$RC_PORT" --directory "$RC_SUITE_DIR" >/dev/null 2>&1 &
+RC_SERVER_PID=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$RC_PORT/index.html" 2>/dev/null && break
+  sleep 1
+done
 rc_stop_server() { [ -n "$RC_SERVER_PID" ] && kill "$RC_SERVER_PID" 2>/dev/null; RC_SERVER_PID=""; }
 trap rc_stop_server EXIT
+# Proof, not assumption: the thing on that port must be byte-identical to the export being gated.
+RC_SERVED_SUM=$(curl -fsS --max-time 5 "http://127.0.0.1:$RC_PORT/index.html" 2>/dev/null | md5sum | cut -d" " -f1)
+RC_EXPORT_SUM=$(md5sum "$RC_SUITE_DIR/index.html" 2>/dev/null | cut -d" " -f1)
+if [ -z "$RC_SERVED_SUM" ] || [ "$RC_SERVED_SUM" != "$RC_EXPORT_SUM" ]; then
+  echo "❌ RELEASE CHECK FAILED: the suite server is not serving the tree being gated."
+  echo "   Port $RC_PORT returned '$RC_SERVED_SUM', the export is '$RC_EXPORT_SUM'."
+  echo "   Running the browser suites now would prove something about a different file."
+  fail_note "the suite server was not serving the tree being gated"
+else
+  echo "ℹ️  Suite server on 127.0.0.1:$RC_PORT, serving $RC_SUITE_DIR (md5 ${RC_EXPORT_SUM:0:8} verified)."
+fi
+export FALSIFY_BASE="http://127.0.0.1:$RC_PORT/index.html"
 
-for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs; do
-  [ -f "$SUITE" ] || continue
-  if node "$SUITE" >"/tmp/rc-$(basename "$SUITE").log" 2>&1; then
+for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs; do
+  [ -f "$RC_SUITE_DIR/$SUITE" ] || continue
+  if (cd "$RC_SUITE_DIR" && node "$SUITE") >"/tmp/rc-$(basename "$SUITE").log" 2>&1; then
     echo "ℹ️  $(basename "$SUITE"): green."
   else
     echo "❌ RELEASE CHECK FAILED: $SUITE"
@@ -799,8 +834,8 @@ for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mj
 done
 rc_stop_server
 
-if [ -f "test/v75-no-other-patient.mjs" ]; then
-  if node test/v75-no-other-patient.mjs >/tmp/rc-no-other-patient.log 2>&1; then
+if [ -f "$RC_SUITE_DIR/test/v75-no-other-patient.mjs" ]; then
+  if (cd "$RC_SUITE_DIR" && node test/v75-no-other-patient.mjs) >/tmp/rc-no-other-patient.log 2>&1; then
     echo "ℹ️  No-other-patient check: clean."
   else
     echo "❌ RELEASE CHECK FAILED: one specific patient has leaked into this product."

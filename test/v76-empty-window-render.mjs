@@ -26,7 +26,10 @@ const { chromium } = (() => {
   throw new Error('playwright not found; tried:\n  ' + tries.join('\n  '));
 })();
 
-const BASE = 'http://127.0.0.1:8899/index.html';
+// app-v89: FALSIFY_BASE, like every other browser suite in this directory. It was the one
+// suite with the port hardcoded, which is how release_check.sh came to announce that it ran
+// against a clean export of HEAD while this one talked to whatever was on a developer's 8899.
+const BASE = process.env.FALSIFY_BASE || 'http://127.0.0.1:8899/index.html';
 let pass = 0, fail = 0;
 const t = (name, cond, detail) => {
   console.log('  ' + (cond ? 'PASS  ' : 'FAIL  ') + name + (detail ? '  |  ' + detail : ''));
