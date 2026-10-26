@@ -67,12 +67,21 @@ const seed = (tier, nProfiles) => `(() => {
     // report printed the row with an EMPTY Detail column, which looked exactly like the app
     // losing the reading. It was the fixture. Found by reading the rendered report rather than
     // by trusting the red. (No backticks in here: this comment lives inside a template literal.)
-    { id: 'e1', medId: 'temp', ts: d - 2*86400000 + 9*3600000, temp: 99.1, unit: 'Fahrenheit' },
-    { id: 'e2', medId: 'temp', ts: d - 2*86400000 + 15*3600000, temp: 99.2, unit: 'Fahrenheit' },
-    { id: 'e3', medId: 'temp', ts: d - 86400000 + 9*3600000, temp: 99.3, unit: 'Fahrenheit' },
-    { id: 'e4', medId: 'temp', ts: d - 86400000 + 15*3600000, temp: 99.4, unit: 'Fahrenheit' },
-    { id: 'e5', medId: 'temp', ts: d + 9*3600000, temp: 99.5, unit: 'Fahrenheit' },
-    { id: 'e6', medId: 'temp', ts: d + 15*3600000, temp: 99.6, unit: 'Fahrenheit' }
+    // A dose field as well, because the app's temperature writer sets one (index.html:3205).
+    // (No backticks in this comment: it lives inside a template literal, and that is the second
+    // time in this file. Section 7's
+    // fixtures were corrected for this first; leaving it out HERE had a subtler cost. Under the
+    // mutant that restores the export defect, these six went blank and 1.3b went red -- which
+    // reads as "temperatures were affected", and they were not. A suite whose failure signal
+    // overstates the blast radius is how the overstatement got into the changelog in the first
+    // place. With a realistic shape, this mutant now reddens only the two things that really
+    // broke, and section 1 keeps testing the one thing it is for: that the report is COMPLETE.
+    { id: 'e1', medId: 'temp', ts: d - 2*86400000 + 9*3600000, temp: 99.1, unit: 'Fahrenheit', dose: '99.1 \u00b0F' },
+    { id: 'e2', medId: 'temp', ts: d - 2*86400000 + 15*3600000, temp: 99.2, unit: 'Fahrenheit', dose: '99.2 \u00b0F' },
+    { id: 'e3', medId: 'temp', ts: d - 86400000 + 9*3600000, temp: 99.3, unit: 'Fahrenheit', dose: '99.3 \u00b0F' },
+    { id: 'e4', medId: 'temp', ts: d - 86400000 + 15*3600000, temp: 99.4, unit: 'Fahrenheit', dose: '99.4 \u00b0F' },
+    { id: 'e5', medId: 'temp', ts: d + 9*3600000, temp: 99.5, unit: 'Fahrenheit', dose: '99.5 \u00b0F' },
+    { id: 'e6', medId: 'temp', ts: d + 15*3600000, temp: 99.6, unit: 'Fahrenheit', dose: '99.6 \u00b0F' }
   ]));
   localStorage.setItem('chemowell-app-seen-version', 'x');
 })()`;
@@ -340,8 +349,14 @@ console.log('\n=== 5. No feature is sold -- and the free plan says it has them')
   // off -- but the claim that actually holds is the positive one: EVERY bullet on a paid card is
   // about how many PEOPLE you track, or says the features are included.
   const bullets = [...(BULLETS.Plus || []), ...(BULLETS.Pro || [])];
-  const ABOUT_PEOPLE = /\b(people|person|profiles?|patients?|relatives)\b|every feature/i;
-  const offList = bullets.filter(x => !ABOUT_PEOPLE.test(x));
+  // CONTAINING the word "people" is not the same as BEING about people. "Priority help by email
+  // for all 3 people" matched the old regex and sailed through, which is the deny-list's weakness
+  // wearing an allow-list's clothes. A paid bullet has exactly four jobs on this sheet -- state a
+  // count, say the people are kept separate, say the features are all included, or say who the
+  // plan is for -- so the opener is pinned to those four. It is deliberately brittle: changing
+  // the shape of what a paid plan claims SHOULD require touching this line.
+  const PAID_BULLET = /^(up to \d+ people\b|as many people as you need\b|each person\b|every feature\b|for a family\b)/i;
+  const offList = bullets.filter(x => !PAID_BULLET.test(x));
   t('5.1b  and every paid bullet is about how many people, not about a feature',
     bullets.length >= 4 && offList.length === 0,
     bullets.length < 4 ? 'only found ' + bullets.length + ' bullets: ' + JSON.stringify(bullets)
@@ -458,7 +473,10 @@ console.log('\n=== 6b. The recovery instructions work on a phone with nothing on
   const txt = lost ? JSON.stringify(lost) : '';
   // The caveat has to come BEFORE the first mention of Settings in the recovery step, or it is
   // advice arriving after the reader is already lost.
-  const iSetup = txt.search(/set it up|set up with any name|welcome screen/i);
+  // "welcome screen" used to be one of the alternatives here, and it made this check satisfiable
+  // by a noun. A mutant that deleted the instruction and kept the words "welcome screen" scored
+  // clean. Only an actual imperative counts now.
+  const iSetup = txt.search(/set it up with any name|set the app up with any name|\*\*set it up with any name first\*\*/i);
   const iRestore = txt.search(/Restore from a backup/);
   t('6b.2  Help warns you to set the app up first', iSetup > -1,
     'no mention of setting up before restoring');
@@ -471,13 +489,23 @@ console.log('\n=== 6b. The recovery instructions work on a phone with nothing on
   // unencrypted medical record and is then told to encrypt it first. The app's own screen gets
   // this right ("Put a password on it before you send it anywhere", above the buttons); Help had
   // inverted it. Order is the whole content of this check.
-  const iPassword = txt.search(/Protect the file with a password/);
-  const iSave = txt.search(/Save backup file/);
-  const iShare = txt.search(/share screen opens/i);
-  t('6b.4  the password comes before the save', iPassword > -1 && iSave > -1 && iPassword < iSave,
-    'password at ' + iPassword + ', save at ' + iSave);
-  t('6b.5  and well before anything says to send the file anywhere', iPassword > -1 && iShare > -1 && iPassword < iShare,
-    'password at ' + iPassword + ', share at ' + iShare);
+  // BY STEP, AND BY THE INSTRUCTION RATHER THAN THE FIRST MENTION. The first version searched
+  // character offsets in the joined blob for the PHRASE "Protect the file with a password" -- so a
+  // mutant that left a passive mention in step 1 and moved the real instruction to step 5, after
+  // the save AND the share, kept this green. The reader's experience is governed by which numbered
+  // step tells them to act, so that is what is measured: the part index of the imperative.
+  const parts = (lost ? [lost.q].concat(String(lost.body || '').split(' \n ')) : []);
+  const idxOf = (re) => parts.findIndex(x => re.test(x));
+  const pPassword = idxOf(/turn on \*\*Protect the file with a password\*\*/i);
+  const pSave = idxOf(/\*\*Save backup file\*\*/);
+  const pShare = idxOf(/share screen opens/i);
+  t('6b.4  the instruction to encrypt is the first step, before the save',
+    pPassword > -1 && pSave > -1 && pPassword < pSave, 'password step ' + pPassword + ', save step ' + pSave
+    + ' of ' + parts.length);
+  t('6b.5  and before anything tells you to send the file anywhere',
+    pPassword > -1 && pShare > -1 && pPassword < pShare, 'password step ' + pPassword + ', share step ' + pShare);
+  t('6b.6  and it is an instruction, not a mention', pPassword > -1,
+    'no step says to TURN ON the password; a passive mention does not count');
   await c.close();
 }
 
@@ -492,6 +520,18 @@ console.log('\n=== 7. Every kind of entry exports its VALUE, not just its name')
 // column or on row COUNT, and because the correction suites seed SUPERSEDED rows, which take the
 // one branch that still worked. So this section does the opposite of all of them: one entry of
 // every kind the chain has a branch for, none of them superseded, asserting the Detail column.
+//
+// EVERY FIXTURE CARRIES A `dose`, BECAUSE EVERY WRITER IN THE APP DOES. The first version of this
+// section omitted it, which made the defect look total -- and that overstatement travelled from
+// these fixtures into a code comment, a commit message and a CHANGELOG bullet that asked patients
+// to re-send medical paperwork that had been fine. The delta audit measured it against the live
+// app-v88 build: `temp` (3205), `blood_pressure` (3086), `weight` (3242), `paracentesis` (3228),
+// `bowel_movement` (3845) and `appetite` (3939) all set `dose` to the same string the branch
+// computes, so the overwrite was invisible for those. Only `radiation_session` and `symptom_*`
+// write `dose: null`, and those are the two that actually lost a value a reader would notice.
+//
+// So a fixture that omits a field the app always writes is not a simplification -- it is a
+// different program. Section 7c below pins the two that genuinely broke, by name.
 {
   const KINDS = `(() => {
     const day = new Date(); day.setHours(0,0,0,0); const d = day.getTime();
@@ -500,14 +540,14 @@ console.log('\n=== 7. Every kind of entry exports its VALUE, not just its name')
     localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, treatmentType: 'both', tourDone: true, installedAt: d - 30*86400000 }));
     localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
     localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([
-      { id: 'k1', medId: 'temp', ts: d + 3600000, temp: 99.1, unit: 'Fahrenheit' },
-      { id: 'k2', medId: 'blood_pressure', ts: d + 2*3600000, sys: 120, dia: 80 },
-      { id: 'k3', medId: 'weight', ts: d + 3*3600000, weight: 150, unit: 'lb' },
-      { id: 'k4', medId: 'paracentesis', ts: d + 4*3600000, liters: 3.5 },
-      { id: 'k5', medId: 'radiation_session', ts: d + 5*3600000 },
-      { id: 'k6', medId: 'bowel_movement', ts: d + 6*3600000, value: 'normal' },
-      { id: 'k7', medId: 'appetite', ts: d + 7*3600000, value: 'good' },
-      { id: 'k8', medId: 'symptom_nausea', ts: d + 8*3600000, severity: 'Moderate' },
+      { id: 'k1', medId: 'temp', ts: d + 3600000, temp: 99.1, unit: 'Fahrenheit', dose: '99.1 \u00b0F' },
+      { id: 'k2', medId: 'blood_pressure', ts: d + 2*3600000, sys: 120, dia: 80, dose: '120/80 mmHg' },
+      { id: 'k3', medId: 'weight', ts: d + 3*3600000, weight: 150, unit: 'lb', dose: '150 lb', weightReason: 'fluid_retention' },
+      { id: 'k4', medId: 'paracentesis', ts: d + 4*3600000, liters: 3.5, dose: '3.5 L' },
+      { id: 'k5', medId: 'radiation_session', ts: d + 5*3600000, dose: null, mg: 0 },
+      { id: 'k6', medId: 'bowel_movement', ts: d + 6*3600000, value: 'normal', dose: 'Normal' },
+      { id: 'k7', medId: 'appetite', ts: d + 7*3600000, value: 'good', dose: 'Good' },
+      { id: 'k8', medId: 'symptom_nausea', ts: d + 8*3600000, severity: 'Moderate', dose: null, mg: 0 },
       { id: 'k9', medId: 'tylenol', ts: d + 9*3600000, dose: '500 mg' }
     ]));
     localStorage.setItem('chemowell-app-seen-version', 'x');
@@ -535,6 +575,21 @@ console.log('\n=== 7. Every kind of entry exports its VALUE, not just its name')
   t('7.4  the paracentesis volume reads back exactly', detailOf('paracent') === '3.5 L drained', JSON.stringify(detailOf('paracent')));
   t('7.5  the dose label survives', (rows || []).some(r => String(r[3]) === '500 mg'),
     JSON.stringify((rows || []).map(r => r[3])));
+
+  // 7c. THE TWO THAT ACTUALLY BROKE. Everything else in this section would pass on the defective
+  // build, because its writer supplies a `dose` that happens to match. These two write
+  // `dose: null`, so they are the entire user-visible footprint of the defect and the only rows
+  // that discriminate. Named individually so a future regression says which one.
+  t('7c.1  a radiation session prints its number', detailOf('radiation') === 'Session 1',
+    JSON.stringify(detailOf('radiation')));
+  t('7c.2  a symptom prints its severity', detailOf('nausea') === 'Moderate',
+    JSON.stringify(detailOf('nausea')));
+
+  // 7c.3 is the regression this release's own fix introduced: once the suffix stopped being
+  // suppressed, the weight row started printing the RAW stored id to a clinician.
+  const w = detailOf('weight');
+  t('7c.3  the weight reason is a readable label, not a stored id', /^150 lb \(/.test(w) && !/_/.test(w),
+    JSON.stringify(w));
   await c.close();
 }
 
