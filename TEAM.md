@@ -53,6 +53,43 @@ second branch no cell is clicked, so the behaviour under test cannot fire and th
 for the wrong reason. It was not being taken — but preconditions are exactly where this hides,
 because nobody reads them as assertions.
 
+---
+
+## FOR ANY STRING A CAREGIVER READS, LOOK AT THE RENDERED PAGE ONCE. (app-v88, 2026-10-26)
+
+The pair to the rule above, and it comes from the same release.
+
+app-v88 shipped `**Log another day**` into the What's New notice every user is shown after an
+update. It rendered **with the asterisks visible**. Help topics are parsed for markdown; the
+changelog array is not — its strings go to the screen exactly as typed, and that was the only
+markdown in thirty-seven changelog points.
+
+**Four audit rounds, a Designer exemption and a PM read past it**, because every one of them read
+the array as *source*, where `**Log another day**` looks like formatting doing its job. The defect
+exists only on the rendered page.
+
+And the detail that makes it stick: in round one the auditor had **already dumped the app's
+rendered text into its own tool output**, and the literal asterisks were in that dump. It was
+scanning the output for row values and treated the changelog block as noise. Its own words:
+
+> *A dump I scanned for one thing is not a page I looked at.*
+
+**Output nobody reads as a whole is not coverage.** A grep over rendered text is still a grep.
+
+> **The rule: for any string a caregiver reads, open it once and read it as a reader.**
+> Not as a grep target, not as a diff, not as a field in a dump.
+
+Two further things this cost, both worth knowing:
+
+* **The guard written for it was itself too narrow, twice.** It caught `**` and backticks while
+  `*single*`, `_underscore_` and `[link](url)` all passed, and the check *named* for every release
+  entry never clicked through to them — one entry on screen, nine behind a tap. **Match the
+  character class, not the case list.** That is the third time on one release a pattern matched a
+  wording instead of a rule.
+* **A widening is a fix, so it falls under the rule above it.** Before trusting a broadened
+  pattern, re-run the mutants it *already* caught. A widening that holds its old ground is free;
+  one that quietly drops a case is a disarmed check wearing a bigger regex.
+
 Scribe's job every release:
 - Check off anything in `REQUESTS.md` that just shipped and was verified live; add any new
   request Aaron made this session, the moment he makes it, not at the end.
