@@ -111,9 +111,11 @@ const logAnotherDay = async (pg, key, backDays, value, note) => {
              // is rendered, which stays true on a build whose display expression always returns
              // blank, and an audit reverted exactly that and scored the whole gate green. A field
              // left in the shape object is an invitation to assert on it again, so it is gone.
-             // Captured again after the day is picked, below, because the box is a function of
-             // the day.
-             noteShown: (d.querySelector('[data-daily-modal-note]') || {}).value,
+             // NOT captured here. The box is a function of the day, and at this point no day has
+             // been picked -- so this read is always the opening day's note, never the one under
+             // test, and every assertion reads the capture taken after the pick instead. It was
+             // dead, and a dead field beside a live one of the same name is how the wrong one
+             // gets asserted on.
              text: (d.innerText || '') };
   });
   if (!shape) return { ok: false, why: 'modal did not open' };
@@ -538,7 +540,12 @@ await p7g.waitForTimeout(900);
     const inp = d2 && d2.querySelector('[data-daily-modal-note]');
     return inp ? inp.value : null;
   });
-  t('precondition: the same day was tapped a second time', again === true || again === 'reopened', String(again));
+  // ONLY `true`. Accepting 'reopened' here would be a latent free pass: that branch clicks no
+  // cell, so the reset cannot fire and the assertion below would hold for the wrong reason. It
+  // is not taken today -- an audit instrumented it and the second tap returns true -- but a
+  // precondition that tolerates "I did not do the thing" is the shape this suite has already
+  // been caught by twice.
+  t('precondition: the same day was actually tapped a second time', again === true, String(again));
   t('and the typed note survives a tap on the day that is already selected',
     boxNow === 'vomited twice', 'box shows ' + JSON.stringify(boxNow));
 }

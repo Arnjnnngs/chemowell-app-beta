@@ -19,6 +19,40 @@ it can't be skipped the way a remembered checklist item can be. For a release bi
 already be running a Developer/Auditor/PM as separate agents, Scribe can be its own fresh
 agent pass too, the same way Lead Auditor/Lead Designer scale up — but it never skips.
 
+---
+
+## AFTER ANY FIX, RE-RUN THE MUTANT THE PREVIOUS ROUND WAS CATCHING. (app-v88, 2026-10-26)
+
+**The most valuable finding across four audit rounds on app-v88 was not in the product.** It was a
+fix quietly retiring the check for the thing it had just fixed, **with nothing going red to say
+so.**
+
+What happened, exactly. The release's first blocker was the "log another day" dialog sending
+*delete the note* on every confirm. It was fixed, and a check was written that turned red without
+the fix. Two rounds later a different defect was fixed by clearing the note whenever the day
+changes — a correct fix, and it had a side effect nobody could see: **the check for the first
+blocker picks a day before confirming**, so the day-change reset now overwrote the value that
+check existed to test. Restoring the original blocker verbatim scored a clean pass. The guard was
+still there, still ran, still green — and would have stayed green on a build with the first defect
+back in it.
+
+Nothing in any suite, any gate or any review can tell you that has happened. A disarmed check and
+a passing check look identical. The only thing that catches it costs one line:
+
+> **When you fix something, re-run the mutant that the previous round's check was catching.**
+> Not the suite — the suite is green either way. The mutant.
+
+On the round this was found, the auditor re-ran every mutant the suite was already catching rather
+than assuming a one-expression calendar edit was local. Five were unchanged and one had got
+*stronger*. That took minutes and is the only reason app-v88 did not ship with its first blocker
+unguarded.
+
+Corollary, same release: **a precondition that tolerates "I did not do the thing" is a free pass.**
+One check accepted either "the day was tapped" or "I reopened the calendar instead", and on the
+second branch no cell is clicked, so the behaviour under test cannot fire and the assertion holds
+for the wrong reason. It was not being taken — but preconditions are exactly where this hides,
+because nobody reads them as assertions.
+
 Scribe's job every release:
 - Check off anything in `REQUESTS.md` that just shipped and was verified live; add any new
   request Aaron made this session, the moment he makes it, not at the end.
