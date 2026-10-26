@@ -355,8 +355,14 @@ console.log('\n=== 5. No feature is sold -- and the free plan says it has them')
   // count, say the people are kept separate, say the features are all included, or say who the
   // plan is for -- so the opener is pinned to those four. It is deliberately brittle: changing
   // the shape of what a paid plan claims SHOULD require touching this line.
-  const PAID_BULLET = /^(up to \d+ people\b|as many people as you need\b|each person\b|every feature\b|for a family\b)/i;
-  const offList = bullets.filter(x => !PAID_BULLET.test(x));
+  // TWO TESTS PER BULLET, because anchoring the opener alone let "Each person also gets priority
+  // email help, plus early access to new screens" through -- a support tier sold on a paid card,
+  // 62/62. The opener says what KIND of claim this is; the deny-list says no benefit may be
+  // smuggled into the rest of the sentence. The opener also accepts the obvious rewordings
+  // ("Track up to 3 people", "Up to 3 profiles") so it is brittle about MEANING, not phrasing.
+  const PAID_BULLET = /^(track |)?(up to \d+ (people|profiles)\b|as many (people|profiles) as you need\b|each person\b|every feature\b|for a family\b)/i;
+  const SMUGGLED = /\b(priority|email|support|help desk|access|screens?|reports?|backup|restore|csv|export|insights?|encrypted|sync|cloud|storage|discount)\b/i;
+  const offList = bullets.filter(x => !PAID_BULLET.test(x) || SMUGGLED.test(x));
   t('5.1b  and every paid bullet is about how many people, not about a feature',
     bullets.length >= 4 && offList.length === 0,
     bullets.length < 4 ? 'only found ' + bullets.length + ' bullets: ' + JSON.stringify(bullets)
@@ -494,7 +500,13 @@ console.log('\n=== 6b. The recovery instructions work on a phone with nothing on
   // mutant that left a passive mention in step 1 and moved the real instruction to step 5, after
   // the save AND the share, kept this green. The reader's experience is governed by which numbered
   // step tells them to act, so that is what is measured: the part index of the imperative.
-  const parts = (lost ? [lost.q].concat(String(lost.body || '').split(' \n ')) : []);
+  // THE NUMBERED STEPS, from their own hook. The previous version indexed [question, answer,
+  // ...steps, note], so a mutant that moved the encrypt-first caveat into the ANSWER and left the
+  // steps as navigate -> save -> share -> ... -> encrypt scored a clean 62/62. The reader follows
+  // the circled numbers; this reads the circled numbers.
+  const allSteps = await pg.evaluate(() => (window.__v86Test && window.__v86Test.helpSteps) ? window.__v86Test.helpSteps() : {});
+  const parts = (allSteps['priv-lost-phone'] || []);
+  t('6b.3b  precondition: the numbered steps were read as steps', parts.length >= 4, parts.length + ' steps');
   const idxOf = (re) => parts.findIndex(x => re.test(x));
   const pPassword = idxOf(/turn on \*\*Protect the file with a password\*\*/i);
   const pSave = idxOf(/\*\*Save backup file\*\*/);
@@ -546,8 +558,14 @@ console.log('\n=== 7. Every kind of entry exports its VALUE, not just its name')
       { id: 'k4', medId: 'paracentesis', ts: d + 4*3600000, liters: 3.5, dose: '3.5 L' },
       { id: 'k5', medId: 'radiation_session', ts: d + 5*3600000, dose: null, mg: 0 },
       { id: 'k6', medId: 'bowel_movement', ts: d + 6*3600000, value: 'normal', dose: 'Normal' },
-      { id: 'k7', medId: 'appetite', ts: d + 7*3600000, value: 'good', dose: 'Good' },
+      // 'little', not 'good': APPETITE_LABELS is { normal, little, none } (index.html:3915) and
+      // 'good' is not a value the app can store. N3's own lesson, half-applied the first time.
+      { id: 'k7', medId: 'appetite', ts: d + 7*3600000, value: 'little', dose: 'Little to none' },
       { id: 'k8', medId: 'symptom_nausea', ts: d + 8*3600000, severity: 'Moderate', dose: null, mg: 0 },
+      // The changelog promises "the severity OR BODY SITE" is fixed, and only severity was
+      // guarded -- dropping site and freq from the branch scored 62/62 while the bullet claimed
+      // otherwise. A promise to a patient needs a check behind every clause of it.
+      { id: 'k10', medId: 'symptom_skin_reaction', ts: d + 10*3600000, severity: 'Mild', site: 'left forearm', freq: 3, dose: null, mg: 0 },
       { id: 'k9', medId: 'tylenol', ts: d + 9*3600000, dose: '500 mg' }
     ]));
     localStorage.setItem('chemowell-app-seen-version', 'x');
@@ -560,7 +578,7 @@ console.log('\n=== 7. Every kind of entry exports its VALUE, not just its name')
   await pg.waitForTimeout(2400);
 
   const rows = await pg.evaluate(() => (window.__v86Test && window.__v86Test.exportRows) ? window.__v86Test.exportRows() : null);
-  t('7.0  precondition: nine entries reached the export', Array.isArray(rows) && rows.length === 9,
+  t('7.0  precondition: all ten entries reached the export', Array.isArray(rows) && rows.length === 10,
     Array.isArray(rows) ? rows.length + ' rows' : String(rows));
 
   const blank = (rows || []).filter(r => !String(r[3] || '').trim()).map(r => r[2]);
@@ -584,6 +602,9 @@ console.log('\n=== 7. Every kind of entry exports its VALUE, not just its name')
     JSON.stringify(detailOf('radiation')));
   t('7c.2  a symptom prints its severity', detailOf('nausea') === 'Moderate',
     JSON.stringify(detailOf('nausea')));
+  const skin = detailOf('skin');
+  t('7c.2b  and its body site and episode count', /Mild/.test(skin) && /left forearm/.test(skin) && /3 episodes/.test(skin),
+    JSON.stringify(skin));
 
   // 7c.3 is the regression this release's own fix introduced: once the suffix stopped being
   // suppressed, the weight row started printing the RAW stored id to a clinician.

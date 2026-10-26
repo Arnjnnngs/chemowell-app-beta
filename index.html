@@ -9317,7 +9317,7 @@ const CHANGELOG = [
       'The printable doctor’s report used to cost $4.99. It does not any more. It was the only feature in ChemoWell you had to pay for, and charging for a tidy printout of your own records — the one you take to an appointment — was the wrong call.',
       'Backup and restore is free too, and always was. The plans screen said otherwise, which was simply wrong, and it has been corrected.',
       'Paying now adds one thing only: more people to look after. One person is free forever, with nothing held back and nothing that expires. Plus covers three, Pro as many as you need.',
-      'Also fixed, found while making the report free: **radiation sessions and symptoms** came out of the report and the spreadsheet with an empty details column — the session number missing, and the severity or body site missing from a symptom. Doses, temperatures, blood pressures, weights and the daily answers were never affected. It had been wrong since October 24th. If you sent a care team a report in the last few days that was meant to show radiation sessions or symptom details, it is worth sending a fresh one.',
+      'Also fixed, found while making the report free: radiation sessions and symptoms came out of the report and the spreadsheet with an empty details column — the session number missing, and the severity or body site missing from a symptom. A weight logged with a reason kept the weight but lost the reason. Doses, temperatures, blood pressures and the daily bowel and appetite answers were never affected. It had been wrong since October 24th. If you sent a care team a report in the last few days that was meant to show radiation sessions, symptom details or why a weight was taken, it is worth sending a fresh one.',
       'If you saved a backup file, your records come back onto a new phone. The help page said that feature had not been built yet. It had. That page now tells you how to save one, how to put a password on it, and how to get everything onto a new phone.',
     ] },
   { v: 'app-v88', date: 'Oct 25, 2026', title: 'Filling in a day you missed, and a note box that finally exists',
@@ -10609,8 +10609,13 @@ function buildExportRows() {
     //     a shape the app never writes, and the overstatement went from a test fixture into a
     //     comment, a commit message and a changelog entry that asked patients to re-send medical
     //     paperwork they did not need to re-send.
-    //   * An entry that WAS superseded skipped the else, so an ordinary corrected dose printed
-    //     only "(corrected later -- superseded)" with no dose in front of it.
+    //   * The mirror case was written up here as "a corrected dose printed only the marker", and
+    //     THAT NEVER HAPPENED EITHER. Only `SUPERSEDABLE_MED_IDS` -- bowel_movement and appetite
+    //     (11915) -- can be superseded at all, a dose cannot, and both of those write a `dose`
+    //     too, so a corrected bowel answer printed "Normal (corrected later -- superseded)"
+    //     identically before and after. Measured against origin/main, not reasoned about. The
+    //     claim is struck rather than reworded: the chain was genuinely broken, and it had
+    //     exactly one visible consequence, not two.
     //
     // Live since app-v86 (0f73911), through v87 and v88, and confirmed against origin/main rather
     // than assumed. It survived because every guard on this function asserted on the NOTE column
@@ -13625,6 +13630,12 @@ if (typeof window !== 'undefined') {
     // returns. Listing data sources can never close that -- a ninth literal appears the next
     // time somebody types a sentence into the renderer. The version with no next surface reads
     // the rendered screen instead, and that is its own task rather than another hook.
+    // `steps` separately, not only folded into `body`. A guard that measured the ORDER of the
+    // recovery instructions indexed the joined blob, where position 0 is the question and 1 is the
+    // answer -- so a mutant that put the encrypt-first caveat in the ANSWER and left the numbered
+    // steps as save -> share -> ... -> encrypt scored clean. The reader obeys the numbered list;
+    // the guard has to read the numbered list.
+    helpSteps: () => { const o = {}; helpAllTopics().forEach(tp => { o[tp.id] = (tp.steps || []).map(String); }); return o; },
     helpProse: () => helpAllTopics().map(tp => ({ id: tp.id, q: String(tp.q || ''),
       body: [tp.a].concat(tp.steps || []).concat(tp.note ? [tp.note] : [])
         .concat((tp.branches || []).flatMap(br => [br.when].concat(br.steps || [])))

@@ -821,7 +821,17 @@ else
 fi
 export FALSIFY_BASE="http://127.0.0.1:$RC_PORT/index.html"
 
-for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs; do
+# test/v84-whatsnew.mjs IS IN THIS LIST BECAUSE IT CAUGHT THE SAME DEFECT TWICE AND NOBODY RAN IT.
+# app-v88 shipped literal `**Log another day**` into the patient-facing What's New notice past four
+# audit rounds; the suite written in response caught it, and was never added here. One release
+# later app-v89 shipped `**radiation sessions and symptoms**` into the same notice -- in the commit
+# whose message was "The changelog told patients something untrue" -- and that same suite reported
+# 98/100 the whole time, because nothing ran it. Every audit pass on app-v89 listed it under "not
+# checked".
+#
+# A guard that runs when somebody remembers is the same as no guard. That sentence is already in
+# this file twice, about other suites. This is the third.
+for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs; do
   [ -f "$RC_SUITE_DIR/$SUITE" ] || continue
   if (cd "$RC_SUITE_DIR" && node "$SUITE") >"/tmp/rc-$(basename "$SUITE").log" 2>&1; then
     echo "ℹ️  $(basename "$SUITE"): green."
