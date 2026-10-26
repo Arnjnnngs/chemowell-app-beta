@@ -1,5 +1,29 @@
 # REQUESTS.md — Aaron's open requests
 
+## 2026-10-25/26 — the pricing decision
+
+- [x] **"agreed. make backup free for all tiers. I might have read that wrong earlier. free
+  shouldn't be penalized bc they didn't pay. after all, this is in Brandi's memory and people
+  should be able to use ALL the features if they are a single user. its the most important thing
+  to me. not money"** (2026-10-25). **Shipped in app-v89.** The paid axis is now HOW MANY PEOPLE
+  you track and nothing else: Free is the whole app for one person forever, Plus is three, Pro is
+  as many as you need. The printable report was the app's only feature paywall and is gone; backup
+  & restore turned out to have been free all along and only the plans sheet said otherwise.
+
+- [x] **"no, I don't want to have to put out separate things saying this one is free but then hit
+  them with other stuff later to purchase. thats not how a business should work"** (2026-10-25),
+  rejecting my suggestion of a free-only launch. He was right and I said so. A ladder whose only
+  rung is a profile count cannot become that, because there is nothing left to take away later.
+
+- [ ] **"I can't register yet. still waiting on DUNS number... I don't want to rush this, but I
+  would like to be in a good position when its ready... don't speed it up and it will just break
+  on play store"** (2026-10-25). Aaron's own action once the DUNS number arrives: register the
+  Play Console developer account under the LLC. The store blockers on this side are tracked as
+  tasks #27-#31 and in `BACKLOG.md` — and app-v89's Enhancer pass added a new one, M20: there
+  is **no Restore purchases control**, which Apple requires and Google expects, and which must land
+  with Play Billing rather than after it.
+
+
 ## 2026-09-12/13 — the medication description database
 
 - [x] **"The med desc should also fill automatically with what it's for based on the website it

@@ -745,3 +745,23 @@ committing their records to it has no path to the answer from Home, Settings or 
 Noticed during the Designer pass, not charged to app-v89 and not introduced by it: the update notice
 renders over an open plans sheet. Only reachable by opening the sheet without dismissing an update
 notice first. Worth looking at when the stacking order is next touched.
+
+### M25 — `release_check.sh`: the chain gate still hides code problems underneath it (M)
+
+**Half-fixed in app-v89, and the other half is deliberately not attempted inside a release this
+script is gating.** The gate fails in two ways: most checks set a flag and carry on, so one run
+surfaces every problem of that kind; a handful call `exit 1` on the spot. Both used to print one
+red line and exit 1, so an operator reading the second kind believed they had the complete list,
+fixed the one thing, re-ran, and met the next failure — serially, one release-blocking item per
+run, each looking like the last.
+
+app-v89 made the difference **visible**: an early stop now prints `⛔ STOPPED EARLY — the checks
+after this point did NOT run`, and an accumulating run ends with every failure listed together.
+
+What remains: the **Quality Chain gate** — the check that an independent `AUDIT*` report and `PM*`
+sign-off exist for this version — stops the run, which is the normal mid-release state. So a
+missing audit report hides the delete ratchet, the 16px floor, the README-row check and
+`v75-no-other-patient` underneath it. The fix is to run the independent code checks regardless of
+chain state and report everything at the end, which is a restructure of a 790-line script. The
+four prerequisite stops (unresolvable baseline, unparseable `CACHE`) must **stay** hard: a gate
+that claims to have checked something it could not is the failure that rule exists for.

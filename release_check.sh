@@ -13,6 +13,40 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 FAIL=0
+FAILED_LIST=""
+
+# ---- UNDER-REPORTING. (app-v88 PM, assigned to app-v89's first commit) -------------------------
+# This gate had two ways of failing and told the reader nothing about which one it had just done.
+#
+#   * Most checks set FAIL=1 and carry on, so one run surfaces every problem of that kind.
+#   * A handful -- an unresolvable baseline, an unparseable CACHE, and the whole Quality Chain
+#     gate -- call `exit 1` on the spot, because what follows them would otherwise be checked
+#     against a baseline that does not exist or reported against a chain whose state is unknown.
+#
+# Both printed one red line and exited 1. So an operator reading the second kind believed they
+# had the complete list, fixed the one thing, re-ran, and met the next failure -- serially, one
+# release-blocking item per run, each one looking like the last. That is the under-reporting.
+#
+# The hard stops stay hard: a gate must never claim to have checked something it could not. What
+# changes is that they now SAY they stopped early, and that a run which merely accumulated
+# failures ends with all of them listed together instead of a bare exit code.
+#
+# What is NOT fixed here, deliberately, and is logged as M25 in BACKLOG.md: the Quality Chain gate
+# still stops the run, so a missing audit report hides any code problem underneath it. Fixing that
+# means the independent code checks run regardless of chain state, which is a restructure of a
+# 790-line script and not something to attempt inside a release it is gating.
+fail_note() {
+  FAIL=1
+  FAILED_LIST="$FAILED_LIST
+   - $1"
+}
+stopped_early() {
+  echo ""
+  echo "⛔ STOPPED EARLY -- the checks after this point did NOT run."
+  echo "   This is not the complete list of what is wrong with the release; it is the first thing"
+  echo "   that made the rest of the gate impossible to evaluate. Fix it and re-run."
+  exit 1
+}
 
 # ---- WHAT IS ON DISK IS NOT WHAT SHIPS. (app-v82 audit, BLOCK 3) ------------------------------
 # Every gate in this project has always run against the WORKING TREE, and the working tree is not
@@ -36,7 +70,7 @@ if [ -n "$DIRTY" ]; then
   echo "   This gate must judge what will actually ship, not what happens to be on disk."
   echo "   Commit the change (or restore the file) and run this again."
   echo "   If a falsification mutant is still applied, THAT is what this just caught."
-  FAIL=1
+  fail_note "the working tree is dirty, or a falsification mutant is still applied"
 fi
 
 # And the suites run against a clean export of HEAD, not the working copy, for the same reason.
@@ -135,7 +169,7 @@ if [ -n "${BASE_REF:-}" ]; then
   BASE="$BASE_REF"
   if ! git rev-parse --verify --quiet "$BASE" >/dev/null; then
     echo "❌ RELEASE CHECK FAILED: BASE_REF='$BASE' was set explicitly but does not resolve."
-    exit 1
+    stopped_early
   fi
   echo "ℹ️  Baseline: BASE_REF override -> $BASE"
 elif [ -n "$PUB_COMMIT" ] && git rev-parse --verify --quiet "$PUB_COMMIT^{commit}" >/dev/null; then
@@ -152,7 +186,7 @@ elif [ -n "$PUB_COMMIT" ] && git rev-parse --verify --quiet "$PUB_COMMIT^{commit
     echo "   It records cache '$PUB_CACHE' for commit ${PUB_COMMIT:0:7}, but that commit's sw.js"
     echo "   actually says '$REC_CACHE'. Do not hand-edit this file -- re-run ./mark_published.sh"
     echo "   against the commit that was really uploaded."
-    exit 1
+    stopped_early
   fi
   BASE="$PUB_COMMIT"
   echo "ℹ️  Baseline: PUBLISHED.json -> $PUB_VERSION ($PUB_CACHE) at ${PUB_COMMIT:0:7}"
@@ -257,7 +291,7 @@ if [ "$CACHE_NEW" = "multi" ]; then
   echo "❌ RELEASE CHECK FAILED: ./sw.js defines CACHE more than once (outside comments)."
   echo "   This gate will not guess which one the service worker actually uses. Leave exactly one"
   echo "   active definition and re-run."
-  exit 1
+  stopped_early
 fi
 
 # PM-1 on the release gate (app-v55 PM gate): "none" is a sentinel, and a sentinel that can never
@@ -272,7 +306,7 @@ if [ "$CACHE_NEW" = "none" ]; then
   echo "   Expected a line matching:  const CACHE = '…';  (single quotes)."
   echo "   This gate cannot verify a cache bump it cannot parse, and it will not guess. Fix sw.js"
   echo "   (or update this script's pattern if the format changed on purpose) and re-run."
-  exit 1
+  stopped_early
 fi
 if [ "$CACHE_OLD" = "none" ] || [ "$CACHE_OLD" = "multi" ]; then
   echo "⚠️  WARNING: could not read a single CACHE constant out of sw.js at $BASE_LABEL"
@@ -289,7 +323,7 @@ if [ -n "$INDEX_CHANGED" ] && [ "$CACHE_OLD" = "$CACHE_NEW" ]; then
   echo
   echo "   Fix: bump the CACHE constant at the top of sw.js (e.g. 'chemowell-app-v41-1'),"
   echo "   then re-run this script."
-  FAIL=1
+  fail_note "the sw.js CACHE constant did not move with index.html"
 fi
 
 # Belt and braces on the same failure, from the other direction: the value about to be published
@@ -319,7 +353,7 @@ if [ -n "$INDEX_CHANGED" ] && [ "$BASE" != "HEAD" ]; then
       echo "   published history at $BASE_LABEL). Re-using a retired cache key strands installed apps"
       echo "   the copy they already hold. Pick a value that has never been used."
     fi
-    FAIL=1
+    fail_note "the cache key reuses a value an earlier release already published"
   fi
 fi
 
@@ -362,7 +396,7 @@ if [ -n "$INDEX_CHANGED" ] && [ -f README.md ]; then
   if [ -z "$ROW" ]; then
     echo "❌ RELEASE CHECK FAILED: README.md has no version-history row for $NEW_VER."
     echo "   Two releases (app-v54, app-v55) shipped with no row at all before this check existed."
-    FAIL=1
+    fail_note "no README version-history row for this release"
   else
     if ! sed -n "${ROW}p" README.md | grep -qF "$CACHE_NEW"; then
       echo "❌ RELEASE CHECK FAILED: README.md's $NEW_VER row does not mention the cache key that"
@@ -376,7 +410,7 @@ if [ -n "$INDEX_CHANGED" ] && [ -f README.md ]; then
       fi
       echo "   Fix the row. A version-history entry wrong about the one fact it exists to record is"
       echo "   worse than no entry, because it will be believed."
-      FAIL=1
+      fail_note "the README row for this release says nothing real"
     fi
   fi
 fi
@@ -476,7 +510,7 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
     echo "   Every suite passing is SELF-verification. CLAUDE.md rule 5 requires an independent"
     echo "   Auditor pass and PM sign-off before this ships, with no size exception. Permission to"
     echo "   push is not that gate."
-    exit 1
+    stopped_early
   fi
   # ---- THE DESIGN-TIME SEATS MUST HAVE RUN TOO ----------------------------------------------
   # Added 2026-09-14, and it is the second half of a promise this repo had already written down
@@ -514,7 +548,7 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
       echo "   These run BEFORE the build, on the screens about to change (TEAM-ORDER.md)."
       echo "   An Enhancer pass that found nothing is written down as 'nothing this time' and still"
       echo "   counts. Silence does not -- that is the failure this gate exists for."
-      FAIL=1
+      fail_note "a Quality Chain seat produced no report"
     else
       # A FILE THAT EXISTS IS NOT A PASS THAT RAN. Three lines is not a threshold anyone should be
       # proud of; it is here because `touch outputs/DESIGN-app-v81.md` would otherwise clear a gate
@@ -532,7 +566,7 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
         if [ "$_lines" -lt 3 ]; then
           echo "❌ RELEASE CHECK FAILED: $_f is empty or near-empty."
           echo "   A file with nothing in it is how a skipped seat looks from outside."
-          FAIL=1
+          fail_note "a chain report file is empty"
         fi
       done
     fi
@@ -640,7 +674,7 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
     echo "       VERDICT: SHIP        (or: VERDICT: DO NOT SHIP)"
     echo "   A report the gate cannot read is not a report that raises no objection. Two live"
     echo "   refusals once vanished from this output that way."
-    exit 1
+    stopped_early
   fi
 
   BLOCKING=""
@@ -679,7 +713,7 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
     echo "   These say DO NOT SHIP:$BLOCKING"
     echo "   A refusal is cleared by re-running that stage against a LATER commit and it saying"
     echo "   SHIP — not by adding another file beside it."
-    exit 1
+    stopped_early
   fi
 
   CURRENT_AUDIT=""
@@ -708,7 +742,7 @@ if [ -n "$RULE5_CHANGED" ] && [ -n "$GATE_VERSION" ]; then
     fi
     echo "   Re-run that stage against the current tree, or drop the unaudited work to a later"
     echo "   version. Code that ships must be code someone read."
-    exit 1
+    stopped_early
   fi
   AUDIT_REPORT="$CURRENT_AUDIT"
   PM_REPORT="$CURRENT_PM"
@@ -760,7 +794,7 @@ for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mj
     echo "❌ RELEASE CHECK FAILED: $SUITE"
     sed -n '/FAIL/p' "/tmp/rc-$(basename "$SUITE").log" | head -10 | sed 's/^/   /'
     tail -4 "/tmp/rc-$(basename "$SUITE").log" | sed 's/^/   /'
-    FAIL=1
+    fail_note "a required suite failed (see the log path above)"
   fi
 done
 rc_stop_server
@@ -772,16 +806,21 @@ if [ -f "test/v75-no-other-patient.mjs" ]; then
     echo "❌ RELEASE CHECK FAILED: one specific patient has leaked into this product."
     sed -n '/FAIL/p' /tmp/rc-no-other-patient.log | head -12 | sed 's/^/   /'
     echo "   Full output: /tmp/rc-no-other-patient.log -- Rule 0 in CLAUDE.md explains each shape."
-    FAIL=1
+    fail_note "one specific patient has leaked into this product"
   fi
 else
   echo "❌ RELEASE CHECK FAILED: test/v75-no-other-patient.mjs is missing."
   echo "   It is the only mechanical guard against one patient's app leaking into this product."
   echo "   Deleting it is not a way to pass this gate."
-  FAIL=1
+  fail_note "test/v75-no-other-patient.mjs is missing"
 fi
 
 if [ "$FAIL" -eq 1 ]; then
+  if [ -n "$FAILED_LIST" ]; then
+    echo ""
+    echo "❌ RELEASE CHECK FAILED. Everything this run found, in one place:$FAILED_LIST"
+    echo "   The whole gate ran, so this IS the complete list -- fix all of it before re-running."
+  fi
   exit 1
 fi
 
