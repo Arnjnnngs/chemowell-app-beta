@@ -360,13 +360,34 @@ console.log('\n=== 5. No feature is sold -- and the free plan says it has them')
   // 62/62. The opener says what KIND of claim this is; the deny-list says no benefit may be
   // smuggled into the rest of the sentence. The opener also accepts the obvious rewordings
   // ("Track up to 3 people", "Up to 3 profiles") so it is brittle about MEANING, not phrasing.
-  const PAID_BULLET = /^(track |)?(up to \d+ (people|profiles)\b|as many (people|profiles) as you need\b|each person\b|every feature\b|for a family\b)/i;
-  const SMUGGLED = /\b(priority|email|support|help desk|access|screens?|reports?|backup|restore|csv|export|insights?|encrypted|sync|cloud|storage|discount)\b/i;
-  const offList = bullets.filter(x => !PAID_BULLET.test(x) || SMUGGLED.test(x));
-  t('5.1b  and every paid bullet is about how many people, not about a feature',
-    bullets.length >= 4 && offList.length === 0,
-    bullets.length < 4 ? 'only found ' + bullets.length + ' bullets: ' + JSON.stringify(bullets)
-                       : 'off-list: ' + JSON.stringify(offList));
+  // PINNED EXACTLY, AFTER TWO CLEVERER RULES FAILED IN BOTH DIRECTIONS. An opener allow-list let
+  // "Up to 3 people, each with a printable summary for every appointment" through; adding a
+  // deny-list of benefit words then reddened an innocent separation bullet that happened to say
+  // "no extra screens to unlock". Every regex that is loose enough to accept tomorrow's honest
+  // rewording is loose enough to accept tomorrow's feature.
+  //
+  // So these six strings ARE the test. What a paid plan claims is a business decision, it changes
+  // about once a year, and Aaron's decision was that it claims ONE thing: more people. Changing
+  // it should require editing this list on purpose -- which is the whole point, not a cost.
+  const EXPECTED_PAID = {
+    Plus: ['Up to 3 people',
+           'Each person kept completely separate \u2014 their own medications, their own history, their own reminders',
+           'Every feature, for all three'],
+    Pro:  ['As many people as you need',
+           'For a family caring for several relatives, or a professional caregiver with several patients',
+           'Every feature, for all of them']
+  };
+  const offList = [];
+  for (const tier of ['Plus', 'Pro']) {
+    const got = BULLETS[tier] || [];
+    const want = EXPECTED_PAID[tier];
+    if (got.length !== want.length) { offList.push(tier + ': ' + got.length + ' bullets, expected ' + want.length); continue; }
+    want.forEach((w, i) => { if (got[i] !== w) offList.push(tier + '[' + i + ']: ' + JSON.stringify(got[i])); });
+  }
+  t('5.1b  the paid cards claim exactly what Aaron decided they claim, and nothing else',
+    bullets.length === 6 && offList.length === 0,
+    offList.length ? 'changed or added: ' + JSON.stringify(offList)
+                   : 'found ' + bullets.length + ' bullets, expected 6');
 
   // "coming later" beat the old three-word list. Matching on the IDEA -- a future tense next to a
   // bullet -- rather than on the three phrasings this release happened to delete.
@@ -508,16 +529,23 @@ console.log('\n=== 6b. The recovery instructions work on a phone with nothing on
   const parts = (allSteps['priv-lost-phone'] || []);
   t('6b.3b  precondition: the numbered steps were read as steps', parts.length >= 4, parts.length + ' steps');
   const idxOf = (re) => parts.findIndex(x => re.test(x));
+  // PINNING THREE LITERALS WAS NOT ENOUGH. Two mutants restored blocker B2 at a green board:
+  // one added a new FIRST step telling you to save and email in different words (so it sorted
+  // ahead of the three literals, unchecked), and one satisfied the imperative regex from inside
+  // a NEGATION -- "you do not need to turn on **Protect the file with a password**". So the rule
+  // is stated positively and absolutely: step one IS the encrypt step, nothing before it mentions
+  // moving the file at all, and the sentence is not a denial.
   const pPassword = idxOf(/turn on \*\*Protect the file with a password\*\*/i);
-  const pSave = idxOf(/\*\*Save backup file\*\*/);
-  const pShare = idxOf(/share screen opens/i);
-  t('6b.4  the instruction to encrypt is the first step, before the save',
-    pPassword > -1 && pSave > -1 && pPassword < pSave, 'password step ' + pPassword + ', save step ' + pSave
-    + ' of ' + parts.length);
-  t('6b.5  and before anything tells you to send the file anywhere',
-    pPassword > -1 && pShare > -1 && pPassword < pShare, 'password step ' + pPassword + ', share step ' + pShare);
-  t('6b.6  and it is an instruction, not a mention', pPassword > -1,
-    'no step says to TURN ON the password; a passive mention does not count');
+  const MOVES_THE_FILE = /\b(sav(e|ing)|send|email|e-mail|share|shares|upload|back it up|backup file|attach)\b/i;
+  const NEGATED = /\b(do not|don'?t|no need|not necessary|optional|skip)\b/i;
+  t('6b.4  step one IS the instruction to encrypt', pPassword === 0,
+    'encrypt is step ' + pPassword + ' of ' + parts.length + ': ' + JSON.stringify((parts[0] || '').slice(0, 90)));
+  const earlyMovers = parts.slice(0, Math.max(pPassword, 0)).filter(x => MOVES_THE_FILE.test(x));
+  t('6b.5  and no step before it mentions moving the file anywhere', earlyMovers.length === 0,
+    JSON.stringify(earlyMovers));
+  t('6b.6  and it is an instruction, not a denial of one',
+    pPassword > -1 && !NEGATED.test(parts[pPassword] || ''),
+    JSON.stringify((parts[Math.max(pPassword, 0)] || '').slice(0, 120)));
   await c.close();
 }
 
@@ -545,6 +573,22 @@ console.log('\n=== 7. Every kind of entry exports its VALUE, not just its name')
 // So a fixture that omits a field the app always writes is not a simplification -- it is a
 // different program. Section 7c below pins the two that genuinely broke, by name.
 {
+  // ---- NOTES ON THE TWO SYMPTOM FIXTURES, kept OUT of the template literal below. ------------
+  // Three separate breakages of this file have been a backtick inside a comment inside that
+  // template, so the comments live out here now. A rule I keep re-promising is not a mechanism;
+  // moving the text somewhere it cannot do harm is.
+  //
+  // k8 is a BARE SYMPTOM, which is all that ten of the eleven symptom types can ever be.
+  // logSymptom is called from exactly one place (index.html:3309) and passes site and severity
+  // ONLY when symptomType === 'skin_reaction'. Help says the same at 4158. So an empty Detail for
+  // it is CORRECT, on both builds, and 7.1 excludes it by name instead of pretending otherwise.
+  // The previous version of this fixture gave nausea a severity -- a combination the app cannot
+  // produce -- and that is precisely how the changelog came to tell every patient that their
+  // symptom details had been missing when only a skin reaction's ever were.
+  //
+  // k10 is the one symptom that CAN carry a detail. Severity is stored lowercase (5721: the
+  // screen capitalises it with CSS, the export does not), and the freq field has never been
+  // written by any version of this app, so it is not seeded here either.
   const KINDS = `(() => {
     const day = new Date(); day.setHours(0,0,0,0); const d = day.getTime();
     localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
@@ -561,11 +605,8 @@ console.log('\n=== 7. Every kind of entry exports its VALUE, not just its name')
       // 'little', not 'good': APPETITE_LABELS is { normal, little, none } (index.html:3915) and
       // 'good' is not a value the app can store. N3's own lesson, half-applied the first time.
       { id: 'k7', medId: 'appetite', ts: d + 7*3600000, value: 'little', dose: 'Little to none' },
-      { id: 'k8', medId: 'symptom_nausea', ts: d + 8*3600000, severity: 'Moderate', dose: null, mg: 0 },
-      // The changelog promises "the severity OR BODY SITE" is fixed, and only severity was
-      // guarded -- dropping site and freq from the branch scored 62/62 while the bullet claimed
-      // otherwise. A promise to a patient needs a check behind every clause of it.
-      { id: 'k10', medId: 'symptom_skin_reaction', ts: d + 10*3600000, severity: 'Mild', site: 'left forearm', freq: 3, dose: null, mg: 0 },
+      { id: 'k8', medId: 'symptom_nausea', ts: d + 8*3600000, dose: null, mg: 0 },
+      { id: 'k10', medId: 'symptom_skin_reaction', ts: d + 10*3600000, severity: 'mild', site: 'left forearm', dose: null, mg: 0 },
       { id: 'k9', medId: 'tylenol', ts: d + 9*3600000, dose: '500 mg' }
     ]));
     localStorage.setItem('chemowell-app-seen-version', 'x');
@@ -581,9 +622,13 @@ console.log('\n=== 7. Every kind of entry exports its VALUE, not just its name')
   t('7.0  precondition: all ten entries reached the export', Array.isArray(rows) && rows.length === 10,
     Array.isArray(rows) ? rows.length + ' rows' : String(rows));
 
+  // Everything EXCEPT a bare symptom, which has nothing to say and correctly says nothing.
   const blank = (rows || []).filter(r => !String(r[3] || '').trim()).map(r => r[2]);
-  t('7.1  every single one carries a value in the Detail column', blank.length === 0,
-    blank.length ? 'BLANK Detail for: ' + blank.join(', ') : '');
+  const unexpectedBlank = blank.filter(n => !/nausea/i.test(n));
+  t('7.1  every entry that has something to report carries it', unexpectedBlank.length === 0,
+    unexpectedBlank.length ? 'BLANK Detail for: ' + unexpectedBlank.join(', ') : '');
+  t('7.1b  and a bare symptom is correctly blank, on both builds', blank.some(n => /nausea/i.test(n)),
+    'blank rows: ' + JSON.stringify(blank));
 
   // Exact strings for the ones with a fixed format, so a silent change of units or shape is caught
   // too, not only an empty cell.
@@ -600,11 +645,9 @@ console.log('\n=== 7. Every kind of entry exports its VALUE, not just its name')
   // that discriminate. Named individually so a future regression says which one.
   t('7c.1  a radiation session prints its number', detailOf('radiation') === 'Session 1',
     JSON.stringify(detailOf('radiation')));
-  t('7c.2  a symptom prints its severity', detailOf('nausea') === 'Moderate',
-    JSON.stringify(detailOf('nausea')));
   const skin = detailOf('skin');
-  t('7c.2b  and its body site and episode count', /Mild/.test(skin) && /left forearm/.test(skin) && /3 episodes/.test(skin),
-    JSON.stringify(skin));
+  t('7c.2  a skin reaction prints how bad it was', /mild/i.test(skin), JSON.stringify(skin));
+  t('7c.2b  and where it was', /left forearm/.test(skin), JSON.stringify(skin));
 
   // 7c.3 is the regression this release's own fix introduced: once the suffix stopped being
   // suppressed, the weight row started printing the RAW stored id to a clinician.
