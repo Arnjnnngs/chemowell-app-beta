@@ -1025,6 +1025,15 @@ section('7f. NO SURFACE TELLS THE READER THE LIST IS COMPLETE -- THE CLASS, NOT 
 
 // ---------------------------------------------------------------------------------------------
 section('7z. WHAT’S NEW IS PLAIN PROSE, AND IT MUST BE READ RENDERED');
+// ONE SOURCE FOR THE RULE, read by the on-screen matcher, the every-entry scan AND the failure
+// message. All three were written separately and all three had drifted: the on-screen matcher
+// caught a `##` heading and the every-entry scan did not, so a heading in one of the eight
+// entries behind the tap was caught by neither -- and the failure message was still searching for
+// `**` or a backtick, so four of the seven forms printed `2 found: []`. Two copies of a rule is
+// one copy too many; this release learned that about bowel values and Help enumerations and then
+// made the same mistake inside its own suite.
+const MARKDOWN_SRC = '\\*|_|`|~|^\\s*#{1,6}\\s|\\[[^\\]]+\\]\\([^)]+\\)';
+const MARKDOWN_G = new RegExp(MARKDOWN_SRC, 'gm');
 // app-v88 SHIPPED `**Log another day**` INTO THIS NOTICE AND FOUR AUDIT ROUNDS READ PAST IT.
 //
 // Help topics are parsed for markdown; the changelog is not -- it is the one caregiver-facing
@@ -1062,9 +1071,10 @@ section('7z. WHAT’S NEW IS PLAIN PROSE, AND IT MUST BE READ RENDERED');
     // half-remembers the syntax. A printed changelog point has no legitimate use for any of these
     // characters, so the rule is the characters rather than the wordings -- the same correction
     // this release already made twice, to a regex that matched one phrasing of a false claim.
-    const marks = (seen.match(/\*|_|`|~|^\s*#{1,6}\s|\[[^\]]+\]\([^)]+\)/gm) || []);
+    const marks = (seen.match(MARKDOWN_G) || []);
     t('and it contains no literal markdown -- this array is not parsed, it is printed',
-      marks.length === 0, marks.length ? (marks.length + ' found: ' + JSON.stringify(seen.match(/.{0,30}(\*\*|`).{0,30}/) || [])) : 'none');
+      marks.length === 0,
+      marks.length ? (marks.length + ' found: ' + JSON.stringify((seen.match(new RegExp('.{0,30}(?:' + MARKDOWN_SRC + ').{0,30}')) || [])[0] || marks.join(' '))) : 'none');
   }
   // AND EVERY OTHER ENTRY, WHICH MEANS CLICKING THROUGH TO THEM. This check was named for all of
   // them and never opened them: an audit instrumented it and found ONE entry node before the
@@ -1078,13 +1088,14 @@ section('7z. WHAT’S NEW IS PLAIN PROSE, AND IT MUST BE READ RENDERED');
   await page.waitForTimeout(900);
   const entryCount = await page.evaluate(() => document.querySelectorAll('[data-whatsnew-entry]').length);
   t('precondition: the older entries are open, not just the newest', entryCount > 1, entryCount + ' entries on screen');
-  const srcBad = await page.evaluate(() => {
+  const srcBad = await page.evaluate((src) => {
     const out = [];
-    const scan = (txt) => { if (typeof txt === 'string' && /\*|_|`|~|\[[^\]]+\]\([^)]+\)/.test(txt)) out.push(txt.slice(0, 70)); };
+    const re = new RegExp(src);
+    const scan = (txt) => { if (typeof txt === 'string' && re.test(txt)) out.push(txt.slice(0, 70)); };
     const nodes = [...document.querySelectorAll('[data-whatsnew-entry]')];
     nodes.forEach(n => scan(n.innerText || ''));
     return out;
-  });
+  }, MARKDOWN_SRC);
   t('and no entry reachable from the notice carries any either', srcBad.length === 0,
     srcBad.length ? JSON.stringify(srcBad) : 'all entries clean');
   await page.close();
