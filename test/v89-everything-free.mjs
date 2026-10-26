@@ -224,11 +224,15 @@ console.log('\n=== 3. The profile cap is UNCHANGED -- 1 / 3 / unlimited');
     ['plus', 3, 'sheet', 'Plus is capped at 3 -- a fourth asks you to pay'],
     ['pro',  3, 'form',  'Pro is uncapped -- a fourth is just added'],
   ];
-  // BOTH surfaces. There are two "+ Add profile" buttons in this app with two separate copies of
-  // the cap test -- one on Account, one on Settings -> Profiles -- and the first version of this
-  // section drove only Account. A mutant that loosened the SETTINGS copy alone scored the whole
-  // suite green. Two copies of a rule is one copy too many, and until they are merged the test
-  // has to walk both.
+  // BOTH ROUTES. There are two "+ Add profile" buttons in this app, each with its own copy of the
+  // cap test, reached by two different rows of the drawer. The first version of this section drove
+  // only one of them and a mutant that loosened the other scored the whole suite green.
+  //
+  // The names below are the DRAWER ROW clicked, not a claim about which code renders it -- and
+  // that distinction is not pedantry: mutating the copy of the guard that reads `limit` turned the
+  // "account" rows red, not the "settings" rows, so the obvious mapping is the wrong way round.
+  // Walking both routes is what makes the section correct without having to know which is which.
+  // Two copies of a rule is one copy too many; until they are merged, the test walks both.
   for (const surface of ['account', 'settings']) {
     for (const [tier, n, want, label] of cases) {
       const { pg, c } = await freshPage(tier, n);
