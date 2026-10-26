@@ -185,3 +185,25 @@ previous round was catching.** It is the cheapest habit on this board and it is 
 release is not shipping with its first blocker unguarded.
 
 Nothing is left that a caregiver of this build can hit. **Ship it.**
+
+---
+
+   ADDENDUM, added by the Lead Developer, not the auditor, and indented so it cannot be read as a
+   second header line.
+
+   This report's verdict pins to 64bb8a6. Two TEST-ONLY edits landed afterwards in 0cce928, both
+   of them changes this auditor asked for in this same pass:
+
+     * test/v88-log-a-missed-day.mjs -- 7g's second precondition tightened from
+       `again === true || again === 'reopened'` to `again === true`. The 'reopened' branch clicks
+       no cell, so the behaviour under test cannot fire and the assertion would have held for the
+       wrong reason. Strictly stricter; it cannot make a failing build pass.
+     * the same file -- the dead noteShown capture taken before any day is picked, removed. Every
+       assertion reads the capture taken after the pick, so no assertion changes.
+
+   index.html, sw.js and every other Rule 5 path are byte-identical to 64bb8a6. Re-run on the
+   committed tree: 58/58.
+
+   Recorded because the auditor raised it rather than letting it pass, and the reasoning it
+   refused -- "it is only the test file" -- is exactly the reasoning this release was refused for
+   once already.
