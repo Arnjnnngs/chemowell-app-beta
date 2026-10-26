@@ -1055,19 +1055,32 @@ section('7z. WHAT’S NEW IS PLAIN PROSE, AND IT MUST BE READ RENDERED');
   t('precondition: the What’s New notice is on screen to be read', !!seen && seen.length > 60,
     seen === null ? 'notice not open' : (seen.length + ' chars'));
   if (seen) {
-    const marks = (seen.match(/\*\*|`|^\s*[*_]\s/gm) || []);
+    // THE CHARACTER CLASS, NOT A CASE LIST. The first version matched `**` and a backtick, and an
+    // audit widened the family: *single*, _underscore_ and [link](url) all render literally in
+    // this notice exactly as `**` did, and all three scored a clean 99/99. A single asterisk pair
+    // is the likeliest next instance, because it is what somebody types who means emphasis and
+    // half-remembers the syntax. A printed changelog point has no legitimate use for any of these
+    // characters, so the rule is the characters rather than the wordings -- the same correction
+    // this release already made twice, to a regex that matched one phrasing of a false claim.
+    const marks = (seen.match(/\*|_|`|~|^\s*#{1,6}\s|\[[^\]]+\]\([^)]+\)/gm) || []);
     t('and it contains no literal markdown -- this array is not parsed, it is printed',
       marks.length === 0, marks.length ? (marks.length + ' found: ' + JSON.stringify(seen.match(/.{0,30}(\*\*|`).{0,30}/) || [])) : 'none');
   }
-  // AND THE SOURCE SIDE, over every entry rather than only the one on screen, because the notice
-  // shows the newest release and the older ones are reachable from "See recent updates".
-  const allPoints = await page.evaluate(() => {
-    const T = window.__v86Test;
-    return (T && T.helpTopics) ? null : null;
+  // AND EVERY OTHER ENTRY, WHICH MEANS CLICKING THROUGH TO THEM. This check was named for all of
+  // them and never opened them: an audit instrumented it and found ONE entry node before the
+  // click and NINE after, so the one it read was the same entry the check above had already
+  // covered and it added nothing. Markdown planted in the app-v87 entry scored 99/99. Eight
+  // entries, one tap away, unguarded by a check whose name said otherwise.
+  await page.evaluate(() => {
+    const b2 = document.querySelector('[data-whatsnew-all]');
+    if (b2) b2.click();
   });
+  await page.waitForTimeout(900);
+  const entryCount = await page.evaluate(() => document.querySelectorAll('[data-whatsnew-entry]').length);
+  t('precondition: the older entries are open, not just the newest', entryCount > 1, entryCount + ' entries on screen');
   const srcBad = await page.evaluate(() => {
     const out = [];
-    const scan = (txt) => { if (typeof txt === 'string' && (/\*\*/.test(txt) || /`/.test(txt))) out.push(txt.slice(0, 70)); };
+    const scan = (txt) => { if (typeof txt === 'string' && /\*|_|`|~|\[[^\]]+\]\([^)]+\)/.test(txt)) out.push(txt.slice(0, 70)); };
     const nodes = [...document.querySelectorAll('[data-whatsnew-entry]')];
     nodes.forEach(n => scan(n.innerText || ''));
     return out;
