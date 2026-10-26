@@ -5805,7 +5805,8 @@ function renderTimeModal() {
         ),
         m.calOpen ? h('div', { style: { marginTop: '8px' } },
           renderCalendar(m.timeValue.slice(0, 10), m.calCursor || m.timeValue.slice(0, 7),
-            (ds) => { state.timeModal.timeValue = ds + 'T' + state.timeModal.timeValue.slice(11); state.timeModal.calCursor = ds.slice(0, 7);
+            (ds) => { const prevDay = state.timeModal.timeValue.slice(0, 10);
+              state.timeModal.timeValue = ds + 'T' + state.timeModal.timeValue.slice(11); state.timeModal.calCursor = ds.slice(0, 7);
               // THE NOTE BELONGS TO THE DAY, AND THE DAY CAN CHANGE UNDER IT. This modal holds one
               // `note`, and the calendar stays open after a pick, so without this the second pick
               // inherits the first day's typing: empty the box meaning to clear Thursday, change
@@ -5815,7 +5816,12 @@ function renderTimeModal() {
               // rotated from the touched axis onto the day axis, and reachable by an ordinary use
               // of a date picker. Clearing it restores the rule the other two surfaces follow:
               // untouched means undefined, and "untouched" has to be re-asked for each day.
-              if (state.timeModal.type === 'daily') state.timeModal.note = undefined;
+              // ONLY WHEN THE DAY ACTUALLY CHANGED. Firing on every cell click meant tapping the
+              // already-selected date -- which is how a person dismisses an open calendar, since
+              // it does not close on a pick -- threw away what they had just typed, silently.
+              // The reset is for the day moving out from under the note; a tap that moves
+              // nothing should move nothing.
+              if (state.timeModal.type === 'daily' && ds !== prevDay) state.timeModal.note = undefined;
               setState({ timeModal: state.timeModal }); },
             (delta) => { const cur = state.timeModal.calCursor || state.timeModal.timeValue.slice(0, 7); state.timeModal.calCursor = calShift(cur, delta); setState({ timeModal: state.timeModal }); }
           )

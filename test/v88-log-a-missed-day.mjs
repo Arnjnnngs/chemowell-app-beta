@@ -28,6 +28,15 @@
 //       4 reds as covering it.
 //   M3  the appetite note field removed, everything else intact -> 5 red.
 //
+// THIRD ROUND, and the finding worth keeping: THE SECOND ROUND'S FIX DISARMED THE GUARD FOR THE
+// FIRST BLOCKER. Clearing the note on a day change meant 7b -- which picks a day before
+// confirming -- had the opener's value overwritten before it could matter, so restoring
+// `note: ''` at the opener went back to scoring a clean 52/52. The opener is still load-bearing
+// on the one path the reset cannot reach: open the control and confirm WITHOUT touching the
+// calendar. That is 7b2, and it is the cheapest check in the file.
+//   M23  note: '' restored at the opener         -> 2 red (7b2)
+//   M27  the day reset fires on every tap again  -> 1 red (7g)
+//
 // SECOND ROUND. The three mutants that walked through the first set, re-run here and now caught:
 //   M5   the row corrector sends what is DISPLAYED instead of what was TYPED  -> 1 red (7d2 row)
 //   M6   the logger does the same                                            -> 1 red (7d2 logger)
@@ -97,10 +106,13 @@ const logAnotherDay = async (pg, key, backDays, value, note) => {
     return { label: d.getAttribute('aria-label') || '', hasValue: !!sel,
              values: sel ? [...sel.options].map(o => o.value).filter(Boolean) : [],
              hasTimeInput: !!d.querySelector('input[type="time"]'),
-             hasNote: !!d.querySelector('[data-daily-modal-note]'),
-             // THE VALUE, not just the element. Asserting `!!element` tests that a box is
-             // rendered, which is true on a build whose display expression always returns blank
-             // -- an audit reverted exactly that and scored the whole gate green.
+             // THE VALUE, not just the element -- and `hasNote: !!element` is deliberately NOT
+             // here. That was the vacuous assertion of the previous round: it tested that a box
+             // is rendered, which stays true on a build whose display expression always returns
+             // blank, and an audit reverted exactly that and scored the whole gate green. A field
+             // left in the shape object is an invitation to assert on it again, so it is gone.
+             // Captured again after the day is picked, below, because the box is a function of
+             // the day.
              noteShown: (d.querySelector('[data-daily-modal-note]') || {}).value,
              text: (d.innerText || '') };
   });
@@ -440,6 +452,97 @@ for (const surface of ['row', 'logger']) {
     JSON.stringify(rows.map(r => ({ v: r.v, note: r.note }))));
   await pg.close();
 }
+
+console.log('\n7b2. CONFIRM WITHOUT TOUCHING THE CALENDAR AT ALL -- the opener is still load-bearing');
+// THE D1 FIX DISARMED THE GUARD FOR THE ORIGINAL BLOCKER, which an audit caught and which is the
+// most useful thing it found this round. 7b picks a day, and the day-pick reset now overwrites
+// whatever the opener put in `m.note` before Confirm -- so restoring `note: ''` at the opener,
+// the exact first blocker, went back to scoring a clean 52/52.
+//
+// The opener's value is still load-bearing on the path where NO day is picked: open "Log another
+// day" on a day that already carries a note and confirm the default. On HEAD that is a no-op. With
+// the opener reverted it writes a blank standing answer and flags the line holding the real note
+// as superseded -- the caregiver's words gone, the export saying a correction happened.
+//
+// No calendar driving at all, which is the whole point: it is the one path the day-pick reset
+// cannot reach, and the cheapest check in the file.
+const p7b2 = await freshPage(new Function(seed(
+  '[{ id: "o1", medId: "appetite", value: "normal", dose: "Normal", mg: 0, note: "ate a full dinner", ts: d + 12*3600000 }]')));
+await p7b2.evaluate(() => window.__v86Test.openReport('appetite'));
+await p7b2.waitForTimeout(900);
+{
+  const before = await entriesOf(p7b2, 'appetite');
+  t('precondition: today already carries a note', before.length === 1 && before[0].note === 'ate a full dinner', JSON.stringify(before));
+  await p7b2.evaluate(() => { const b2 = document.querySelector('[data-log-another-day="appetite"]'); if (b2) b2.click(); });
+  await p7b2.waitForTimeout(700);
+  const boxAtOpen = await p7b2.evaluate(() => {
+    const d2 = document.querySelector('[role="dialog"]');
+    const inp = d2 && d2.querySelector('[data-daily-modal-note]');
+    return inp ? inp.value : null;
+  });
+  t('the box shows today’s note the moment it opens, before any day is picked',
+    boxAtOpen === 'ate a full dinner', JSON.stringify(boxAtOpen));
+  // Confirm the default answer (Normal, which is what today already is) with the calendar untouched.
+  await p7b2.evaluate(() => {
+    const d2 = document.querySelector('[role="dialog"]');
+    const go = d2 && [...d2.querySelectorAll('button')].find(x => /^Confirm$/i.test((x.innerText || '').trim()));
+    if (go) go.click();
+  });
+  await p7b2.waitForTimeout(1100);
+  const after = await entriesOf(p7b2, 'appetite');
+  t('confirming without touching the calendar does not wipe the note',
+    after.length === 1 && after[0].note === 'ate a full dinner',
+    JSON.stringify(after.map(x => ({ v: x.v, note: x.note }))));
+}
+await p7b2.close();
+
+console.log('\n7g. TAPPING THE DAY ALREADY SELECTED MUST NOT DISCARD WHAT WAS TYPED');
+// The day-pick reset fired on EVERY cell click rather than only when the date changed -- and the
+// calendar does not close on a pick, so tapping the highlighted date is how a person dismisses
+// it. Type a note, tap that same date, and the typing was gone with no message. The reset is for
+// the day moving out from under the note; a tap that moves nothing must move nothing.
+const p7g = await freshPage(new Function(seed(
+  '[{ id: "g1", medId: "appetite", value: "normal", dose: "Normal", mg: 0, note: "soup", ts: d - 1*86400000 + 12*3600000 }]')));
+await p7g.evaluate(() => window.__v86Test.openReport('appetite'));
+await p7g.waitForTimeout(900);
+{
+  await p7g.evaluate(() => { const b2 = document.querySelector('[data-log-another-day="appetite"]'); if (b2) b2.click(); });
+  await p7g.waitForTimeout(700);
+  const tapDay = (n) => p7g.evaluate((k) => {
+    const target = new Date(); target.setHours(0,0,0,0); target.setTime(target.getTime() - k * 86400000);
+    const want = String(target.getDate());
+    const d2 = document.querySelector('[role="dialog"]');
+    let cells = [...d2.querySelectorAll('button')].filter(x => (x.innerText || '').trim() === want);
+    if (!cells.length) {
+      const pill = [...d2.querySelectorAll('button')].find(x => /\d/.test(x.innerText || '') && !/^(Cancel|Confirm)$/i.test((x.innerText || '').trim()));
+      if (pill) pill.click();
+      return 'reopened';
+    }
+    cells[cells.length - 1].click();
+    return true;
+  }, n);
+  let first = await tapDay(1);
+  if (first === 'reopened') { await p7g.waitForTimeout(450); first = await tapDay(1); }
+  await p7g.waitForTimeout(400);
+  t('precondition: a day with a note was picked', first === true, String(first));
+  await p7g.evaluate(() => {
+    const d2 = document.querySelector('[role="dialog"]');
+    const inp = d2 && d2.querySelector('[data-daily-modal-note]');
+    if (inp) { inp.value = 'vomited twice'; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+  });
+  await p7g.waitForTimeout(300);
+  const again = await tapDay(1);
+  await p7g.waitForTimeout(400);
+  const boxNow = await p7g.evaluate(() => {
+    const d2 = document.querySelector('[role="dialog"]');
+    const inp = d2 && d2.querySelector('[data-daily-modal-note]');
+    return inp ? inp.value : null;
+  });
+  t('precondition: the same day was tapped a second time', again === true || again === 'reopened', String(again));
+  t('and the typed note survives a tap on the day that is already selected',
+    boxNow === 'vomited twice', 'box shows ' + JSON.stringify(boxNow));
+}
+await p7g.close();
 
 console.log('\n7f. THE DAY UNDER THE NOTE CAN CHANGE, AND THE NOTE MUST NOT FOLLOW IT');
 // THE BLOCKER THIS SECTION EXISTS FOR, and it is the modal's note defect rotated one axis. The
