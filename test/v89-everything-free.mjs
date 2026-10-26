@@ -272,6 +272,12 @@ console.log('\n=== 6. Help agrees with the app');
   const named = ['Save backup file', 'Restore from a backup', 'Protect the file with a password', 'Printable report', 'Download CSV'];
   const missing = named.filter(n => !live.includes(n));
   t('6.5  every control Help names is really on the screen', missing.length === 0, 'missing: ' + missing.join(' / '));
+
+  // Help now names the SECTION as a navigation step ("scroll to Export data"), so the section's
+  // own heading is a label Help depends on too. Case-insensitive: the heading is rendered through
+  // text-transform: uppercase, and Help writing it in sentence case is correct for a reader.
+  t('6.6  and the section Help tells you to scroll to is named that', /export data/i.test(live),
+    JSON.stringify(live.split('\n')[0] || ''));
   await c.close();
 }
 

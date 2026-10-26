@@ -570,3 +570,38 @@ fix what the checks find, audit it, ship it, update the docs and the lists, and 
 sibling app if it belongs there. The two exceptions above are the only places that may be
 interrupted.
 
+
+---
+
+## A mutant served by the wrong server looks exactly like a check that cannot fail (app-v89)
+
+A new guard was written, a mutant was applied to break it, the suite was run against that mutant —
+and it scored **green**. Under this project's own rule that is a vacuous check, and the next move
+is to delete or rewrite it.
+
+**The check was fine. The server was serving a different directory.** The mutated file on disk was
+correct; the process answering on that port had been started from somewhere else, so every request
+returned the unmutated app. Restarted from inside the mutant's own directory, with the md5 of what
+the port serves compared against the md5 of the file on disk, the same check went red immediately.
+
+**The rule, and it costs two seconds:** before believing a falsification result — in either
+direction — prove the server is serving the bytes you think it is.
+
+    curl -s --noproxy '*' http://127.0.0.1:<port>/index.html | md5sum
+    md5sum <mutant dir>/index.html
+
+Equal, or the run means nothing. This is now mechanical inside `release_check.sh`, which refuses to
+run its suites unless the md5 of what its own server returns equals the md5 of the export being
+gated — added in the same release, for the same reason, after that script was found to be
+announcing "suites will run against a clean export of HEAD" while running them against the working
+tree.
+
+**Why this one is worth a section rather than a line.** This project's most recurrent defect is the
+vacuous check, so the standing instinct on a green mutant is *my check is wrong*. That instinct is
+usually right and was wrong here, and acting on it would have deleted a working guard and left a
+real one-line copy defect — Help naming a control that had been renamed — with nothing watching it.
+**A green mutant has two explanations, and the cheap one to rule out first is that the mutant never
+reached the browser.** It is the same shape as app-v88's *a mutant that does not reach the code
+under test looks exactly like a defect*, and app-v89's *a check that runs too late looks exactly
+like a check that passed*: three releases running, the failure has been the instrument rather than
+the thing measured.
