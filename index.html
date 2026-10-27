@@ -9311,78 +9311,72 @@ const APP_VERSION = 'app-v89';
 // Written for the person holding the phone, not for a developer reading a diff. No version
 // numbers in the prose, no file names, no function names. THEY/THEM throughout: this app has
 // never asked anyone's gender and most users are not women (CLAUDE.md Rule 0, leak shape 2).
+// WHAT'S NEW IS FOR THE PERSON USING THE APP, NOT FOR THE DEVELOPER. (Aaron, 2026-10-27:
+// "most apps doesn't have a whole book about each update. they are supposed to be just something
+// short... no one is reading all of that for every update. thats notes that me the developer needs
+// to know".)
+//
+// He is right and the numbers were indefensible: app-v89 ran to 304 words and app-v80 to 956. A
+// release note a tired person scrolls past is worth less than three lines they actually read.
+//
+// THE RULE: a title of three to six words, then two to four bullets, each one or two short
+// sentences. What changed, and what to do about it if anything. No mechanism, no history, no
+// reasoning. If a bullet explains WHY, it belongs somewhere else.
+//
+// The long record is NOT lost and must not be recreated here -- it already lives in three places
+// that are meant for it: README.md's version-history table, outputs/ for the chain reports, and
+// the commit messages. This array is the only one of the four a patient reads.
 const CHANGELOG = [
-  { v: 'app-v89', date: 'Oct 26, 2026', title: 'Every feature is free',
+  { v: 'app-v89', date: 'Oct 26, 2026', title: 'Everything is free now',
     points: [
-      'The printable doctor’s report used to cost $4.99. It does not any more. It was the only feature in ChemoWell you had to pay for, and charging for a tidy printout of your own records — the one you take to an appointment — was the wrong call.',
-      'Backup and restore is free too, and always was. The plans screen said otherwise, which was simply wrong, and it has been corrected.',
-      'Paying now adds one thing only: more people to look after. One person is free forever, with nothing held back and nothing that expires. Plus covers three, Pro as many as you need.',
-      'Also fixed, found while making the report free. Three things came out of the report and the spreadsheet with an empty details column: a radiation session showed no session number, a skin reaction or rash showed neither how bad it was nor where, and a weight logged with a reason kept the weight but lost the reason. Everything else was fine — doses, temperatures, blood pressures, drain volumes and the daily bowel and appetite answers all printed normally, and other symptoms have no severity or location to record in the first place. It had been wrong since October 24th. If you sent a care team a report in the last few days meant to show radiation sessions, skin-reaction details, or why a weight was taken, it is worth sending a fresh one.',
-      'If you saved a backup file, your records come back onto a new phone. The help page said that feature had not been built yet. It had. That page now tells you how to save one, how to put a password on it, and how to get everything onto a new phone.',
+      'The printable doctor\u2019s report no longer costs anything. It was the only feature you had to pay for.',
+      'Paying adds one thing: more people to track. One person gets every feature, free, for good.',
+      'Radiation sessions, skin reactions and weights logged with a reason were printing without their details. Fixed. If you sent a care team a report in the last few days showing any of those, send a fresh one.',
     ] },
-  { v: 'app-v88', date: 'Oct 25, 2026', title: 'Filling in a day you missed, and a note box that finally exists',
+  { v: 'app-v88', date: 'Oct 25, 2026', title: 'Log a day you missed',
     points: [
-      'You could fix a day you got wrong, but there was no way to fill in a day you missed entirely — two days in hospital simply had no answer and nothing on screen said why. Both the bowel movement and appetite screens now have a “Log another day” button: pick the day, pick the answer, done. One answer per day still, so choosing a day you have already answered replaces it and keeps the earlier answer in your records.',
-      'A day in the future is refused rather than saved.',
-      'The appetite note box did not exist. The app showed a note on each day and put it in the records you share with the care team, and there was no way to write one. There is now, on the appetite screen and on any day you correct — and emptying the box clears the note.',
+      'You could correct a day you got wrong but not fill in one you missed. Both the bowel and appetite screens now have a Log another day button.',
+      'Appetite notes can be typed in at last. They were already being shown and exported, with nowhere to write one.',
     ] },
-  { v: 'app-v87', date: 'Oct 25, 2026', title: 'Fixing a day you got wrong, and the answer the banner would not let you give',
+  { v: 'app-v87', date: 'Oct 25, 2026', title: 'Fix a day you logged wrong',
     points: [
-      'The bowel movement box on the Home banner offered four answers when the app has five \u2014 \u201cLoose\u201d was missing from it entirely, so you had to go to Reports to record it and nothing said so.',
-      'A day you logged earlier could only be deleted, not changed. Both the bowel movement and appetite lists now have a Correct button on every day, and picking a new answer keeps the old one in your records rather than removing it.',
-      'The box on the banner used to say \u201cUpdate status if back to normal\u201d, which only invited one of the answers. It now says it is for changing the day.',
-      'The daily check-in could open with the bowel box blank on a day you had already answered “Loose”, because that sheet had its own shorter list of answers. Both boxes are built from the same list now, so they cannot disagree.',
-      'A Loose day looked exactly like a normal day in your history — same green dot. It now shows amber: worth seeing, not an alarm.',
-      'Help said the Symptoms list includes diarrhea and constipation. It has not for a long time, so Help now says so and points you to the bowel question instead. Help also promised a 1-to-10 scale on symptoms that was never built; that promise is gone until it is.'
+      'Every day in your bowel and appetite history now has a Correct button. Before this, a wrong day could only be deleted.',
+      'Loose was missing from the bowel box on the Home banner. It is there now, and a loose day shows amber in your history instead of green.',
     ] },
-  { v: 'app-v86', date: 'Oct 24, 2026', title: 'Bowel and appetite can be logged any time, and History stops calling everything a dose',
+  { v: 'app-v86', date: 'Oct 24, 2026', title: 'Log bowel and appetite any time',
     points: [
-      'Bowel movement and appetite could only be logged from the once-a-day check-in card on Home, and that card only appears from your chosen check-in time onwards \u2014 7pm unless you changed it. Before then there was no way in at all, even though the Reports screens said those entries were logged from Home.',
-      'Both Reports screens now let you log today\u2019s answer directly, whatever the time. Picking again replaces today\u2019s answer and keeps the earlier one in the record.',
-      'The History day summary counted blood pressure readings, symptoms and paracentesis entries as \u201cdoses\u201d. Each is now counted and named for what it actually is.',
-      'A daily milligram total was labelled with one specific painkiller\u2019s abbreviation no matter which medication it was counting. It now uses the medication\u2019s own name.',
-      'You can rename the profile you\u2019re in, from Settings. The Account screen pointed at a rename control that had never been built.',
-      'Changing today\u2019s bowel or appetite answer keeps the earlier one in your records rather than deleting it, and the exported file and the printed report mark it as corrected \u2014 so a nurse reading two answers for the same day can tell which one stands.',
-      'Picking the answer that is already showing does nothing instead of adding a second identical record.',
-      'Snooze on the Up Next card now says it is fifteen minutes, on the button and again when you tap it.'
+      'Both can be logged straight from their Reports screen at any hour, not only from the daily check-in card.',
+      'History was calling blood pressure readings, symptoms and procedures doses. Each is named for what it is now.',
+      'You can rename the person you are tracking, from Settings.',
     ] },
-  { v: 'app-v85', date: 'Sep 17, 2026', title: 'Reminders for one person no longer wipe out another\u2019s',
+  { v: 'app-v85', date: 'Sep 17, 2026', title: 'Reminders stop deleting each other',
     points: [
-      'If this phone has more than one person set up, every time you opened the ChemoWell app it quietly removed the reminders belonging to whoever you were not currently in. A dose could pass with nothing on screen and nothing in your hand buzzing.',
-      'That is fixed — each person\u2019s reminders are now left alone. Reminders are still only set up for the person you are in, and another person\u2019s run out within about three days, so open their profile to set theirs up again.',
-      'Settings now tells you which person the reminder count is about, so a tick on that screen no longer looks like it covers everyone on the phone.'
+      'With more than one person set up, opening the app wiped the reminders belonging to whoever you were not using. Each person\u2019s reminders are left alone now.',
     ] },
-  { v: 'app-v84', date: 'Sep 14, 2026', title: 'The app now tells you what changed',
+  { v: 'app-v84', date: 'Sep 14, 2026', title: 'The app tells you what changed',
     points: [
-      'Until today ChemoWell updated quietly. A button could move or a number could start being counted differently and nothing on screen said so.',
-      'From now on, the first time you open the app after an update, a short note tells you what is different. Tap "Got it" and it does not come back.',
-      'Updates from here on are listed under “What’s new” in the menu, newest first, if you want to look back at one.'
+      'After an update, a short note now says what is different. Tap Got it and it does not come back.',
     ] },
-  { v: 'app-v83', date: 'Sep 14, 2026', title: 'Your medication cards now show what has happened today',
+  { v: 'app-v83', date: 'Sep 14, 2026', title: 'Medication cards show today',
     points: [
-      'Each medication on the Meds screen used to describe itself and its rules and say nothing about today. It now shows whether it is available, due, paused, or at its daily limit — and how many doses have been taken today and when the last one was.',
-      'A medication with a daily limit gets a bar showing how much of it has been used and how much is left.',
-      'Temperature has its own report for the first time. It charts your readings over time with the fever line marked, so you can see at a glance how long a temperature has been up and how high it got.',
-      'The Symptoms screen now shows how often each symptom has been happening over the last few weeks. Tap one to see just those entries.'
+      'Each medication now shows whether it is available, due or paused, instead of only describing its rules.',
+      'A medication with a daily limit gets a bar showing how much is left.',
+      'Temperature has its own report, charting your readings against the fever line.',
     ] },
-  { v: 'app-v82', date: 'Sep 14, 2026', title: 'The home screen leads with your medications',
+  { v: 'app-v82', date: 'Sep 14, 2026', title: 'A simpler home screen',
     points: [
-      'Temperature, weight and blood pressure used to sit in three large boxes at the top of Home, asking to be typed into before you could see anything else. They are three small tiles now, each showing the last reading and how long ago it was.',
-      'Tap a tile and the same box and the same Log button open underneath it. Nothing was taken away.',
-      'Today’s events are one list down the day now instead of four separate cards split by time of day.',
-      'If you had turned temperature and weight off in Settings but kept blood pressure on, the blood pressure box used to disappear along with them. It stays now.'
+      'Temperature, weight and blood pressure are small tiles now instead of three large boxes. Tap one and the same Log button opens underneath it.',
+      'Today\u2019s events are one list down the day instead of four cards split by time of day.',
     ] },
-  { v: 'app-v81', date: 'Sep 14, 2026', title: 'Dose amounts are read the way they are written',
+  { v: 'app-v81', date: 'Sep 14, 2026', title: 'Dose amounts read correctly',
     points: [
-      'An amount written as ".5 mg" was being counted as 5 mg against a daily limit, so a limit could be reached after a tenth of the medicine. Half-tablets, amounts with a comma in the thousands, and amounts ending in a zero after the point were all counted wrongly too.',
-      'Combination medicines written like "5/325 mg" are now left alone rather than guessed at. Where the app cannot work out how many tablets an amount means, it says so on the same screen as the button that gives the dose, and names the limit it is not applying.',
-      'Typing a medication name now shows what it is for straight away, instead of only after you touch another box. The list of medicines it recognises went from 66 to 184.'
+      'An amount written as .5 mg was counted as 5 mg against a daily limit, so a limit could be reached ten times too early. Half-tablets are read properly now.',
+      'Combination medicines written like 5/325 mg are left alone rather than guessed at.',
     ] },
-  { v: 'app-v80', date: 'Sep 13, 2026', title: 'Home answers "what is due next"',
+  { v: 'app-v80', date: 'Sep 13, 2026', title: 'Home says what is due next',
     points: [
-      'The top of Home now names the next medication that is due, its amount, and whether it is due now or at a time.',
-      'It never names a medication the app says not to give — one already logged, one paused, one not scheduled today, or one blocked around a treatment day.',
-      'When everything scheduled is logged, it says so rather than disappearing.'
+      'The top of Home names the next medication due, how much, and when.',
+      'It never names one the app says not to give: already logged, paused, not scheduled today, or blocked around a treatment day.',
     ] }
 ];
 
