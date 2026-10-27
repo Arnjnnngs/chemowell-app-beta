@@ -168,6 +168,46 @@ counting a different thing from every other row.
    without one — a blocker, a promotion waiting on Aaron — it gets a number before it gets a row.
    A row with a `—` in the `#` column is a row that was never on the list.
 
+## Rule 0.9 — WHAT'S NEW IS THREE LINES. THE BOOK GOES SOMEWHERE ELSE. (2026-10-27, Aaron)
+
+> *"its too much. most apps doesn't have a whole book about each update. they are supposed to be
+> just something short. "Fixed issue with not able to log previous day". maybe a couple sentences
+> after that. but no one is reading all of that for every update. there may be some things that
+> needs longer stuff. but that many words is way too much. thats notes that me the developer needs
+> to know or have you kept in notes or something"*
+
+**He is right and the numbers were indefensible.** The in-app `CHANGELOG` had reached **304 words
+for app-v89 and 956 for app-v80** — about 2,600 words across ten updates, written in the register
+of an engineering post-mortem and shown to a patient on a phone. Rewritten the same day to 520
+words total.
+
+### The rule
+
+1. **A title of three to six words**, naming the change in the user's words. *"Log a day you
+   missed"*, not *"Filling in a day you missed, and a note box that finally exists"*.
+2. **Two to four bullets, each one or two short sentences.** What changed, and what to do about it
+   if there is anything to do.
+3. **No mechanism, no history, no reasoning.** If a bullet explains WHY, or names a function, a
+   version, a commit or a seat on the team, it is in the wrong file. A patient does not need to
+   know that a guard was vacuous or that an audit refused the first build twice.
+4. **One exception, used sparingly: a bullet that asks the reader to DO something** — re-send a
+   report, re-check a setting — may run longer, because they have to be able to tell whether it
+   applies to them. app-v89's export bullet is the shape of that exception.
+5. **Target under ~70 words per entry.** Over 100 is a rewrite, not a judgement call.
+
+### Where the detail goes instead — it is NOT lost, and must not be recreated here
+
+| Record | Lives in | Read by |
+|---|---|---|
+| The full account: what broke, why, what was measured | `README.md` version history | the developer, next session |
+| Each seat's findings, mutants, verdicts | `outputs/AUDIT-*`, `PM-*`, `DEV-BRIEF-*` | the chain |
+| Why a specific line is the way it is | the commit message, and the comment beside it | whoever changes it next |
+| **What changed, for the person using the app** | **the `CHANGELOG` array** | **the patient** |
+
+Four records, four audiences. The failure was writing the first one into the fourth. **When
+shortening an entry, nothing is deleted — check the detail is in the README row first, and move
+it there if it is not.**
+
 ## What this repo is
 The **native mobile app** codebase (APP-BETA). Seeded from `chemowell-beta` v71, with Firebase completely removed. Target: Capacitor-wrapped iOS/Android builds for the stores (APP-LIVE later).
 
