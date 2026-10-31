@@ -692,6 +692,124 @@ console.log('\n=== 7b. A corrected entry keeps its own value AND says it was cor
   await c.close();
 }
 
+console.log('\n=== 9. The release note about the export names what MEASUREMENT says it should');
+// THE GAP THAT FIVE DRAFTS OF ONE SENTENCE WENT THROUGH. Nothing in this repo has ever tied a
+// CHANGELOG claim to behaviour: v84-whatsnew has sixteen sections and not one asks whether an
+// entry is TRUE. The clearing audit proved it by reverting a single word -- "skin reactions" back
+// to "symptoms", the exact over-claim behind three refusals -- and scoring 65/65 and 100/100.
+//
+// So this derives the list from the export instead of trusting the prose. Of the kinds section 7
+// seeds, the ones the old code got wrong are the ones whose Detail does NOT come from the entry's
+// own `dose` -- because `dose` is what the broken `else` fell back to. Those are computed here and
+// the bullet is required to name each, in the words the app uses.
+{
+  const SEED = `(() => {
+    const day = new Date(); day.setHours(0,0,0,0); const d = day.getTime();
+    localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
+    localStorage.setItem('chemowell-app-license-v1', JSON.stringify({ tier: 'free' }));
+    localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, treatmentType: 'both', tourDone: true, installedAt: d - 30*86400000 }));
+    localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [] }));
+    localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify([
+      { id: 'a1', medId: 'temp', ts: d + 3600000, temp: 99.1, unit: 'Fahrenheit', dose: '99.1 °F' },
+      { id: 'a2', medId: 'blood_pressure', ts: d + 2*3600000, sys: 120, dia: 80, dose: '120/80 mmHg' },
+      { id: 'a3', medId: 'weight', ts: d + 3*3600000, weight: 150, unit: 'lb', dose: '150 lb', weightReason: 'fluid_retention' },
+      { id: 'a4', medId: 'radiation_session', ts: d + 5*3600000, dose: null, mg: 0 },
+      { id: 'a5', medId: 'bowel_movement', ts: d + 6*3600000, value: 'normal', dose: 'Normal' },
+      { id: 'a6', medId: 'appetite', ts: d + 7*3600000, value: 'little', dose: 'Little to none' },
+      { id: 'a7', medId: 'symptom_skin_reaction', ts: d + 8*3600000, severity: 'mild', site: 'left forearm', dose: null, mg: 0 }
+    ]));
+    localStorage.setItem('chemowell-app-seen-version', 'nothing-seen-yet');
+  })()`;
+  const DOSES = { 'a1': '99.1 °F', 'a2': '120/80 mmHg', 'a3': '150 lb', 'a4': '', 'a5': 'Normal', 'a6': 'Little to none', 'a7': '' };
+  const c = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  c.on('page', (pg2) => pg2.on('pageerror', (e) => thrown.push(String(e))));
+  const pg = await c.newPage();
+  await pg.addInitScript(SEED);
+  await pg.goto(BASE, { waitUntil: 'load' });
+  await pg.waitForTimeout(2400);
+
+  const rows = await pg.evaluate(() => window.__v86Test.exportRows());
+  t('9.0  precondition: seven entries exported', Array.isArray(rows) && rows.length === 7,
+    Array.isArray(rows) ? rows.length + ' rows' : String(rows));
+  // Detail differs from what `dose` alone would have given => the old build got this kind wrong.
+  const order = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'];
+  const affected = (rows || []).map((r, i) => ({ type: r[2], detail: r[3], dose: DOSES[order[i]] }))
+    .filter(x => String(x.detail) !== String(x.dose))
+    .map(x => x.type);
+  t('9.1  precondition: measurement finds the kinds the old build got wrong',
+    affected.length >= 3, 'affected: ' + JSON.stringify(affected));
+
+  // The notice itself, rendered -- not the source array.
+  // The notice itself, rendered -- scoped to the modal, NOT document.body. Reading the whole
+  // page meant the nav's own "Symptoms" tab counted as the notice saying "symptoms", which is
+  // the exact word this section exists to police.
+  const notice = await pg.evaluate(() => {
+    const m = document.querySelector('[data-whatsnew-modal]');
+    return m ? (m.innerText || '') : null;
+  });
+  t('9.2  precondition: the What’s New notice is on screen', /free/i.test(notice) && notice.length > 100,
+    JSON.stringify(notice.slice(0, 80)));
+
+  // The search term is DERIVED from the type the export printed, not looked up in a map. The
+  // first version keyed the map 'Skin Reaction' while the export says 'Skin Reaction/Rash', so
+  // `WORD_FOR[ty] &&` quietly dropped the one kind this whole section exists for and the check
+  // passed on two of three. A lookup that can miss is a check that is vacuous for exactly the
+  // case nobody thought of.
+  const termFor = (ty) => String(ty).split('/')[0].trim().split(/\s+/)[0];
+  const unnamed = affected.filter(ty => !new RegExp(termFor(ty), 'i').test(notice || ''));
+  t('9.3  the note names every kind that measurement says lost a value',
+    affected.length >= 3 && unnamed.length === 0,
+    'measured affected: ' + JSON.stringify(affected) + ' | searched for: '
+    + JSON.stringify(affected.map(termFor)) + ' | not named: ' + JSON.stringify(unnamed));
+
+  // And does not over-claim. "symptoms" in general is the exact word three refusals were about:
+  // ten of the eleven symptom types have no severity or site to lose, so saying "symptoms" tells
+  // someone logging nausea to re-send a printout that would come back identical.
+  t('9.4  and does not say "symptoms" when only a skin reaction is affected',
+    !/\bsymptoms?\b/i.test(notice) || /skin reaction/i.test(notice),
+    JSON.stringify((notice.match(/.{0,60}symptoms?.{0,60}/i) || [''])[0]));
+  const OVERCLAIM = ['temperature', 'blood pressure', 'appetite', 'bowel'];
+  const wronglyNamed = OVERCLAIM.filter(w => new RegExp(w + '[^.]{0,80}(printing without|empty|missing|blank)', 'i').test(notice)
+                                          || new RegExp('(printing without|empty|missing|blank)[^.]{0,80}' + w, 'i').test(notice));
+  t('9.5  and does not name a kind measurement says was fine', wronglyNamed.length === 0,
+    JSON.stringify(wronglyNamed));
+
+  // 9.6 -- THE TITLE. The clearing audit blocked on "Everything is free now" being false while
+  // Plus is $4.99 and Pro is $14.99, and a mutant restoring that exact title scored 71/71: every
+  // check in this section reads the BULLETS, and nobody was reading the headline. A title is the
+  // one line of a release note that everybody reads.
+  //
+  // Derived, not pinned: open the plans sheet in this same page, see whether the app charges for
+  // anything, and only then require the notice not to claim universal freeness. If ChemoWell ever
+  // really does become free of charge, this check stops applying by itself.
+  const title = String(notice || '').split('\n').map(x => x.trim()).filter(Boolean)[1] || '';
+  t('9.6a  precondition: the notice title was found', title.length > 3 && title.length < 60,
+    JSON.stringify(title));
+  await pg.evaluate(() => {
+    const d = document.querySelector('[data-whatsnew-modal]');
+    const btn = d && [...d.querySelectorAll('button')].find(x => /got it|close/i.test(x.innerText || ''));
+    if (btn) btn.click();
+  });
+  await pg.waitForTimeout(500);
+  await gotoAccount(pg);
+  await pg.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find(x => /View plans/i.test(x.innerText || ''));
+    if (btn) btn.click();
+  });
+  await pg.waitForTimeout(700);
+  const prices = await pg.evaluate(() => {
+    const sh = document.getElementById('plans-sheet');
+    return sh ? ((sh.innerText || '').match(/\$[0-9]+(?:\.[0-9]{2})?/g) || []) : null;
+  });
+  const charges = (prices || []).some(x => x !== '$0');
+  t('9.6b  precondition: the plans sheet was read', Array.isArray(prices) && prices.length >= 2,
+    JSON.stringify(prices));
+  t('9.6  the title does not promise everything is free while the app still charges',
+    !(charges && /\b(everything|all of it|all features)\b[^.]{0,20}\bfree\b/i.test(title)),
+    'title ' + JSON.stringify(title) + ' with prices ' + JSON.stringify(prices));
+  await c.close();
+}
+
 console.log('\n=== 8. Nothing threw');
 t('8.1  no uncaught page errors', thrown.length === 0, thrown.slice(0, 3).join(' | '));
 
