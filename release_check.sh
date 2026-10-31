@@ -800,6 +800,17 @@ else
   RC_SUITE_DIR="$PWD"
   echo "⚠️  WARNING: no clean export available; suites will run against the working tree."
 fi
+# AND THE EXPORT HAS TO BE ABLE TO RESOLVE THE SUITES' DEPENDENCIES. (app-v89, found on a runner
+# the hard way.) Running the suites with the export as their working directory -- which is what
+# makes them test what ships -- also moved them away from the repo's node_modules. In this sandbox
+# nothing noticed, because each suite's require() falls back to a list of global install paths. On
+# a GitHub runner there is no global playwright: the workflow does `npm install --no-save
+# playwright` into the CHECKOUT, so after the move three browser suites could not load it at all
+# and the live-verification job failed on the first push that used this code. `git archive` does
+# not carry node_modules (it is not tracked), so the export is linked to the checkout's.
+if [ -d "$PWD/node_modules" ] && [ ! -e "$RC_SUITE_DIR/node_modules" ]; then
+  ln -s "$PWD/node_modules" "$RC_SUITE_DIR/node_modules" 2>/dev/null || true
+fi
 python3 -m http.server "$RC_PORT" --directory "$RC_SUITE_DIR" >/dev/null 2>&1 &
 RC_SERVER_PID=$!
 for _ in 1 2 3 4 5 6 7 8 9 10; do
