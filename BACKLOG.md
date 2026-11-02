@@ -779,3 +779,48 @@ in the first place: a helper that allocates a free port, serves a directory, and
 on exit, used by every falsification round instead of a hand-rolled `nohup setsid`. The delta audit
 also suggests verifying `/proc/<pid>/cwd` rather than only comparing md5 after the fact, which
 catches the case where the right bytes are served by the wrong process.
+
+### M27 — **A vital can be logged from the report screen and never corrected or removed there** (M)
+
+From `outputs/ENHANCER-app-v90.md` E1. Task **#32**.
+
+The Temperature report's `Readings` list (`index.html` 11638) and the Weight trend's `All Readings`
+(12681) render every reading as a plain row with **no control on it**. A temperature typed as `102`
+instead of `100.2` goes in on that screen and cannot be fixed on it. Removal lives in History
+(5893), behind a different tab; **correction does not exist for a vital at all.**
+
+**Paracentesis, on the same Reports screen, has a `Remove` on every row** (12494), and bowel and
+appetite days got the correct-rather-than-delete treatment in app-v89. Vitals are what is left out,
+and that inconsistency is the finding rather than an absence.
+
+Preferred shape: a correction path that **appends a superseding reading** the way `logSymptom` has
+since app-v72, plus a `Remove` matching the paracentesis row. Build with M28 below, not before it.
+
+### M28 — Both vital log boxes stamp NOW, with no earlier-time entry (M, pairs with M27)
+
+E2. A temperature taken at 6am and typed in at 9pm is recorded at 9pm, and by M27 cannot be moved.
+Bowel and appetite got "log a day you missed" in app-v89; the two vitals did not. An entry at the
+wrong time that **can** be corrected is a far smaller problem than one that cannot, so M27 first.
+
+### M29 — **`Average` on the Weight trend is the paracentesis average again** (S) — Aaron's call
+
+E3, and Voice question 3. Task **#33**. `index.html` 12636 shows `Current` / `Average` / `Change`;
+`Average` is the arithmetic mean of every reading in the window.
+
+Weight during treatment **trends**, so its mean is the midpoint of a slope. It describes nothing a
+clinician uses and invites *"averaging 150, this one is 146, fine"* when the direction is the whole
+story — and **`Change` already carries the direction** while `Current` carries the number that
+matters. This is precisely what Aaron caught on the paracentesis report himself (*"this isn't an avg
+thing"*), one screen across, surviving because this seat looks for what is missing and walks past
+what is already there — the blind spot Rule 2.6 item 6 names.
+
+Recommend **rate of change** over the window (`-1.4 lb / week`): the figure oncology watches, and
+one that cannot be read as a target. **A number on a patient's screen, so Aaron decides.**
+
+### M30 — The Temperature report's range toggle writes `state.weightRange` (S)
+
+E4. Task **#34**. `renderTemperatureReport` 11498 reads `state.weightRange`, and its own
+Weeks/Months buttons write it — so **Months** on Temperature silently switches the Weight report
+too. Surfaced by app-v90's own suite section 4b, which is the first test ever to press that button.
+Defensible behaviour, undefensible naming. Recommend renaming the key to `vitalRange` with a comment
+saying the sharing is deliberate, rather than splitting it.
