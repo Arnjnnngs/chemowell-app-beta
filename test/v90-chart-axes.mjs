@@ -56,13 +56,25 @@ const seed = (entries) => `(() => {
 })()`;
 
 // Open a report and read its x-axis labels by hook.
-const axisOf = async (chartKey, entries, months) => {
+const axisOf = async (chartKey, entries, months, simYmd) => {
   const c = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   c.on('page', (pg2) => pg2.on('pageerror', (e) => thrown.push(String(e))));
   const pg = await c.newPage();
   await pg.addInitScript(seed(entries));
   await pg.goto(BASE, { waitUntil: 'load' });
   await pg.waitForTimeout(2200);
+  // Move the app's clock BEFORE the report is drawn, where asked. chartTimeMax takes `now` as an
+  // argument precisely so one drawing cannot hold two clocks, and a mutant that threw the
+  // argument away and called Date.now() again passed all 89 checks -- because nothing in the
+  // suite could make the app's clock differ from the real one.
+  if (simYmd) {
+    const moved = await pg.evaluate((ymd) => {
+      if (!(window.__v86Test && window.__v86Test.simDate)) return 'no hook';
+      window.__v86Test.simDate(ymd); return 'ok';
+    }, simYmd);
+    if (moved !== 'ok') thrown.push('simDate hook missing');
+    await pg.waitForTimeout(500);
+  }
   const opened = await pg.evaluate((k) => {
     if (!(window.__v86Test && window.__v86Test.openReport)) return 'no hook';
     window.__v86Test.openReport(k); return 'ok';
@@ -91,6 +103,11 @@ const axisOf = async (chartKey, entries, months) => {
       // one is drawn at the earliest reading, which is exactly where the axis starts -- so it is
       // an exact anchor for the first label, derived from the chart rather than guessed.
       cxs: svg ? [...svg.querySelectorAll('circle')].map(c => Number(c.getAttribute('cx'))) : [],
+      // THE BOX, NOT THE ANCHOR. Putting pad.right back to 20 -- undoing the clipping fix this
+      // release shipped -- passed all 89 checks, because the only positional check asked whether
+      // the label's `x` was inside the viewBox and both 646 and 660 are. What clips is the drawn
+      // text, which extends half its width either side of x because text-anchor is middle.
+      boxes: ns.map(n => { try { const b = n.getBBox(); return [b.x, b.x + b.width]; } catch (e) { return null; } }),
       vbWidth: vb && vb.length === 4 ? vb[2] : null,
       svgs: document.querySelectorAll('svg').length,
     };
@@ -141,6 +158,20 @@ const futureOnes = (labels) => {
   });
 };
 
+// Only for spans whose ticks are guaranteed to produce distinct labels -- a day or more apart on
+// a dated axis, or distinct hours on a same-day one. There, EVERY tick must carry a label, so the
+// gaps between labels are all equal. A mutant that dropped one label from the middle of the axis
+// passed all 89 checks: nothing asserted the axis was fully labelled, and every distinctness
+// check (`new Set(labels).size === labels.length`) is satisfied MORE easily by dropping a label
+// than by keeping it. The suite was blind in exactly the direction the de-duplication fix moved
+// the code. Deliberately NOT applied where labels are meant to collapse (sections 3, 3b and 4c).
+const checkFullyLabelled = (tag, r) => {
+  const xs = r.xs || [];
+  t(tag + '.f1  every tick on the axis carries a label -- none dropped from the middle',
+    xs.length >= 3 && xs.slice(1).every((v, i) => Math.abs((v - xs[i]) - (xs[1] - xs[0])) <= 0.3),
+    'gaps ' + JSON.stringify(xs.slice(1).map((v, i) => Math.round((v - xs[i]) * 10) / 10)));
+};
+
 // Every section runs this. It is the half the suite was missing.
 const checkPositions = (tag, r) => {
   const xs = r.xs || [];
@@ -161,6 +192,10 @@ const checkPositions = (tag, r) => {
   t(tag + '.p3  the first label sits exactly on the earliest reading',
     xs.length > 0 && cxs.length > 0 && Math.abs(xs[0] - Math.min.apply(null, cxs)) <= 0.11,
     'first label at ' + xs[0] + ', earliest reading at ' + (cxs.length ? Math.min.apply(null, cxs) : 'none'));
+  const boxes = (r.boxes || []).filter(Boolean);
+  t(tag + '.p4  and no label is DRAWN outside the chart, box and all',
+    boxes.length === xs.length && r.vbWidth > 0 && boxes.every(bx => bx[0] >= 0 && bx[1] <= r.vbWidth),
+    'viewBox 0..' + r.vbWidth + ', boxes ' + JSON.stringify(boxes.map(bx => [Math.round(bx[0] * 10) / 10, Math.round(bx[1] * 10) / 10])));
 };
 
 for (const chart of CHARTS) {
@@ -183,6 +218,7 @@ for (const chart of CHARTS) {
       r.labels.length >= 3 && new Set(r.labels).size === r.labels.length,
       r.labels.length + ' labels: ' + JSON.stringify(r.labels));
     checkPositions('1.' + chart.key + '', r);
+    checkFullyLabelled('1.' + chart.key + '', r);
   }
 
   // --- 2. Three readings in one morning. The reported "repeats dates" case.
@@ -196,6 +232,7 @@ for (const chart of CHARTS) {
     t('2.' + chart.key + '.2  and none of them is after now',
       r.labels.length > 0 && futureOnes(r.labels).length === 0, JSON.stringify(futureOnes(r.labels)));
     checkPositions('2.' + chart.key + '', r);
+    checkFullyLabelled('2.' + chart.key + '', r);
   }
 
   // --- 3. Two days, which is the span the old code repeated most visibly.
@@ -229,6 +266,7 @@ for (const chart of CHARTS) {
       r.labels.length >= 3 && new Set(r.labels).size === r.labels.length && futureOnes(r.labels).length === 0,
       JSON.stringify(r.labels) + ' future=' + JSON.stringify(futureOnes(r.labels)));
     checkPositions('4.' + chart.key, r);
+    checkFullyLabelled('4.' + chart.key, r);
 
     // --- 4b. THE MONTHS TOGGLE, which asks the axis for 6 ticks instead of 4. Nothing pressed it
     //         before, so a mutant hard-coding the count sailed through every case above.
@@ -242,6 +280,7 @@ for (const chart of CHARTS) {
       new Set(rm.labels).size === rm.labels.length && futureOnes(rm.labels).length === 0,
       JSON.stringify(rm.labels));
     checkPositions('4b.' + chart.key, rm);
+    checkFullyLabelled('4b.' + chart.key, rm);
   }
 }
 
@@ -263,9 +302,74 @@ for (const chart of CHARTS) {
   t('3b.' + chart.key + '.1  distinct, and nothing after today',
     new Set(r.labels).size === r.labels.length && futureOnes(r.labels).length === 0,
     JSON.stringify(r.labels));
-  t('3b.' + chart.key + '.2  the earliest date is the first label, not a later one',
-    r.labels.length >= 2, JSON.stringify(r.labels));
+  // THIS CHECK WAS VACUOUS AND THE AUDIT PROVED IT. It read `r.labels.length >= 2` -- character
+  // for character its own precondition one line above -- under a name claiming something else
+  // entirely, and the keep-the-last-of-a-run mutant made that claim false while this passed.
+  // Rule 5's `|| true` hazard with better camouflage, in the very commit whose message was about
+  // checks that cannot be reached. It now asserts the claim its name makes: the first label is
+  // the DATE OF THE EARLIEST READING, which is a different statement from p3's positional one.
+  const wantFirst = (new Date(t0).getMonth() + 1) + '/' + new Date(t0).getDate();
+  t('3b.' + chart.key + '.2  the first label names the earliest reading\u2019s own date',
+    r.labels[0] === wantFirst, 'first label ' + JSON.stringify(r.labels[0]) + ', want ' + JSON.stringify(wantFirst));
   checkPositions('3b.' + chart.key, r);
+}
+
+// --- 3c. A CHART WHOSE NEWEST READING IS DAYS OLD. This is the case the whole suite was
+//         missing, and it is the same gap that let a FALSE SENTENCE reach the patient: the
+//         app-v90 release note first said the charts "stop at the last reading", which is only
+//         true when the last reading is old. Every fixture in the suite ended at roughly now, so
+//         the suite could not tell "stops at the newest reading" from "runs on to today" -- and
+//         a mutant dropping the `tMin + AXIS_DAY` cap entirely passed all 89 checks for exactly
+//         that reason. Here the newest reading is five days back, so the axis must END on it.
+console.log('\n=== 3c. The axis ends on the newest reading when that reading is days old');
+for (const chart of CHARTS) {
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const t0 = midnight.getTime() - 20 * DAY + 9 * HOUR;
+  const tLast = midnight.getTime() - 5 * DAY + 9 * HOUR;
+  const r = await axisOf(chart.key, [chart.mk(t0, 0), chart.mk(Math.round((t0 + tLast) / 2), 1), chart.mk(tLast, 2)]);
+  t('3c.' + chart.key + '.0  precondition: the chart rendered an axis', r.labels.length >= 3,
+    'labels=' + JSON.stringify(r.labels));
+  // The newest reading's dot and the final tick must be the same point. If the axis ran on to
+  // today, the last dot would sit well left of the last label.
+  const cxs = (r.cxs || []).filter(Number.isFinite);
+  t('3c.' + chart.key + '.1  the last label sits exactly on the newest reading, not days past it',
+    r.xs.length > 0 && cxs.length > 0
+      && Math.abs(r.xs[r.xs.length - 1] - Math.max.apply(null, cxs)) <= 0.11,
+    'last label at ' + r.xs[r.xs.length - 1] + ', newest reading at ' + (cxs.length ? Math.max.apply(null, cxs) : 'none'));
+  // And said the other way round, in the axis's own words rather than its geometry.
+  const wantLast = (new Date(tLast).getMonth() + 1) + '/' + new Date(tLast).getDate();
+  t('3c.' + chart.key + '.2  and the last label is that reading\u2019s date, not today\u2019s',
+    r.labels[r.labels.length - 1] === wantLast,
+    'last label ' + JSON.stringify(r.labels[r.labels.length - 1]) + ', want ' + JSON.stringify(wantLast));
+  t('3c.' + chart.key + '.3  distinct, and nothing after today',
+    new Set(r.labels).size === r.labels.length && futureOnes(r.labels).length === 0,
+    JSON.stringify(r.labels));
+  checkPositions('3c.' + chart.key, r);
+  checkFullyLabelled('3c.' + chart.key, r);
+}
+
+// --- 3d. A SPAN LONGER THAN A YEAR, WHICH THE CODE'S OWN COMMENT CLAIMED WAS UNREACHABLE.
+//         It is not: when every reading is older than the window, renderWeightTrend falls back to
+//         `weightEntries.slice(-2)` with no bound on how far apart the two are. Without the year
+//         in the format, global de-duplication dropped the tick sitting under the most recent
+//         reading. Weight only -- the temperature report says "no temperatures in the last N"
+//         for an empty window instead of falling back, and that difference is the point.
+console.log('\n=== 3d. A span longer than a year carries the year, and loses no label');
+{
+  const chart = CHARTS.find(c => c.key === 'weight');
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const t0 = midnight.getTime() - 400 * DAY + 9 * HOUR;
+  const tLast = midnight.getTime() - 60 * DAY + 9 * HOUR;   // 340 days apart, both outside 28d
+  const r = await axisOf(chart.key, [chart.mk(t0, 0), chart.mk(tLast, 1)]);
+  t('3d.0  precondition: the fallback rendered a chart from two out-of-window readings',
+    r.labels.length >= 3, 'labels=' + JSON.stringify(r.labels));
+  t('3d.1  every label carries the year, so no two can be confused across one',
+    r.labels.length >= 3 && r.labels.every(L => /^\d{1,2}\/\d{1,2}\/\d{2}$/.test(L)),
+    JSON.stringify(r.labels));
+  t('3d.2  and the tick under the newest reading still has its label',
+    new Set(r.labels).size === r.labels.length, JSON.stringify(r.labels));
+  checkPositions('3d', r);
+  checkFullyLabelled('3d', r);
 }
 
 console.log('\n=== 4c. A span under three hours is labeled to the minute');
@@ -298,6 +402,31 @@ for (const chart of CHARTS) {
     new Set(r.labels).size === r.labels.length && futureOnes(r.labels).length === 0,
     JSON.stringify(r.labels));
   checkPositions('4c.' + chart.key, r);
+}
+
+// --- 4d. THE TEST_MODE DATE OVERRIDE. chartTimeMax is handed the same `now` the rest of the
+//         chart was built from, instead of calling simNow() a second time -- so one drawing holds
+//         one clock. A mutant that ignored the argument and called Date.now() passed every one of
+//         the 89 checks before this, because no fixture ever moved the app's clock. With the
+//         clock pushed three days forward, a reading logged that morning draws a normal axis; a
+//         chart reading the REAL clock collapses the span to nothing and draws a single label.
+console.log('\n=== 4d. A simulated future date moves the axis with it');
+{
+  const future = new Date(); future.setHours(0, 0, 0, 0);
+  future.setTime(future.getTime() + 3 * DAY);
+  const ymd = future.getFullYear() + '-' + String(future.getMonth() + 1).padStart(2, '0')
+    + '-' + String(future.getDate()).padStart(2, '0');
+  for (const chart of CHARTS) {
+    const r = await axisOf(chart.key, [chart.mk(future.getTime() + 9 * HOUR, 0)], false, ymd);
+    t('4d.' + chart.key + '.0  precondition: the chart rendered on the simulated day',
+      r.labels.length >= 1, 'labels=' + JSON.stringify(r.labels));
+    t('4d.' + chart.key + '.1  the axis runs from the reading to the SIMULATED now, not collapsed',
+      r.labels.length >= 3 && new Set(r.labels).size === r.labels.length,
+      r.labels.length + ' labels: ' + JSON.stringify(r.labels));
+    t('4d.' + chart.key + '.2  and they are times on one day, since the reading is today there',
+      r.labels.length >= 3 && r.labels.every(L => /(AM|PM)/i.test(L)), JSON.stringify(r.labels));
+    checkPositions('4d.' + chart.key, r);
+  }
 }
 
 console.log('\n=== 5. The What’s New title has a hook, not a line number (F1, deferred from app-v89)');

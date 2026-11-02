@@ -9329,7 +9329,7 @@ const APP_VERSION = 'app-v90';
 const CHANGELOG = [
   { v: 'app-v90', date: 'Nov 2, 2026', title: 'Chart dates read correctly',
     points: [
-      'The temperature and weight charts could label the bottom of the chart with tomorrow\u2019s date when only today had readings. They stop at the last reading now.',
+      'The temperature and weight charts could label the bottom of the chart with tomorrow\u2019s date when only today had readings. They no longer run past today.',
       'They also repeated the same date several times across a short stretch. A single day is labeled by the hour now, and longer stretches by the date, with no date printed twice.',
     ] },
   { v: 'app-v89', date: 'Oct 31, 2026', title: 'Every feature is free now',
@@ -11453,18 +11453,23 @@ function timeAxisLabels(tMin, tMax, count, x) {
   // comment reasoned that duplicates must therefore be adjacent and de-duplicated only against
   // the previous label, which was true below a year and wrong above it. The de-duplication is
   // global now. Times within one day are strictly increasing and cannot collide at all.
-  // The year is deliberately still absent, and that is a reachability call rather than an
-  // oversight: the only two spans the UI can ask for are 28 and 90 days (`spanDays`), so no
-  // label this function can be asked to draw is ambiguous about which year it is in. If a range
-  // longer than a year is ever added, the format needs the year -- not more de-duplication,
-  // which would silently drop labels instead.
+  // AND A SPAN OVER A YEAR IS REACHABLE, which an earlier version of this comment flatly denied.
+  // It claimed the UI can only ask for 28 or 90 days (`spanDays`) and that no label could
+  // therefore be ambiguous about its year. False: when EVERY reading is older than the window,
+  // `renderWeightTrend` falls back to `weightEntries.slice(-2)` with no bound at all on how far
+  // apart those two readings are. Measured at a 365-day span, global de-duplication did not just
+  // leave an ambiguous label -- it DROPPED one, and the one it dropped was the tick sitting under
+  // the most recent reading. So the year is printed once the span passes ~300 days, which is what
+  // that same comment said the right fix was in the sentence before it declined to do it.
   const dayOf = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
   const sameDay = dayOf(tMin) === dayOf(tMax);
   const fmt = sameDay
     ? (span < 3 * AXIS_HOUR
         ? (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
         : (d) => d.toLocaleTimeString([], { hour: 'numeric' }))
-    : (d) => (d.getMonth() + 1) + '/' + d.getDate();
+    : (span > 300 * AXIS_DAY
+        ? (d) => (d.getMonth() + 1) + '/' + d.getDate() + '/' + String(d.getFullYear()).slice(-2)
+        : (d) => (d.getMonth() + 1) + '/' + d.getDate());
   const out = [], seen = new Set();
   for (let i = 0; i <= count; i++) {
     const ts = tMin + (span / count) * i;
@@ -13650,6 +13655,11 @@ if (typeof window !== 'undefined') {
   // exact label text of a bottom-nav button.
   window.__v86Test = {
     openReport: (r) => openReport(r),
+    // app-v90 delta. chartTimeMax takes `now` as an argument so one drawing cannot hold two
+    // clocks -- and a mutant that threw the argument away and called Date.now() again passed all
+    // 89 checks, because nothing in the suite could move the app's clock away from the real one.
+    // The alternative was driving a collapsed settings panel by text, which Rule 5 forbids.
+    simDate: (ymd) => setSimDate(ymd),
     isDoseEntry,
     isSymptomEntry,
     supersedeStamp,
