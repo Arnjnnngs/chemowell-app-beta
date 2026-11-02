@@ -283,3 +283,30 @@ Fix the one sentence and the one check. Neither touches the drawing code, so the
 five-timezone result stand; re-run `v90-chart-axes.mjs` once after BLOCKER-2 and the re-audit is a
 delta on two files. The chart fix is right, it is the fix Aaron asked for, and it should not wait
 long behind two edits this small.
+
+---
+
+## Addendum — five commits landed above the audit target during this pass
+
+`dc4b337`, `4fc6706`, `ddf504b`, `34e83f9`, `e99af32`. **All documentation**: TEAM.md, BACKLOG.md,
+README.md. `git diff 9e34a40 HEAD -- index.html sw.js test/` is **empty**, so everything above was
+measured against the code that is at HEAD and both blockers are still live there.
+
+Re-checked at HEAD, since two of my findings are about the README:
+
+* **Both record errors persist.** *"FOUR OF THEM SURVIVED 29/29"* is still in the row (six did),
+  and *"All five now die: 12, 22, 2, 2 and 2 red"* is unchanged — my reconstruction of the
+  one-tick-right mutant reds 24, and I still cannot identify the 12.
+* **The new text corroborates me where it overlaps.** The row now records `v88 51/58` and
+  root-causes all seven failures to one line — `pickDay` matching a calendar cell by the day
+  NUMBER as text and clicking the LAST match, which is two selectors Rule 5 forbids by name, and
+  which is why the count moves with the calendar month rather than with the code. That matches the
+  51/58 I measured and settles a figure that had been wrong twice. The note that 7b's empty note
+  box "reads exactly like silently losing a caregiver's note" and is really the suite correcting
+  the wrong day is the right call and worth the space it takes.
+* **One number I did not measure moved.** The row now reads `v82 15/15` where it previously read
+  `v82 24/24`. I did not run v82 this pass and offer no opinion; flagging it only because a figure
+  in that table changed without a release between.
+* `9.6a2`'s falsification is now recorded in the row as 75/75 clean and 74/75 with the date in the
+  title. **That is exactly what I measured independently** (M12), so F7 is closed on two separate
+  runs rather than one.
