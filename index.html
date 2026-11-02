@@ -9329,8 +9329,8 @@ const APP_VERSION = 'app-v90';
 const CHANGELOG = [
   { v: 'app-v90', date: 'Nov 2, 2026', title: 'Chart dates read correctly',
     points: [
-      'The temperature and weight charts could label the bottom of the chart with tomorrow\u2019s date. They now stop at today.',
-      'They also repeated the same date several times across a short stretch. A single day is labelled by the hour now, and longer stretches by the date, with nothing printed twice.',
+      'The temperature and weight charts could label the bottom of the chart with tomorrow\u2019s date when only today had readings. They stop at the last reading now.',
+      'They also repeated the same date several times across a short stretch. A single day is labeled by the hour now, and longer stretches by the date, with no date printed twice.',
     ] },
   { v: 'app-v89', date: 'Oct 31, 2026', title: 'Every feature is free now',
     points: [
@@ -11448,8 +11448,16 @@ function timeAxisLabels(tMin, tMax, count, x) {
   //
   // So the question is not how LONG the span is, it is whether it crosses midnight. Within a day
   // the date never varies and the time is the whole story; across days the reverse. Dates are
-  // monotonic, so any duplicates among them are adjacent and the de-duplication below removes
-  // them; times within one day are strictly increasing and cannot collide at all.
+  // monotonic -- but NOT free of duplicates at distance, because M/D carries no year: two
+  // readings 730 days apart render "7/25, 1/24, 7/25, 1/24, 7/25". An earlier version of this
+  // comment reasoned that duplicates must therefore be adjacent and de-duplicated only against
+  // the previous label, which was true below a year and wrong above it. The de-duplication is
+  // global now. Times within one day are strictly increasing and cannot collide at all.
+  // The year is deliberately still absent, and that is a reachability call rather than an
+  // oversight: the only two spans the UI can ask for are 28 and 90 days (`spanDays`), so no
+  // label this function can be asked to draw is ambiguous about which year it is in. If a range
+  // longer than a year is ever added, the format needs the year -- not more de-duplication,
+  // which would silently drop labels instead.
   const dayOf = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
   const sameDay = dayOf(tMin) === dayOf(tMax);
   const fmt = sameDay
@@ -11457,11 +11465,12 @@ function timeAxisLabels(tMin, tMax, count, x) {
         ? (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
         : (d) => d.toLocaleTimeString([], { hour: 'numeric' }))
     : (d) => (d.getMonth() + 1) + '/' + d.getDate();
-  const out = [];
+  const out = [], seen = new Set();
   for (let i = 0; i <= count; i++) {
     const ts = tMin + (span / count) * i;
     const label = fmt(new Date(ts));
-    if (out.length && out[out.length - 1].label === label) continue;
+    if (seen.has(label)) continue;
+    seen.add(label);
     out.push({ label: label, px: x(ts) });
   }
   return out;
@@ -11473,8 +11482,10 @@ function timeAxisLabels(tMin, tMax, count, x) {
 // Math.max(lastTs, ...) is load-bearing in the one direction that matters: the data always fits.
 // If a reading is somehow later than "now" -- a simulated future date -- the axis still reaches it
 // rather than cropping a reading out of the chart.
-function chartTimeMax(tMin, lastTs) {
-  return Math.max(lastTs, Math.min(tMin + AXIS_DAY, simNow()));
+// `now` is passed in rather than read again: every caller already holds the one the rest of the
+// chart was built from, and calling simNow() here would put two clocks in one drawing.
+function chartTimeMax(tMin, lastTs, now) {
+  return Math.max(lastTs, Math.min(tMin + AXIS_DAY, now));
 }
 
 function renderTemperatureReport(now) {
@@ -11543,11 +11554,15 @@ function renderTemperatureReport(now) {
   const vMin = Math.floor(lo * 2) / 2, vMax = Math.ceil(hi * 2) / 2;
   const vRange = (vMax - vMin) || 2;
   const tMin = points[0].ts;
-  const tMax = chartTimeMax(tMin, points[points.length - 1].ts);
+  const tMax = chartTimeMax(tMin, points[points.length - 1].ts, now);
   const tRange = (tMax - tMin) || DAY;
 
   const W = 680, H = 300;
-  const pad = { top: 30, right: 20, bottom: 50, left: 58 };
+  // right: 34, not 20 -- this release made the last label a TIME on a same-day chart, and
+  // "10:36 PM" is 29 units wide where "10/31" was 18. At 20 it rendered as "10:09 P",
+  // clipped by the viewBox: a caregiver taking temperatures every half hour late evening,
+  // which is this release's own use case.
+  const pad = { top: 30, right: 34, bottom: 50, left: 58 };
   const cW = W - pad.left - pad.right, cH = H - pad.top - pad.bottom;
   const x = (ts) => pad.left + ((ts - tMin) / tRange) * cW;
   const y = (v) => pad.top + cH - ((v - vMin) / vRange) * cH;
@@ -12526,12 +12541,12 @@ function renderWeightTrend(now) {
   const maxW = Math.ceil(Math.max(...weights) + 2);
   const wRange = maxW - minW || 4;
   const tMin = points[0].ts;
-  const tMax = chartTimeMax(tMin, points[points.length - 1].ts);
+  const tMax = chartTimeMax(tMin, points[points.length - 1].ts, now);
   const tRange = tMax - tMin || DAY;
 
   // SVG dimensions
   const W = 680, H = 300;
-  const pad = { top: 30, right: 20, bottom: 50, left: 55 };
+  const pad = { top: 30, right: 34, bottom: 50, left: 55 };  // see the note in the temperature chart
   const cW = W - pad.left - pad.right;
   const cH = H - pad.top - pad.bottom;
 

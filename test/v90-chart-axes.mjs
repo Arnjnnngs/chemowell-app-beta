@@ -56,7 +56,7 @@ const seed = (entries) => `(() => {
 })()`;
 
 // Open a report and read its x-axis labels by hook.
-const axisOf = async (chartKey, entries) => {
+const axisOf = async (chartKey, entries, months) => {
   const c = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   c.on('page', (pg2) => pg2.on('pageerror', (e) => thrown.push(String(e))));
   const pg = await c.newPage();
@@ -68,16 +68,56 @@ const axisOf = async (chartKey, entries) => {
     window.__v86Test.openReport(k); return 'ok';
   }, chartKey);
   await pg.waitForTimeout(900);
-  const out = await pg.evaluate(() => ({
-    labels: [...document.querySelectorAll('[data-xaxis]')].map(n => (n.textContent || '').trim()),
-    svgs: document.querySelectorAll('svg').length,
-  }));
+  // The Weeks/Months toggle decides whether the axis asks for 4 ticks or 6. A mutant that
+  // hard-coded it to 4 survived the whole suite, because nothing ever pressed Months.
+  if (months) {
+    await pg.evaluate(() => {
+      const b2 = [...document.querySelectorAll('button')].find(x => /^Months$/.test((x.innerText || '').trim()));
+      if (b2) b2.click();
+    });
+    await pg.waitForTimeout(700);
+  }
+  // POSITION, NOT ONLY TEXT. Four surviving mutants moved every label sideways -- one tick right
+  // of its own time, or the de-duplication keeping the last of a run instead of the first -- and
+  // the suite never noticed, because it only ever read the words. data-xaxis already carries x.
+  const out = await pg.evaluate(() => {
+    const ns = [...document.querySelectorAll('[data-xaxis]')];
+    const svg = ns.length ? ns[0].closest('svg') : null;
+    const vb = svg ? (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number) : null;
+    return {
+      labels: ns.map(n => (n.textContent || '').trim()),
+      xs: ns.map(n => Number(n.getAttribute('x'))),
+      // The data points are the chart's own statement of where a moment in time sits. The first
+      // one is drawn at the earliest reading, which is exactly where the axis starts -- so it is
+      // an exact anchor for the first label, derived from the chart rather than guessed.
+      cxs: svg ? [...svg.querySelectorAll('circle')].map(c => Number(c.getAttribute('cx'))) : [],
+      vbWidth: vb && vb.length === 4 ? vb[2] : null,
+      svgs: document.querySelectorAll('svg').length,
+    };
+  });
   await c.close();
   return { opened, ...out };
 };
 
-// Today at a given hour, in the browser's own zone, as a timestamp.
-const todayAt = (h, m) => { const d = new Date(); d.setHours(h, m || 0, 0, 0); return d.getTime(); };
+// FIXTURES ARE RELATIVE TO NOW, NEVER AT AN ABSOLUTE HOUR. The first version seeded todayAt(9)
+// and todayAt(7/9/11), so before those hours it was creating FUTURE-dated readings: the single
+// reading case collapsed to tMax === tMin, one label, and that label was after now. Six checks
+// red, on this exact and correct code, at 03:07, 03:38, 04:38 and 04:05 in four timezones --
+// found by the audit running at a different hour than the author.
+//
+// A suite that passes in the afternoon and fails in the morning is worse than no suite: it is
+// red on correct code, which teaches whoever sees it that red means nothing. Every fixture below
+// is "N hours before now", clamped so it never lands before midnight -- so a run at 00:30 gets a
+// span measured in minutes rather than a reading dated yesterday, and still tests the same thing.
+const ago = (hours) => {
+  const now = Date.now();
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const wanted = now - hours * HOUR;
+  // Keep it inside today, and never exactly now -- a zero-length span is its own case, not this one.
+  return Math.max(wanted, midnight.getTime() + 60000);
+};
+// Hours before now, used where a case needs a day boundary crossed rather than a time of day.
+const agoDays = (d, hours) => ago(hours) - d * DAY;
 
 // A label is "in the future" if it names a calendar day after today, or an hour later than now.
 // Date labels are M/D; time labels are "9 AM" or "9:05 AM". Both are checked against the same
@@ -101,13 +141,35 @@ const futureOnes = (labels) => {
   });
 };
 
+// Every section runs this. It is the half the suite was missing.
+const checkPositions = (tag, r) => {
+  const xs = r.xs || [];
+  t(tag + '.p1  every label has a real x inside the drawing',
+    xs.length > 0 && r.vbWidth > 0 && xs.every(v => Number.isFinite(v) && v >= 0 && v <= r.vbWidth),
+    'viewBox width ' + r.vbWidth + ', xs ' + JSON.stringify(xs));
+  t(tag + '.p2  and they run left to right, never backwards or on top of each other',
+    xs.length > 0 && xs.every((v, i) => i === 0 || v > xs[i - 1]), JSON.stringify(xs));
+  // A label shifted a whole tick sideways is still "increasing" and still "inside" -- what it is
+  // not is anchored to the data. Two mutants did exactly that: one drew every label a tick right
+  // of its own time, the other kept the LAST of a run of repeats instead of the first, which
+  // drags the surviving label rightwards. Both move the FIRST label off the earliest reading,
+  // and the earliest reading's own dot is where the axis begins -- so this compares the two.
+  // (The LAST label is deliberately not checked against the right edge: where the labels
+  // de-duplicate, as they do across a two-day span, the last one kept sits where the date
+  // changes, which is correct and is nowhere near the edge.)
+  const cxs = (r.cxs || []).filter(Number.isFinite);
+  t(tag + '.p3  the first label sits exactly on the earliest reading',
+    xs.length > 0 && cxs.length > 0 && Math.abs(xs[0] - Math.min.apply(null, cxs)) <= 0.11,
+    'first label at ' + xs[0] + ', earliest reading at ' + (cxs.length ? Math.min.apply(null, cxs) : 'none'));
+};
+
 for (const chart of CHARTS) {
   console.log('\n=== ' + chart.name.toUpperCase() + ' CHART ===');
 
   // --- 1. ONE reading today. The reported "runs into the future" case, at its sharpest: the old
   //        floor made the right edge 24h after the ONLY reading.
   {
-    const r = await axisOf(chart.key, [chart.mk(todayAt(9), 0)]);
+    const r = await axisOf(chart.key, [chart.mk(ago(4), 0)]);
     t('1.' + chart.key + '.0  precondition: the chart rendered and has labels',
       r.opened === 'ok' && r.labels.length > 0, 'opened=' + r.opened + ' svgs=' + r.svgs + ' labels=' + JSON.stringify(r.labels));
     const fut = futureOnes(r.labels);
@@ -120,11 +182,12 @@ for (const chart of CHARTS) {
     t('1.' + chart.key + '.2  and a day of readings gets several distinct labels, not one',
       r.labels.length >= 3 && new Set(r.labels).size === r.labels.length,
       r.labels.length + ' labels: ' + JSON.stringify(r.labels));
+    checkPositions('1.' + chart.key + '', r);
   }
 
   // --- 2. Three readings in one morning. The reported "repeats dates" case.
   {
-    const r = await axisOf(chart.key, [chart.mk(todayAt(7), 0), chart.mk(todayAt(9), 1), chart.mk(todayAt(11), 2)]);
+    const r = await axisOf(chart.key, [chart.mk(ago(5), 0), chart.mk(ago(3), 1), chart.mk(ago(1), 2)]);
     t('2.' + chart.key + '.0  precondition: the chart rendered and has labels',
       r.opened === 'ok' && r.labels.length > 0, 'labels=' + JSON.stringify(r.labels));
     t('2.' + chart.key + '.1  three readings in one morning give several distinct labels',
@@ -132,11 +195,12 @@ for (const chart of CHARTS) {
       r.labels.length + ' labels: ' + JSON.stringify(r.labels));
     t('2.' + chart.key + '.2  and none of them is after now',
       r.labels.length > 0 && futureOnes(r.labels).length === 0, JSON.stringify(futureOnes(r.labels)));
+    checkPositions('2.' + chart.key + '', r);
   }
 
   // --- 3. Two days, which is the span the old code repeated most visibly.
   {
-    const base = todayAt(9);
+    const base = ago(1);
     const r = await axisOf(chart.key, [chart.mk(base - DAY, 0), chart.mk(base - DAY + 6 * HOUR, 1), chart.mk(base, 2)]);
     t('3.' + chart.key + '.0  precondition: the chart rendered and has labels',
       r.opened === 'ok' && r.labels.length > 0, 'labels=' + JSON.stringify(r.labels));
@@ -147,12 +211,13 @@ for (const chart of CHARTS) {
       r.labels.length + ' labels: ' + JSON.stringify(r.labels));
     t('3.' + chart.key + '.2  and nothing is after today',
       r.labels.length > 0 && futureOnes(r.labels).length === 0, JSON.stringify(futureOnes(r.labels)));
+    checkPositions('3.' + chart.key + '', r);
   }
 
   // --- 4. Four weeks. The case that already worked: it must still look the way it did, dates and
   //        all, or the format rule has eaten the ordinary chart.
   {
-    const base = todayAt(9);
+    const base = ago(1);
     const pts = [];
     for (let i = 27; i >= 0; i -= 3) pts.push(chart.mk(base - i * DAY, 27 - i));
     const r = await axisOf(chart.key, pts);
@@ -161,9 +226,78 @@ for (const chart of CHARTS) {
     t('4.' + chart.key + '.1  a month of readings is still labelled with dates',
       r.labels.length >= 3 && r.labels.every(L => /^\d{1,2}\/\d{1,2}$/.test(L)), JSON.stringify(r.labels));
     t('4.' + chart.key + '.2  distinct, and none after today',
-      new Set(r.labels).size === r.labels.length && futureOnes(r.labels).length === 0,
+      r.labels.length >= 3 && new Set(r.labels).size === r.labels.length && futureOnes(r.labels).length === 0,
       JSON.stringify(r.labels) + ' future=' + JSON.stringify(futureOnes(r.labels)));
+    checkPositions('4.' + chart.key, r);
+
+    // --- 4b. THE MONTHS TOGGLE, which asks the axis for 6 ticks instead of 4. Nothing pressed it
+    //         before, so a mutant hard-coding the count sailed through every case above.
+    const rm = await axisOf(chart.key, pts, true);
+    t('4b.' + chart.key + '.0  precondition: Months renders an axis', rm.labels.length >= 3,
+      'labels=' + JSON.stringify(rm.labels));
+    t('4b.' + chart.key + '.1  Months asks for more ticks than Weeks, and gets them',
+      rm.labels.length > r.labels.length,
+      'weeks ' + r.labels.length + ' ' + JSON.stringify(r.labels) + ' vs months ' + rm.labels.length + ' ' + JSON.stringify(rm.labels));
+    t('4b.' + chart.key + '.2  still distinct, still nothing after today',
+      new Set(rm.labels).size === rm.labels.length && futureOnes(rm.labels).length === 0,
+      JSON.stringify(rm.labels));
+    checkPositions('4b.' + chart.key, rm);
   }
+}
+
+// --- 3b. A SPAN WHOSE FIRST DATE REPEATS. This exists because of a mutant that survived
+//         everything above: de-duplication that keeps the LAST of a run of repeats instead of
+//         the first. In section 3 the earliest tick's date happened to be unique, so keeping the
+//         last of each run moved nothing the suite was looking at. Here most of the early ticks
+//         land on the first day, so keep-last drags that day's label inward, off the earliest
+//         reading -- and p3 sees it. The fixture is anchored to local midnight rather than to
+//         the current hour, so it does not change shape through the day.
+console.log('\n=== 3b. A span whose earliest date covers several ticks');
+for (const chart of CHARTS) {
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const t0 = midnight.getTime() - 2 * DAY + HOUR;         // two days ago, 01:00
+  const t1 = midnight.getTime() - DAY + 12 * HOUR;        // yesterday, noon
+  const r = await axisOf(chart.key, [chart.mk(t0, 0), chart.mk(t1, 1)]);
+  t('3b.' + chart.key + '.0  precondition: the chart rendered an axis', r.labels.length >= 2,
+    'labels=' + JSON.stringify(r.labels));
+  t('3b.' + chart.key + '.1  distinct, and nothing after today',
+    new Set(r.labels).size === r.labels.length && futureOnes(r.labels).length === 0,
+    JSON.stringify(r.labels));
+  t('3b.' + chart.key + '.2  the earliest date is the first label, not a later one',
+    r.labels.length >= 2, JSON.stringify(r.labels));
+  checkPositions('3b.' + chart.key, r);
+}
+
+console.log('\n=== 4c. A span under three hours is labeled to the minute');
+// The minute branch (span under 3 hours, all on one day) was only reachable by accident, between
+// about 09:00 and 12:00 local, so the mutant that disabled it survived the whole suite. The axis
+// always runs to NOW, so the window has to end at now and start after midnight -- which is as
+// little as a few seconds just after midnight. So the fixture takes whatever of the last 90
+// minutes is still inside today:
+const MIN = 60000;
+const minuteWindow = () => {
+  const now = Date.now();
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const end = now - 30000;
+  const start = Math.max(midnight.getTime() + 1000, end - 90 * MIN);
+  return [start, start + (end - start) / 2, end];
+};
+for (const chart of CHARTS) {
+  const w = minuteWindow();
+  const r = await axisOf(chart.key, w.map((ts, i) => chart.mk(ts, i)));
+  // The floor is one label, not three, on purpose: a minute past midnight the window is a few
+  // seconds wide and every tick rounds to the same minute. One label is enough to kill the
+  // mutant -- an hour-formatted label cannot match this pattern -- and the distinctness of a
+  // normal run is asserted in sections 1 through 4b, which are not clock-bound.
+  t('4c.' + chart.key + '.0  precondition: the chart rendered an axis', r.labels.length >= 1,
+    'labels=' + JSON.stringify(r.labels));
+  t('4c.' + chart.key + '.1  a span inside one hour is labeled with minutes, not bare hours',
+    r.labels.length >= 1 && r.labels.every(L => /^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(L)),
+    JSON.stringify(r.labels));
+  t('4c.' + chart.key + '.2  distinct and none after now',
+    new Set(r.labels).size === r.labels.length && futureOnes(r.labels).length === 0,
+    JSON.stringify(r.labels));
+  checkPositions('4c.' + chart.key, r);
 }
 
 console.log('\n=== 5. The What’s New title has a hook, not a line number (F1, deferred from app-v89)');

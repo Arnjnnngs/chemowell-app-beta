@@ -798,8 +798,15 @@ console.log('\n=== 9. The release note about the export names what MEASUREMENT s
     const n = document.querySelector('[data-whatsnew-title="app-v89"]');
     return n ? (n.textContent || '').trim() : null;
   });
+  // The hook alone is not enough. A mutant that rendered the DATE inside the title node, hook
+  // intact, scored 74/74 here -- because this precondition only measured the string's length,
+  // and "Nov 2, 2026" is a perfectly ordinary length. The v90 suite's 5.2 asserts the title is
+  // not a date; the same assertion belongs here, where the title is about to be read for meaning.
+  const looksLikeADate = /^\s*(?:\d{1,2}[\/.-]\d{1,2}|[A-Z][a-z]{2,8}\.?\s+\d{1,2})(?:[,\s]+\d{2,4})?\s*$/.test(title || '');
   t('9.6a  precondition: the notice title was found by its hook',
     typeof title === 'string' && title.length > 3 && title.length < 60, JSON.stringify(title));
+  t('9.6a2 and what came back is a title, not the date printed beside it',
+    typeof title === 'string' && !looksLikeADate && /[a-z]{3}/.test(title), JSON.stringify(title));
   await pg.evaluate(() => {
     const d = document.querySelector('[data-whatsnew-modal]');
     const btn = d && [...d.querySelectorAll('button')].find(x => /got it|close/i.test(x.innerText || ''));
