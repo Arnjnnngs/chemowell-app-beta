@@ -37,6 +37,24 @@ when you're about to touch the relevant code; delete the line once it's actually
   * **`pickDay` / `tapDay` are fragile across a month boundary** (`test/v88-log-a-missed-day.mjs`).
     They match a day cell by `String(getDate())`, which fails loudly but confusingly on the first
     days of a month. Assert the date pill's label names the expected date.
+    **MEASURED 2026-11-02, and it accounts for ALL SEVEN of that suite's failures, not one
+    section.** `pickDay` (line 573) takes `want = String(target.getDate())`, finds dialog buttons
+    whose text equals that number, and clicks `cells[cells.length - 1]`. The calendar draws only
+    the cursor month, so on **Nov 2** "two days back" is **Oct 31** and `want` is `"31"` — a number
+    November's grid does not contain. The fallback then clicks any button matching `/\d/`, which
+    can be anything. **Two Rule 5 violations in six lines:** a TEXT selector where a `data-` hook
+    is required, and last-match selection where an explicit hook is required. Both are named in
+    Rule 5 as already-paid-for lessons.
+    The date-dependence is the proof: **8 failures on Oct 31 (app-v89), 7 on Nov 2 (app-v90)**,
+    with no code change in that area. A failure count that moves with the calendar is a clock
+    artifact, not a regression. Sections 1/2/3 write to today instead of the day picked; **7b's
+    note box is empty because it is showing a DIFFERENT day's note, and confirming then writes a
+    row with `note: ""`** — which reads exactly like silent note loss and is not; 7f is the same
+    thing after a day change. **That near-miss is the reason this is written down in full: a suite
+    artifact that mimics data loss is one panic away from a day spent fixing a working app.**
+    Fix: `data-cal-day="YYYY-MM-DD"` on every cell, select on it, navigate months until the wanted
+    day is drawn. Falsify on the 1st, the 2nd and the 15th. Then re-check: any failure that
+    survives is a real app defect and gets its own task.
   * **`test/v75-no-other-patient.mjs` reads the repo from disk and ignores `FALSIFY_BASE`.** An
     auditor's first falsification of the pronoun ratchet reported the same count for a +1 and a −1
     mutant and looked like a dead ratchet when it was a harness that never reached the mutated
