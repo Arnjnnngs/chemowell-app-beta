@@ -842,3 +842,39 @@ Weeks/Months buttons write it — so **Months** on Temperature silently switches
 too. Surfaced by app-v90's own suite section 4b, which is the first test ever to press that button.
 Defensible behaviour, undefensible naming. Recommend renaming the key to `vitalRange` with a comment
 saying the sharing is deliberate, rather than splitting it.
+
+### M31 — `dayOf()` decides "same day" from the container's clock, and no test can reach the gap (S)
+
+Named twice by the Zero Day Auditor (`AUDIT-app-v90.md` A4, `AUDIT-app-v90-delta.md` M11) and
+**still alive**, recorded here because a hole reported twice and written down nowhere is a hole that
+gets closed by accident or not at all.
+
+`timeAxisLabels()` decides between time labels and date labels with
+`dayOf(ts) => { const d = new Date(ts); d.setHours(0,0,0,0); return d.getTime(); }`. A mutant that
+uses `setUTCHours` instead **survives the whole suite, and survived it under `TZ=America/Chicago`
+too.** The discriminating input is a span that crosses LOCAL midnight but not UTC midnight — in
+Chicago, roughly 23:00 to 01:00 local — and the axis always ends at *now*, so building that fixture
+requires "now" to be a particular time of night. **It is not constructible at an arbitrary hour**,
+which is exactly why it has survived two audits.
+
+Two honest options, and the second is better:
+1. Freeze the clock. The suite can now move the app's date through `__v86Test.simDate`, but that
+   takes whole days, not hours. A time-of-day override would make this and a family of other
+   boundary cases reachable — and would be the second time this release found that *a check that
+   cannot be reached is indistinguishable from a check that passes*.
+2. **Test `timeAxisLabels()` directly.** It is a pure function of `(tMin, tMax, count, x)`. A unit
+   test can hand it a span across local midnight at any hour and read the labels back, with no
+   browser and no clock. The browser suite is the wrong instrument for a pure function, and that
+   is the real finding: this hole exists because every check on this code goes through a page.
+
+### M32 — the global de-duplication is now defensive only, and that is worth knowing before deleting it
+
+The audit's M2 mutant — restoring the old previous-label-only de-duplication — **survived all 89
+checks**, which it reported as "F2's fix has zero test coverage". True at the time. With the year
+now printed on spans over ~300 days, non-adjacent duplicates are no longer constructible at all:
+inside a span, `M/D` is unique for ticks a day or more apart, and where ticks are closer than a day
+the repeats are adjacent, which the OLD rule already handled.
+
+**So M2 is now a genuinely equivalent mutant, not an uncovered one.** The global `Set` is belt and
+braces behind the format. Written down so that nobody later reads "no test distinguishes these" and
+deletes the `Set` as dead weight — it is the thing that holds if the format rule is ever relaxed.
