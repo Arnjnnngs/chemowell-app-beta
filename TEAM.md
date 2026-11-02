@@ -654,3 +654,58 @@ thirty-eight abandoned servers holding the ports a later run needed. Each wasted
 was different in kind — it did not hide a defect, it manufactured one, and shipped it to patients
 as fact.** A broken instrument that reads zero gets noticed. A broken instrument that reads high
 gets believed and repeated.
+
+---
+
+## A CHECK THAT CANNOT BE REACHED IS INDISTINGUISHABLE FROM A CHECK THAT PASSES (app-v90)
+
+app-v88 taught that **a mutant which does not reach the code under test looks exactly like a
+defect** — the mutant appears to pass and the author believes the check is weak. app-v90 is the
+same lesson from the other side, and it cost ten mutants to find.
+
+The chart-axis suite was 29/29 green. The auditor wrote ten mutants and **four survived**. Two of
+them survived for a reason worth writing down: **the suite could not reach the branch.**
+
+* The axis asks for 4 ticks on the Weeks range and 6 on Months. **No test had ever pressed
+  Months.** A mutant that hard-coded the count to 4 therefore passed every case in the suite.
+* The minute-format branch fires on a span under three hours that sits entirely inside one day.
+  The fixtures were anchored to fixed clock times (`todayAt(9)`), so that branch was only
+  reachable **between about 09:00 and 12:00 local**. A mutant disabling it passed outside those
+  hours, which is most of the day.
+
+Neither was a weak assertion. Both assertions were fine. **The code they were written for was
+never executed**, and a suite reports that identically to a correct answer.
+
+### The rule
+
+1. **For every branch a release adds, name the input that reaches it, and put that input in a
+   fixture.** A `? :` on a range toggle is a branch. A `span < 3h` test is a branch. If no case in
+   the suite drives it, the branch is untested whatever the green count says.
+2. **A control that selects between behaviours must be pressed by a test.** Not read from state —
+   pressed, the way a person does it. app-v90 section 4b clicks **Months** and requires more ticks
+   than Weeks produced on the identical data.
+3. **A fixture anchored to a clock time is a fixture that is sometimes absent.** Build fixtures
+   relative to `Date.now()` and to local midnight, then assert the shape they actually produce.
+   Where a window can genuinely collapse (just after midnight, there are only seconds of "today"),
+   say so in the check's own comment and set the floor at what survives — never a conditional skip.
+
+### And the other two survivors: the suite was reading the words and never the positions
+
+A mutant that drew **every label one tick to the right of its own time** — the axis saying 9 AM
+above a 10 AM reading, which is the most misleading thing a chart can do — passed 29/29. So did
+de-duplication that keeps the last of a run instead of the first.
+
+**Every label had carried an `x` attribute the whole time and no check had ever read it.** The data
+needed to catch both was already in the DOM, exposed by the hook the suite was already using.
+
+**So: when a check reads a rendered element, list what that element asserts about the world and
+ask which of those the check actually reads.** A text label on a chart makes two claims — *this
+value* and *at this position* — and reading one of them is half a check. The position claim is the
+one a reader trusts without thinking, which makes it the one worth asserting.
+
+**Anchor a position to the drawing's own geometry, not to a number you worked out.** app-v90's
+first attempt required the last label at the right-hand edge, computed from the padding. That is
+false wherever labels de-duplicate: across a two-day span the last label kept sits where the date
+changes, correctly, nowhere near the edge. The check that works compares the first label's `x` to
+the **earliest reading's own plotted dot**, because that is provably where the axis begins — the
+app states it, so the test does not have to guess it.
