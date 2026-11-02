@@ -743,12 +743,20 @@ console.log('\n=== 9. The release note about the export names what MEASUREMENT s
   // The notice itself, rendered -- scoped to the modal, NOT document.body. Reading the whole
   // page meant the nav's own "Symptoms" tab counted as the notice saying "symptoms", which is
   // the exact word this section exists to police.
+  // THE app-v89 ENTRY, BY NAME -- not "whichever one the notice opens on". That was app-v89's
+  // only until app-v90 existed; the moment a newer release landed, this section began asking the
+  // NEW entry whether it mentioned a radiation session, and failed. A guard about one release's
+  // wording has to name that release or it expires on the next one. Older entries sit behind
+  // "see all", so that is clicked first.
+  await pg.evaluate(() => { const b2 = document.querySelector('[data-whatsnew-all]'); if (b2) b2.click(); });
+  await pg.waitForTimeout(500);
   const notice = await pg.evaluate(() => {
-    const m = document.querySelector('[data-whatsnew-modal]');
-    return m ? (m.innerText || '') : null;
+    const e = document.querySelector('[data-whatsnew-entry="app-v89"]');
+    return e ? (e.innerText || '') : null;
   });
-  t('9.2  precondition: the What’s New notice is on screen', /free/i.test(notice) && notice.length > 100,
-    JSON.stringify(notice.slice(0, 80)));
+  t('9.2  precondition: the app-v89 entry was found by name and read alone',
+    notice !== null && /free/i.test(notice),
+    notice === null ? 'no [data-whatsnew-entry="app-v89"] on screen' : JSON.stringify(notice.slice(0, 70)));
 
   // The search term is DERIVED from the type the export printed, not looked up in a map. The
   // first version keyed the map 'Skin Reaction' while the export says 'Skin Reaction/Rash', so
@@ -782,9 +790,16 @@ console.log('\n=== 9. The release note about the export names what MEASUREMENT s
   // Derived, not pinned: open the plans sheet in this same page, see whether the app charges for
   // anything, and only then require the notice not to claim universal freeness. If ChemoWell ever
   // really does become free of charge, this check stops applying by itself.
-  const title = String(notice || '').split('\n').map(x => x.trim()).filter(Boolean)[1] || '';
-  t('9.6a  precondition: the notice title was found', title.length > 3 && title.length < 60,
-    JSON.stringify(title));
+  // app-v90 (F1, deferred here by the app-v89 PM): read by HOOK, not by counting lines of text.
+  // This was innerText.split('\n')[1] -- a text-position selector, which Rule 5 forbids -- and
+  // emptying the "Updated" badge above made the extracted "title" the date string, which 9.6a's
+  // own precondition cheerfully accepted. A line number is not a name.
+  const title = await pg.evaluate(() => {
+    const n = document.querySelector('[data-whatsnew-title="app-v89"]');
+    return n ? (n.textContent || '').trim() : null;
+  });
+  t('9.6a  precondition: the notice title was found by its hook',
+    typeof title === 'string' && title.length > 3 && title.length < 60, JSON.stringify(title));
   await pg.evaluate(() => {
     const d = document.querySelector('[data-whatsnew-modal]');
     const btn = d && [...d.querySelectorAll('button')].find(x => /got it|close/i.test(x.innerText || ''));

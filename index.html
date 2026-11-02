@@ -9304,7 +9304,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v89';
+const APP_VERSION = 'app-v90';
 
 // ---- WHAT'S NEW ------------------------------------------------------------------------------
 //
@@ -9327,6 +9327,11 @@ const APP_VERSION = 'app-v89';
 // that are meant for it: README.md's version-history table, outputs/ for the chain reports, and
 // the commit messages. This array is the only one of the four a patient reads.
 const CHANGELOG = [
+  { v: 'app-v90', date: 'Nov 2, 2026', title: 'Chart dates read correctly',
+    points: [
+      'The temperature and weight charts could label the bottom of the chart with tomorrow\u2019s date. They now stop at today.',
+      'They also repeated the same date several times across a short stretch. A single day is labelled by the hour now, and longer stretches by the date, with nothing printed twice.',
+    ] },
   { v: 'app-v89', date: 'Oct 31, 2026', title: 'Every feature is free now',
     points: [
       'The printable doctor\u2019s report no longer costs anything. It was the only feature you had to pay for.',
@@ -9453,7 +9458,11 @@ function whatsNewShouldShow() {
 function whatsNewEntry(e, latest) {
   return h('div', { 'data-whatsnew-entry': e.v, style: { background: latest ? 'rgba(246,108,49,0.08)' : '#FFFDFC', border: '1px solid ' + (latest ? 'rgba(228,111,60,0.34)' : '#F0E3DD'), borderRadius: '15px', padding: '13px 14px', minWidth: '0' } },
     h('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginBottom: '3px' } },
-      h('div', { style: { fontSize: '14.5px', fontWeight: '800', color: '#2A2127', letterSpacing: '-0.01em', minWidth: '0', overflowWrap: 'anywhere' } }, e.title),
+      // data-whatsnew-title (app-v90, deferred here by the app-v89 PM): the suite's title check
+      // read innerText.split('\n')[1] -- a text-position selector, which Rule 5 forbids -- so
+      // emptying the badge above made the "title" the date string and the check's own
+      // precondition accepted it. A hook cannot drift the way a line number can.
+      h('div', { 'data-whatsnew-title': e.v, style: { fontSize: '14.5px', fontWeight: '800', color: '#2A2127', letterSpacing: '-0.01em', minWidth: '0', overflowWrap: 'anywhere' } }, e.title),
       h('div', { style: { fontSize: '11.5px', fontWeight: '700', color: '#915E48', flexShrink: '0' } }, e.date)
     ),
     h('ul', { style: { margin: '7px 0 0', paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '5px' } },
@@ -11411,6 +11420,63 @@ function renderEraseAllModal() {
 }
 
 
+// ONE TIME AXIS, FOR BOTH CHARTS. (app-v90, Aaron: "chart x-axes repeat dates and run into the
+// future".) Both halves of that report came from six lines that existed TWICE -- in the
+// temperature chart and in the weight chart -- so the fix is written once and called twice. Two
+// copies of a rule is one copy too many; this project has the scar from bowel values and from the
+// Help enumerations.
+//
+// WHY THE FORMAT IS CHOSEN FROM THE SPAN. The labels were always M/D, so a span shorter than a few
+// days put the same calendar day under four or five ticks: "10/31 10/31 10/31 11/1 11/1". Over a
+// few hours the DATE is not what varies and printing it says nothing; the time is.
+//
+// WHY NOT CALENDAR BOUNDARIES. Ticking on midnights would make repeats impossible by construction,
+// and it was rejected: it moves the end labels off the data, so a ten-day chart would open before
+// the first reading and end after the last, and a span under a day has no interior midnight at all
+// and degenerates to one tick or none. Keeping the ticks on the data and fixing the FORMAT answers
+// both symptoms without changing what the axis means.
+//
+// The de-duplication is belt and braces on top of that: six days across seven ticks still collides
+// whatever the format, and dropping a label identical to the one before it is always right.
+const AXIS_HOUR = 3600000, AXIS_DAY = 86400000;
+function timeAxisLabels(tMin, tMax, count, x) {
+  const span = Math.max(tMax - tMin, 1);
+  // A TIME IS ONLY UNAMBIGUOUS INSIDE ONE CALENDAR DAY, and the first version of this got it
+  // wrong: it chose times for any span under two days, so a chart from yesterday morning to this
+  // morning read "9 AM, 3 PM, 9 PM, 3 AM, 9 AM" -- the same label twice, twenty-four hours apart,
+  // which is both a repeat and a lie about which reading is which. Its own suite caught it.
+  //
+  // So the question is not how LONG the span is, it is whether it crosses midnight. Within a day
+  // the date never varies and the time is the whole story; across days the reverse. Dates are
+  // monotonic, so any duplicates among them are adjacent and the de-duplication below removes
+  // them; times within one day are strictly increasing and cannot collide at all.
+  const dayOf = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const sameDay = dayOf(tMin) === dayOf(tMax);
+  const fmt = sameDay
+    ? (span < 3 * AXIS_HOUR
+        ? (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+        : (d) => d.toLocaleTimeString([], { hour: 'numeric' }))
+    : (d) => (d.getMonth() + 1) + '/' + d.getDate();
+  const out = [];
+  for (let i = 0; i <= count; i++) {
+    const ts = tMin + (span / count) * i;
+    const label = fmt(new Date(ts));
+    if (out.length && out[out.length - 1].label === label) continue;
+    out.push({ label: label, px: x(ts) });
+  }
+  return out;
+}
+// THE RIGHT EDGE OF A CHART IS NEVER LATER THAN NOW. The old floor was `tMin + DAY`, so a day
+// holding a single reading drew an axis labelled with TOMORROW. simNow() rather than Date.now()
+// because the TEST_MODE date override has to move the axis too.
+//
+// Math.max(lastTs, ...) is load-bearing in the one direction that matters: the data always fits.
+// If a reading is somehow later than "now" -- a simulated future date -- the axis still reaches it
+// rather than cropping a reading out of the chart.
+function chartTimeMax(tMin, lastTs) {
+  return Math.max(lastTs, Math.min(tMin + AXIS_DAY, simNow()));
+}
+
 function renderTemperatureReport(now) {
   // Converted ONCE at ingestion, so a history logged in Celsius and viewed in Fahrenheit charts on
   // one axis -- the same reason renderWeightTrend does it (its v12b note).
@@ -11477,7 +11543,7 @@ function renderTemperatureReport(now) {
   const vMin = Math.floor(lo * 2) / 2, vMax = Math.ceil(hi * 2) / 2;
   const vRange = (vMax - vMin) || 2;
   const tMin = points[0].ts;
-  const tMax = Math.max(points[points.length - 1].ts, tMin + DAY);
+  const tMax = chartTimeMax(tMin, points[points.length - 1].ts);
   const tRange = (tMax - tMin) || DAY;
 
   const W = 680, H = 300;
@@ -11492,11 +11558,7 @@ function renderTemperatureReport(now) {
 
   const ySteps = 5, yLabels = [];
   for (let i = 0; i <= ySteps; i++) { const v = vMin + (vRange / ySteps) * i; yLabels.push({ val: Math.round(v * 10) / 10, py: y(v) }); }
-  const xLabels = [], labelCount = range === 'weeks' ? 4 : 6;
-  for (let i = 0; i <= labelCount; i++) {
-    const ts = tMin + (tRange / labelCount) * i, d = new Date(ts);
-    xLabels.push({ label: (d.getMonth() + 1) + '/' + d.getDate(), px: x(ts) });
-  }
+  const xLabels = timeAxisLabels(tMin, tMax, range === 'weeks' ? 4 : 6, x);
 
   let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;">';
   yLabels.forEach(yl => {
@@ -11504,7 +11566,10 @@ function renderTemperatureReport(now) {
     svg += '<text x="' + (pad.left - 10) + '" y="' + (yl.py + 4).toFixed(1) + '" fill="#7A6E76" font-size="12" font-family="ui-monospace,Menlo,monospace" text-anchor="end">' + yl.val + '</text>';
   });
   xLabels.forEach(xl => {
-    svg += '<text x="' + xl.px.toFixed(1) + '" y="' + (H - 10) + '" fill="#7A6E76" font-size="12" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">' + xl.label + '</text>';
+    // data-xaxis so a guard can find these by name. Selecting them by y-coordinate or by
+    // text-anchor would be the positional selector Rule 5 forbids -- the same shape as the
+    // What's New title hook added in this release.
+    svg += '<text data-xaxis="1" x="' + xl.px.toFixed(1) + '" y="' + (H - 10) + '" fill="#7A6E76" font-size="12" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">' + xl.label + '</text>';
   });
   // THE THRESHOLD LINES. Drawn before the data so a reading sits on top of them, and each labelled
   // with its own number so nobody has to count gridlines to find out which line is which.
@@ -12461,7 +12526,7 @@ function renderWeightTrend(now) {
   const maxW = Math.ceil(Math.max(...weights) + 2);
   const wRange = maxW - minW || 4;
   const tMin = points[0].ts;
-  const tMax = Math.max(points[points.length - 1].ts, tMin + DAY);
+  const tMax = chartTimeMax(tMin, points[points.length - 1].ts);
   const tRange = tMax - tMin || DAY;
 
   // SVG dimensions
@@ -12494,15 +12559,7 @@ function renderWeightTrend(now) {
     yLabels.push({ val: Math.round(val * 10) / 10, py: y(val) });
   }
 
-  // X-axis labels (dates)
-  const xLabels = [];
-  const labelCount = range === 'weeks' ? 4 : 6;
-  for (let i = 0; i <= labelCount; i++) {
-    const ts = tMin + (tRange / labelCount) * i;
-    const d = new Date(ts);
-    const label = (d.getMonth() + 1) + '/' + d.getDate();
-    xLabels.push({ label, px: x(ts) });
-  }
+  const xLabels = timeAxisLabels(tMin, tMax, range === 'weeks' ? 4 : 6, x);
 
   // Stats
   const latest = points[points.length - 1];
@@ -12521,7 +12578,10 @@ function renderWeightTrend(now) {
   });
   // X labels
   xLabels.forEach(xl => {
-    svg += '<text x="' + xl.px.toFixed(1) + '" y="' + (H - 10) + '" fill="#7A6E76" font-size="12" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">' + xl.label + '</text>';
+    // data-xaxis so a guard can find these by name. Selecting them by y-coordinate or by
+    // text-anchor would be the positional selector Rule 5 forbids -- the same shape as the
+    // What's New title hook added in this release.
+    svg += '<text data-xaxis="1" x="' + xl.px.toFixed(1) + '" y="' + (H - 10) + '" fill="#7A6E76" font-size="12" font-family="ui-monospace,Menlo,monospace" text-anchor="middle">' + xl.label + '</text>';
   });
   // Area gradient
   svg += '<defs><linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(174,88,51,0.25)"/><stop offset="100%" stop-color="rgba(174,88,51,0)"/></linearGradient></defs>';
