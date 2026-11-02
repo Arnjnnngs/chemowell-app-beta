@@ -709,3 +709,50 @@ false wherever labels de-duplicate: across a two-day span the last label kept si
 changes, correctly, nowhere near the edge. The check that works compares the first label's `x` to
 the **earliest reading's own plotted dot**, because that is provably where the axis begins — the
 app states it, so the test does not have to guess it.
+
+---
+
+## WHEN EVERY FIXTURE SHARES AN INCIDENTAL PROPERTY, EVERY CLAIM THAT DEPENDS ON IT IS UNTESTED
+### And the same gap wrote a false sentence to the patient (app-v90, second delta)
+
+The app-v90 release note said the charts *"stop at the last reading now."* **They stop at `now`.**
+For a span inside one day, `Math.max(lastTs, Math.min(tMin + DAY, now))` picks `now` — so one
+reading at 09:00 drew an axis running to 11 PM, fourteen hours past the last reading. The sentence
+was false in exactly the scenario its own first clause described.
+
+An 89-check suite did not catch it, and a mutant that **deleted the `tMin + DAY` cap altogether**
+also passed all 89. One cause for both: **every fixture in the suite had its newest reading at
+roughly "now."** Nothing distinguished "the axis ends at the last reading" from "the axis runs on
+to today," because in every test those two were the same point.
+
+That property was never a decision. It was what you get from writing fixtures as "a reading an hour
+ago, a reading yesterday" — the natural way to write them. And it silently removed a whole class of
+claims from the suite's reach.
+
+### The rule
+
+1. **List what is accidentally true of every fixture, and treat each item as an untested axis.**
+   All readings recent. All spans ending at now. All data in one month, one year, one timezone. All
+   lists non-empty. One fixture that breaks the pattern is usually enough — app-v90's second delta
+   added one case with the newest reading five days old, and it killed the surviving mutant and
+   made the release note checkable in the same stroke.
+2. **Before writing a sentence for the patient, ask which fixture proves it.** If none does, the
+   sentence is a guess about your own code. The copy that went out was written from reading the
+   diff, and the diff was right; the sentence about it was not.
+3. **Prefer the claim the code can be held to.** *"They no longer run past today"* is exact,
+   shorter, and true in both branches. The overstatement and the falsehood were both attempts to
+   say something more specific than the code does.
+
+### And a vacuous check, in the commit whose own message was about checks that cannot be reached
+
+The same delta added `3b.<chart>.2`, named *"the earliest date is the first label, not a later
+one"*, whose body was `r.labels.length >= 2` — **character for character its own precondition on
+the line above.** The keep-the-last-of-a-run mutant makes that claim false and this check passed;
+only the positional check caught it.
+
+**A check whose body does not mention the thing in its name is the `|| true` hazard with better
+camouflage.** It is worse than an absent check, because the name is in the output as a PASS and a
+reader counts it. Two cheap habits: when writing a check, say the name out loud and point at the
+part of the expression that tests it; and when a section has a precondition, never let a later
+assertion in that section repeat the precondition's expression — if that is all you have, delete
+the check and let the one that bites carry the claim.
