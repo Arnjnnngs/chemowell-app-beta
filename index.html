@@ -5484,7 +5484,13 @@ function render() {
   // the nav, so the page has to clear the pill instead -- see backPillClearancePx(). Non-report
   // screens keep the 90px baseline: nothing is clipped there and padding them all to 138px would
   // leave dead space under Home.
-  const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(120deg, #FDD9CC 0%, #FDE3CB 55%, #FFEFDC 100%)', color: '#2A2127', paddingBottom: 'calc(' + (backPillShowing() ? backPillClearancePx() : 90) + 'px + env(safe-area-inset-bottom))', position: 'relative' } },
+  // `data-page-shell` is the hook test/v92-pill-clearance.mjs reads this element's padding-bottom
+  // through, so the suite can assert the INVARIANT (the Back pill sits inside the reserve this
+  // padding creates) rather than only the symptom (a glyph already under the pill). Two elements
+  // in this file open with an identical `const page = h('div', { style: { minHeight: '100vh'` --
+  // this one and the welcome screen's -- so the hook went on by line number after counting, not
+  // by a string match that would have had a 50% chance of instrumenting the wrong screen.
+  const page = h('div', { 'data-page-shell': '1', style: { minHeight: '100vh', background: 'linear-gradient(120deg, #FDD9CC 0%, #FDE3CB 55%, #FFEFDC 100%)', color: '#2A2127', paddingBottom: 'calc(' + (backPillShowing() ? backPillClearancePx() : 90) + 'px + env(safe-area-inset-bottom))', position: 'relative' } },
     renderHeader(now),
     h('main', { style: { position: 'relative', zIndex: '1', maxWidth: '720px', margin: '0 auto', padding: '16px 16px 20px', display: 'flex', flexDirection: 'column', gap: '18px' } }, ...renderContent(now, mg, pct, tyColor, ceiling)),
     // v70: toast now wraps onto multiple lines instead of forcing a single nowrap line -- long

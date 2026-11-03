@@ -105,10 +105,10 @@ const seed = () => `(() => {
   // is the signal.
   //
   // RENDERED IS NOT MEASURED, and the first version of this comment claimed measured. This scan
-  // reads the TEXT element's own `opacity`, which is 1; the muting is on its ROW. So it reports
+  // reads the TEXT element's own \`opacity\`, which is 1; the muting is on its ROW. So it reports
   // these inks UNMUTED whatever the row's opacity is -- proved by running this file unchanged
   // against the pre-app-v92 build, which prints 327 / 0 below AA / worst 4.83:1 on rows painted
-  // at 3.4:1. The ancestor-opacity hole is `BACKLOG.md` M38-b and it is open. What the fixture
+  // at 3.4:1. The ancestor-opacity hole is \`BACKLOG.md\` M38-b and it is open. What the fixture
   // buys is coverage, not verification: the row is on the screen, so the day its ink changes it
   // is in front of this instrument rather than behind it.
   localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [
@@ -350,8 +350,10 @@ const collect = () => page.evaluate(() => {
 // for text painted at 3.39:1 and 3.27:1.
 //
 // app-v92 raises those rows to 0.8, which puts them at 4.92:1 and 4.68:1 as painted, and seeds a
-// PAUSED medication below so the row is measured here from now on -- it was invisible to every
-// gate for one dull reason: no fixture had ever rendered it. **The ancestor-opacity hole itself is
+// PAUSED medication below so the row is RENDERED here from now on -- not measured, which is the
+// distinction this whole note exists to make and which this very sentence got wrong a second
+// time, two lines above the paragraph that corrects it. The row was invisible to every gate for
+// one dull reason: no fixture had ever rendered it. **The ancestor-opacity hole itself is
 // still open**: the fix is to multiply the computed opacity up the ancestor chain before applying
 // the skip. In `BACKLOG.md` M38-b with the mutant that proves it.
 const shotAndSample = async (items) => {

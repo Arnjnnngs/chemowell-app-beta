@@ -799,6 +799,32 @@ if (escaped.length) console.log('\n  BLOCKED OUTBOUND REQUESTS: ' + escaped.leng
 // has to come from what it actually did.
 console.log('\n' + scanned + ' of ' + (DEVICES.length * (SCREENS.length + EXTRA_COUNT)) +
   ' screen/width combinations scanned, ' + problems + ' overflowing element(s).');
+
+// ---- THE SHARED SUMMARY LINE, so this suite can be SWEPT like the others. (app-v92) ----------
+// `falsify.sh` reads exactly two shapes out of a suite: lines starting "  FAIL" and a line
+// containing "checks:". This file printed NEITHER -- the only one of the gate's ten suites with
+// neither -- so `./falsify.sh test/overflow-scan.mjs falsify/mutants-v92-layout.sh` refused at
+// the baseline ("the baseline produced no summary line, so the suite never finished on HEAD")
+// after a completely healthy 7m17s run, and mutants 7-9 were never reached. The refusal also
+// misdiagnosed itself: the suite finished, it was never READABLE. The lesson had been written
+// into this repo's own commit message one commit earlier -- and then three mutants were pointed
+// at the one suite still missing the line.
+//
+// The denominator is counted, not assumed, and it is deliberately harsher than `problems`:
+//   * every screen/width combination is one check;
+//   * an UNREACHABLE combination is a FAILED check, because this file already argues at length
+//     that an unchecked screen is not a clean screen -- so it may not quietly leave the count;
+//   * the page-error / console-warning condition is one further check of its own, so a build
+//     that throws can never print "0 failed".
+const ovfFailed = report.length + unreachable + ((errs.length || warns.length) ? 1 : 0);
+const ovfTotal = DEVICES.length * (SCREENS.length + EXTRA_COUNT) + 1;
+report.forEach(r => console.log('  FAIL  ' + r.os + ' ' + r.dev + ' (' + r.w + 'px) ' +
+  r.screen.toUpperCase() + ' -- ' + r.found.length + ' element(s) overflowing'));
+if (unreachable) console.log('  FAIL  ' + unreachable +
+  ' screen/width combination(s) could not be reached -- unchecked, not clean');
+if (errs.length || warns.length) console.log('  FAIL  the app logged ' + errs.length +
+  ' page error(s) and ' + warns.length + ' console warning(s)/error(s)');
+console.log(ovfTotal + ' checks: ' + (ovfTotal - ovfFailed) + ' passed, ' + ovfFailed + ' failed');
 if (errs.length || warns.length) {
   console.log('NOT CLEAN — the app logged ' + errs.length + ' page error(s) and ' + warns.length +
     ' console warning(s)/error(s). A caught-and-logged failure is still a failure: this is the exact');

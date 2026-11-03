@@ -877,6 +877,39 @@ export FALSIFY_BASE="http://127.0.0.1:$RC_PORT/index.html"
 # himself. If it ever becomes the reason someone skips the gate, narrow the DEVICES list in the
 # scan -- do not quietly drop it from this loop.
 RC_DESIGNER_SUITE="test/${GATE_VERSION#app-}-designer-pass.mjs"
+
+# ---- EVERY SUITE MUST PARSE, AND THAT IS CHECKED BEFORE THE SLOW PART. (app-v92) --------------
+# A suite that does not parse is not a weak check, it is NO check, and the delta that shipped
+# app-v92 contained one: a seven-line comment went inside `contrast-scan`'s own `seed()` template
+# literal with two unescaped backticks, so `node test/contrast-scan.mjs` exited 1 at line 1 --
+# the legibility gate for the exact defect the owner reported, dead, in the commit that claimed
+# to have measured its runtime. The file beside it got the same edit WITH the backticks escaped,
+# which is the tell: the escaping was understood and one of the two was simply never run again.
+#
+# The suite loop below would have caught it -- in the eleventh minute, after `overflow-scan`.
+# This loop costs under a second and runs FIRST, so a typo in a comment cannot cost a gate run.
+# It checks every suite in test/, not only the gated ones: a dead instrument that nothing calls
+# is this project's most repeated defect (overflow-scan, contrast-scan, v90-chart-axes, all three
+# sat unrun), and the day one is wired in is the wrong day to discover it never parsed.
+#
+# Falsified: re-introduce the backtick and this block goes red naming the file, with the gate
+# exiting 1 in under a second and the suite loop never starting.
+RC_PARSE_BAD=0
+for RC_MJS in "$RC_SUITE_DIR"/test/*.mjs; do
+  [ -f "$RC_MJS" ] || continue
+  if ! RC_PARSE_ERR=$(node --check "$RC_MJS" 2>&1); then
+    echo "❌ RELEASE CHECK FAILED: test/$(basename "$RC_MJS") does not parse"
+    printf '%s\n' "$RC_PARSE_ERR" | head -4 | sed 's/^/     /'
+    RC_PARSE_BAD=1
+  fi
+done
+if [ "$RC_PARSE_BAD" = "1" ]; then
+  fail_note "a suite in test/ does not parse -- it cannot fail, so it is not a check"
+  FAIL=1
+else
+  echo "✅ every test/*.mjs parses ($(ls -1 "$RC_SUITE_DIR"/test/*.mjs 2>/dev/null | wc -l | tr -d ' ') suite(s), node --check)"
+fi
+
 # AND THE THREE app-v92 ADDS, each for a question no existing instrument asked.
 #   v90-chart-axes  -- 162 checks, built in app-v90 and never wired in. Same omission, again.
 #   v92-pill-clearance -- scrolls to the END and asks whether anything is behind the floating
@@ -886,6 +919,11 @@ RC_DESIGNER_SUITE="test/${GATE_VERSION#app-}-designer-pass.mjs"
 #     time, and reported the app-v92 defect as "over by 5px" when what was on the screen was
 #     a medication name printed across the time and the dose.
 for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs test/overflow-scan.mjs test/v90-chart-axes.mjs test/v92-pill-clearance.mjs test/v92-text-collisions.mjs "$RC_DESIGNER_SUITE"; do
+  # A dead suite makes the next eleven minutes meaningless, so the parse gate above stops this
+  # loop rather than feeding it a file node cannot read. The rest of the gate still runs and
+  # still reports, and this is what makes the parse gate falsifiable in a second instead of in
+  # a quarter of an hour.
+  [ "$RC_PARSE_BAD" = "1" ] && break
   # A MISSING SUITE FAILS THE GATE. It used to `continue`, silently -- so nine of the ten suites
   # in this loop could be DELETED and the gate would pass, saying nothing. `v75-no-other-patient`
   # below has had an explicit "deleting it is not a way to pass this gate" branch for releases;

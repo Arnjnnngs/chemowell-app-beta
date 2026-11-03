@@ -150,8 +150,24 @@ const measure = () => {
       if (ox > 0.5 && oy > 0.5) covered.push({ text: t.slice(0, 40), tag: el.tagName, w: Math.round(ox), h: Math.round(oy) });
     }
   }
+  // THE RESERVE, read off the page shell's own padding rather than inferred. This is what makes
+  // the next assertion an invariant instead of a symptom: the app reserves `backPillClearancePx()`
+  // at the bottom of the page, and the pill has to live INSIDE that reserve. If the pill's top is
+  // above the reserve's top edge, the pill is over content -- whether or not this fixture happens
+  // to have put a glyph in that band.
+  // The screen's own heading, READ (not selected by) -- Rule 5 bans selecting an element by its
+  // text, not reading a value out of one. It is how this suite tells a real report screen from a
+  // screen the app rendered for a key it does not know: `renderReportDetail` prints
+  // `reportDescriptor(type).label` here, so a bogus key yields an empty or duplicated heading.
+  const hEl = document.querySelector('h1');
+  const heading = hEl ? (hEl.textContent || '').trim() : '';
+  const shell = document.querySelector('[data-page-shell]');
+  const padBottom = shell ? parseFloat(getComputedStyle(shell).paddingBottom) || 0 : null;
   return {
     pill: pr ? { top: Math.round(pr.top), h: Math.round(pr.height), w: Math.round(pr.width) } : null,
+    padBottom: padBottom === null ? null : Math.round(padBottom),
+    heading,
+    innerH: window.innerHeight,
     covered, glyphBoxes,
     scrollTop: Math.round(window.scrollY),
     atEnd: Math.abs(window.scrollY + window.innerHeight - document.documentElement.scrollHeight) < 2
@@ -182,7 +198,38 @@ const b = await chromium.launch();
 for (const W of WIDTHS) {
   const ctx = await b.newContext({ viewport: { width: W, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
   const thrown = [];
-  ctx.on('page', (p) => p.on('pageerror', (e) => thrown.push(String(e))));
+  // CONSOLE WARNINGS AND ERRORS COUNT. The app says `console.warn('[reports] unknown report type:')`
+  // when it is asked for a report it does not have, and this suite was DEAF to it: an audit put a
+  // value the app does not dispatch on into a `data-report-tile` hook, and the walk opened a shell
+  // with the fallback heading "Report", scored it `ok`, and still printed "9 report screens
+  // discovered". Reading the heading cannot tell that apart -- the app's own warning can, and the
+  // app was already printing it. overflow-scan.mjs has failed on console output since app-v84 for
+  // exactly this reason ("a caught-and-logged failure is still a failure"); this file did not.
+  const noise = [], escaped = [];
+  // NOTHING LEAVES THE MACHINE, and that is also what makes the console readable. Without this
+  // the sandbox's own DNS failures ("net::ERR_NAME_NOT_RESOLVED" for the Capacitor CDN tags and
+  // Google Fonts) arrive as console ERRORS, so the check above would have gone red on every build
+  // including a correct one -- a check that always fails is as useless as one that cannot, and
+  // tuning it to ignore "resource" errors would have blinded it to real ones. Copied from
+  // overflow-scan.mjs, which has been hermetic since app-v84: the CDN scripts are stubbed, fonts
+  // are aborted, and anything else asking for the network is recorded so a new external
+  // dependency shows up as a finding instead of as a hang.
+  await ctx.route('**/*', (route) => {
+    const u = route.request().url();
+    if (u.startsWith('http://127.0.0.1') || u.startsWith('file:')) return route.continue();
+    if (u.includes('cdn.jsdelivr.net')) return route.fulfill({ status: 200, contentType: 'application/javascript', body: '/* stubbed for the clearance walk */' });
+    if (u.startsWith('https://fonts.')) return route.abort();
+    escaped.push(u); return route.abort();
+  });
+  ctx.on('page', (p) => {
+    p.on('pageerror', (e) => thrown.push(String(e)));
+    p.on('console', (m) => {
+      if (m.type() !== 'error' && m.type() !== 'warning') return;
+      const t = m.text();
+      if (t.includes('Service Worker registration blocked by Playwright')) return; // ours, expected
+      noise.push(m.type() + ': ' + t);
+    });
+  });
   await ctx.addInitScript(freeze);
   const page = await ctx.newPage();
   await page.addInitScript(seed());
@@ -211,11 +258,35 @@ for (const W of WIDTHS) {
       + 'that walks zero screens must FAIL, not report clean.');
     await b.close(); if (server) server.close(); process.exit(3);
   }
+  // ---- THE COMPLETENESS RATCHET THE HEADER PROMISED AND THE FILE DID NOT HAVE. ---------------
+  // The brief said "a tenth report added to the app is discovered, not missed" and that much is
+  // true. The reverse was not checked at all: an audit removed `data-report-tile` from three of
+  // the nine tiles, consistently at every width, and the walk quietly narrowed from 27 checks to
+  // 18 and PASSED, printing "6 report screens discovered". Discovering from the app protects
+  // against a report being forgotten; it protects nothing against the hook being dropped, which
+  // is the same silent-narrowing class as the empty fixture one screen up.
+  //
+  // So: a FLOOR. The fixture deliberately turns on every profile gate there is (chemo AND
+  // radiation, non-male, cycle tracking, paracentesis tracking), so every report the app can
+  // offer must be on this menu. Nine is what that is today. A tenth report RAISES it and the
+  // check still passes; removing a report means lowering this number on purpose, in a diff, with
+  // a reason -- which is the whole point of a ratchet and is how `v75-no-other-patient.mjs`
+  // pins its three counts.
+  const MIN_REPORT_TILES = 9;
+  if (tiles.length < MIN_REPORT_TILES) {
+    fails.push(W + 'px: the Reports menu offered only ' + tiles.length + ' [data-report-tile] '
+      + 'elements and this fixture enables every profile gate, so it must offer at least '
+      + MIN_REPORT_TILES + '. Either a report lost its hook (and this suite silently stopped '
+      + 'walking it) or a report was removed -- if removed, lower MIN_REPORT_TILES deliberately.');
+    console.log('  FAIL  ' + W + 'px  only ' + tiles.length + ' report tiles, floor is ' + MIN_REPORT_TILES);
+  }
   if (tileCount === null) tileCount = tiles.length;
   else if (tileCount !== tiles.length) {
     fails.push(W + 'px: the Reports menu offered ' + tiles.length + ' reports, but ' + tileCount
       + ' at an earlier width. The set must not depend on the viewport.');
   }
+  // Every screen's heading, so a key that renders NOTHING cannot be scored as a clean screen.
+  const headingsSeen = new Map();
   for (const key of tiles) {
     await page.evaluate((r) => window.__v86Test.openReport(r), key);
     await page.waitForTimeout(900);
@@ -251,6 +322,62 @@ for (const W of WIDTHS) {
       console.log('  FAIL  ' + W + 'px ' + key.padEnd(16) + 'did not scroll \u2014 vacuous, not clear');
       continue;
     }
+    // ---- AND IT HAS TO BE A REAL REPORT SCREEN. --------------------------------------------
+    // `where.reportsView === key` above is satisfied by ANY string: `openReport('nonsense')` sets
+    // the state and the app renders a detail shell for a key it does not know. An audit put a
+    // wrong value in three `data-report-tile` hooks, and this suite walked three screens that do
+    // not exist, scored them `ok`, and still printed "9 report screens discovered" -- a stronger
+    // version of the same narrowing the floor above now catches. The app prints
+    // `reportDescriptor(type).label` as the screen's `h1`, so a real screen has a non-empty
+    // heading and no two reports share one.
+    if (!g.heading) {
+      fails.push(W + 'px ' + key + ': the screen rendered no heading, so `' + key + '` is not a '
+        + 'report this app knows. The hook holds a value the app does not dispatch on, and every '
+        + 'measurement on this screen is of an empty shell.');
+      console.log('  FAIL  ' + W + 'px ' + key.padEnd(16) + 'no heading — not a real report screen');
+      continue;
+    }
+    if (headingsSeen.has(g.heading)) {
+      fails.push(W + 'px ' + key + ': its heading "' + g.heading + '" is the same screen already '
+        + 'walked as `' + headingsSeen.get(g.heading) + '`. Two tiles are opening one report, so '
+        + 'one report is not being tested.');
+      console.log('  FAIL  ' + W + 'px ' + key.padEnd(16) + 'duplicate screen of ' + headingsSeen.get(g.heading));
+      continue;
+    }
+    headingsSeen.set(g.heading, key);
+
+    // ---- THE INVARIANT, not the symptom. (added after the app-v92 delta audit) ----------------
+    // The covered-glyph test below is the SYMPTOM: it can only go red once a glyph has actually
+    // landed in the band the pill occupies, which means it passes on slack. An audit proved that
+    // with two mutants, both measured at 844px tall:
+    //
+    //   BACK_PILL_GAP = -24   padding 106 -> reserve top 738, pill top 714   last glyph at 705
+    //   BACK_PILL_H   = 0     padding  96 -> reserve top 748, pill top 738   last glyph at 716
+    //
+    // Both put the pill over the reserve the page set aside for it -- by 24px and by 10px -- and
+    // both SURVIVED, because on this fixture the last line stopped 9px and 22px short. "The gap is
+    // breathing room, not the guard" and "a mutant that edits a shared constant cannot break an
+    // agreement the sharing creates" were both written up as findings about the app. They were
+    // findings about THIS FIXTURE. One line catches both: the pill must sit inside the reserve.
+    //
+    // This is the assertion the file's own header claimed ("asserts the INVARIANT rather than one
+    // row") and did not contain.
+    if (g.padBottom === null) {
+      fails.push(W + 'px ' + key + ': no [data-page-shell] element, so the reserve could not be '
+        + 'read. The hook was removed from index.html and this invariant is now unmeasured.');
+      console.log('  FAIL  ' + W + 'px ' + key.padEnd(16) + 'no [data-page-shell] — reserve unmeasurable');
+      continue;
+    }
+    const reserveTop = g.innerH - g.padBottom;
+    if (g.pill.top < reserveTop - 0.5) {
+      fails.push(W + 'px ' + key + ': the Back pill starts ' + Math.round(reserveTop - g.pill.top)
+        + 'px ABOVE the reserve the page padding creates (pill top ' + g.pill.top + ', reserve top '
+        + reserveTop + ' = ' + g.innerH + ' - ' + g.padBottom + '). The pill is over content; that no '
+        + 'glyph happens to be there on this fixture is luck, not clearance.');
+      console.log('  FAIL  ' + W + 'px ' + key.padEnd(16) + 'pill ' + Math.round(reserveTop - g.pill.top)
+        + 'px above the reserve (top ' + g.pill.top + ' vs ' + reserveTop + ')');
+      continue;
+    }
     const tag = 'scrolled';
     if (g.covered.length) {
       const worst = g.covered.slice().sort((a, c) => (c.w * c.h) - (a.w * a.h))[0];
@@ -263,6 +390,18 @@ for (const W of WIDTHS) {
     }
   }
   if (thrown.length) fails.push(W + 'px: the page threw — ' + thrown.join(' | '));
+  if (escaped.length) {
+    const uniq = [...new Set(escaped)];
+    fails.push(W + 'px: the app asked for ' + uniq.length + ' outbound URL(s) this walk does not '
+      + 'know about — ' + uniq.slice(0, 3).join(' | ') + '. A new external dependency is a finding.');
+    console.log('  FAIL  ' + W + 'px  ' + uniq.length + ' unexpected outbound request(s): ' + uniq[0]);
+  }
+  if (noise.length) {
+    const uniq = [...new Set(noise)];
+    fails.push(W + 'px: the app logged ' + noise.length + ' console error(s)/warning(s) while this '
+      + 'suite walked it — ' + uniq.slice(0, 3).join(' | '));
+    console.log('  FAIL  ' + W + 'px  ' + uniq.length + ' distinct console error(s)/warning(s): ' + uniq[0]);
+  }
   await ctx.close();
 }
 await b.close();

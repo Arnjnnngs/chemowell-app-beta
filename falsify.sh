@@ -259,13 +259,27 @@ while declare -F "mutant_$i" >/dev/null; do
     ALIVE=$((ALIVE+1)); UNMEASURED=$((UNMEASURED+1))
     echo "  ⚠️  COULD NOT MEASURE -- the suite produced neither a red nor a summary, so it never ran."
     echo "      This is not a survivor and not a catch. Find out why before believing anything here."
-  elif [ "$EXPECT" = "survive" ] && [ "$LAST_STATUS" -ne 0 ]; then
-    # GREEN TEXT IS NOT A GREEN RUN. See run_suite's comment: a suite can exit non-zero with no
-    # FAIL line (contrast-scan does it on a page error). Scoring that as "survived as expected"
-    # would let an over-block control certify a run the suite actually refused.
-    ALIVE=$((ALIVE+1)); OVERBLOCK=$((OVERBLOCK+1)); OVERBLOCK_LIST="$OVERBLOCK_LIST $i"
-    echo "  ❌ OVER-BLOCK -- this mutant was expected to SURVIVE and printed no FAIL line, but the"
-    echo "     suite exited $LAST_STATUS. A non-zero exit with no red line is a refusal, not a pass."
+  elif [ "$LAST_STATUS" -ne 0 ]; then
+    # GREEN TEXT IS NOT A GREEN RUN, WHATEVER THE LABEL SAYS. See run_suite's comment: a suite can
+    # exit non-zero with no FAIL line (a refusal -- a missing fixture, a page that never loaded).
+    #
+    # THE TEST USED TO BE GATED ON `$EXPECT = "survive"`, and that was a hole with teeth: a mutant
+    # labelled "hole" whose suite REFUSED to run fell through to the hole branch, printed
+    # "SURVIVED -- KNOWN OPEN HOLE", and exited the sweep 0. A refused run would have certified a
+    # known hole as still-open without a single measurement, and `hole` does not even count toward
+    # $ALIVE. Found by driving this block through all four outcomes with a synthetic suite; it was
+    # the same defect as the one it was written to fix, one label along. So the status test is
+    # hoisted ABOVE the label dispatch and the label now only decides what to call it.
+    if [ "$EXPECT" = "survive" ]; then
+      ALIVE=$((ALIVE+1)); OVERBLOCK=$((OVERBLOCK+1)); OVERBLOCK_LIST="$OVERBLOCK_LIST $i"
+      echo "  ❌ OVER-BLOCK -- this mutant was expected to SURVIVE and printed no FAIL line, but the"
+      echo "     suite exited $LAST_STATUS. A non-zero exit with no red line is a refusal, not a pass."
+    else
+      ALIVE=$((ALIVE+1)); UNMEASURED=$((UNMEASURED+1))
+      echo "  ⚠️  REFUSED -- the suite printed no red line and exited $LAST_STATUS, so it did not run"
+      echo "     to a verdict on this mutant. Not a catch, not a survivor, and NOT evidence that a"
+      echo "     hole is still open. Find out why the suite refused before reading anything above."
+    fi
   elif [ "$EXPECT" = "survive" ]; then
     EXPECTED_ALIVE=$((EXPECTED_ALIVE+1))
     echo "  ✅ SURVIVED AS EXPECTED -- the suite stayed green on a change a real release could"
