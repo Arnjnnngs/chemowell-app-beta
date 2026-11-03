@@ -72,7 +72,13 @@ const needs = (px, weight) => ((px >= 24) || (px >= 18.66 && Number(weight) >= 7
 // It matters here even though the gate reads only an exit code: a count that drifts is a count a
 // human cannot compare between runs, and comparing runs is how the overlay defects in this file
 // were all found.
-const FROZEN = (() => { const d = new Date(); d.setHours(14, 0, 0, 0); return d.getTime(); })();
+// 14:00 IN THE ZONE THE BROWSER IS PINNED TO, which is UTC (see newContext below). Computing
+// this with `setHours` used the HOST's zone, so `TZ=America/Chicago node ...` froze the page --
+// itself running in UTC -- at 20:00, which renders different time-of-day headings: measured
+// 310 strings / 602 samples with TZ unset and 309 / 565 with TZ=America/Chicago, on identical
+// code. Pinning the browser's zone is only half of it; the fixture's clock has to be pinned in
+// the SAME zone or the two disagree and the count moves with the machine's locale.
+const FROZEN = (() => { const n = new Date(); return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate(), 14, 0, 0, 0); })();
 const freeze = '(() => {'
   + '  const R = Date;'
   + '  const D = function (...a) { return a.length ? new R(...a) : new R(' + FROZEN + '); };'
@@ -104,7 +110,24 @@ const seed = () => `(() => {
 })()`;
 
 const b = await chromium.launch();
-const ctx = await b.newContext({ viewport: { width: WIDTH, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+// THE TIMEZONE IS PINNED, AND THE FREEZE ALONE WAS NOT ENOUGH. The fourth audit ran this in six
+// zones: 310 strings / 602 samples in UTC, Asia/Tokyo, Pacific/Kiritimati and Europe/London, but
+// **313 / 604 in America/Chicago and America/Denver.** The mechanism is not a mystery and was
+// measured rather than guessed: `FROZEN` is 14:00 *local*, while the fixture walks back six days in
+// fixed milliseconds -- and both US zones had a DST transition on 1 Nov inside that window, so one
+// reading lands in a different time-of-day bucket and the app draws one more heading. London
+// transitioned on 25 Oct, outside the window, and matches UTC: that is the control.
+//
+// The VERDICT was stable in all six (0 below AA, worst 4.78:1); only the count moved. But a count
+// that moves is a count nobody can compare between runs, and comparing runs is how every overlay
+// defect in this file was found. So the zone is pinned too, and `310 / 602` means "in UTC".
+//
+// WHAT THE FREEZE COSTS, written down rather than discovered later: at 14:00 the fixture no longer
+// renders the "Overnight" and "Evening" headings, so two strings leave coverage -- measured,
+// `Overnight` at 6.44:1 and a sixth weight row at 6.36:1. Both are comfortably above AA, and the
+// frozen set is the HARDER one (worst 4.78:1 frozen against 4.84:1 unfrozen), so nothing below AA
+// is being hidden by the freeze. It is still a narrowing, and it is in `BACKLOG.md` M38.
+const ctx = await b.newContext({ viewport: { width: WIDTH, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1, timezoneId: 'UTC' });
 const thrown = [];
 ctx.on('page', (p) => p.on('pageerror', (e) => thrown.push(String(e))));
 // The freeze is a CONTEXT script so it runs before the seed, which reads Date.now() itself.
@@ -166,7 +189,11 @@ await film.evaluate(() => {
       for (let i = 0; i < a2.length; i += 4) {
         if (a2[i] !== b2[i] || a2[i+1] !== b2[i+1] || a2[i+2] !== b2[i+2]) n++;
       }
-      return n;
+      // BOTH NUMBERS, FROM THE SAME ROUNDING. The caller used to compute its own denominator as
+      // `round(w * h)` while this loop examines `round(w) * round(h)` after clamping to the
+      // canvas -- so a fractional box printed more changed pixels than it had, e.g. "1242 of
+      // 1231". The count and the thing it is a fraction OF now come from one place.
+      return [n, w * h];
     });
   };
 });
@@ -264,9 +291,42 @@ const collect = () => page.evaluate(() => {
 // made transparent -- and count the pixels inside each text box that CHANGED. A visible word
 // changes pixels. Zero changed pixels means the word is not painting there: something is over it,
 // or it is invisible, and the colour sampled underneath is not the colour behind that word.
-// Mechanism-independent: it does not care who painted the layer, whether it is hit-testable,
-// whether the app knows about it, or whether the text escaped `color` through `fill` or anything
-// else invented later.
+// It does not care who painted the layer, whether it is hit-testable, whether the app knows about
+// it, or whether the text escaped `color` through `fill`. An earlier version of this comment called
+// that "mechanism-independent". IT IS NOT, AND THE FOURTH AUDIT MEASURED THE HOLE:
+//
+//   THE INK AND THE BACKDROP COME FROM DIFFERENT PLACES. The backdrop is read from the photograph,
+//   so it is whatever was really painted -- a veil included. The INK is read from `cs.color`, which
+//   a veil does not touch. So a TRANSLUCENT layer over the text defeats this guard on both counts
+//   at once: the glyphs still change pixels through it, so the A-B diff is non-zero and the string
+//   is kept; the layer is static, so B and C are identical and the moving check is silent; and the
+//   ratio is then computed from the real ink against a veiled backdrop. Both colours are wrong in
+//   the SAME direction, so the printed ratio goes UP.
+//
+//   Measured, mutant md5 `dcfc26be936ebb9dc1559daad41d69a9`: one 390x140 fixed `<div>`,
+//   `pointer-events: none`, `rgba(255,255,255,0.85)`. Output byte-identical to a clean build --
+//   310 / 602 / 0 below AA / worst 4.78:1, exit 0 -- while 48 of the 310 printed ratios moved, ALL
+//   of them upward. "Alex's Meds" printed 15.08:1 and was painted #DFDEDF on #FFFAF8 = 1.30:1.
+//
+//   The live shape of it is `#tour-scrim` (`index.html:5349`): a full-viewport
+//   `rgba(34,14,6,0.28)` layer at `pointer-events: none`. It fails loudly today only because it is
+//   DARK -- a dark veil drives ratios down, past the threshold, and gets caught as a failure. A
+//   PALE veil is the silent direction. The only thing keeping the tour shut here is `tourDone:
+//   true` in the fixture, pinned by nothing.
+//
+//   So: this guard catches a layer that HIDES the glyphs (opaque, blend, blur) and a backdrop that
+//   MOVES. It does not catch a static translucent veil, and it never reports partial coverage of a
+//   box. Closing it means measuring the ink from pixels too, which is a redesign of the sampler --
+//   logged with this mutant's md5 in `BACKLOG.md` M38 rather than bolted on at the end of a
+//   release. `0 below AA` from this scan means "nothing measured below AA", not "no unreadable
+//   text on screen", and nothing in this file may say otherwise.
+//
+// A second instance of the same premise, not live today: `getComputedStyle(el).opacity` is the
+// element's OWN value, so the `< 0.95` translucency skip below never sees an ANCESTOR's opacity.
+// With `#root { opacity: 0.35 }` the scan exits 1 on 13 strings and still prints 297 as passing
+// while every one of them is painted at 35%. The app currently has one `opacity: 0`, two
+// `opacity: 1`, and a `0.65` inside a comment -- which is exactly the status `currentColor` had
+// before it became the deepest defect of this release. Also in M38.
 const shotAndSample = async (items) => {
   // A: as the viewer sees it.
   const shotA = await page.screenshot({ type: 'png' });
@@ -287,20 +347,29 @@ const shotAndSample = async (items) => {
   await page.waitForTimeout(80);
   await film.evaluate((u) => window.__load(u), 'data:image/png;base64,' + shotB.toString('base64'));
   await film.evaluate(() => window.__stashB());
-  // C: THE SAME HIDDEN FRAME AGAIN, AND THE THIRD AUDIT IS WHY IT EXISTS. The diff above assumes
-  // that anything changing between A and B is a glyph. `HIDE` is wider than that: it sets
-  // `color: transparent` on every element, so a border, background, box-shadow or SVG fill drawn
-  // from `currentColor` changes too -- where no glyph ever was. A mutant whose opaque bar used
-  // `background: currentColor` with a 2s transition therefore produced a NON-zero diff inside
-  // every covered box and a headline byte-identical to a clean build: 309 / 0 / 4.71, exit 0.
-  // A second mutant flipping an opaque bar on a 30ms `setInterval` leaked 36 of 108 covered
-  // strings the same way, because Playwright settles CSS animations and cannot settle a timer.
+  // C: THE SAME HIDDEN FRAME AGAIN, AND THE THIRD AUDIT IS WHY IT EXISTS.
+  //
+  // HISTORY, IN THE PAST TENSE BECAUSE THE MECHANISM IT DESCRIBES IS GONE. `HIDE` USED TO set
+  // `color: transparent` on every element, which is wider than hiding a glyph: a border,
+  // background, box-shadow or SVG fill drawn from `currentColor` changed too, where no glyph ever
+  // was. A mutant whose opaque bar used `background: currentColor` with a 2s transition therefore
+  // produced a NON-zero diff inside every covered box and a headline byte-identical to a clean
+  // build. `HIDE` now sets `-webkit-text-fill-color` (see its own comment), which paints the glyph
+  // and nothing else, so that class is closed AT SOURCE -- the fourth audit re-ran that mutant and
+  // it is now caught as INVISIBLE, not as moving. **Do not "restore" `color: transparent` here.**
+  //
+  // WHAT C STILL DOES, present tense: a backdrop that MOVES. A mutant flipping an opaque bar on a
+  // 30ms `setInterval` leaks covered strings past the A-B diff, because Playwright settles CSS
+  // animations and cannot settle a timer, so some boxes are photographed on the frame where the bar
+  // is absent. Measured by the fourth audit with `movedEnough` forced false: that mutant leaks 304
+  // measured strings instead of 268. Without C it still exits 1, but by luck of which boxes land on
+  // which frame; C makes the catch deterministic.
   //
   // C is taken in the same hidden state as B, a moment later. A still backdrop is IDENTICAL in
   // B and C; anything moving -- a transition, a timer, an animation the harness did not settle --
   // is not, and a box whose backdrop is still moving is a box whose sampled colour means nothing.
   await film.evaluate((u) => window.__load(u), 'data:image/png;base64,' + shotC.toString('base64'));
-  const moving = await film.evaluate((bx) => window.__diffBC(bx), items.map(it => it.box));
+  const movingPairs = await film.evaluate((bx) => window.__diffBC(bx), items.map(it => it.box));
   await film.evaluate(() => window.__restoreB());
 
   const flat = [];
@@ -309,10 +378,10 @@ const shotAndSample = async (items) => {
   let k = 0;
   for (const it of items) it.back = it.pts.map(() => cols[k++]);
 
-  const diffs = await film.evaluate((bx) => window.__diff(bx), items.map(it => it.box));
+  const diffPairs = await film.evaluate((bx) => window.__diff(bx), items.map(it => it.box));
   const live = [];
   for (let i = 0; i < items.length; i++) {
-    items[i].changed = diffs[i];
+    items[i].changed = diffPairs[i][0];
     // A MOVING BACKDROP CHANGES THE BOX, NOT A FEW PIXELS OF IT. The first threshold here was
     // "any pixel at all", and on a clean build that flagged five strings at 4 to 16 pixels --
     // "BETA", "Overnight", "Weeks", "+" -- which is anti-aliasing between two captures, not an
@@ -323,10 +392,10 @@ const shotAndSample = async (items) => {
     // 25% of the box area, floored at 24px so a tiny box cannot trip on three stray pixels.
     // Falsified in both directions rather than tuned until green: the clean build must pass, and
     // the `currentColor`-transition bar and the 30ms-timer bar must both still fail.
-    const area = Math.max(1, Math.round(items[i].box[2] * items[i].box[3]));
-    const movedEnough = moving[i] >= Math.max(24, area * 0.25);
-    if (movedEnough) { unstable.push({ text: items[i].text, box: items[i].box.map(Math.round), px: moving[i], of: area }); continue; }
-    if (diffs[i] > 0) live.push(items[i]);
+    const movedPx = movingPairs[i][0], examined = Math.max(1, movingPairs[i][1]);
+    const movedEnough = movedPx >= Math.max(24, examined * 0.25);
+    if (movedEnough) { unstable.push({ text: items[i].text, box: items[i].box.map(Math.round), px: movedPx, of: examined }); continue; }
+    if (diffPairs[i][0] > 0) live.push(items[i]);
     else invisible.push({ text: items[i].text, box: items[i].box.map(Math.round) });
   }
   return live;
@@ -457,8 +526,17 @@ for (const s of report) {
 // the verdict would not.
 // DE-DUPLICATED, BECAUSE THE FIRST VERSION OF THIS LINE COUNTED COLLECTIONS AND CALLED THEM
 // STRINGS -- the identical inflation pass 1 blocked on, printed four lines under the comment that
-// records that lesson. 108 "strings" against the opaque-bar mutant was 48; the clean run measures
-// 309 and the mutant 261, and 309 - 261 = 48 is the arithmetic that says so.
+// records that lesson.
+//
+// THESE TWO LINES COUNT WITH DIFFERENT DENOMINATORS AND THAT IS DELIBERATE, because an earlier
+// version of this comment did the arithmetic across them and got a number neither line prints.
+// `invisible` and `unstable` are de-duplicated GLOBALLY -- the same string on the same box is one
+// entry however many screens it appears on -- because a header that is invisible on all eight
+// screens is ONE defect, not eight. `measured` is counted PER SCREEN, at each string's worst
+// sample there, because a ratio is a property of a string on a screen. So against the opaque-bar
+// mutant the scan prints **6 invisible** (six distinct header strings) and **262 measured**
+// against a clean **310** -- and 310 - 262 = 48 is 6 strings x 8 screens, not a contradiction.
+// Neither number is wrong; subtracting one from the other is.
 const uniq = (list) => {
   const m = new Map();
   for (const v of list) m.set(v.text + '\u241f' + JSON.stringify(v.box), v);
@@ -490,6 +568,17 @@ console.log('  (NOT a coverage figure. `offscreen` is overwhelmingly the SAME st
   + ' another pass; measured coverage is ~96%. This number is here to MOVE when the app starts'
   + ' hiding text from the scan, not to be read as the unmeasured surface.)');
 console.log('page errors: ' + thrown.length + (thrown.length ? ' -> ' + thrown.slice(0, 2).join(' | ') : ''));
+// A `checks:` LINE IN THE SHARED SHAPE, because `falsify.sh` reads one to decide whether the suite
+// RAN at all -- and without it the sweep refused its own baseline and scored every mutant as
+// "could not measure". A suite the falsification harness cannot read is a suite nobody falsifies.
+// The unit is a distinct string: it passes if it was proven visible, sat on a still backdrop, and
+// met AA. So the three red categories are all in `failed`, and this line can never read green
+// while a FAIL is printed above it.
+{
+  const failedChecks = failures + invisibleU.length + unstableU.length;
+  const totalChecks = measured + invisibleU.length + unstableU.length;
+  console.log(totalChecks + ' checks: ' + (totalChecks - failedChecks) + ' passed, ' + failedChecks + ' failed');
+}
 if (JSON_OUT) fs.writeFileSync(JSON_OUT, JSON.stringify(report, null, 2));
 await b.close();
 process.exit(failures || thrown.length || invisibleU.length || unstableU.length ? 1 : 0);

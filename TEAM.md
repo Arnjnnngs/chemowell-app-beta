@@ -820,6 +820,9 @@ over the whole release is worth writing down plainly:
 | the third photograph taken after un-hiding — 341 false flags | the first run of it |
 | `color: transparent` wiping `currentColor` paint | an audit built a bar, three guards deep |
 | fixtures dated from the wall clock — count drifted 309↔310 | two runs an hour apart |
+| the freeze pinned the PAGE's clock but not the HOST's — 310/602 in UTC, 309/565 under `TZ=America/Chicago`, identical code | an audit ran it in six timezones |
+| the record claimed the diff was "mechanism-independent" — a static TRANSLUCENT veil defeats it, byte-identically to a clean build | an audit built a veil |
+| the designer script was given a `process.exit` and nothing ran it | an audit grepped for it |
 
 **Not one was found by reading the code**, including the ones where the reasoning was good enough
 that I would have shipped on it. Two in that list are mine finding my own fix wrong *after*
@@ -830,6 +833,45 @@ column of someone else's audit.
 re-run, not a one-off check at the moment it is written.** Every mutant above is cheap to rebuild
 and each one is now the only thing standing between a future edit and a silent false green. They
 belong beside the scan, not in a scratch directory.
+
+**DONE, and it had to be said twice before it was.** The sentence above shipped while every mutant
+from four audits still lived in scratch directories that died with their sessions — so each audit
+rebuilt the previous one's corpus from prose, and the fourth one said so. The corpus is
+`falsify/mutants-contrast-overlays.sh`, nine mutants, runnable with the harness this repo already
+had:
+
+    ./falsify.sh test/contrast-scan.mjs falsify/mutants-contrast-overlays.sh
+
+**And writing it down forced two things a prose record cannot hold.** A corpus has to be able to
+say *this one is expected to survive*, in two different senses, so `falsify.sh` grew
+`MUTANT_EXPECT`:
+
+* **`"survive"` — an over-block control.** It changes something a real release might legitimately
+  contain (an animated page gradient). The suite must stay **green**, and catching it is scored as a
+  **failure of the sweep**. This is the row that matters most for an instrument this young: a gate
+  that misses things is worth having, a gate that fails legitimate work is the one that gets
+  `|| true` written beside it — which has already happened in this repo.
+* **`"hole"` — a known open hole, with its ticket in the description.** It survives, everyone knows
+  why, and it stays in the corpus so the day it **starts** dying is noticed instead of the hole
+  being rediscovered by a fifth audit.
+
+Without those two states the only honest way to keep either mutant was to leave it out — and
+leaving it out is how a corpus stops describing the instrument.
+
+### What this gate does NOT measure, in the file and in the record
+
+**The scan's limits are now written at the guard itself, in `BACKLOG.md` M38, and in the corpus —
+and the reason is that the record said the opposite.** It called the pixel diff
+*"mechanism-independent"*. It is not: the backdrop is read from the photograph, so a veil is
+included in it, while the **ink** is read from `cs.color`, which a veil does not touch. A static
+translucent layer therefore moves both colours the same way and the printed ratio goes **up**. A
+390×140 `rgba(255,255,255,0.85)` div produces output byte-identical to a clean build while
+`Alex's Meds` prints **15.08:1** against a painted **1.30:1**.
+
+**So `0 below AA` from this scan means "nothing measured below AA". It does not mean "no unreadable
+text on screen", and no document in this repo may say it does.** A gate that under-catches and says
+so is an asset. One that under-catches and advertises coverage is how the next session concludes
+there is nothing left to find.
 
 **And the second rule, which cost the most:** three guards in a row failed because they were all
 downstream of the same hiding mechanism. **When a measurement modifies the thing it measures, every

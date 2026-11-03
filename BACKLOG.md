@@ -1036,3 +1036,60 @@ is there yet:
    every number from that run is fiction.
 
 A measurement harness needs a check on what it MEASURES, not only on what it reports.
+
+---
+
+**STATUS, app-v91 (updated after the fourth audit).**
+
+**Item 2 is DONE and shipped** — it is the A/B pixel diff in `test/contrast-scan.mjs`, plus a third
+photograph C in the same hidden state for a backdrop that is still moving. A string that cannot be
+proven visible now **fails** the scan instead of being counted as passing. **Item 1 is still open**
+and would still be worth having: a sampled backdrop that matches nothing in the palette means the
+sample landed somewhere unexpected.
+
+### What the pixel diff does NOT catch, with the mutants that prove it
+
+The corpus is `falsify/mutants-contrast-overlays.sh`, runnable with
+`./falsify.sh test/contrast-scan.mjs falsify/mutants-contrast-overlays.sh`. Four audits built these
+mutants in scratch directories that died with their sessions, so each audit rebuilt the last one's
+work from prose. They are committed now, with the two below declared as expected survivors so the
+day either starts dying is noticed rather than rediscovered.
+
+**M38-a — a static TRANSLUCENT veil (corpus mutant 4, `MUTANT_EXPECT="hole"`).** The backdrop is
+read from the photograph, so a veil is included in it; the **ink** is read from `cs.color`, which a
+veil does not touch. Both colours are then wrong in the same direction, so the printed ratio goes
+**up**. Measured: one 390×140 `rgba(255,255,255,0.85)` div at `pointer-events: none` produces output
+**byte-identical to a clean build** — 310 / 602 / 0 below AA / worst 4.78:1, exit 0 — while 48 of the
+310 printed ratios move, every one upward, and `Alex's Meds` prints **15.08:1** against a painted
+**1.30:1**. The live shape is `#tour-scrim` (`index.html:5349`), which fails loudly today only
+because it is **dark**; a pale veil is the silent direction, and the only thing holding the tour shut
+in the fixture is `tourDone: true`.
+
+*Proposed fix, size M, not attempted in app-v91:* collect every element that paints — `position`
+fixed/absolute/sticky with a non-transparent `background-color` or a `background-image`, plus
+`backdrop-filter` and `mix-blend-mode` layers — independently of hit-testing, and fail any text box
+one of them intersects. That is a real guard rather than a wider diff, and it has to be falsified in
+**both** directions before it goes in: the drawer and the upgrade sheet are legitimate layers and a
+gate that refuses them is a gate somebody disables. The corpus already carries the over-block
+control for that (mutant 8).
+
+**M38-b — an ANCESTOR's `opacity` (corpus mutant 7).** `getComputedStyle(el).opacity` is the
+element's **own** value, so the `< 0.95` translucency skip never sees an ancestor's. With
+`#root { opacity: 0.35 }` the scan exits 1 on 13 strings and still prints **297 as passing** while
+every one of them is painted at 35%. **Not live today** — the app has one `opacity: 0`, two
+`opacity: 1`, and a `0.65` inside a comment — which is exactly the status `currentColor` had before
+it became this release's deepest defect. *Fix, size S:* multiply the computed opacity up the ancestor
+chain before applying the skip.
+
+**M38-c — partial coverage of a multi-line box.** The diff is counted over the whole box, so a layer
+covering one line of a three-line string leaves a non-zero diff and the string is kept. Reasoned
+about, not built — an incompleteness rather than a wrong measurement, and the weakest of the three.
+
+**M38-d — coverage, stated plainly.** One width (390), eight screens, no focus/pressed/disabled
+states, Chromium only. `-webkit-text-fill-color` is a WebKit-prefixed property and has been measured
+**only in Chromium**. The frozen 14:00 clock also drops the "Overnight" and "Evening" headings from
+coverage; both measured above AA (6.44:1, 6.36:1) and the frozen set is the harder one (worst 4.78:1
+against 4.84:1), so nothing failing is being hidden — but it is a narrowing.
+
+**So `0 below AA` from this scan means "nothing measured below AA", never "no unreadable text on
+screen".** The scan's own comments say so now, and nothing in this repo may say otherwise.

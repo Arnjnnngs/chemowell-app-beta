@@ -148,13 +148,31 @@ fi
 # ceiling prints a truncated log that looks exactly like a finished one in anything filtered. That
 # has now happened twice. A slice finishes, says so, and the slices together are the sweep -- which
 # is honest, where "it probably would have passed" is not. Always state which slice a result covers.
-DEAD=0; ALIVE=0; SURVIVED=0; UNMEASURED=0; STALE=0
+# A MUTANT CAN BE EXPECTED TO SURVIVE, AND UNTIL NOW THERE WAS NO WAY TO SAY SO. Two kinds:
+#
+#   MUTANT_EXPECT_n="survive"  -- an OVER-BLOCK CONTROL. It changes something a real release might
+#     legitimately contain (a slow page-gradient animation, say) and the suite MUST stay green. If
+#     such a mutant is caught, that is a false alarm, and a check that cries wolf is the one that
+#     gets `|| true` written beside it -- which has already happened in this repo. Catching it is
+#     scored as a FAILURE of the sweep, the opposite of every other row.
+#
+#   MUTANT_EXPECT_n="hole"     -- a KNOWN OPEN HOLE, with its ticket named in the description. It
+#     survives today and everyone knows why. Keeping it in the corpus is how the day it STARTS
+#     dying is noticed, instead of the hole being rediscovered by a fourth audit. Scored neither
+#     as a catch nor as a surprise -- printed, counted, and listed in the tally by name.
+#
+# Without this, the only honest way to keep either mutant was to leave it out of the corpus, and
+# leaving it out is how the corpus stops describing the instrument.
+DEAD=0; ALIVE=0; SURVIVED=0; UNMEASURED=0; STALE=0; OVERBLOCK=0; HOLE=0; EXPECTED_ALIVE=0
+HOLE_LIST=""; OVERBLOCK_LIST=""
 FROM="${FALSIFY_FROM:-1}"
 TO="${FALSIFY_TO:-9999}"
 i=1
 while declare -F "mutant_$i" >/dev/null; do
   if [ "$i" -lt "$FROM" ] || [ "$i" -gt "$TO" ]; then i=$((i+1)); continue; fi
   desc_var="MUTANT_DESC_$i"
+  expect_var="MUTANT_EXPECT_$i"
+  EXPECT="${!expect_var:-die}"
   echo ""
   echo "=== MUTANT $i: ${!desc_var:-（no description）}"
   # A MUTANT THAT DOES NOT APPLY IS NOT A MUTANT THAT PASSED. Each one asserts its anchor matches
@@ -198,12 +216,30 @@ while declare -F "mutant_$i" >/dev/null; do
   _ran=0
   if echo "$OUT" | grep -q "checks:"; then _ran=1; fi
   if echo "$OUT" | grep -q "^  FAIL"; then
-    DEAD=$((DEAD+1))
     [ "$_ran" = 1 ] || echo "  ℹ️  CAUGHT, but the suite ABORTED after its first red -- the counts above are partial."
+    if [ "$EXPECT" = "survive" ]; then
+      ALIVE=$((ALIVE+1)); OVERBLOCK=$((OVERBLOCK+1)); OVERBLOCK_LIST="$OVERBLOCK_LIST $i"
+      echo "  ❌ OVER-BLOCK -- this mutant was expected to SURVIVE and the suite went red on it."
+      echo "     It changes something a real release could legitimately contain, so this is a false"
+      echo "     alarm, not a catch. A gate that fails legitimate work is the one that gets"
+      echo "     disabled. Fix the check, not the mutant."
+    else
+      DEAD=$((DEAD+1))
+      [ "$EXPECT" = "hole" ] && echo "  ✅ CAUGHT -- and this mutant was recorded as a KNOWN OPEN HOLE. The hole is closed;"
+      [ "$EXPECT" = "hole" ] && echo "     update its MUTANT_EXPECT to \"die\" and close its ticket."
+    fi
   elif [ "$_ran" = 0 ]; then
     ALIVE=$((ALIVE+1)); UNMEASURED=$((UNMEASURED+1))
     echo "  ⚠️  COULD NOT MEASURE -- the suite produced neither a red nor a summary, so it never ran."
     echo "      This is not a survivor and not a catch. Find out why before believing anything here."
+  elif [ "$EXPECT" = "survive" ]; then
+    EXPECTED_ALIVE=$((EXPECTED_ALIVE+1))
+    echo "  ✅ SURVIVED AS EXPECTED -- the suite stayed green on a change a real release could"
+    echo "     legitimately contain. That is this mutant's job: it is the over-block control."
+  elif [ "$EXPECT" = "hole" ]; then
+    HOLE=$((HOLE+1)); HOLE_LIST="$HOLE_LIST $i"
+    echo "  ⚠️  SURVIVED -- KNOWN OPEN HOLE, and its description names the ticket. Not a surprise and"
+    echo "     not a catch. It stays in the corpus so the day it starts dying is noticed."
   else
     ALIVE=$((ALIVE+1)); SURVIVED=$((SURVIVED+1))
     echo "  ⚠️  SURVIVED -- no check went red. Either the check cannot fail, or this mutant is a no-op."
@@ -238,5 +274,11 @@ echo ""
 # $DEAD + $SURVIVED + $UNMEASURED short of the mutants attempted and vanished from the summary --
 # in the very commit whose message was "the sweep stopped three times on a stale mutant and never
 # said so". The exit code was right, so nothing could ship on it; the line a person reads was wrong.
-echo "=== $DEAD mutant(s) caught, $SURVIVED survived, $UNMEASURED could not be measured, $STALE anchor(s) stale"
+echo "=== $DEAD mutant(s) caught, $SURVIVED survived unexpectedly, $UNMEASURED could not be measured, $STALE anchor(s) stale"
+echo "=== $EXPECTED_ALIVE over-block control(s) correctly stayed green, $OVERBLOCK over-block(s) fired, $HOLE known open hole(s)"
+[ -n "$HOLE_LIST" ] && echo "    known open holes still open: mutant(s)$HOLE_LIST -- see their descriptions for the ticket"
+[ -n "$OVERBLOCK_LIST" ] && echo "    OVER-BLOCKS: mutant(s)$OVERBLOCK_LIST -- the suite failed a change it should have passed"
+# A KNOWN OPEN HOLE DOES NOT FAIL THE SWEEP -- it is already written down and ticketed, and a sweep
+# that is permanently red is a sweep nobody runs. An OVER-BLOCK does fail it, and so does an
+# unexpected survivor, a mutant that could not be measured, and a stale anchor.
 [ "$ALIVE" -eq 0 ] || exit 1

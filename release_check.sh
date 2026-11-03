@@ -852,10 +852,24 @@ export FALSIFY_BASE="http://127.0.0.1:$RC_PORT/index.html"
 # It needs the server, so it goes in this loop rather than beside the static checks, and it is
 # given its base explicitly -- its default port is a developer convenience and would silently
 # measure whatever happens to be served there instead of the clean export this gate built.
-for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs; do
+# AND THE FIFTH IS THIS RELEASE'S OWN DESIGNER PASS, derived from the version rather than pinned.
+# app-v91 taught the same lesson one layer in: the designer script was given a `process.exit` so it
+# COULD fail, the DESIGN artefact check above was already in place -- and that check only asks
+# whether a `DESIGN*` FILE EXISTS. So a designer script that goes red changed nothing about the
+# gate's verdict, which is "declared a gate, wired into nothing" for the third time in this file.
+# `test/<version>-designer-pass.mjs` is run when it exists; it is not required, because a release
+# that touches no screen has no screens to walk and the artefact check above already covers the
+# seat. Never pin the literal (Rule 5): `app-v91` -> `v91`, so the next release's file is picked up
+# with nothing to remember.
+RC_DESIGNER_SUITE="test/${GATE_VERSION#app-}-designer-pass.mjs"
+for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs test/overflow-scan.mjs "$RC_DESIGNER_SUITE"; do
   [ -f "$RC_SUITE_DIR/$SUITE" ] || continue
   RC_SUITE_ARGS=""
   [ "$SUITE" = "test/contrast-scan.mjs" ] && RC_SUITE_ARGS="--base http://127.0.0.1:$RC_PORT/index.html"
+  # POSITIONAL, not --base. The designer script reads `[base, out, tag]` off argv, so passing
+  # `--base <url>` would set base to the literal "--base" and the run would fail for the wrong
+  # reason -- a green-for-the-wrong-reason away from being a check about nothing.
+  [ "$SUITE" = "$RC_DESIGNER_SUITE" ] && RC_SUITE_ARGS="http://127.0.0.1:$RC_PORT/index.html /tmp/rc-design-shots $GATE_VERSION"
   if (cd "$RC_SUITE_DIR" && node "$SUITE" $RC_SUITE_ARGS) >"/tmp/rc-$(basename "$SUITE").log" 2>&1; then
     echo "ℹ️  $(basename "$SUITE"): green."
   else
