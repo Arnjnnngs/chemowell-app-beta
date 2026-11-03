@@ -39,6 +39,33 @@ const b = await chromium.launch();
 const thrown = [];
 const HOUR = 3600000, DAY = 86400000;
 
+// THE CLOCK IS FROZEN AT 14:00 LOCAL, AND THIS IS THE THIRD CURE FOR THE SAME DISEASE.
+//
+//   v1  fixtures at absolute hours (todayAt(9))  -> red before 09:00: future-dated readings.
+//   v2  fixtures relative to now, clamped to midnight  -> red between about 03:00 and 04:00:
+//       the clamp pins the span to "midnight -> now", which between three and four hours wide
+//       is labelled by the HOUR, and the first two ticks then land in the same hour, so
+//       de-duplication correctly drops one and `f2` counts four labels where it wanted five.
+//       Measured, not guessed: 8 red at 03:50 local, 0 red at 04:06, same build, same bytes.
+//   v3  section 4d: the simulated date moves in whole DAYS and keeps the real time of day
+//       -> red before 09:00 again, in the one section that killed the Date.now() mutant.
+//
+// Each cure was a correct answer to the previous failure and created the next one, because all
+// three left the WALL CLOCK in the fixture. A fixture whose truth depends on the hour it runs is
+// not a fixture, and patching the hour it breaks at only moves the hour.
+//
+// So the clock is frozen, the way `warning-priority-test.mjs` in chemowell-beta already does it:
+// `window.Date` is replaced in every page, and node-side helpers read FROZEN instead of
+// `Date.now()`. 14:00 is chosen because it is far from midnight in both directions -- no clamp
+// can fire, and no span can collapse.
+const FROZEN = (() => { const d = new Date(); d.setHours(14, 0, 0, 0); return d.getTime(); })();
+const freeze = '(() => {'
+  + '  const R = Date;'
+  + '  const D = function (...a) { return a.length ? new R(...a) : new R(' + FROZEN + '); };'
+  + '  D.now = () => ' + FROZEN + '; D.parse = R.parse; D.UTC = R.UTC; D.prototype = R.prototype;'
+  + '  window.Date = D;'
+  + '})()';
+
 // Both charts, from one table. temp entries are medId 'temp' with a temp field; weight entries are
 // medId 'weight' with a weight field -- the shapes the app's own writers produce (3205, 3242).
 const CHARTS = [
@@ -58,6 +85,7 @@ const seed = (entries) => `(() => {
 // Open a report and read its x-axis labels by hook.
 const axisOf = async (chartKey, entries, months, simYmd) => {
   const c = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await c.addInitScript(freeze);
   c.on('page', (pg2) => pg2.on('pageerror', (e) => thrown.push(String(e))));
   const pg = await c.newPage();
   await pg.addInitScript(seed(entries));
@@ -127,8 +155,8 @@ const axisOf = async (chartKey, entries, months, simYmd) => {
 // is "N hours before now", clamped so it never lands before midnight -- so a run at 00:30 gets a
 // span measured in minutes rather than a reading dated yesterday, and still tests the same thing.
 const ago = (hours) => {
-  const now = Date.now();
-  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const now = FROZEN;
+  const midnight = new Date(FROZEN); midnight.setHours(0, 0, 0, 0);
   const wanted = now - hours * HOUR;
   // Keep it inside today, and never exactly now -- a zero-length span is its own case, not this one.
   return Math.max(wanted, midnight.getTime() + 60000);
@@ -140,7 +168,7 @@ const agoDays = (d, hours) => ago(hours) - d * DAY;
 // Date labels are M/D; time labels are "9 AM" or "9:05 AM". Both are checked against the same
 // clock the fixture used.
 const futureOnes = (labels) => {
-  const now = new Date();
+  const now = new Date(FROZEN);
   return labels.filter(L => {
     const md = L.match(/^(\d{1,2})\/(\d{1,2})$/);
     if (md) {
@@ -306,7 +334,7 @@ for (const chart of CHARTS) {
 //         the current hour, so it does not change shape through the day.
 console.log('\n=== 3b. A span whose earliest date covers several ticks');
 for (const chart of CHARTS) {
-  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const midnight = new Date(FROZEN); midnight.setHours(0, 0, 0, 0);
   const t0 = midnight.getTime() - 2 * DAY + HOUR;         // two days ago, 01:00
   const t1 = midnight.getTime() - DAY + 12 * HOUR;        // yesterday, noon
   const r = await axisOf(chart.key, [chart.mk(t0, 0), chart.mk(t1, 1)]);
@@ -344,7 +372,7 @@ for (const chart of CHARTS) {
 //         that reason. Here the newest reading is five days back, so the axis must END on it.
 console.log('\n=== 3c. The axis ends on the newest reading when that reading is days old');
 for (const chart of CHARTS) {
-  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const midnight = new Date(FROZEN); midnight.setHours(0, 0, 0, 0);
   const t0 = midnight.getTime() - 20 * DAY + 9 * HOUR;
   const tLast = midnight.getTime() - 5 * DAY + 9 * HOUR;
   const r = await axisOf(chart.key, [chart.mk(t0, 0), chart.mk(Math.round((t0 + tLast) / 2), 1), chart.mk(tLast, 2)]);
@@ -381,7 +409,7 @@ for (const chart of CHARTS) {
 console.log('\n=== 3d. A span longer than a year carries the year, and loses no label');
 {
   const chart = CHARTS.find(c => c.key === 'weight');
-  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const midnight = new Date(FROZEN); midnight.setHours(0, 0, 0, 0);
   const t0 = midnight.getTime() - 400 * DAY + 9 * HOUR;
   const tLast = midnight.getTime() - 60 * DAY + 9 * HOUR;   // 340 days apart, both outside 28d
   const r = await axisOf(chart.key, [chart.mk(t0, 0), chart.mk(tLast, 1)]);
@@ -409,8 +437,8 @@ console.log('\n=== 4c. A span under three hours is labeled to the minute');
 // minutes is still inside today:
 const MIN = 60000;
 const minuteWindow = () => {
-  const now = Date.now();
-  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const now = FROZEN;
+  const midnight = new Date(FROZEN); midnight.setHours(0, 0, 0, 0);
   const end = now - 30000;
   const start = Math.max(midnight.getTime() + 1000, end - 90 * MIN);
   return [start, start + (end - start) / 2, end];
@@ -465,10 +493,10 @@ for (const chart of CHARTS) {
 console.log('\n=== 4d. A simulated future date moves the axis with it');
 {
   const simAhead = 3;                                  // whole days, as the date picker sets it
-  const sim = new Date(); sim.setTime(sim.getTime() + simAhead * DAY);
+  const sim = new Date(FROZEN); sim.setTime(sim.getTime() + simAhead * DAY);
   const ymd = sim.getFullYear() + '-' + String(sim.getMonth() + 1).padStart(2, '0')
     + '-' + String(sim.getDate()).padStart(2, '0');
-  const reading = Date.now() + 12 * HOUR;              // real future, simulated past, always
+  const reading = FROZEN + 12 * HOUR;                  // real future, simulated past, always
   for (const chart of CHARTS) {
     const r = await axisOf(chart.key, [chart.mk(reading, 0)], false, ymd);
     t('4d.' + chart.key + '.0  precondition: the chart rendered on the simulated day',
@@ -490,6 +518,7 @@ console.log('\n=== 4d. A simulated future date moves the axis with it');
 console.log('\n=== 5. The What’s New title has a hook, not a line number (F1, deferred from app-v89)');
 {
   const c = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await c.addInitScript(freeze);
   c.on('page', (pg2) => pg2.on('pageerror', (e) => thrown.push(String(e))));
   const pg = await c.newPage();
   await pg.addInitScript(`(() => {
