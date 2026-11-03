@@ -5,6 +5,17 @@ file; do not move it back to the root and do not rename the stub.
 
 Instructions for any AI agent working in this repo.
 
+## RULE 0.0 — `care-tracker` IS CLOSED. NOTHING GOES BACK TO IT.
+
+**Brandi passed away on 18 September 2026**, and on 3 November 2026 Aaron froze that app: *"That
+app and its data is to be frozen… that app is not to be touched whatsoever."*
+
+Rule 0 below still stands in full — this product must carry no trace of one named patient, and the
+reasons are unchanged. What has changed is the **other direction**: this repo's notes and
+`BACKLOG.md` contain items of the form "the same defect exists in `care-tracker`, port it back".
+**Those are closed, not queued.** A real defect in that app is not a reason to touch it. The full
+notice is at the top of `care-tracker/CLAUDE.md`.
+
 ## RULE 0 — WHO THIS APP IS FOR. Read this before anything else.
 
 **ChemoWell is a product. Every user is a different patient. None of them is the owner's wife.**
