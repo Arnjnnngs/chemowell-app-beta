@@ -58,6 +58,10 @@ mutant_2() {
   _inject '<div style="position:fixed;left:0;top:0;width:390px;height:140px;background:currentColor;color:#FFFFFF;transition:background 2s;pointer-events:none;z-index:999"></div>'
 }
 
+# READING THE SWEEP LOG: the two timer mutants (3 and 9) are red on every run, but WHICH screens go
+# red moves between runs, because which boxes are photographed on the frame where the bar is absent
+# depends on timing. Their redness and the verdict are stable; their per-screen counts are not.
+# A later session comparing two sweep logs line by line would otherwise read that as a regression.
 MUTANT_DESC_3="an opaque bar flipped by a 30ms setInterval -- a timer Playwright cannot settle"
 # This is the reason photograph C exists. With the moving check forced off, this mutant leaks 304
 # measured strings instead of 268: without C it still exits 1, but by luck of which boxes land on

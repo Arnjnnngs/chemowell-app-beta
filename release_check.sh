@@ -872,7 +872,15 @@ export FALSIFY_BASE="http://127.0.0.1:$RC_PORT/index.html"
 # the owner has had to report himself. If it ever becomes the reason someone skips the gate, narrow
 # the DEVICES list in the scan -- do not quietly drop it from this loop.
 RC_DESIGNER_SUITE="test/${GATE_VERSION#app-}-designer-pass.mjs"
-for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs test/overflow-scan.mjs "$RC_DESIGNER_SUITE"; do
+# AND THE THREE app-v92 ADDS, each for a question no existing instrument asked.
+#   v90-chart-axes  -- 162 checks, built in app-v90 and never wired in. Same omission, again.
+#   v92-pill-clearance -- scrolls to the END and asks whether anything is behind the floating
+#     Back pill. Every other gate here photographs a still frame at scroll 0.
+#   v92-text-collisions -- asks whether two pieces of text IN NORMAL FLOW land on each other,
+#     which overflow-scan cannot see: it compares each element against its own box, one at a
+#     time, and reported the app-v92 defect as "over by 5px" when what was on the screen was
+#     a medication name printed across the time and the dose.
+for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs test/overflow-scan.mjs test/v90-chart-axes.mjs test/v92-pill-clearance.mjs test/v92-text-collisions.mjs "$RC_DESIGNER_SUITE"; do
   [ -f "$RC_SUITE_DIR/$SUITE" ] || continue
   RC_SUITE_ARGS=""
   [ "$SUITE" = "test/contrast-scan.mjs" ] && RC_SUITE_ARGS="--base http://127.0.0.1:$RC_PORT/index.html"
@@ -880,7 +888,17 @@ for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mj
   # `--base <url>` would set base to the literal "--base" and the run would fail for the wrong
   # reason -- a green-for-the-wrong-reason away from being a check about nothing.
   [ "$SUITE" = "$RC_DESIGNER_SUITE" ] && RC_SUITE_ARGS="http://127.0.0.1:$RC_PORT/index.html /tmp/rc-design-shots $GATE_VERSION"
-  if (cd "$RC_SUITE_DIR" && node "$SUITE" $RC_SUITE_ARGS) >"/tmp/rc-$(basename "$SUITE").log" 2>&1; then
+  # `env -u` ON THE PROXY VARIABLES, and the gate could not run a suite without it. app-v91's
+  # fifth audit invoked the loop exactly as written and got: `REFUSING: HTTPS_PROXY is set`,
+  # exit 3, which the loop scores as a failed suite -- so the moment `overflow-scan.mjs` was
+  # wired in, the gate could not pass here for a reason with nothing to do with any release.
+  # That suite refuses on the PRESENCE of the variable rather than on reachability, which is
+  # stricter than what it is protecting against (`contrast-scan` under the same environment
+  # exits 0, because Chromium honours `no_proxy` and `no_proxy` lists 127.0.0.1). This is the
+  # same line `falsify.sh` has carried since it was written. It changes nothing for the suites
+  # that were already passing and it makes the new one able to execute -- and a gate that
+  # REPORTS on a suite that never ran is worse than one that does not call it.
+  if (cd "$RC_SUITE_DIR" && env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy node "$SUITE" $RC_SUITE_ARGS) >"/tmp/rc-$(basename "$SUITE").log" 2>&1; then
     echo "ℹ️  $(basename "$SUITE"): green."
   else
     echo "❌ RELEASE CHECK FAILED: $SUITE"

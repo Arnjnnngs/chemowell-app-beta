@@ -1,3 +1,9 @@
+# NOTE added after the fifth audit re-ran this sweep: mutants 3 and 9 are the two 30ms-timer
+# mutants, and WHICH screens they turn red moves between runs -- which boxes land on the frame
+# where the bar is absent is a matter of timing. Their redness, and the sweep's verdict, are
+# stable and reproduced exactly. Every other mutant reproduced line for line. Do not read a
+# difference in mutant 3's or 9's per-screen lines as a regression.
+
 === BASELINE (no mutant) -- every check must be green before any of them mean anything
 310 checks: 310 passed, 0 failed
 

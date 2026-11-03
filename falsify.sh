@@ -108,10 +108,23 @@ if grep -Ev "$_noise" "$WORK/.server.err" 2>/dev/null | grep -q .; then
 fi
 
 # The suite is pointed at the clone's port by environment, never by editing the suite.
+#
+# AND ITS EXIT CODE IS KEPT. The first version piped node straight into `grep`, so the status was
+# `grep`'s and the suite's own was thrown away -- the sweep judged redness purely by whether a
+# `FAIL` line was printed. That is nearly always the same answer and it has one hole, which the
+# app-v91 fifth audit measured: `contrast-scan` also exits non-zero on a PAGE ERROR, and a page
+# error prints no FAIL line at all. A mutant that throws is therefore invisible to the text test
+# -- and if it were labelled `MUTANT_EXPECT="survive"` it would be scored "SURVIVED AS EXPECTED"
+# on a run the suite had refused. It cannot bite today (the only `survive` mutant is CSS and
+# cannot throw), which is exactly the status every other defect in this family had the day before
+# it bit. $LAST_STATUS is the suite's own.
+LAST_STATUS=0
 run_suite() {
-  ( cd "$WORK" && env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy \
-      FALSIFY_BASE="http://127.0.0.1:$PORT/index.html" node "$SUITE" 2>&1 ) \
-    | grep -E "^  FAIL|checks:" || true
+  local _out
+  _out=$( cd "$WORK" && env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy \
+      FALSIFY_BASE="http://127.0.0.1:$PORT/index.html" node "$SUITE" 2>&1 )
+  LAST_STATUS=$?
+  printf '%s\n' "$_out" | grep -E "^  FAIL|checks:" || true
 }
 
 # shellcheck disable=SC1090
@@ -232,10 +245,18 @@ while declare -F "mutant_$i" >/dev/null; do
     ALIVE=$((ALIVE+1)); UNMEASURED=$((UNMEASURED+1))
     echo "  ⚠️  COULD NOT MEASURE -- the suite produced neither a red nor a summary, so it never ran."
     echo "      This is not a survivor and not a catch. Find out why before believing anything here."
+  elif [ "$EXPECT" = "survive" ] && [ "$LAST_STATUS" -ne 0 ]; then
+    # GREEN TEXT IS NOT A GREEN RUN. See run_suite's comment: a suite can exit non-zero with no
+    # FAIL line (contrast-scan does it on a page error). Scoring that as "survived as expected"
+    # would let an over-block control certify a run the suite actually refused.
+    ALIVE=$((ALIVE+1)); OVERBLOCK=$((OVERBLOCK+1)); OVERBLOCK_LIST="$OVERBLOCK_LIST $i"
+    echo "  ❌ OVER-BLOCK -- this mutant was expected to SURVIVE and printed no FAIL line, but the"
+    echo "     suite exited $LAST_STATUS. A non-zero exit with no red line is a refusal, not a pass."
   elif [ "$EXPECT" = "survive" ]; then
     EXPECTED_ALIVE=$((EXPECTED_ALIVE+1))
     echo "  ✅ SURVIVED AS EXPECTED -- the suite stayed green on a change a real release could"
-    echo "     legitimately contain. That is this mutant's job: it is the over-block control."
+    echo "     legitimately contain, and exited 0. That is this mutant's job: it is the"
+    echo "     over-block control."
   elif [ "$EXPECT" = "hole" ]; then
     HOLE=$((HOLE+1)); HOLE_LIST="$HOLE_LIST $i"
     echo "  ⚠️  SURVIVED -- KNOWN OPEN HOLE, and its description names the ticket. Not a surprise and"

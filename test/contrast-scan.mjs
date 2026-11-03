@@ -97,8 +97,15 @@ const seed = () => `(() => {
   localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
   localStorage.setItem('chemowell-app-license-v1', JSON.stringify({ tier: 'free' }));
   localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, treatmentType: 'chemo', tourDone: true, installedAt: now - 90 * DAY }));
+  // A PAUSED MEDICATION, because the row it renders was invisible to every gate this project has.
+  // The grouped card's paused row and treatment-excluded row are muted with an opacity on the ROW,
+  // and no fixture had ever rendered either of them -- so text painted at 3.4:1 sat in the app
+  // through a release whose entire subject was whether the words can be read. A second medication
+  // in the same group is all it took. If the group ever stops rendering, the count below drops and
+  // that is the signal.
   localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [
-    { id: 'med-1', name: 'Blood pressure', schedule: 'daily', times: ['08:00'], doses: [{ label: '1 tablet', single: true }] }
+    { id: 'med-1', name: 'Blood pressure', schedule: 'daily', times: ['08:00'], doses: [{ label: '1 tablet', single: true }] },
+    { id: 'med-2', name: 'Ondansetron', schedule: 'daily', times: ['08:00'], doses: [{ label: '4 mg', single: true }], groupedMorning: true, paused: true }
   ] }));
   localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify(e));
   // NO VERSION LITERAL HERE. An earlier version of this file pinned 'app-v90' to suppress the
@@ -321,12 +328,24 @@ const collect = () => page.evaluate(() => {
 //   release. `0 below AA` from this scan means "nothing measured below AA", not "no unreadable
 //   text on screen", and nothing in this file may say otherwise.
 //
-// A second instance of the same premise, not live today: `getComputedStyle(el).opacity` is the
+// A second instance of the same premise, AND IT IS LIVE. `getComputedStyle(el).opacity` is the
 // element's OWN value, so the `< 0.95` translucency skip below never sees an ANCESTOR's opacity.
 // With `#root { opacity: 0.35 }` the scan exits 1 on 13 strings and still prints 297 as passing
-// while every one of them is painted at 35%. The app currently has one `opacity: 0`, two
-// `opacity: 1`, and a `0.65` inside a comment -- which is exactly the status `currentColor` had
-// before it became the deepest defect of this release. Also in M38.
+// while every one of them is painted at 35%.
+//
+// An earlier version of this comment said the app had "one `opacity: 0`, two `opacity: 1`, and a
+// `0.65` inside a comment" -- not live. **That was wrong, and it came out of an audit report
+// rather than out of the file.** The grouped medications card has TWO live rows at
+// `opacity: '0.65'` (the paused row and the treatment-excluded row), each wrapping two pieces of
+// text, plus an `opacity: '0.55'` disabled input in the med editor. The opacity is on the row, so
+// this scan reads 1 on the text and measures the ink unmuted: it would print 8.44:1 and 7.88:1
+// for text painted at 3.39:1 and 3.27:1.
+//
+// app-v92 raises those rows to 0.8, which puts them at 4.92:1 and 4.68:1 as painted, and seeds a
+// PAUSED medication below so the row is measured here from now on -- it was invisible to every
+// gate for one dull reason: no fixture had ever rendered it. **The ancestor-opacity hole itself is
+// still open**: the fix is to multiply the computed opacity up the ancestor chain before applying
+// the skip. In `BACKLOG.md` M38-b with the mutant that proves it.
 const shotAndSample = async (items) => {
   // A: as the viewer sees it.
   const shotA = await page.screenshot({ type: 'png' });

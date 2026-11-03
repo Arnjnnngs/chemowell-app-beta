@@ -1073,13 +1073,33 @@ one of them intersects. That is a real guard rather than a wider diff, and it ha
 gate that refuses them is a gate somebody disables. The corpus already carries the over-block
 control for that (mutant 8).
 
-**M38-b — an ANCESTOR's `opacity` (corpus mutant 7).** `getComputedStyle(el).opacity` is the
-element's **own** value, so the `< 0.95` translucency skip never sees an ancestor's. With
-`#root { opacity: 0.35 }` the scan exits 1 on 13 strings and still prints **297 as passing** while
-every one of them is painted at 35%. **Not live today** — the app has one `opacity: 0`, two
-`opacity: 1`, and a `0.65` inside a comment — which is exactly the status `currentColor` had before
-it became this release's deepest defect. *Fix, size S:* multiply the computed opacity up the ancestor
-chain before applying the skip.
+**M38-b — an ANCESTOR's `opacity` (corpus mutant 7). LIVE, not hypothetical.**
+`getComputedStyle(el).opacity` is the element's **own** value, so the `< 0.95` translucency skip
+never sees an ancestor's. With `#root { opacity: 0.35 }` the scan exits 1 on 13 strings and still
+prints **297 as passing** while every one of them is painted at 35%.
+
+**An earlier version of this entry said "not live today", and that was false.** It listed one
+`opacity: 0`, two `opacity: 1` and a `0.65` inside a comment — an enumeration taken from an audit
+report instead of from the file. The grouped medications card carries **two live rows at
+`opacity: '0.65'`** (`index.html` paused row and treatment-excluded row), each wrapping a
+`TYPE.title #554A52` and a `TYPE.caption #5C4E52` over the card's white, plus an `opacity: '0.55'`
+disabled input in the med editor. The scan would have printed **8.44:1** and **7.88:1** for text
+painted at **3.39:1** and **3.27:1**.
+
+**Half of this is CLOSED in app-v92** and half is still open:
+
+* **Closed:** those two rows are now `opacity: 0.8` — measured as painted, **4.92:1** title,
+  **4.68:1** caption, and the Resume button took the palette's existing `#6A4433` because `#6D5247`
+  composites to only 4.34:1 even at 0.8. `contrast-scan.mjs` now seeds a **paused** medication, so
+  the row is measured on every run from here. It was invisible to every gate because no fixture had
+  ever rendered it — which is a fixture-coverage lesson, not a scan-design one.
+* **Still open, size S:** the scan's skip still cannot see an ancestor's opacity. *Fix:* multiply the
+  computed opacity up the ancestor chain before applying the `< 0.95` skip. Corpus mutant 7 is the
+  falsification, and it must go from "caught on 13 of 310" to "caught on all of them".
+* **Still open, size S, and it is the one that bites next:** the `opacity: '0.55'` disabled input in
+  the med editor has never been measured either, for the same reason — no fixture opens the editor
+  with a disabled field. A disabled control is allowed to be low-contrast under WCAG, so this may be
+  exempt rather than a defect; **measure it before deciding, and write down which it is.**
 
 **M38-c — partial coverage of a multi-line box.** The diff is counted over the whole box, so a layer
 covering one line of a three-line string leaves a non-zero diff and the string is kept. Reasoned

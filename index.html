@@ -129,11 +129,35 @@ const SUPPORT_LINK_READY = SUPPORT_LINK.indexOf('REPLACE') === -1;
     if (isWebView && measured === 0) document.documentElement.style.setProperty('--safe-top', '28px');
   } catch (e) {}
 })();
-// See the toast's own comment in render(). Only FIXED-positioned furniture belongs here: this lifts
-// the toast by a constant, which can clear an element whose position is also constant and cannot
-// chase one that scrolls. Today that is one element, the Reports "Back" pill.
-function toastNeedsLift() {
+// THE BACK PILL'S GEOMETRY, IN ONE PLACE. These two numbers used to be written out at the pill's
+// own render site only, and the page's bottom padding was a third number that had to agree with
+// them and did not: the pill's top edge sits a constant BACK_PILL_BOTTOM + BACK_PILL_H = 130px
+// above the viewport bottom, while the page padded 90px -- enough for the bottom nav and nothing
+// else. At the end of the scroll on a report screen the bottom of the last LINE OF TEXT therefore
+// ran underneath the pill: measured 35x7px on History and 50x7px on Temperature at 320, 15x7 and
+// 30x7 at 360, 15x7 on Temperature at 390. Unreachable by scrolling, because the scroll had ended.
+//
+// Two literals that have to agree are the defect, not just this instance of it: the same pairing
+// broke the toast at 96px against this pill at 130px in v57. So both call sites and the page's
+// padding are derived from these constants, and `backPillClearancePx()` is the one number any
+// layer that has to clear the pill asks for.
+const BACK_PILL_BOTTOM = 88;   // px above the viewport bottom, clear of the 84px bottom nav
+const BACK_PILL_H = 42;        // the pill's minHeight; a 13px single-line label never exceeds it
+const BACK_PILL_GAP = 8;       // breathing room, so the last line clears the pill instead of touching it
+function backPillClearancePx() { return BACK_PILL_BOTTOM + BACK_PILL_H + BACK_PILL_GAP; }
+
+// Is the floating Reports "Back" pill on screen? Named for what it answers, because three
+// different things now need to know: the pill itself, the toast's lift, and the page's bottom
+// padding. See the toast's own comment in render(): only FIXED-positioned furniture belongs in
+// that lift, which can clear an element whose position is also constant and cannot chase one that
+// scrolls. Today that is one element, this pill.
+function backPillShowing() {
   return state.view === 'reports' && !!state.reportsView;
+}
+// Kept as the toast's caller and for anything already reading it. backPillShowing() is the
+// primitive; this is the question the toast happens to be asking.
+function toastNeedsLift() {
+  return backPillShowing();
 }
 function safeTopPx() {
   const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-top'));
@@ -4875,15 +4899,34 @@ function renderGroupedMedsCard(title, meds, now) {
       ...meds.map((med, i) => {
         if (med.paused) {
           // v20: pause wins over every other row state, matching medCards' standalone card ordering.
-          // Designer review (v20): apply the same opacity:0.65 muting as the treatment-excluded row
-          // just below, so this card has one consistent "row is inert" visual language instead of a
-          // third, weaker one of its own; copy also aligned with the standalone Home card's wording.
-          return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(246,108,49,0.08)' : 'none', opacity: '0.65' } },
+          // Designer review (v20): apply the same muting as the treatment-excluded row just below,
+          // so this card has one consistent "row is inert" visual language instead of a third,
+          // weaker one of its own; copy also aligned with the standalone Home card's wording.
+          //
+          // app-v92: THE MUTING WAS 0.65 AND THAT PUT THIS TEXT BELOW AA. Opacity on the row
+          // composites the ink toward white, and `getComputedStyle(textEl).opacity` is the
+          // element's OWN value -- so `contrast-scan.mjs` read 1 on the text and measured the ink
+          // UNMUTED. It would have printed 8.44:1 for a row painted at 3.40:1. Measured as
+          // painted, on the card's #FFFFFF:
+          //
+          //    opacity 0.65   title #554A52 3.40:1   caption #5C4E52 3.27:1   Resume 3.10:1
+          //    opacity 0.80   title #554A52 4.92:1   caption #5C4E52 4.68:1   Resume 4.97:1
+          //
+          // 0.8 rather than 0.75 (4.33 / 4.14, still failing) and rather than dropping the opacity
+          // altogether, which would lose the inert language this row shares with the one below.
+          // The Resume button needed its own ink too -- #6D5247 composites to 4.34:1 even at 0.8 --
+          // so it takes the palette's existing #6A4433 HERE ONLY. #6D5247 is used in twelve other
+          // places, none of them inside a muted row, and changing it everywhere is a palette
+          // release rather than this one.
+          //
+          // The scan now seeds a PAUSED medication so this row is measured from here on. It was
+          // invisible to every gate for one dull reason: no fixture had ever rendered it.
+          return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(246,108,49,0.08)' : 'none', opacity: '0.8' } },
             h('div', { style: { flex: '1', minWidth: '0' } },
               h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name + ' \u2014 Paused'),
               h('div', { style: { ...TYPE.caption, color: '#5C4E52', marginTop: '2px' } }, 'Not tracked while paused. Resume anytime.')
             ),
-            h('button', { onClick: () => setMedicationPaused(med.id, false), style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '999px', background: '#FFFFFF', border: '1px solid #D7B8AA', color: '#6D5247', fontSize: '13px', fontWeight: '700' } }, 'Resume')
+            h('button', { onClick: () => setMedicationPaused(med.id, false), style: { flexShrink: '0', minHeight: '44px', padding: '0 16px', borderRadius: '999px', background: '#FFFFFF', border: '1px solid #D7B8AA', color: '#6A4433', fontSize: '13px', fontWeight: '700' } }, 'Resume')
           );
         }
         if (treatmentOnlyBlocks(med, now) || treatmentExcludedNow(med, now)) {
@@ -4891,7 +4934,7 @@ function renderGroupedMedsCard(title, meds, now) {
           // release (a pre-existing gap noted in the schedule-window brief's blast-radius review) --
           // closing it now for both directions rather than leaving grouped placement inconsistent
           // with standalone Quick Log cards, which have always hidden the card outright here.
-          return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(246,108,49,0.08)' : 'none', opacity: '0.65' } },
+          return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(246,108,49,0.08)' : 'none', opacity: '0.8' } },
             h('div', { style: { flex: '1', minWidth: '0' } },
               h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name),
               h('div', { style: { ...TYPE.caption, color: '#5C4E52', marginTop: '2px' } }, med.treatmentOnly ? (isOtherTreatmentType() ? 'Outside its date window' : 'Outside its treatment-day window') : (isOtherTreatmentType() ? 'Excluded near your date' : 'Excluded near treatment day'))
@@ -5431,7 +5474,11 @@ function render() {
   // as zeroes only because the two render signatures still take them, and removing arguments from
   // a call chain is a wider change than this release should make.
   const ceiling = 0, mg = 0, pct = 0, tyColor = '#A83D0F';
-  const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(120deg, #FDD9CC 0%, #FDE3CB 55%, #FFEFDC 100%)', color: '#2A2127', paddingBottom: 'calc(90px + env(safe-area-inset-bottom))', position: 'relative' } },
+  // paddingBottom: 90px clears the 84px bottom nav. On a report screen the Back pill sits ABOVE
+  // the nav, so the page has to clear the pill instead -- see backPillClearancePx(). Non-report
+  // screens keep the 90px baseline: nothing is clipped there and padding them all to 138px would
+  // leave dead space under Home.
+  const page = h('div', { style: { minHeight: '100vh', background: 'linear-gradient(120deg, #FDD9CC 0%, #FDE3CB 55%, #FFEFDC 100%)', color: '#2A2127', paddingBottom: 'calc(' + (backPillShowing() ? backPillClearancePx() : 90) + 'px + env(safe-area-inset-bottom))', position: 'relative' } },
     renderHeader(now),
     h('main', { style: { position: 'relative', zIndex: '1', maxWidth: '720px', margin: '0 auto', padding: '16px 16px 20px', display: 'flex', flexDirection: 'column', gap: '18px' } }, ...renderContent(now, mg, pct, tyColor, ceiling)),
     // v70: toast now wraps onto multiple lines instead of forcing a single nowrap line -- long
@@ -5477,8 +5524,8 @@ function render() {
     // overlap the bottom of this button and win the tap since it painted on top. If this still
     // happens, the next thing to check is exactly which on-page button was tapped right before Back
     // stopped responding.
-    (state.view === 'reports' && state.reportsView) ? h('div', { style: { position: 'fixed', zIndex: '36', left: '0', right: '0', bottom: 'calc(88px + env(safe-area-inset-bottom))', display: 'flex', justifyContent: 'center', pointerEvents: 'none' } },
-      h('button', { onClick: () => setState({ reportsView: null }), style: { pointerEvents: 'auto', minHeight: '42px', padding: '0 18px', borderRadius: '99px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(59,25,10,0.88)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', fontSize: '13px', fontWeight: '800', boxShadow: '0 10px 28px rgba(136,57,24,0.22)' } }, '↩ Back')
+    backPillShowing() ? h('div', { style: { position: 'fixed', zIndex: '36', left: '0', right: '0', bottom: 'calc(' + BACK_PILL_BOTTOM + 'px + env(safe-area-inset-bottom))', display: 'flex', justifyContent: 'center', pointerEvents: 'none' } },
+      h('button', { onClick: () => setState({ reportsView: null }), style: { pointerEvents: 'auto', minHeight: BACK_PILL_H + 'px', padding: '0 18px', borderRadius: '99px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(59,25,10,0.88)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', fontSize: '13px', fontWeight: '800', boxShadow: '0 10px 28px rgba(136,57,24,0.22)' } }, '↩ Back')
     ) : null,
     renderBottomNav(),
     !state.loaded ? h('div', { style: { position: 'fixed', inset: '0', background: 'rgba(253,220,206,0.95)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '100' } },
@@ -5857,10 +5904,20 @@ function renderTimeModal() {
 function missedRow(e, i) {
   return h('div', { style: { padding: '12px 14px', borderTop: i > 0 ? '1px solid rgba(192,69,59,0.2)' : 'none', background: 'rgba(192,69,59,0.06)', borderLeft: '3px solid #C0453B' } },
     h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } },
-      h('div', { className: 'mono', style: { ...TYPE.mono, color: '#C0453B', fontWeight: '700', minWidth: '66px' } }, fmtTime(e.ts)),
-      h('div', { style: { flex: '1' } },
-        h('div', { style: { ...TYPE.bodyBold, color: '#2A2127', display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' } },
-          nameOf(e.medId),
+      // flexShrink '0' for the same reason as the Home timeline row's time cell: same fmtTime()
+      // output, same default shrink. It does not overflow today only because this row has fewer
+      // columns competing for width. Fix the class, not the instance.
+      h('div', { className: 'mono', style: { ...TYPE.mono, color: '#C0453B', fontWeight: '700', minWidth: '66px', flexShrink: '0' } }, fmtTime(e.ts)),
+      h('div', { style: { flex: '1', minWidth: '0' } },
+        h('div', { style: { ...TYPE.bodyBold, color: '#2A2127', display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap', overflowWrap: 'break-word' } },
+          // The name is wrapped in a span so it can SHRINK. The line above is a flex container and
+          // a bare text child becomes an anonymous flex item, which cannot go below its own
+          // min-content width -- so "Temperature" (92px) sat in a 68px column at 320px and
+          // overflowed by 23px the moment the time column stopped absorbing the squeeze. minWidth
+          // '0' lets it shrink. The break itself comes from `overflowWrap: 'break-word'` on the
+          // line above, which is INHERITED -- declaring it here as well would be a property that
+          // does nothing, which is the shape of false record this codebase has paid for.
+          h('span', { style: { minWidth: '0' } }, nameOf(e.medId)),
           h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '2px 7px' } }, 'Missed')
         ),
         h('div', { style: { ...TYPE.caption, color: '#5C4E52' } }, e.windowName + ' window closed')
@@ -5890,7 +5947,10 @@ function removeBtn(e) {
       h('button', { onClick: () => setState({ confirmRemove: null }), style: { color: '#5C4E52', fontSize: '12.5px', minHeight: '44px', padding: '8px 6px', fontWeight: '600' } }, 'Keep')
     );
   }
-  return h('button', { onClick: () => { setState({ confirmRemove: e.id }); setTimeout(() => { if (state.confirmRemove === e.id) setState({ confirmRemove: null }); }, 6000); }, style: { color: '#A15B56', fontSize: '12.5px', padding: '12px 10px', minHeight: '44px' } }, 'Remove');
+  // flexShrink '0' to match the confirm variant above, which has always had it. Without it this
+  // 44px tap target is what gives way when a row runs out of width, and a squeezed Remove button
+  // is worse than a wrapped medication name.
+  return h('button', { onClick: () => { setState({ confirmRemove: e.id }); setTimeout(() => { if (state.confirmRemove === e.id) setState({ confirmRemove: null }); }, 6000); }, style: { color: '#A15B56', fontSize: '12.5px', padding: '12px 10px', minHeight: '44px', flexShrink: '0' } }, 'Remove');
 }
 
 function renderToday(now, mg, pct, tyColor, ceiling) {
@@ -6963,13 +7023,32 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
             ...g.items.map((e, i) => e.missed ? missedRow(e, i) : h('div', { 'data-timeline-row': String(e.id || e.ts), style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderTop: i > 0 ? '1px solid rgba(246,108,49,0.08)' : 'none' } },
               // THE DOT, tied to the time rather than floated beside it, so a row that wraps on a
               // narrow phone keeps its marker level with the time it belongs to.
-              h('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', minWidth: '0' } },
+              // flexShrink '0' on BOTH, and it is the correctness guard -- not the minWidth.
+              // This cell was a flex item with minWidth 58px and the default flex-shrink 1, so a
+              // row whose name and dose wanted room squeezed it to 58px while "10:00 AM" measures
+              // 66.31px at 14px ui-monospace: overflow-scan reported it over by 5px on Home at
+              // 320px, and ONLY at 320px. The string's one break opportunity is a plain U+0020
+              // (measured -- not the narrow no-break space ICU 72+ emits in some builds), and the
+              // cell is one line tall, so white-space:normal cannot save it. A bigger minWidth
+              // would hold until the next locale or font needing one pixel more; flex-shrink 0
+              // makes the used width max(min-width, content) and ends the class.
+              // minWidth stays as a COLUMN-ALIGNMENT floor so times line up down the list.
+              // The group needs it too: its old minWidth '0' let it shrink below its own
+              // min-content, which would just move the overflow onto the group.
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', flexShrink: '0' } },
                 h('span', { 'data-timeline-dot': 'true', 'aria-hidden': 'true', style: { flexShrink: '0', width: '9px', height: '9px', borderRadius: '50%', background: '#C25020', boxShadow: '0 0 0 3px #FFFFFF' } }),
-                h('div', { className: 'mono', style: { ...TYPE.mono, fontWeight: '600', color: '#6A4433', minWidth: '58px' } }, fmtTime(e.ts))
+                h('div', { className: 'mono', style: { ...TYPE.mono, fontWeight: '600', color: '#6A4433', minWidth: '58px', flexShrink: '0' } }, fmtTime(e.ts))
               ),
-              h('div', { style: { flex: '1' } },
-                h('div', { style: { ...TYPE.body, display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' } },
-                  nameOf(e.medId),
+              h('div', { style: { flex: '1', minWidth: '0' } },
+                h('div', { style: { ...TYPE.body, display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap', overflowWrap: 'break-word' } },
+                  // The name is wrapped in a span so it can SHRINK. The line above is a flex container and
+                  // a bare text child becomes an anonymous flex item, which cannot go below its own
+                  // min-content width -- so "Temperature" (92px) sat in a 68px column at 320px and
+                  // overflowed by 23px the moment the time column stopped absorbing the squeeze. minWidth
+                  // '0' lets it shrink. The break itself comes from `overflowWrap: 'break-word'` on the
+                  // line above, which is INHERITED -- declaring it here as well would be a property that
+                  // does nothing, which is the shape of false record this codebase has paid for.
+                  h('span', { style: { minWidth: '0' } }, nameOf(e.medId)),
                   e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, overrideBadgeLabel(e.overrideReason)) : null,
                   e.skipped ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#5C4E52', background: 'rgba(124,97,86,0.14)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
                 ),
@@ -9304,7 +9383,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v91';
+const APP_VERSION = 'app-v92';
 
 // ---- WHAT'S NEW ------------------------------------------------------------------------------
 //
@@ -9327,6 +9406,11 @@ const APP_VERSION = 'app-v91';
 // that are meant for it: README.md's version-history table, outputs/ for the chain reports, and
 // the commit messages. This array is the only one of the four a patient reads.
 const CHANGELOG = [
+  { v: 'app-v92', date: 'Nov 3, 2026', title: 'Nothing covers anything',
+    points: [
+      'On a small phone, a long medication name could print across the time and the dose on your home screen. It wraps onto its own line now.',
+      'The Back button on a report no longer sits on top of the last row when you scroll to the bottom.',
+    ] },
   { v: 'app-v91', date: 'Nov 3, 2026', title: 'Easier to read',
     points: [
       'The background was too close in shade to some of the writing on top of it, so headings, dates and the small grey text were hard to make out. The background is lighter now and that text is darker.',
@@ -11771,7 +11855,10 @@ function renderReportsMenu(now) {
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
       ...reportTypes.map(type => {
         const report = reportDescriptor(type, now);
-        return h('button', { onClick: () => openReport(type), style: { width: '100%', minHeight: '92px', display: 'flex', alignItems: 'center', gap: '13px', padding: '14px', textAlign: 'left', borderRadius: '18px', background: '#FFFFFF', border: '1px solid #E9D8D1', color: '#2A2127', boxShadow: '0 4px 18px rgba(203,122,87,0.09)' } },
+        // data-report-tile: one attribute, no behaviour. It lets test/v92-pill-clearance.mjs
+        // discover the report sub-screens from the app rather than carrying a list of its own, so
+        // a tenth report is walked by that suite on the day it lands.
+        return h('button', { 'data-report-tile': type, onClick: () => openReport(type), style: { width: '100%', minHeight: '92px', display: 'flex', alignItems: 'center', gap: '13px', padding: '14px', textAlign: 'left', borderRadius: '18px', background: '#FFFFFF', border: '1px solid #E9D8D1', color: '#2A2127', boxShadow: '0 4px 18px rgba(203,122,87,0.09)' } },
           h('span', { style: { width: '44px', height: '44px', borderRadius: '14px', background: 'rgba(200,83,32,0.12)', color: '#A83D0F', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: '0' } }, appIcon(report.icon, 22)),
           h('span', { style: { display: 'block', flex: '1', minWidth: '0' } },
             h('span', { style: { display: 'block', ...TYPE.title } }, report.label),
@@ -11921,10 +12008,17 @@ function renderHistory(now) {
             }
             if (e.missed) { rows.push(missedRow(e, newGroup ? 0 : 1)); return; }
             rows.push(h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderTop: newGroup ? 'none' : '1px solid rgba(246,108,49,0.08)' } },
-              h('div', { className: 'mono', style: { ...TYPE.mono, fontWeight: '600', color: '#6A4433', minWidth: '66px' } }, fmtTime(e.ts)),
-              h('div', { style: { flex: '1' } },
-                h('div', { style: { ...TYPE.body, display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' } },
-                  nameOf(e.medId),
+              h('div', { className: 'mono', style: { ...TYPE.mono, fontWeight: '600', color: '#6A4433', minWidth: '66px', flexShrink: '0' } }, fmtTime(e.ts)),
+              h('div', { style: { flex: '1', minWidth: '0' } },
+                h('div', { style: { ...TYPE.body, display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap', overflowWrap: 'break-word' } },
+                  // The name is wrapped in a span so it can SHRINK. The line above is a flex container and
+                  // a bare text child becomes an anonymous flex item, which cannot go below its own
+                  // min-content width -- so "Temperature" (92px) sat in a 68px column at 320px and
+                  // overflowed by 23px the moment the time column stopped absorbing the squeeze. minWidth
+                  // '0' lets it shrink. The break itself comes from `overflowWrap: 'break-word'` on the
+                  // line above, which is INHERITED -- declaring it here as well would be a property that
+                  // does nothing, which is the shape of false record this codebase has paid for.
+                  h('span', { style: { minWidth: '0' } }, nameOf(e.medId)),
                   e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, overrideBadgeLabel(e.overrideReason)) : null,
                   e.skipped ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#5C4E52', background: 'rgba(124,97,86,0.14)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
                 ),
