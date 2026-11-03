@@ -892,8 +892,14 @@ RC_DESIGNER_SUITE="test/${GATE_VERSION#app-}-designer-pass.mjs"
 # is this project's most repeated defect (overflow-scan, contrast-scan, v90-chart-axes, all three
 # sat unrun), and the day one is wired in is the wrong day to discover it never parsed.
 #
-# Falsified: re-introduce the backtick and this block goes red naming the file, with the gate
-# exiting 1 in under a second and the suite loop never starting.
+# FALSIFIED BOTH WAYS, and the method is worth recording because the obvious one does not work:
+# running the whole gate with a suite broken does NOT reach this block, because the chain-artefact
+# check above it bails first while an audit refusal is on record -- cheapest-check-first ordering,
+# which is correct. So the block was lifted out of this file verbatim (`sed -n` on its own line
+# range) and run against the real tree with a stub `fail_note`. Broken: "❌ RELEASE CHECK FAILED:
+# test/contrast-scan.mjs does not parse", node's own error indented under it, FAIL=1. Restored:
+# "✅ every test/*.mjs parses (68 suite(s), node --check)", FAIL=0. Under a second either way.
+# A check verified by reading its placement is not verified; this one was run.
 RC_PARSE_BAD=0
 for RC_MJS in "$RC_SUITE_DIR"/test/*.mjs; do
   [ -f "$RC_MJS" ] || continue
