@@ -9,9 +9,23 @@
 #   FALSIFY_PORT=8871 ./falsify.sh test/v92-pill-clearance.mjs  falsify/mutants-v92-layout.sh
 #   FALSIFY_PORT=8872 ./falsify.sh test/v92-text-collisions.mjs falsify/mutants-v92-layout.sh
 #
-# Mutants 1-3 are for the pill suite, 4-6 for the collisions suite. A mutant aimed at the other
-# suite is a no-op for the one being swept and will be scored SURVIVED, which is why they are
-# labelled with the suite they belong to and why the two runs are reported separately.
+# Mutants 1-3 are for the pill suite, 4-6 for the collisions suite, 7-9 for overflow-scan. A
+# mutant aimed at another suite is a no-op for the one being swept and will be scored SURVIVED,
+# which is why each is labelled with the suite it belongs to and why the runs are reported
+# separately. Use FALSIFY_FROM / FALSIFY_TO to run one group.
+#
+# WHICH PROPERTY IS LOAD-BEARING FOR WHICH SUITE, measured rather than assumed -- and the first
+# version of this file got it wrong, which is the part worth keeping:
+#
+#   * The COLLISION is held off by `minWidth: '0'` on the NAME SPAN. Remove it and
+#     "Hydroxychloroquine" lands on "Remove" (46x9px at 320px, 6x9px at 360px). Remove the time
+#     cell's `flexShrink: '0'` instead and nothing collides, because the name absorbs the squeeze
+#     -- that was written as a collision mutant, it SURVIVED, and it was right to.
+#   * The OVERFLOW is held off by `flexShrink: '0'` on the time cell and its group, and by
+#     `minWidth: '0'` on the badges. Those belong to overflow-scan, not to the collision suite.
+#
+# Two suites, two different properties, and a mutant pointed at the wrong one teaches nothing.
+# Being able to say which is which is what a corpus is for.
 
 MUTANT_DESC_1="[pill] the page's bottom padding goes back to 90px -- the app-v92 defect itself"
 mutant_1() {
@@ -48,26 +62,30 @@ io.open(p,'w',encoding='utf-8').write(s.replace(old,"h('button', { onClick: () =
 PY
 }
 
-MUTANT_DESC_4="[collisions] the time cell can shrink again -- the name prints over the time and the dose"
+MUTANT_DESC_4="[collisions] the name span cannot shrink -- the drug name lands on the Remove button"
+# THE load-bearing property for this suite. A bare text child of a flex container is an anonymous
+# flex item and cannot go below its own min-content width; the span with `minWidth: 0` is what
+# lets the name give way instead of pushing its neighbours. Measured with it removed:
+# "Hydroxychloroquine" over "Remove", 46x9px at 320px and 6x9px at 360px.
 mutant_4() {
-  python3 - <<'PY'
+  python3 - <<'MUT'
 import io
 p='index.html'; s=io.open(p,encoding='utf-8').read()
-old = "color: '#6A4433', minWidth: '58px', flexShrink: '0' } }, fmtTime(e.ts))"
-assert s.count(old)==1
-io.open(p,'w',encoding='utf-8').write(s.replace(old,"color: '#6A4433', minWidth: '58px' } }, fmtTime(e.ts))"))
-PY
+old = "h('span', { style: { minWidth: '0' } }, nameOf(e.medId)),"
+assert s.count(old)==3, s.count(old)
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"h('span', null, nameOf(e.medId)),"))
+MUT
 }
 
-MUTANT_DESC_5="[collisions] the dot+time group can shrink -- the same collision by the other route"
+MUTANT_DESC_5="[collisions] the content column cannot shrink -- the other half of the same guard"
 mutant_5() {
-  python3 - <<'PY'
+  python3 - <<'MUT'
 import io
 p='index.html'; s=io.open(p,encoding='utf-8').read()
-old = "h('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', flexShrink: '0' } },"
-assert s.count(old)==1
-io.open(p,'w',encoding='utf-8').write(s.replace(old,"h('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', minWidth: '0' } },"))
-PY
+old = "h('div', { style: { flex: '1', minWidth: '0' } },"
+assert s.count(old)>=3, s.count(old)
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"h('div', { style: { flex: '1' } },"))
+MUT
 }
 
 MUTANT_DESC_6="[collisions] an OVERLAP built out of fixed positioning -- must NOT be reported"
@@ -93,4 +111,58 @@ anchor = '\n</body>\n</html>'
 assert s.count(anchor) == 1, 'expected one document-closing </body></html>, found %d' % s.count(anchor)
 io.open(p, 'w', encoding='utf-8').write(s.replace(anchor, '\n' + frag + anchor))
 PY
+}
+
+# --- overflow-scan group. SLOW: each run is 7 to 13 minutes, so sweep these deliberately:
+#       FALSIFY_PORT=8864 FALSIFY_FROM=7 FALSIFY_TO=9 \
+#         ./falsify.sh test/overflow-scan.mjs falsify/mutants-v92-layout.sh
+#     Each was also falsified on its own while app-v92 was built; the figures are in each one.
+
+MUTANT_DESC_7="[overflow] the time cell can shrink -- '10:00 AM' over its box by 5px at 320px"
+# The app-v92 defect itself, as overflow-scan sees it. Measured with it reverted: 3 overflowing,
+# "10:00 AM" by 5px, 320px only. That number badly understates what is on the screen -- the name
+# prints across the time and the dose -- and saying so is mutant 4's job, in the other suite.
+mutant_7() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+old = "color: '#6A4433', minWidth: '58px', flexShrink: '0' } }, fmtTime(e.ts))"
+assert s.count(old)==1
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"color: '#6A4433', minWidth: '58px' } }, fmtTime(e.ts))"))
+MUT
+}
+
+MUTANT_DESC_8="[overflow] the badges cannot shrink -- 'Not scheduled - Early - Over limit' by 21px"
+# The defect app-v92's audit found. `overflow-wrap: break-word` IS inherited by the badge and does
+# NOT reduce a flex item's automatic minimum size; only min-width does. Measured with minWidth
+# removed from the badge spans: 6 overflowing, 21px at 320px and 11px at 330px.
+mutant_8() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+pairs = [("borderRadius: '6px', padding: '1px 6px', minWidth: '0' } }, overrideBadgeLabel(e.overrideReason))",
+          "borderRadius: '6px', padding: '1px 6px' } }, overrideBadgeLabel(e.overrideReason))"),
+         ("borderRadius: '6px', padding: '1px 6px', minWidth: '0' } }, 'Skipped')",
+          "borderRadius: '6px', padding: '1px 6px' } }, 'Skipped')")]
+for old, new in pairs:
+    assert s.count(old) == 2, s.count(old)
+    s = s.replace(old, new)
+io.open(p,'w',encoding='utf-8').write(s)
+MUT
+}
+
+MUTANT_DESC_9="[overflow] SEED_ENTRIES loses the badge -- the fixture stops being able to see mutant 8"
+MUTANT_EXPECT_9="hole"
+# NOT a defect in the app: a defect in the INSTRUMENT, kept so that the day somebody trims that
+# fixture entry the sweep says so. It survives on a correct build because nothing is wrong with
+# the app. What it demonstrates is that mutant 8 goes invisible under it -- the state this suite
+# was actually in for the whole of app-v92's first commit. Run 8 and 9 and read them as a pair.
+mutant_9() {
+  python3 - <<'MUT'
+import io
+p='test/overflow-scan.mjs'; s=io.open(p,encoding='utf-8').read()
+old = ",\n    override: true, overrideReason: 'offDay+early+overLimit', skipped: true },"
+assert s.count(old)==1
+io.open(p,'w',encoding='utf-8').write(s.replace(old," },"))
+MUT
 }

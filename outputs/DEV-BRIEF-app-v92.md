@@ -87,7 +87,11 @@ One predicate, three call sites.
 ### Done means
 
 - At 320, 360 and 390, on **every** Reports sub-screen, scrolled to `scrollHeight`, **no glyph box
-  intersects the pill's rect at all** — zero covered boxes, not "a smaller overlap".
+  intersects the pill's rect at all** — zero covered boxes, not "a smaller overlap". **"Every"
+  means all nine the app can offer**, not the six a default profile shows: `cycle`, `radiation`
+  and `paracentesis` are profile-gated and the suite's first fixture enabled none of them, so it
+  walked six while this sentence said every. The fixture turns all three on. Measured: **27
+  combinations, 27 of them genuinely scrolling, 0 covered.**
 - On Home / Meds / Symptoms / In-Patient the page's bottom padding is unchanged (assert the computed
   value, not the screenshot).
 
@@ -104,10 +108,13 @@ scrolls, it does not photograph a still frame:
   last depends on the screen and on the data. A hook would pin this instance; geometry pins the
   class, and the class is what keeps coming back. The report under a failure names the offending
   element (tag, hook attribute if it has one, and its text) so the finding is actionable.
-- Separately assert the screen actually scrolled (`scrollTop > 0` after the scroll) and that the
-  seeded list rendered, by the hooks that already exist — `data-timeline-row`, `data-temp-list`,
-  `data-symptom-list`, `data-chemo-list`. A screen that failed to seed must FAIL, not pass by being
-  too short to clip anything. That is the empty-Home trap `test/overflow-scan.mjs` paid for twice.
+- Separately assert the screen actually scrolled (`scrollTop > 0` after the scroll). **A screen
+  that did not scroll FAILS** — and the first version of this suite did not do that: it refused
+  only when NOT ONE screen scrolled, so with the fixture emptied an audit got a PASS with 13 of 18
+  combinations vacuous, because the appetite screen scrolls on app chrome alone. On the real run
+  four were already vacuous and `blood_pressure`'s end-of-scroll had never been tested at any
+  width. Per-screen now, with the fixture seeding every report the menu offers. That is the
+  empty-Home trap `test/overflow-scan.mjs` paid for twice, and it does not get a third outing.
 - A completeness check over the Reports sub-screen list: if a seventh sub-screen is added without a
   clearance assertion, the suite fails — the class, not the instance.
 
@@ -229,7 +236,11 @@ check-that-cannot-fail wearing a different coat.
 
 * `test/overflow-scan.mjs` exits **0** — **170 of 170** combinations across **ten** device widths
   (not eight, as an earlier draft of this brief said), zero overflowing elements, including the six
-  drawer screens it walks. **Measured on the fixed build: clean.**
+  drawer screens it walks. **Measured on the fixed build: clean** — and the sentence below about
+  relocation turned out to be false the first time round, so read it with its correction: the
+  fixture had never rendered the `override`/`skipped` badge, so the relocation it promised to
+  catch went straight past it. The badge is in the fixture now and the badges carry `minWidth: '0'`;
+  falsified both ways, 0 with the fix and the same 6 (21px at 320, 11px at 330) without it.
 * `test/v92-text-collisions.mjs` exits **0** — 15 screen×width combinations, 650 in-flow text runs
   compared, no two overlapping. **Measured on the fixed build: clean. Measured on the current build:
   red, on exactly the one real defect.** The scan reports the worst

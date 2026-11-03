@@ -41,9 +41,15 @@ destructive control, so it is Aaron's call, not mine.
 
 ## 2. Task #36 — the Back pill
 
-**At the end of the scroll**, on every report screen at all three widths, nothing is behind the
-pill any more. Measured: 18 screen×width combinations at `scrollHeight`, 14 of them genuinely
-scrolling, zero glyph boxes intersecting the pill.
+**At the end of the scroll**, on **all nine** report screens at all three widths, nothing is behind
+the pill any more. Measured: **27 screen×width combinations** at `scrollHeight`, **27 of them
+genuinely scrolling**, zero glyph boxes intersecting the pill.
+
+*(This paragraph first said “every report screen” over a run that walked **six** of the nine — the
+other three are profile-gated and the suite's fixture enabled none of them, and four of its
+eighteen combinations were vacuous because their reports had no rows. Both are fixed in the suite,
+not in the wording: the fixture enables all nine and seeds every one of them, and a screen that
+does not scroll now fails.)*
 
 **Mid-scroll the pill still floats over a row, and that is deliberate.** It is a floating control
 over a list; the person scrolls and the row comes out from under it. What was wrong was the END of

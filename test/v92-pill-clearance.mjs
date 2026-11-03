@@ -271,6 +271,11 @@ if (scrolledScreens === 0) {
 }
 console.log('\n' + checks + ' screen×width combinations at end-of-scroll, ' + scrolledScreens
   + ' of them genuinely scrolling, ' + tileCount + ' report screens discovered from the menu.');
+// A `checks:` LINE IN THE SHARED SHAPE, because `falsify.sh` reads one to decide whether the
+// suite RAN at all. Without it the sweep refuses its own baseline and no mutant is ever
+// measured -- which is exactly what happened the first time this suite was swept. The unit is
+// a screen x width combination: it passes if the screen scrolled and nothing sat under the pill.
+console.log(checks + ' checks: ' + (checks - fails.length) + ' passed, ' + fails.length + ' failed');
 if (fails.length) {
   console.error('\n' + fails.length + ' FAILURE(S):');
   for (const f of fails) console.error('  - ' + f);

@@ -130,9 +130,14 @@ fi
 LAST_STATUS=0
 LAST_OUT=""
 run_suite() {
+  # `|| LAST_STATUS=$?` IS LOad-BEARING UNDER `set -e`. A bare assignment from a command
+  # substitution takes that command's status, so `LAST_OUT=$(node ...)` with a failing suite --
+  # which is EVERY caught mutant -- aborted the whole sweep at the first one. Measured: the log
+  # ended on mutant 10's header with no verdict and the script exited 1, which looks exactly like
+  # a finished sweep in anything filtered. The `&& ... || ...` list is exempt from `set -e`, so
+  # the status is captured instead of being fatal.
   LAST_OUT=$( cd "$WORK" && env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy \
-      FALSIFY_BASE="http://127.0.0.1:$PORT/index.html" node "$SUITE" 2>&1 )
-  LAST_STATUS=$?
+      FALSIFY_BASE="http://127.0.0.1:$PORT/index.html" node "$SUITE" 2>&1 ) && LAST_STATUS=0 || LAST_STATUS=$?
   LAST_OUT=$(printf '%s\n' "$LAST_OUT" | grep -E "^  FAIL|checks:" || true)
 }
 
