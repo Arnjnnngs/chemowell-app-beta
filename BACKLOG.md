@@ -921,3 +921,41 @@ Closed in part in app-v90 by asserting a floor on the label COUNT alongside the 
 kills this mutant. The complete fix is M31's option 2 — `timeAxisLabels()` is a pure function, so a
 unit test can assert `out.length === count + 1` exactly, with no browser, no clock and no floor
 chosen by measurement.
+
+### M35 — `v87-correct-a-past-day` is red under `TZ=America/Chicago`, and it is a DST defect in the SUITE (S)
+
+**Found by the app-v90 PM, and it had been invisible for a reason worth writing down: all three
+audit passes ran their regression tables under `America/Chicago` and none of them re-ran v87.**
+The figure `v87 64/64` was carried forward from an earlier run under a different zone.
+
+Measured:
+
+| Zone | Result |
+|---|---|
+| `Etc/UTC` | **64/64** |
+| `America/Chicago` | **43/51** — eight failures, and thirteen checks never executed |
+| `America/Phoenix` | **64/64** — same local date (Mon Nov 2), no DST |
+
+**Phoenix is what makes it a diagnosis rather than a guess.** Same calendar date as Chicago, same
+app, no daylight saving: green. So it is neither the date nor the app.
+
+**The cause.** The fixture seeds a day at `localMidnight - 2 * 86400000` while the selector looks
+for the key `D0 - 2 * 86400000`. Chicago's fall-back on 2026-11-01 makes that interval **49 hours,
+not 48**, so the seeded day lands at 01:00 of the wrong date and the `data-correct-day` key never
+matches. Arithmetic on milliseconds is not arithmetic on days, which is the same mistake
+`timeAxisLabels` avoids by asking `dayOf()` instead of measuring a span.
+
+**It is pre-existing, not an app-v90 regression**, and that was checked rather than assumed: the
+published app-v89 baseline (`a5d5908`) scores an identical **43/51** in Chicago.
+
+**It is a DIFFERENT defect from task #30** (`v88`'s `pickDay` selecting calendar cells by day
+number with no month navigation), so #30 does not cover it. Both are suite defects that move with
+the calendar; neither is in the app.
+
+The fix is the same shape as #30's: derive the target day as a DATE (`setDate(getDate() - 2)`),
+never by subtracting milliseconds, and address the cell by a `data-` key built from that date.
+
+**And one more thing that suite carries:** it contains a self-check comparing its own count against
+the figure in `README.md`. That check is currently red. It is a real mechanism and worth keeping,
+but it reds whenever the count moves for any reason, so it reports "the record is stale" and "the
+suite found a bug" in the same colour.
