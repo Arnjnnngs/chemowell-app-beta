@@ -177,7 +177,18 @@ await film.evaluate(() => {
 // as unreadable against muddy greys (#7D7276, #8D8487) that exist nowhere in the app. Precise,
 // repeatable, and about nothing. Exactly the shape of defect this project keeps paying for, found
 // here only because a backdrop colour looked wrong rather than because a check failed.
-const HIDE = `*,*::before,*::after{color:transparent !important;text-shadow:none !important;-webkit-text-stroke:0 !important;}
+// HIDE THE GLYPHS AND NOTHING ELSE. `color: transparent` was too broad and the breadth WAS the
+// hole: `currentColor` resolves from `color`, so a border, background or shadow painted from it
+// vanished in the hidden photograph too. A mutant whose opaque bar used `background:
+// currentColor` therefore DISAPPEARED when the text was hidden -- the scan then sampled the real
+// gradient underneath, computed a correct ratio for text the user cannot see at all, and exited
+// 0. Three guards in a row missed it (the hit-test, the app's overlay probe, and the A/B diff),
+// because all three were downstream of a hiding mechanism that changed the thing being measured.
+//
+// `-webkit-text-fill-color` paints the glyph and nothing else: `color` keeps its value, so
+// `currentColor` keeps resolving to it and every border, background and shadow stays exactly as
+// painted. The property appears nowhere in index.html, so nothing in the app conflicts with it.
+const HIDE = `*,*::before,*::after{-webkit-text-fill-color:transparent !important;text-shadow:none !important;-webkit-text-stroke:0 !important;}
 svg text,svg tspan{fill:transparent !important;stroke:none !important;}`;
 
 // Collect every text-bearing element in the viewport, with the points to sample for each. Points
