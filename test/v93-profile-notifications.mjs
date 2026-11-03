@@ -75,17 +75,29 @@ const seedTwo = `(() => {
   localStorage.setItem('chemowell-app-license-v1', JSON.stringify({ tier: 'pro' }));
   [['p1', 'Dana'], ['p2', 'Rosa']].forEach(([id, nm]) => {
     localStorage.setItem(P(id, 'prefs-v1'), JSON.stringify({ patientName: nm, onboarded: true, treatmentType: 'chemo', tourDone: true }));
-    localStorage.setItem(P(id, 'entries-v1'), JSON.stringify([]));
+    localStorage.setItem(P(id, 'entries-v1'), JSON.stringify([]));  // Rosa's is replaced below
   });
   // Dana: one window OPEN right now (09-12) and one that is not (14-16). One due.
   localStorage.setItem(P('p1', 'med-v1'), JSON.stringify({ version: 2, archivedMeds: {}, meds: [
     ${JSON.stringify(med('alpha', 'Alpha', 9, 12))}, ${JSON.stringify(med('beta', 'Beta', 14, 16))}
   ] }));
-  // Rosa: two windows open right now. Two due. A DIFFERENT number from Dana's on purpose -- a
-  // suite where both profiles show 1 cannot tell a per-profile count from a global one.
+  // Rosa: THREE windows open right now and one of them ALREADY LOGGED, so her count is 2. Still a
+  // DIFFERENT number from Dana's on purpose -- a suite where both profiles show the same figure
+  // cannot tell a per-profile count from a global one.
+  //
+  // THE LOGGED ONE IS THE WHOLE POINT, and the first version of this fixture did not have it: both
+  // profiles carried an empty entries array, so "already logged in this window" was a branch no
+  // check could reach, and the corpus mutant that DELETES that branch survived as a no-op. A dose
+  // you have already given must stop asking -- the most ordinary thing this count does, and the
+  // one thing untested. Same class as the empty-Home trap overflow-scan has paid for twice.
   localStorage.setItem(P('p2', 'med-v1'), JSON.stringify({ version: 2, archivedMeds: {}, meds: [
-    ${JSON.stringify(med('gamma', 'Gamma', 9, 12))}, ${JSON.stringify(med('delta', 'Delta', 8, 11))}
+    ${JSON.stringify(med('gamma', 'Gamma', 9, 12))}, ${JSON.stringify(med('delta', 'Delta', 8, 11))}, ${JSON.stringify(med('eps', 'Epsilon', 10, 13))}
   ] }));
+  // 09:30 on the frozen day, inside gamma's 09-12 window. The context is pinned to UTC and the app
+  // reads dayStart() in local time, so these agree by construction rather than by luck.
+  localStorage.setItem(P('p2', 'entries-v1'), JSON.stringify([
+    { id: 'g1', medId: 'gamma', dose: '1 tablet', ts: ${Date.UTC(2026, 10, 3, 9, 30)} }
+  ]));
 })()`;
 const seedOne = `(() => {
   const P = (s) => 'chemowell-app-p-p1-' + s;
@@ -174,6 +186,11 @@ async function openApp(seed) {
   // THE OTHER PROFILE IS THE WHOLE POINT: this number is read out of another profile's storage
   // without switching to it, which is what makes the drawer able to say who needs something.
   ok('the OTHER profile’s count is read without switching to it', rosa && rosa.count === 2, JSON.stringify(rosa));
+  // A DOSE ALREADY GIVEN STOPS ASKING. Rosa has THREE windows open right now and one of them is
+  // logged, so the honest answer is 2. A count that ignored what had been logged would say 3 --
+  // and would keep saying it all day, for every profile, which is what makes a reminder count
+  // worth nothing. This is the check the corpus proved was missing.
+  ok('a dose already logged is not counted (3 windows open, 1 given)', rosa && rosa.count === 2, JSON.stringify(rosa));
   ok('the other profile’s name is resolved too', rosa && rosa.name === 'Rosa', JSON.stringify(rosa && rosa.name));
   ok('the total is the sum across profiles', (await page.evaluate(() => window.__v86Test.totalDueCount())) === 3);
 
