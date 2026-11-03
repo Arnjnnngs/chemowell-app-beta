@@ -959,3 +959,41 @@ never by subtracting milliseconds, and address the cell by a `data-` key built f
 the figure in `README.md`. That check is currently red. It is a real mechanism and worth keeping,
 but it reds whenever the count moves for any reason, so it reports "the record is stale" and "the
 suite found a bug" in the same colour.
+
+### M36 — the floating Back pill covers report content, and a chain report says it does not (S)
+
+**Found by the app-v90 PM, correcting `outputs/DESIGN-app-v90.md`.** That report saw the Back pill
+sitting on a stat tile in its screenshots, reasoned that `fullPage: true` captures fixed elements at
+viewport coordinates and then extends the page beneath them — which is true — and concluded *"On a
+real screen both are pinned to the bottom and overlap nothing."* **The reasoning is sound and the
+conclusion is false.** The bottom nav really is a capture artifact. The Back pill is not.
+
+Measured in the VIEWPORT with element bounding rects, not in a full-page capture, on the temperature
+report with three readings:
+
+| width | scroll | covered | overlap |
+|---|---|---|---|
+| 320 | top | the `LATEST` tile's value `99.8` | 59 × 21 px |
+| 320 | **bottom (235/235, no further scroll)** | last readings row, `Tue, Nov 3 · 12:01 AM` | 48 × 8 px |
+| 390 | top | `Latest` and `99.8` | 83 × 14, 83 × 21 px |
+| 390 | **bottom (248/248)** | last readings row | 13 × 8 px |
+
+**The cause.** The pill's wrapper is `position: fixed; z-index: 36; bottom: calc(88px +
+env(safe-area-inset-bottom))` (`index.html:5481`) and the scrolling content has
+**`padding-bottom: 0`**. Nothing reserves space for the pill, so at maximum scroll the last row of
+any report list sits permanently underneath it with no scroll left to clear it.
+
+**It is pre-existing, not an app-v90 regression**, and that was checked rather than assumed:
+`git diff a5d5908 HEAD -- index.html` has no hunk within thousands of lines of the pill or the page
+padding — the diff is the version line, the changelog, the What's New hook, the two shared axis
+helpers, the two chart call sites and one test hook.
+
+**The fix is a bottom gutter**, not a change to the pill: give the scrolling report container
+`padding-bottom` of about the pill's height plus its offset, so the last row can always be scrolled
+clear. Check every screen that shows the pill, not only the two chart reports.
+
+**The lesson worth more than the fix.** A Designer seat reading screenshots is right to distrust
+`fullPage` artifacts — that distrust is exactly what the report was exercising, and it is correct
+practice. But "this is probably a capture artifact" is a hypothesis, and a seat that can measure
+should measure it rather than reason it away: one viewport-coordinate rect comparison separates the
+two cases in seconds. A declined finding needs the same evidence standard as a filed one.
