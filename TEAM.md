@@ -756,3 +756,60 @@ reader counts it. Two cheap habits: when writing a check, say the name out loud 
 part of the expression that tests it; and when a section has a precondition, never let a later
 assertion in that section repeat the precondition's expression — if that is all you have, delete
 the check and let the one that bites carry the claim.
+
+---
+
+## Every gate here asked about the SHAPE of a screen. None asked whether the words could be READ.
+
+**2026-11-03, Aaron, from a screenshot:** *"This color would be too hard to read for some people
+and I'm talking mainly about the background… the background blends in with some of the words
+that's not put in the box."*
+
+He was right, and it was not one screen. A scan of eight screens found **102 of 565 strings below
+the WCAG AA floor, the worst at 2.1:1 where 4.5:1 is required.** Every piece of text inside a white
+card was fine; almost everything printed straight onto the page gradient was not.
+
+Look at what this project checks, and the hole is obvious in hindsight:
+
+| Gate | The question it asks |
+|---|---|
+| `overflow-scan` | Does the screen **fit**? |
+| the Voice | Is the copy **true**? |
+| the Enhancer | Can she **do the job** here? |
+| the Designer | Does it **look** right, and is anything **clipped**? |
+| the Zero Day Auditor | Does the **record** survive? |
+| `release_check.sh` | Did the **release mechanics** happen? |
+
+Every one is about position, truth, completeness or process. **Not one is about legibility**, and
+the Designer seat is the one that came closest and still missed it — because a person reading a
+screenshot sees text they can already read, having been told what it says.
+
+`test/contrast-scan.mjs` is the gate for it. Treat it as the sixth question: **can the words be
+read.**
+
+### Two things about building it that generalise
+
+**1. The obvious implementation measures nothing.** Walking up the DOM for a `background-color`
+returns `rgba(0,0,0,0)` for every element that sits on the page gradient — which is precisely the
+set of elements that were failing. A scan written that way reports a perfect ratio against nothing
+and passes forever. The working version photographs the viewport with all text hidden, hands the
+photograph back to a canvas so the browser decodes it, and reads the real pixels: gradient, card,
+scrim and blur included.
+
+**2. The instrument had a defect that looked exactly like a result.** SVG text is painted with
+`fill`, not `color`, so "make all text transparent" left every chart label on screen. The scan then
+sampled each glyph as its own backdrop and reported nineteen chart labels failing against greys
+(`#7D7276`, `#8D8487`) **that exist nowhere in the app.** Precise, repeatable, reproducible — and
+about nothing.
+
+It was caught because a *backdrop colour looked wrong*, not because any check failed. **A
+measurement harness needs its own sanity check on the thing it measures, not only on the thing it
+reports.** The two that would have caught this immediately: assert that every sampled backdrop
+colour actually occurs in the app's palette, and assert that hiding the text changes the pixels
+under it. Both are cheap. Neither was there.
+
+### And the corollary for a colour change
+
+Lightening the background was not enough on its own: at 12px the old muted grey still reached only
+**3.7:1** against the NEW page. A contrast problem has two sides and the fix usually has to touch
+both. Measure after each half rather than assuming the first one did it.

@@ -997,3 +997,37 @@ clear. Check every screen that shows the pill, not only the two chart reports.
 practice. But "this is probably a capture artifact" is a hypothesis, and a seat that can measure
 should measure it rather than reason it away: one viewport-coordinate rect comparison separates the
 two cases in seconds. A declined finding needs the same evidence standard as a filed one.
+
+### M37 — The other two apps have never been measured for contrast at all (M)
+
+`test/contrast-scan.mjs` found **102 of 565 strings below WCAG AA** in this app, worst 2.1:1, and
+the cause was the page gradient rather than any one label. `care-tracker` and `chemowell-beta` are
+the same codebase's ancestors with **the same light-pink glassmorphism theme**, so the same class
+of defect is almost certainly live on a patient's phone right now.
+
+**What makes this worth doing rather than assuming:** the scanner is theme-agnostic. It reads
+painted pixels, so it runs against either app unchanged except for the navigation hooks and the
+seed. Nothing about the fix transfers automatically — the two apps have their own palettes and
+their own stop colours — but the MEASUREMENT does, and the measurement is the part nobody has.
+
+Order: scan both, report the numbers, then decide the palette per app. Do NOT port this app's
+colours across: `care-tracker` is one named person's app with its own look, and a blanket swap
+would be exactly the ancestry leak Rule 0 exists to stop.
+
+### M38 — The contrast scan has no sanity check on its own backdrop readings (S)
+
+It shipped with a defect that looked exactly like a result: SVG text is painted with `fill`, so
+"hide all text with `color: transparent`" left every chart label on screen, and the scan sampled
+each glyph as its own backdrop. Nineteen chart labels were reported as failing against greys
+(`#7D7276`, `#8D8487`) **that exist nowhere in the app's palette.**
+
+Fixed, but found by eye. Two cheap self-checks would have caught it on the first run and neither
+is there yet:
+
+1. **Every sampled backdrop colour should occur in the app's palette** (or be a blend of two that
+   do). A backdrop that matches nothing means the sample is landing on something unexpected.
+2. **Hiding the text must change the pixels under it.** Photograph once with text, once without,
+   and assert the two differ inside every text box. If they do not, the hiding did not work and
+   every number from that run is fiction.
+
+A measurement harness needs a check on what it MEASURES, not only on what it reports.
