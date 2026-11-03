@@ -62,6 +62,23 @@ const ratio = (a, b) => { const la = lum(a), lb = lum(b); const hi = Math.max(la
 // AA: 4.5 for body text, 3.0 for large text (>=24px, or >=18.66px when bold).
 const needs = (px, weight) => ((px >= 24) || (px >= 18.66 && Number(weight) >= 700)) ? 3.0 : 4.5;
 
+// THE CLOCK IS FROZEN AT 14:00 LOCAL, FOR THE THIRD TIME IN THIS REPO AND THE SAME REASON.
+// The seed below places readings relative to "now". Run an hour later, a reading crosses a
+// time-of-day boundary, the app draws one more "Overnight" or "Morning" heading, and the string
+// count moves: measured, 309 at one hour and 310 at another, with Home +1, History +1, Weight -1.
+// Nothing was wrong; the fixture is tied to the wall clock. `v90-chart-axes.mjs` carries the same
+// freeze, and `chemowell-beta`'s suites have had it all along.
+//
+// It matters here even though the gate reads only an exit code: a count that drifts is a count a
+// human cannot compare between runs, and comparing runs is how the overlay defects in this file
+// were all found.
+const FROZEN = (() => { const d = new Date(); d.setHours(14, 0, 0, 0); return d.getTime(); })();
+const freeze = '(() => {'
+  + '  const R = Date;'
+  + '  const D = function (...a) { return a.length ? new R(...a) : new R(' + FROZEN + '); };'
+  + '  D.now = () => ' + FROZEN + '; D.parse = R.parse; D.UTC = R.UTC; D.prototype = R.prototype;'
+  + '  window.Date = D;'
+  + '})()';
 const seed = () => `(() => {
   const now = Date.now(), DAY = 86400000;
   const e = [];
@@ -90,6 +107,8 @@ const b = await chromium.launch();
 const ctx = await b.newContext({ viewport: { width: WIDTH, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 const thrown = [];
 ctx.on('page', (p) => p.on('pageerror', (e) => thrown.push(String(e))));
+// The freeze is a CONTEXT script so it runs before the seed, which reads Date.now() itself.
+await ctx.addInitScript(freeze);
 const page = await ctx.newPage();
 await page.addInitScript(seed());
 await page.goto(BASE, { waitUntil: 'load' });
@@ -283,7 +302,19 @@ const shotAndSample = async (items) => {
   const live = [];
   for (let i = 0; i < items.length; i++) {
     items[i].changed = diffs[i];
-    if (moving[i] > 0) { unstable.push({ text: items[i].text, box: items[i].box.map(Math.round), px: moving[i] }); continue; }
+    // A MOVING BACKDROP CHANGES THE BOX, NOT A FEW PIXELS OF IT. The first threshold here was
+    // "any pixel at all", and on a clean build that flagged five strings at 4 to 16 pixels --
+    // "BETA", "Overnight", "Weeks", "+" -- which is anti-aliasing between two captures, not an
+    // animation. A threshold is a knob and knobs are how checks go vacuous, so this one is tied
+    // to the thing it is about: an overlay that covers a word covers the WHOLE word, so it
+    // changes most of the box. Noise touches its edges.
+    //
+    // 25% of the box area, floored at 24px so a tiny box cannot trip on three stray pixels.
+    // Falsified in both directions rather than tuned until green: the clean build must pass, and
+    // the `currentColor`-transition bar and the 30ms-timer bar must both still fail.
+    const area = Math.max(1, Math.round(items[i].box[2] * items[i].box[3]));
+    const movedEnough = moving[i] >= Math.max(24, area * 0.25);
+    if (movedEnough) { unstable.push({ text: items[i].text, box: items[i].box.map(Math.round), px: moving[i], of: area }); continue; }
     if (diffs[i] > 0) live.push(items[i]);
     else invisible.push({ text: items[i].text, box: items[i].box.map(Math.round) });
   }
@@ -427,7 +458,7 @@ if (unstableU.length) {
   console.log('\n  FAIL  ' + unstableU.length + ' string(s) sit on a backdrop that was still MOVING');
   console.log('        between two photographs of the same hidden frame, so the colour sampled');
   console.log('        under them is a frame of an animation, not the colour behind them.');
-  for (const v of unstableU.slice(0, 8)) console.log('          ' + JSON.stringify(v.text) + '  ' + v.px + 'px changed');
+  for (const v of unstableU.slice(0, 8)) console.log('          ' + JSON.stringify(v.text) + '  ' + v.px + ' of ' + v.of + ' px changed');
   if (unstableU.length > 8) console.log('          ... and ' + (unstableU.length - 8) + ' more');
 }
 if (invisibleU.length) {
