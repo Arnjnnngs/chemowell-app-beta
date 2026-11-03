@@ -118,13 +118,22 @@ fi
 # on a run the suite had refused. It cannot bite today (the only `survive` mutant is CSS and
 # cannot throw), which is exactly the status every other defect in this family had the day before
 # it bit. $LAST_STATUS is the suite's own.
+# AND IT HAS TO REACH THE PARENT SHELL, which the first version of this did not. It set
+# LAST_STATUS inside the function and every caller used `OUT=$(run_suite)` -- a command
+# substitution, which is a SUBSHELL, so the assignment happened in a child and was discarded. The
+# scoring code read the initialised 0 forever, the over-block branch below could never be true,
+# and the sweep printed "and exited 0" about runs that had exited 1. A check that cannot fire, in
+# the file whose only job is proving that checks fire, shipped in the commit that wrote down why
+# the hole mattered. Found by an audit running it, not by reading it -- again.
+#
+# So run_suite assigns and the callers READ, with no substitution anywhere.
 LAST_STATUS=0
+LAST_OUT=""
 run_suite() {
-  local _out
-  _out=$( cd "$WORK" && env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy \
+  LAST_OUT=$( cd "$WORK" && env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy \
       FALSIFY_BASE="http://127.0.0.1:$PORT/index.html" node "$SUITE" 2>&1 )
   LAST_STATUS=$?
-  printf '%s\n' "$_out" | grep -E "^  FAIL|checks:" || true
+  LAST_OUT=$(printf '%s\n' "$LAST_OUT" | grep -E "^  FAIL|checks:" || true)
 }
 
 # shellcheck disable=SC1090
@@ -138,7 +147,7 @@ source "$MUTANTS"
 # running before you believe it -- and do not filter the FAIL lines out of this script's output,
 # because they are what tells you which it was.
 echo "=== BASELINE (no mutant) -- every check must be green before any of them mean anything"
-BASE=$(run_suite)
+run_suite; BASE="$LAST_OUT"
 echo "$BASE"
 # THE BASELINE IS HELD TO THE SAME "DID IT RUN" TEST AS EVERY MUTANT, and it was not. Each mutant
 # below must produce a `checks:` summary or it is scored COULD NOT MEASURE -- while the run they are
@@ -204,7 +213,7 @@ while declare -F "mutant_$i" >/dev/null; do
     i=$((i+1))
     continue
   fi
-  OUT=$(run_suite)
+  run_suite; OUT="$LAST_OUT"
   echo "$OUT"
   # FOUR OUTCOMES, NOT TWO -- and this comment said THREE while the code below scored four, which is
   # a small version of the thing the whole script exists to catch.

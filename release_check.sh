@@ -866,11 +866,16 @@ export FALSIFY_BASE="http://127.0.0.1:$RC_PORT/index.html"
 # box" -- and it was sitting in test/ with nothing calling it, exactly like contrast-scan before
 # app-v91 and v84-whatsnew before that. Third time in this file, so it goes in.
 #
-# IT COSTS REAL TIME AND THAT IS SAID OUT LOUD RATHER THAN DISCOVERED: 170 screen/width
-# combinations at deviceScaleFactor 3 takes roughly 13 minutes, which takes this gate from about
-# four minutes to about seventeen. That is the price of a release, once, against a class of defect
-# the owner has had to report himself. If it ever becomes the reason someone skips the gate, narrow
-# the DEVICES list in the scan -- do not quietly drop it from this loop.
+# IT COSTS REAL TIME AND THAT IS SAID OUT LOUD RATHER THAN DISCOVERED. Measured on this box
+# rather than estimated, because an earlier version of this comment guessed "13 minutes" and
+# "about seventeen" for the whole gate and an audit pointed out that neither was anybody's
+# measurement: `overflow-scan` 170 screen/width combinations at deviceScaleFactor 3, **7 to 13
+# minutes** depending on what else is running; `v90-chart-axes` 69s; `v92-pill-clearance` ~60s
+# (27 combinations since app-v92 widened it to all nine reports); `v92-text-collisions` 28s;
+# `contrast-scan` 28s. So the loop is minutes, not seconds, and `overflow-scan` is nearly all of
+# it. That is the price of a release, once, against a class of defect the owner has had to report
+# himself. If it ever becomes the reason someone skips the gate, narrow the DEVICES list in the
+# scan -- do not quietly drop it from this loop.
 RC_DESIGNER_SUITE="test/${GATE_VERSION#app-}-designer-pass.mjs"
 # AND THE THREE app-v92 ADDS, each for a question no existing instrument asked.
 #   v90-chart-axes  -- 162 checks, built in app-v90 and never wired in. Same omission, again.
@@ -881,7 +886,20 @@ RC_DESIGNER_SUITE="test/${GATE_VERSION#app-}-designer-pass.mjs"
 #     time, and reported the app-v92 defect as "over by 5px" when what was on the screen was
 #     a medication name printed across the time and the dose.
 for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs test/overflow-scan.mjs test/v90-chart-axes.mjs test/v92-pill-clearance.mjs test/v92-text-collisions.mjs "$RC_DESIGNER_SUITE"; do
-  [ -f "$RC_SUITE_DIR/$SUITE" ] || continue
+  # A MISSING SUITE FAILS THE GATE. It used to `continue`, silently -- so nine of the ten suites
+  # in this loop could be DELETED and the gate would pass, saying nothing. `v75-no-other-patient`
+  # below has had an explicit "deleting it is not a way to pass this gate" branch for releases;
+  # the loop never got one. The designer pass is the one exception and it is named, not implied:
+  # a release that touches no screen has no screens to walk, and the DESIGN artefact check above
+  # already covers that seat.
+  if [ ! -f "$RC_SUITE_DIR/$SUITE" ]; then
+    if [ "$SUITE" = "$RC_DESIGNER_SUITE" ]; then continue; fi
+    echo "❌ RELEASE CHECK FAILED: $SUITE is missing from the release."
+    echo "   Deleting a suite is not a way to pass this gate. If it is genuinely obsolete, remove"
+    echo "   it from this loop in the same commit and say why in the message."
+    fail_note "$SUITE is missing"
+    continue
+  fi
   RC_SUITE_ARGS=""
   [ "$SUITE" = "test/contrast-scan.mjs" ] && RC_SUITE_ARGS="--base http://127.0.0.1:$RC_PORT/index.html"
   # POSITIONAL, not --base. The designer script reads `[base, out, tag]` off argv, so passing

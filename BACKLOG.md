@@ -1091,8 +1091,14 @@ painted at **3.39:1** and **3.27:1**.
 * **Closed:** those two rows are now `opacity: 0.8` — measured as painted, **4.92:1** title,
   **4.68:1** caption, and the Resume button took the palette's existing `#6A4433` because `#6D5247`
   composites to only 4.34:1 even at 0.8. `contrast-scan.mjs` now seeds a **paused** medication, so
-  the row is measured on every run from here. It was invisible to every gate because no fixture had
-  ever rendered it — which is a fixture-coverage lesson, not a scan-design one.
+  the row is **rendered** on every run from here — **not measured**, and an earlier version of this
+  bullet said measured two lines above admitting it could not be. The scan reads the text's own
+  opacity, which is 1, so it reports these inks unmuted whatever the row's opacity is: run it
+  unchanged against the pre-app-v92 build and it prints 327 strings, 0 below AA, worst 4.83:1, on
+  rows painted at 3.4:1. **The opacity fix is protected by the arithmetic and by two pixel
+  measurements, and by no gate**, until the bullet below closes. The tell nobody read: the scan's
+  worst ratio went 4.83:1 → 4.76:1 across a release whose subject was raising contrast — if those
+  rows were being measured it would have moved the other way.
 * **Still open, size S:** the scan's skip still cannot see an ancestor's opacity. *Fix:* multiply the
   computed opacity up the ancestor chain before applying the `< 0.95` skip. Corpus mutant 7 is the
   falsification, and it must go from "caught on 13 of 310" to "caught on all of them".

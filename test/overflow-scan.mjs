@@ -80,7 +80,17 @@ const now = Date.now();
 const NOON = (() => { const d = new Date(now); d.setHours(12, 0, 0, 0); return d.getTime(); })();
 const NOON_3D_AGO = NOON - 3 * 86400000;
 const SEED_ENTRIES = [
-  { id: 's1', medId: 'childrens-liquid-tylenol', dose: '2 tsp (650 mg)', mg: 650, ts: NOON - 3600000 },
+  // THE BADGE. This entry carries `override` AND `skipped`, which is the ONLY badge a Home
+  // timeline row or a History row can draw -- and no fixture in this file had ever rendered it,
+  // so the one element those rows add beside the medication name had never been in front of this
+  // scan. app-v92's first commit changed exactly that line's flex sizing and this suite reported
+  // CLEAN, because the element the change newly allowed to shrink was not on the screen. That is
+  // the empty-Home trap in its fourth costume: not short names this time, a missing badge.
+  // `offDay+early+overLimit` is the simultaneous case `index.html` pushes into `reasonParts`
+  // independently and describes as the reason the field exists -- a dose force-logged on an
+  // unscheduled day, early, and over the daily limit.
+  { id: 's1', medId: 'childrens-liquid-tylenol', dose: '2 tsp (650 mg)', mg: 650, ts: NOON - 3600000,
+    override: true, overrideReason: 'offDay+early+overLimit', skipped: true },
   { id: 's2', medId: 'dexamethasone', dose: '2 tablets', mg: 8, ts: NOON - 7200000 },
   { id: 's3', medId: 'compazine', dose: '10 mg', mg: 10, ts: NOON - 14400000 },
   { id: 's4', medId: 'temp', dose: '100.9 F', mg: 0, ts: NOON - 5400000, temp: 100.9 },

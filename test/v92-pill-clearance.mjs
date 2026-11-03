@@ -72,14 +72,38 @@ const freeze = '(() => { const R = Date;'
 const seed = () => `(() => {
   const now = Date.now(), DAY = 86400000;
   const e = [];
+  // ONE READING OF EVERY KIND, ON EVERY ONE OF THE 40 DAYS. The first fixture seeded only doses,
+  // weight and temperature, so four of eighteen screen x width combinations were ALREADY vacuous
+  // on a green run -- blood_pressure at all three widths had never had its end-of-scroll tested
+  // at all, because the screen was too short to clip anything. The suite printed "(short
+  // (vacuously clear))" honestly, and still passed. Now every report the menu offers has rows,
+  // and the guard below fails any screen that still does not scroll.
   for (let d = 0; d < 40; d++) {
     e.push({ id: 'm' + d, medId: 'med-1', name: 'Blood pressure', kind: 'med', ts: now - d * DAY - 3600000, dose: '1 tablet' });
     e.push({ id: 'w' + d, medId: 'weight', ts: now - d * DAY - 7200000, weight: 150 + (d % 9), unit: 'lb', dose: (150 + (d % 9)) + ' lb' });
     e.push({ id: 't' + d, medId: 'temp', ts: now - d * DAY - 9000000, temp: 98.6, unit: 'Fahrenheit', dose: '98.6 \\u00b0F' });
+    e.push({ id: 'bp' + d, medId: 'blood_pressure', ts: now - d * DAY - 10800000, sys: 118 + (d % 7), dia: 72 + (d % 5), dose: (118 + (d % 7)) + '/' + (72 + (d % 5)) + ' mmHg' });
+    e.push({ id: 'bm' + d, medId: 'bowel_movement', ts: now - d * DAY - 12600000, value: 'normal', dose: 'Normal' });
+    e.push({ id: 'ap' + d, medId: 'appetite', ts: now - d * DAY - 14400000, value: 'some', dose: 'Ate some' });
+    e.push({ id: 'pa' + d, medId: 'paracentesis', ts: now - d * DAY - 16200000, liters: 2.5, dose: '2.5 L' });
+    e.push({ id: 'rs' + d, medId: 'radiation_session', ts: now - d * DAY - 18000000, dose: null });
+  }
+  // EIGHT CYCLES, not one. With a single period the cycle report is shorter than the viewport and
+  // the guard below correctly called it vacuous -- which is the guard working, and the fixture's
+  // job is to give it something to measure.
+  for (let c = 1; c <= 8; c++) {
+    e.push({ id: 'cs' + c, medId: 'cycle_start', ts: now - (c * 28) * DAY, dose: null });
+    e.push({ id: 'ce' + c, medId: 'cycle_end', ts: now - (c * 28 - 4) * DAY, dose: null });
   }
   localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Alex', createdAt: 1 }], activeId: 'p1' }));
   localStorage.setItem('chemowell-app-license-v1', JSON.stringify({ tier: 'free' }));
-  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, treatmentType: 'chemo', tourDone: true, installedAt: now - 90 * DAY }));
+  // EVERY REPORT THE APP CAN OFFER, not the six a default profile shows. Three of the nine are
+  // profile-gated -- \`cycle\` (non-male and cycleTracking on), \`radiation\` (a radiation or both
+  // treatment type) and \`paracentesis\` (paracentesisTracking on, or resolved entries) -- so a
+  // default fixture discovers six tiles and the suite's own record then says "every report
+  // sub-screen" about two thirds of them. Turning all three on is one line and makes the sentence
+  // true. If a tenth report appears it is discovered too, because the walk reads the menu.
+  localStorage.setItem('chemowell-app-p-p1-prefs-v1', JSON.stringify({ patientName: 'Alex', onboarded: true, treatmentType: 'both', sex: 'female', tourDone: true, installedAt: now - 90 * DAY, homeCards: { cycleTracking: true, paracentesisTracking: true } }));
   localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [
     { id: 'med-1', name: 'Blood pressure', schedule: 'daily', times: ['08:00'], doses: [{ label: '1 tablet', single: true }] }
   ] }));
@@ -209,8 +233,19 @@ for (const W of WIDTHS) {
         + 'the position the defect lives at.');
       continue;
     }
-    if (g.scrollTop > 0) scrolledScreens++;
-    const tag = g.scrollTop > 0 ? 'scrolled' : 'short (vacuously clear)';
+    // A SCREEN THAT DID NOT SCROLL IS NOT A SCREEN THAT PASSED. The brief promised this and the
+    // first version did not do it: it refused only when NOT ONE screen scrolled, and with the
+    // fixture emptied an audit got a PASS with 13 of 18 combinations vacuous, because the
+    // appetite screen scrolls on app chrome alone. A per-screen failure is the promise kept.
+    if (g.scrollTop > 0) { scrolledScreens++; }
+    else {
+      fails.push(W + 'px ' + key + ': the screen did not scroll, so its end-of-scroll was never '
+        + 'tested. Either the fixture stopped seeding this report, or the report stopped '
+        + 'rendering its rows. A vacuous check is not a passing one.');
+      console.log('  FAIL  ' + W + 'px ' + key.padEnd(16) + 'did not scroll \u2014 vacuous, not clear');
+      continue;
+    }
+    const tag = 'scrolled';
     if (g.covered.length) {
       const worst = g.covered.slice().sort((a, c) => (c.w * c.h) - (a.w * a.h))[0];
       fails.push(W + 'px ' + key + ': ' + g.covered.length + ' glyph box(es) under the Back pill, worst '

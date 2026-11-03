@@ -118,3 +118,36 @@ MUTANT_DESC_9="a 4px opaque line flipped every 30ms -- below the 25% area thresh
 mutant_9() {
   _inject '<div id="m9ln" style="position:fixed;left:0;top:60px;width:390px;height:4px;background:#FFFFFF;pointer-events:none;z-index:999"></div><script>setInterval(function(){var b=document.getElementById("m9ln");if(b)b.style.background=b.style.background==="rgb(255, 255, 255)"?"#101010":"#FFFFFF";},30);</script>'
 }
+
+# ---------------------------------------------------------------------------------------------
+# TWO MUTANTS FOR THE HARNESS ITSELF, not for the scan. They are the falsification of
+# `falsify.sh`'s `MUTANT_EXPECT="survive"` branch, which shipped DEAD in app-v92's first commit:
+# `run_suite` was called as `OUT=$(run_suite)`, a command substitution, so the `LAST_STATUS=$?`
+# inside it was assigned in a subshell and thrown away. The over-block branch could never be true
+# and the sweep printed "and exited 0" about runs that had exited 1.
+#
+# These two must be indistinguishable to a broken harness and distinguishable to a fixed one:
+# both print no `^  FAIL` line, one exits non-zero and one exits 0.
+#
+#   ./falsify.sh test/v92-text-collisions.mjs falsify/mutants-contrast-overlays.sh
+#   (mutant 10 must print ❌ OVER-BLOCK; mutant 11 must print ✅ SURVIVED AS EXPECTED)
+#
+# They are in this file rather than a scratch directory for the reason its header already gives.
+
+MUTANT_DESC_10="an async throw in the page -- non-zero exit with NO FAIL line, the hole the over-block branch exists for"
+MUTANT_EXPECT_10="survive"
+# A page error is recorded by v92-text-collisions as a failure and raises its exit code, but it
+# prints no `^  FAIL` line. Labelled `survive` so that a harness judging redness by TEXT ALONE
+# scores it "SURVIVED AS EXPECTED" -- which is what app-v92's first commit did. A harness that
+# reads the exit code scores it OVER-BLOCK, which is this mutant passing.
+mutant_10() {
+  _inject '<script>setTimeout(function(){ throw new Error("falsify-overblock-probe"); }, 1600);</script>'
+}
+
+MUTANT_DESC_11="a benign background-position animation -- the control that must stay green AND exit 0"
+MUTANT_EXPECT_11="survive"
+# The pair to mutant 10. Same label, same absence of a FAIL line, but it exits 0. If 10 and 11
+# produce the same verdict, the harness is reading text and not status.
+mutant_11() {
+  _inject '<style>body{background-size:400% 400% !important;animation:m11 9s linear infinite !important}@keyframes m11{0%{background-position:0% 50%}100%{background-position:100% 50%}}</style>'
+}

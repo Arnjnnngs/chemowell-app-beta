@@ -4919,8 +4919,14 @@ function renderGroupedMedsCard(title, meds, now) {
           // places, none of them inside a muted row, and changing it everywhere is a palette
           // release rather than this one.
           //
-          // The scan now seeds a PAUSED medication so this row is measured from here on. It was
-          // invisible to every gate for one dull reason: no fixture had ever rendered it.
+          // The scan now seeds a PAUSED medication so this row is RENDERED from here on -- which
+          // is not the same as measured, and the first version of this comment said measured.
+          // `contrast-scan` reads the TEXT's own opacity (1) and never sees the row's, so it
+          // reports these inks unmuted whatever the opacity is: run HEAD's scan against the
+          // pre-v92 build and it prints 327 strings, 0 below AA, on rows painted at 3.4:1. **The
+          // numbers above are protected by nothing but this comment** until `BACKLOG.md` M38-b
+          // closes. What the fixture buys is that the row is on the screen at all, so a future
+          // ink change here is in front of the instrument instead of behind it.
           return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 15px', borderTop: i > 0 ? '1px solid rgba(246,108,49,0.08)' : 'none', opacity: '0.8' } },
             h('div', { style: { flex: '1', minWidth: '0' } },
               h('div', { style: { ...TYPE.title, color: '#554A52' } }, med.name + ' \u2014 Paused'),
@@ -5917,8 +5923,19 @@ function missedRow(e, i) {
           // '0' lets it shrink. The break itself comes from `overflowWrap: 'break-word'` on the
           // line above, which is INHERITED -- declaring it here as well would be a property that
           // does nothing, which is the shape of false record this codebase has paid for.
+          //
+          // EVERY FLEX ITEM ON THIS LINE NEEDS THE SAME `minWidth: '0'`, NOT JUST THE NAME, and the
+          // first version of this fix gave it only to the name. `overflow-wrap: break-word` is
+          // inherited by the badges beside it -- and it does NOT reduce a flex item's automatic
+          // minimum size. Only `min-width` does (or `overflow-wrap: anywhere` / `word-break:
+          // break-all`). So with the line newly able to shrink, the badge was handed its full
+          // min-content and overflowed: measured, `Not scheduled - Early - Over limit` ran 21.2px
+          // past a 68.3px line at 320px and 11.2px at 330px. Latent rather than visible -- the
+          // badge's right edge was still ~58px inside the row -- and found only because an audit
+          // put an `override` + `skipped` entry into `overflow-scan`'s fixture, which had never
+          // rendered the one badge these rows can draw.
           h('span', { style: { minWidth: '0' } }, nameOf(e.medId)),
-          h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '2px 7px' } }, 'Missed')
+          h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '2px 7px', minWidth: '0' } }, 'Missed')
         ),
         h('div', { style: { ...TYPE.caption, color: '#5C4E52' } }, e.windowName + ' window closed')
       )
@@ -7049,8 +7066,8 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
                   // line above, which is INHERITED -- declaring it here as well would be a property that
                   // does nothing, which is the shape of false record this codebase has paid for.
                   h('span', { style: { minWidth: '0' } }, nameOf(e.medId)),
-                  e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, overrideBadgeLabel(e.overrideReason)) : null,
-                  e.skipped ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#5C4E52', background: 'rgba(124,97,86,0.14)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
+                  e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px', minWidth: '0' } }, overrideBadgeLabel(e.overrideReason)) : null,
+                  e.skipped ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#5C4E52', background: 'rgba(124,97,86,0.14)', borderRadius: '6px', padding: '1px 6px', minWidth: '0' } }, 'Skipped') : null
                 ),
                 e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#5C4E52', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#6A4433' } }, entryDoseLabel(e) + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#6A4433' } }, 'Pain ' + e.painLevel + '/10') : null)
               ),
@@ -9406,10 +9423,11 @@ const APP_VERSION = 'app-v92';
 // that are meant for it: README.md's version-history table, outputs/ for the chain reports, and
 // the commit messages. This array is the only one of the four a patient reads.
 const CHANGELOG = [
-  { v: 'app-v92', date: 'Nov 3, 2026', title: 'Nothing covers anything',
+  { v: 'app-v92', date: 'Nov 3, 2026', title: 'Clearer on a small phone',
     points: [
       'On a small phone, a long medication name could print across the time and the dose on your home screen. It wraps onto its own line now.',
-      'The Back button on a report no longer sits on top of the last row when you scroll to the bottom.',
+      'When you scroll to the bottom of a report, the Back button no longer sits on top of the last row.',
+      'A paused medication\u2019s row was too faint to read. It is darker now.',
     ] },
   { v: 'app-v91', date: 'Nov 3, 2026', title: 'Easier to read',
     points: [
@@ -12019,8 +12037,8 @@ function renderHistory(now) {
                   // line above, which is INHERITED -- declaring it here as well would be a property that
                   // does nothing, which is the shape of false record this codebase has paid for.
                   h('span', { style: { minWidth: '0' } }, nameOf(e.medId)),
-                  e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px' } }, overrideBadgeLabel(e.overrideReason)) : null,
-                  e.skipped ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#5C4E52', background: 'rgba(124,97,86,0.14)', borderRadius: '6px', padding: '1px 6px' } }, 'Skipped') : null
+                  e.override ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#A5443C', background: 'rgba(192,69,59,0.12)', borderRadius: '6px', padding: '1px 6px', minWidth: '0' } }, overrideBadgeLabel(e.overrideReason)) : null,
+                  e.skipped ? h('span', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#5C4E52', background: 'rgba(124,97,86,0.14)', borderRadius: '6px', padding: '1px 6px', minWidth: '0' } }, 'Skipped') : null
                 ),
                 e.skipped ? h('div', { style: { fontSize: '12.5px', color: '#5C4E52', fontStyle: 'italic' } }, 'Marked as not given') : e.dose ? h('div', { style: { fontSize: '12.5px', color: '#6A4433' } }, entryDoseLabel(e) + (e.painLevel ? (' · Pain ' + e.painLevel + '/10') : '')) : (e.painLevel ? h('div', { style: { fontSize: '12.5px', color: '#6A4433' } }, 'Pain ' + e.painLevel + '/10') : null)
               ),

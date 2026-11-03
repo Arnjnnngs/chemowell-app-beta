@@ -101,8 +101,16 @@ const seed = () => `(() => {
   // The grouped card's paused row and treatment-excluded row are muted with an opacity on the ROW,
   // and no fixture had ever rendered either of them -- so text painted at 3.4:1 sat in the app
   // through a release whose entire subject was whether the words can be read. A second medication
-  // in the same group is all it took. If the group ever stops rendering, the count below drops and
-  // that is the signal.
+  // in the same group is all it took. If the group ever stops rendering, the count drops and that
+  // is the signal.
+  //
+  // RENDERED IS NOT MEASURED, and the first version of this comment claimed measured. This scan
+  // reads the TEXT element's own `opacity`, which is 1; the muting is on its ROW. So it reports
+  // these inks UNMUTED whatever the row's opacity is -- proved by running this file unchanged
+  // against the pre-app-v92 build, which prints 327 / 0 below AA / worst 4.83:1 on rows painted
+  // at 3.4:1. The ancestor-opacity hole is `BACKLOG.md` M38-b and it is open. What the fixture
+  // buys is coverage, not verification: the row is on the screen, so the day its ink changes it
+  // is in front of this instrument rather than behind it.
   localStorage.setItem('chemowell-app-p-p1-med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: [
     { id: 'med-1', name: 'Blood pressure', schedule: 'daily', times: ['08:00'], doses: [{ label: '1 tablet', single: true }] },
     { id: 'med-2', name: 'Ondansetron', schedule: 'daily', times: ['08:00'], doses: [{ label: '4 mg', single: true }], groupedMorning: true, paused: true }
