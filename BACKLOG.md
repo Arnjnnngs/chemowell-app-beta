@@ -1191,3 +1191,17 @@ That is deliberate and documented (a toast over a row is not a collision), and i
 reason the suite cannot see the Back pill sitting on a row — which is why
 `v92-pill-clearance.mjs` exists and now carries the reserve invariant. Written down here so the
 exemption is a stated exemption rather than an undiscovered gap.
+
+**M39-g — the content column is 77px wide at 320px, and that is why the badge breaks mid-word.**
+Found by the Designer pass the app-v92 delta audit asked for
+(`outputs/DESIGN-app-v92-delta.md`). The card's 280px of inner width at 320px is spent on the time
+group (~85px with dot and gaps), the `Remove` text button (~72px) and the gaps, leaving 77px.
+`SCHEDULED` at 10px bold uppercase with letter-spacing measures ~85px, so **no fix that keeps the
+badge inside that column can avoid breaking the word** — the app-v92 badge fix traded a 21px
+column overflow for a mid-word break, which is a net improvement (nothing escapes into a control
+any more) and still not good. Three ways out, in order of recommendation: **icon-only `Remove` at
+<= 345px** (S — already proposed for app-v92 and not built; gives back ~40px, helps every narrow
+row, and is a CONTROL change so it is Aaron's call under Rule 2.6); drop the uppercase and
+letter-spacing on this badge (S — longest word becomes ~52px, changes a badge type's visual
+language app-wide); give the badges their own full-width line below the row (M — correct in
+principle, three render sites, changes the shape of every row carrying a badge).
