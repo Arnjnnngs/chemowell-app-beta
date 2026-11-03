@@ -597,6 +597,16 @@ console.log('  (NOT a coverage figure. `offscreen` is overwhelmingly the SAME st
   + ' another pass; measured coverage is ~96%. This number is here to MOVE when the app starts'
   + ' hiding text from the scan, not to be read as the unmeasured surface.)');
 console.log('page errors: ' + thrown.length + (thrown.length ? ' -> ' + thrown.slice(0, 2).join(' | ') : ''));
+// A PAGE ERROR IS A RED LINE, NOT ONLY A RED EXIT CODE. It already raised the exit code below and
+// it printed no `^  FAIL`, so `falsify.sh` -- which reads those two things -- saw a suite that had
+// REFUSED and could only score it by the mutant's label. The contrast corpus therefore carried
+// mutant 10, an async throw labelled `survive` purely so the harness's exit-code branch would
+// fire, which meant the corpus could NEVER exit 0: a sweep that is always red is a sweep nobody
+// reads. The honest fix is here rather than in the label: a build whose page throws is a build
+// this suite failed, and it now says so in the shared shape, counted exactly as `invisible` and
+// `unstable` are so a clean run still reads 327.
+if (thrown.length) console.log('  FAIL  the page threw ' + thrown.length + ' error(s) -- '
+  + thrown.slice(0, 2).join(' | '));
 // A `checks:` LINE IN THE SHARED SHAPE, because `falsify.sh` reads one to decide whether the suite
 // RAN at all -- and without it the sweep refused its own baseline and scored every mutant as
 // "could not measure". A suite the falsification harness cannot read is a suite nobody falsifies.
@@ -604,8 +614,8 @@ console.log('page errors: ' + thrown.length + (thrown.length ? ' -> ' + thrown.s
 // met AA. So the three red categories are all in `failed`, and this line can never read green
 // while a FAIL is printed above it.
 {
-  const failedChecks = failures + invisibleU.length + unstableU.length;
-  const totalChecks = measured + invisibleU.length + unstableU.length;
+  const failedChecks = failures + invisibleU.length + unstableU.length + thrown.length;
+  const totalChecks = measured + invisibleU.length + unstableU.length + thrown.length;
   console.log(totalChecks + ' checks: ' + (totalChecks - failedChecks) + ' passed, ' + failedChecks + ' failed');
 }
 if (JSON_OUT) fs.writeFileSync(JSON_OUT, JSON.stringify(report, null, 2));

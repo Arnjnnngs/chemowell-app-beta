@@ -134,12 +134,22 @@ mutant_9() {
 #
 # They are in this file rather than a scratch directory for the reason its header already gives.
 
-MUTANT_DESC_10="an async throw in the page -- non-zero exit with NO FAIL line, the hole the over-block branch exists for"
-MUTANT_EXPECT_10="survive"
-# A page error is recorded by v92-text-collisions as a failure and raises its exit code, but it
-# prints no `^  FAIL` line. Labelled `survive` so that a harness judging redness by TEXT ALONE
-# scores it "SURVIVED AS EXPECTED" -- which is what app-v92's first commit did. A harness that
-# reads the exit code scores it OVER-BLOCK, which is this mutant passing.
+MUTANT_DESC_10="an async throw in the page -- a build that throws is a build this suite fails"
+# RELABELLED FROM `survive` TO `die`, and the reason is worth more than the mutant. It was labelled
+# `survive` so that a harness judging redness by TEXT ALONE would score it "SURVIVED AS EXPECTED"
+# (which is what app-v92's first commit did) while a harness reading the EXIT CODE would score it
+# OVER-BLOCK -- "which is this mutant passing". That made the whole contrast corpus exit 1 on a
+# correct build, for ever. A sweep that can never be green is a sweep nobody reads, which is the
+# same failure mode as a check that can never be red.
+#
+# Two things were wrong with it. First, an async throw is not "a change a real release might
+# legitimately contain" -- it is a defect, so `survive` was never the truthful label. Second, the
+# harness branch it existed to exercise is now falsified properly: a synthetic suite drives
+# falsify.sh's scoring block through all four outcomes with no browser at all, so every row is the
+# harness's own code. A permanent red mutant is a poor substitute for a test of the harness.
+#
+# So the suite was fixed instead: `contrast-scan` now prints `  FAIL  the page threw N error(s)`
+# and counts it, exactly as it counts `invisible` and `unstable`. This mutant is a plain catch now.
 mutant_10() {
   _inject '<script>setTimeout(function(){ throw new Error("falsify-overblock-probe"); }, 1600);</script>'
 }
