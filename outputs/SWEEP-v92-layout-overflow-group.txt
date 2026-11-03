@@ -1,3 +1,10 @@
+THIS LOG IS THE PRE-RELABEL RUN, AND THAT IS WHY IT SAYS EXIT=1. (noted after the delta2 audit)
+Its tally reads "1 survived unexpectedly ... EXIT=1" because mutant 7 was still labelled `die`
+when it was produced. The label is now `hole`, so the same corpus exits 0 with mutant 7 reported
+as a declared open hole. The raw log is kept EXACTLY as it ran -- re-running it to get a tidier
+tally would destroy the only record of the measurement that justified the relabel, which is the
+whole point of the file. Read the EXIT=1 as "this is the run that sent mutant 7 to be measured".
+
 === BASELINE (no mutant) -- every check must be green before any of them mean anything
 171 checks: 171 passed, 0 failed
 

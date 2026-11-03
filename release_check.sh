@@ -1006,7 +1006,20 @@ if [ "$FAIL" -eq 1 ]; then
   if [ -n "$FAILED_LIST" ]; then
     echo ""
     echo "❌ RELEASE CHECK FAILED. Everything this run found, in one place:$FAILED_LIST"
-    echo "   The whole gate ran, so this IS the complete list -- fix all of it before re-running."
+    # A THIRD KIND OF FAILURE, which this sentence did not know about. (app-v92 delta2 audit, F1)
+    # The block at the top of this file describes two: checks that set FAIL=1 and carry on, and
+    # hard stops that `exit 1` on the spot and now say they stopped early. The parse gate added a
+    # third -- it sets FAIL=1 and carries on, but it `break`s the suite loop, so TEN SUITES never
+    # execute. The run then printed "the whole gate ran, so this IS the complete list" over a list
+    # that was missing every suite result. Exit code right, sentence wrong, and under-reporting is
+    # precisely what that top-of-file block exists to end: an operator who believes the list is
+    # complete fixes one thing, re-runs, and meets the next failure.
+    if [ "${RC_PARSE_BAD:-0}" = "1" ]; then
+      echo "   NOT the complete list: a suite did not parse, so the suite loop never ran. Fix the"
+      echo "   parse error and re-run -- the ten suites have not been evaluated at all."
+    else
+      echo "   The whole gate ran, so this IS the complete list -- fix all of it before re-running."
+    fi
   fi
   exit 1
 fi

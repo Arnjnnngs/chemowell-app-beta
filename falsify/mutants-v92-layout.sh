@@ -135,7 +135,7 @@ PY
 #     Each was also falsified on its own while app-v92 was built; the figures are in each one.
 
 MUTANT_DESC_7="[overflow] the time cell can shrink -- INERT after the name fix, measured, not assumed"
-MUTANT_EXPECT_7="survive"
+MUTANT_EXPECT_7="hole"
 # THIS DESCRIPTION USED TO CLAIM THE OPPOSITE AND THE CLAIM WAS WRONG. It said "the app-v92 defect
 # itself ... measured with it reverted: 3 overflowing, '10:00 AM' by 5px, 320px only". It survives:
 # the full sweep reports 171 checks, 171 passed, 0 failed (29m0s), and an audit had already
@@ -157,8 +157,18 @@ MUTANT_EXPECT_7="survive"
 # carries `minWidth: '0'` and `overflowWrap: break-word`, so a crowded row relieves itself by
 # wrapping the name -- a single long token like "Hydroxychloroquine" breaks mid-word -- and the time
 # cell is never put under pressure. `flexShrink: '0'` there is defence-in-depth whose precondition
-# the name fix removed. It stays in the app for a future row that cannot wrap; it is labelled
-# `survive` here because surviving is the CORRECT result and the sweep should not go red on it.
+# the name fix removed. It stays in the app for a future row that cannot wrap.
+#
+# LABELLED `hole`, NOT `survive`, AND THE SECOND AUDIT WAS RIGHT TO INSIST. The first relabel used
+# `survive`, reasoning only that surviving is the correct result and the sweep should not go red.
+# But `falsify.sh:180` DEFINES `survive` as an over-block control -- "changes something a real
+# release might legitimately contain ... catching it is a false alarm" -- and its message on a
+# catch reads "Fix the check, not the mutant". Removing defence-in-depth is not a legitimate
+# release change, and the day the time cell becomes load-bearing that label would tell the next
+# session to go and WEAKEN overflow-scan. `hole` is the file's own word for a known gap with a
+# ticket, and its message on a catch reads "the hole is closed; update its MUTANT_EXPECT to die".
+# That is the sentence this mutant should produce if it ever starts dying. Mutant 9 is the same
+# shape and was already `hole`; this is now consistent with it.
 #
 # WHAT ACTUALLY PINS THIS ROW, so nobody reads the label as "none of it matters": mutant 5 (the
 # name span's `minWidth: '0'`) bites -- "Remove" off the right edge by 17px at 320px, 7px at 330px

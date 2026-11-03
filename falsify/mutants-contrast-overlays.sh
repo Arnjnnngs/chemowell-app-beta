@@ -135,6 +135,7 @@ mutant_9() {
 # They are in this file rather than a scratch directory for the reason its header already gives.
 
 MUTANT_DESC_10="an async throw in the page -- a build that throws is a build this suite fails"
+MUTANT_EXPECT_10="die"   # explicit, not left to the `:-die` default -- a label you cannot grep for is a label nobody audits
 # RELABELLED FROM `survive` TO `die`, and the reason is worth more than the mutant. It was labelled
 # `survive` so that a harness judging redness by TEXT ALONE would score it "SURVIVED AS EXPECTED"
 # (which is what app-v92's first commit did) while a harness reading the EXIT CODE would score it

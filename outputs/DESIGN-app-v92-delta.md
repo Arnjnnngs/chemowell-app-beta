@@ -67,9 +67,16 @@ would see:
 
 Logged as `BACKLOG` M39-g. Nothing here blocks app-v92.
 
-## What this pass did NOT look at
+## What this pass did NOT look at, and what the audit then looked at
 
-Only the Home timeline's badge row, at four widths, in one state. The History row and `missedRow`
-render the same markup and were not rendered here — `overflow-scan` does not open report
-sub-screens or seed a missed dose either (`BACKLOG` M39-c), so that gap is real and is written
-down rather than implied.
+This pass rendered only the Home timeline's badge row, at four widths, in one state. **The
+delta2 audit closed most of that gap by attacking the judgement above.** It rendered the History
+report with the same `override` + `skipped` fixture at four widths and found it **milder** than
+the Home row this argument was made about: at 320px the badge is 101x74 over 4 lines, against
+Home's 77x110 over 6, with zero text overflow and no page side-scroll at 320 / 330 / 360 / 390.
+So the worst case is the one measured here, and the conclusion holds.
+
+`missedRow` is still unrendered by anybody. Its badge is the literal `'Missed'` — one six-letter
+word — so it cannot produce the multi-line wrap this pass is about, which is why nobody held a
+release for it. It is logged as `BACKLOG` M39-j as the one surface no gate and no designer pass
+has ever looked at.

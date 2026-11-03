@@ -66,8 +66,15 @@ for (const W of [320, 330, 360, 390]) {
     const card = t.closest('section') || t.parentElement.parentElement.parentElement;
     card.scrollIntoView({ block: 'center' });
     const r = card.getBoundingClientRect();
-    return { x: Math.max(0, r.left - 6), y: Math.max(0, r.top - 6),
-             width: Math.min(window.innerWidth, r.width + 12), height: Math.min(window.innerHeight, r.height + 12) };
+    // CLAMP TO THE VIEWPORT PROPERLY. The first version clamped width and height but not their
+    // sum against the origin, so at 320px -- where the card is tallest, six wrapped lines of
+    // badge -- x + width and y + height ran past the viewport and Playwright threw on the clip.
+    // The measurements printed fine and the screenshot did not, which is the worst shape for a
+    // probe: it looks like it worked. (app-v92 delta2 audit, F5.)
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const x = Math.max(0, Math.min(r.left - 6, vw - 1));
+    const y = Math.max(0, Math.min(r.top - 6, vh - 1));
+    return { x, y, width: Math.max(1, Math.min(r.width + 12, vw - x)), height: Math.max(1, Math.min(r.height + 12, vh - y)) };
   });
   await page.waitForTimeout(400);
   await page.screenshot({ path: outDir + '/badge-row-' + W + '.png', ...(clip ? { clip } : {}) });

@@ -1154,7 +1154,7 @@ cause is the same scaling mechanism the app-v91 audit logged as F11, and it impl
 overflow on that sub-screen — which, per M39-c, no instrument renders. Measure it before assuming
 it is cosmetic.
 
-**M39-e — corpus mutant 7 is labelled `die` and is caught by nothing.** The auditor measured five
+**M39-e — corpus mutant 7 claimed to be the app-v92 defect and is caught by nothing.** (It was labelled `die`; it is now `hole`. See the resolution at the end of this item — the heading said `die` for a while after the body said otherwise, which is the same stale-record class this whole section is about.) The auditor measured five
 variants of "the time cell can shrink" (the cell's `flexShrink` alone; with the badge out of the
 fixture; the wrapper's `flexShrink`; both; and mutant 5 + mutant 7) and every one reported
 `170/170 … 0 overflowing, CLEAN`. The *"3 overflowing, '10:00 AM' by 5px"* figure in its comment
@@ -1178,7 +1178,11 @@ inert on every row this fixture can draw, and app-v92's own name fix is the reas
 carries `minWidth: '0'` and `overflowWrap: break-word`, so a crowded row relieves itself by
 wrapping the name — even a single long token like `Hydroxychloroquine` breaks mid-word — and the
 time cell is never put under pressure. It stays in the app as defence-in-depth for a future row
-that cannot wrap; the mutant is `MUTANT_EXPECT="survive"` because surviving is the correct result.
+that cannot wrap; the mutant is **`MUTANT_EXPECT="hole"`**. The first relabel used `survive` and
+the second audit was right to refuse it: `falsify.sh` defines `survive` as an OVER-BLOCK CONTROL
+and prints *"Fix the check, not the mutant"* when one is caught, so the day the time cell becomes
+load-bearing that label would send the next session to weaken `overflow-scan`. `hole` is this
+file's own word for a known gap with a ticket, and prints *"the hole is closed"* instead.
 Mutants 5 and 8 are what actually pin that row and both bite.
 
 **What is still open here, and it is small:** no instrument can show that the time cell's
@@ -1205,3 +1209,27 @@ row, and is a CONTROL change so it is Aaron's call under Rule 2.6); drop the upp
 letter-spacing on this badge (S — longest word becomes ~52px, changes a badge type's visual
 language app-wide); give the badges their own full-width line below the row (M — correct in
 principle, three render sites, changes the shape of every row carrying a badge).
+
+**M39-h — `overflow-scan`'s denominator can in principle be exceeded, and under-counts in one
+branch.** Raised by the app-v92 delta2 audit as F3, and raised honestly: it could not be
+reproduced in two attempts and is a code-reading finding. One screen/width combination can push
+**two** `report` entries (the layout-viewport branch and the per-element branch) while the
+denominator counts combinations, so `ovfFailed` could exceed `ovfTotal`; separately, the
+device-level fixture-failure branch adds `unreachable += SCREENS.length` and skips the `EXTRA`
+loop, under-counting by `EXTRA_COUNT`. **Neither can produce a false green** — `ovfFailed == 0`
+still implies 170 scanned — which is why it is here and not in the release. Fix by keying the
+denominator to entries rather than combinations, or de-duplicating `report` by combination.
+
+**M39-i — the Paracentesis report side-scrolls by 8px at 320px, and it is pre-existing.** The
+delta2 audit answered M39-d's open question by measuring it: `innerWidth` 328 against
+`scrollWidth` 328 at a 320px device, which is why that one combination reports `innerH 866` and a
+pill top of 736 — the layout viewport widened and the pill did not move. The widest element is the
+three-up stat grid's "Since last / Today" card (`index.html:12600`). **Not app-v92**: that grid's
+geometry is unchanged since the commit that introduced it and the `TYPE` scale has never moved.
+Invisible to `overflow-scan` because, per M39-c, it walks no report sub-screen. Fix with the
+report sub-screen coverage in M39-c, or by letting that grid wrap to two-up under ~340px.
+
+**M39-j — `missedRow` has never been rendered by any gate or any designer pass.** The one surface
+left unrendered after the delta2 audit walked Home and History. Its badge is the literal
+`'Missed'` — one six-letter word — so it cannot produce the multi-line wrap M39-g is about, which
+is why no one held a release for it. It is still a row that nothing has ever looked at.
