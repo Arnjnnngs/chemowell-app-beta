@@ -187,4 +187,55 @@ EXIT=1
 
 ### Run 2 — with this sign-off in place
 
-_Pending: appended below once the full run completes._
+Run to completion. **Exit code 0.** Ten suites green, the no-other-patient check clean, and
+the chain gate satisfied: it names `AUDIT-app-v92-delta2.md` and this sign-off as the current
+pair and correctly records the two earlier refusals as present and not clearing the release,
+rather than as objections that vanished. The served tree's md5 is verified as `e62bc8df` inside
+the run, so the suites measured the same bytes I signed.
+
+```
+ℹ️  Suites will run against a clean export of HEAD at /tmp/tmp.ewowT26Sm7
+   (not the working tree -- see the app-v82 note above).
+ℹ️  Baseline: PUBLISHED.json -> app-v89 (chemowell-app-v89-1) at a5d5908
+   8 commit(s) have changed index.html since that record. This gate assumes NONE of
+   them are live yet. If any were already pushed, run ./mark_published.sh <that commit>
+   first -- otherwise the comparison below is against the wrong build.
+ℹ️  Other reports present and not clearing this release:
+     outputs/AUDIT-app-v92-delta.md — says DO NOT SHIP
+     outputs/AUDIT-app-v92.md — says DO NOT SHIP
+ℹ️  Chain artifacts present for app-v92, and current against the working tree:
+     outputs/AUDIT-app-v92-delta2.md
+     outputs/PM-app-v92.md
+ℹ️  Suite server on 127.0.0.1:8897, serving /tmp/tmp.ewowT26Sm7 (md5 e62bc8df verified).
+✅ every test/*.mjs parses (68 suite(s), node --check)
+ℹ️  v76-properties-equivalence.mjs: green.
+ℹ️  v76-empty-window-render.mjs: green.
+ℹ️  v89-everything-free.mjs: green.
+ℹ️  v84-whatsnew.mjs: green.
+ℹ️  contrast-scan.mjs: green.
+ℹ️  overflow-scan.mjs: green.
+ℹ️  v90-chart-axes.mjs: green.
+ℹ️  v92-pill-clearance.mjs: green.
+ℹ️  v92-text-collisions.mjs: green.
+ℹ️  v92-designer-pass.mjs: green.
+ℹ️  No-other-patient check: clean.
+✅ Release check passed.
+   index.html changed and sw.js's CACHE constant changed with it -- installed
+   copies of the app will pick this up automatically on next open.
+```
+
+---
+
+## One process defect found and fixed, which did not block
+
+**Two of Aaron's three requests were never written into `REQUESTS.md`.** Only the colour one had
+an entry. The other two — the medication name printing across the time and the dose, and the Back
+pill covering the last line — existed as task numbers #36 and #28 in a session task list and in
+`outputs/`, and `REQUESTS.md` mentioned those numbers in passing without ever carrying the asks
+themselves. That file's own rule is that an ask is logged the moment he makes it, before any code
+is touched, and `TEAM-ORDER.md` already records the Scribe seat failing to keep this file before.
+
+**The work itself was not dropped — I verified all three fixes in `index.html`, which is the
+point of this seat — so this is a record defect, not a scope defect, and it does not block.** I
+logged both asks in `REQUESTS.md` with their measurements and with M39-g named as the known
+tradeoff, rather than reporting the gap and leaving it open.

@@ -29,6 +29,27 @@
   against byte-identical code; a fourth refused the release over what the *record* claimed about
   the new contrast gate, not over the colours.
 
+- [ ] **The two layout fixes Aaron asked for alongside the colour work — "the other fixes"**
+  (2026-11-03, tracked in the session task list as #36 and #28, and logged here by the app-v92 PM
+  gate because they never were). **app-v92, built and pushed to the working branch, awaiting
+  Aaron's word to go to `main`.** Logged late and that is the defect: this file's own rule is that
+  an ask is written down the moment he makes it, before any code is touched, and these two were
+  carried in a task list and in `outputs/` instead. The work itself is complete and verified in
+  `index.html`, not merely discussed.
+  - **A long medication name printed across the time and the dose** on a small phone —
+    `Hydroxychloroquine` over `8:00 AM` and `200 mg` at 320px, both illegible. The time cell held
+    58px while the string measures 66.31px because it could shrink; it no longer can, at all three
+    sites that draw a time in a row, and the name wraps instead. Measured 2 text collisions before,
+    0 after.
+  - **The floating Back pill covered the last line of every report screen** — its top edge sits a
+    constant 130px above the bottom of the screen while the page reserved 90px, so the last line
+    of text sat under it at the end of the scroll with nowhere left to scroll. The pill and the
+    page's reserve now derive from one set of constants. 27 screen-width combinations, 0 covered.
+  - **Known and deliberately not fixed:** at 320px only, on a row that is both unscheduled and
+    skipped, the status badge now breaks `SCHEDULED` mid-word. Contained and legible, and better
+    than the 21px escape into the Remove control it replaces. The clean fix is an icon-only Remove
+    on narrow screens, which is a control change and therefore Aaron's call — `BACKLOG` M39-g.
+
 ## 2026-10-25/26 — the pricing decision
 
 - [x] **"agreed. make backup free for all tiers. I might have read that wrong earlier. free
