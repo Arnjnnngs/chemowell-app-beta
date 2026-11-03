@@ -10,22 +10,22 @@
 MUTANT_DESC_1="the notification title loses its profile name -- the whole of Aaron's first ask"
 mutant_1() {
   python3 - <<'MUT'
-import io
+import io, re
 p='index.html'; s=io.open(p,encoding='utf-8').read()
-old = "  const pfx = (t) => (profileLabel ? profileLabel + ' · ' + t : t);"
-assert s.count(old)==1
-io.open(p,'w',encoding='utf-8').write(s.replace(old,"  const pfx = (t) => t;"))
+m = re.search(r"^  const pfx = \(t\) => .*$", s, re.M)
+assert m, 'the pfx line is gone'
+io.open(p,'w',encoding='utf-8').write(s[:m.start()] + '  const pfx = (t) => t;' + s[m.end():])
 MUT
 }
 
 MUTANT_DESC_2="the name is APPENDED instead of prefixed -- the half of the fix Android truncates away"
 mutant_2() {
   python3 - <<'MUT'
-import io
+import io, re
 p='index.html'; s=io.open(p,encoding='utf-8').read()
-old = "  const pfx = (t) => (profileLabel ? profileLabel + ' · ' + t : t);"
-assert s.count(old)==1
-io.open(p,'w',encoding='utf-8').write(s.replace(old,"  const pfx = (t) => (profileLabel ? t + ' · ' + profileLabel : t);"))
+m = re.search(r"^  const pfx = \(t\) => .*$", s, re.M)
+assert m, 'the pfx line is gone'
+io.open(p,'w',encoding='utf-8').write(s[:m.start()] + "  const pfx = (t) => (profileLabel ? t + ' \\u00b7 ' + profileLabel : t);" + s[m.end():])
 MUT
 }
 
@@ -56,9 +56,9 @@ mutant_5() {
   python3 - <<'MUT'
 import io
 p='index.html'; s=io.open(p,encoding='utf-8').read()
-old = "      if (!medWindowDueAt(med, d0, w, entries)) return; // already logged in this window"
+old = "\n      if (!medWindowDueAt(med, d0, w, entries)) return; // already logged in this window\n"
 assert s.count(old)==1
-io.open(p,'w',encoding='utf-8').write(s.replace(old,"      if (false) return;"))
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"\n      if (false) return;\n"))
 MUT
 }
 
@@ -145,10 +145,10 @@ MUTANT_EXPECT_13="survive"
 MUTANT_DESC_13="OVER-BLOCK CONTROL: the separator becomes an en dash -- the NAME is the claim, not the glyph"
 mutant_13() {
   python3 - <<'MUT'
-import io
+import io, re
 p='index.html'; s=io.open(p,encoding='utf-8').read()
-old = "  const pfx = (t) => (profileLabel ? profileLabel + ' · ' + t : t);"
-assert s.count(old)==1
-io.open(p,'w',encoding='utf-8').write(s.replace(old,"  const pfx = (t) => (profileLabel ? profileLabel + ' – ' + t : t);"))
+m = re.search(r"^  const pfx = \(t\) => .*$", s, re.M)
+assert m, 'the pfx line is gone'
+io.open(p,'w',encoding='utf-8').write(s[:m.start()] + "  const pfx = (t) => (profileLabel ? profileLabel + ' \\u2013 ' + t : t);" + s[m.end():])
 MUT
 }

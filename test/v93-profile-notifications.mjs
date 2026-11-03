@@ -196,6 +196,20 @@ async function openApp(seed) {
   ok('each row carries that profile’s own count', rows.find(r => r.id === 'p1')?.due === '1' && rows.find(r => r.id === 'p2')?.due === '2', JSON.stringify(rows));
   ok('each row has a silence control', rows.every(r => r.mute), JSON.stringify(rows));
 
+  // A MISSING ROW MUST FAIL, NOT THROW. The mutant that hides the drawer profile list entirely
+  // made every check below `page.$eval('[data-profile-row="p2"]')` reject, and the suite died with
+  // no `checks:` line at all -- which the falsify harness can only report as "could not measure".
+  // A crash is indistinguishable from a refusal, and this repo has written that lesson down twice.
+  // The dependent checks are now recorded as FAILURES and the walk continues.
+  if (!rows.some(r => r.id === 'p2')) {
+    ['the silenced profile is recorded as muted', 'a silenced profile contributes nothing to the total',
+     'the menu badge drops to the unsilenced total', 'the silenced row stops showing a due number',
+     'the silence control reports its state to a screen reader',
+     'the silenced control draws a different icon from the unsilenced one',
+     'the silenced icon is a struck-through bell, not the home fallback',
+     'unsilencing restores the total'].forEach(l => ok(l, false, 'no [data-profile-row="p2"] to act on'));
+  } else {
+
   // ---- silencing the OTHER profile, which is the case Aaron described
   await page.click('[data-profile-mute="p2"]');
   await page.waitForTimeout(500);
@@ -232,6 +246,7 @@ async function openApp(seed) {
   await page.click('[data-profile-mute="p2"]');
   await page.waitForTimeout(500);
   ok('unsilencing restores the total', (await page.evaluate(() => window.__v86Test.totalDueCount())) === 3);
+  }
 
   if (noise.length) {
     const uniq = [...new Set(noise)];
