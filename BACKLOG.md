@@ -1119,3 +1119,51 @@ against 4.84:1), so nothing failing is being hidden — but it is a narrowing.
 
 **So `0 below AA` from this scan means "nothing measured below AA", never "no unreadable text on
 screen".** The scan's own comments say so now, and nothing in this repo may say otherwise.
+
+---
+
+### M39 — What the app-v92 delta audit left behind (S each, none blocking)
+
+Every item here was raised by the Zero Day Auditor's delta pass on app-v92
+(`outputs/AUDIT-app-v92-delta.md`), measured by it, and deliberately NOT fixed in that release.
+They are instrument debt, not app defects: nothing on this list changes what a patient sees.
+
+**M39-a — `MUTANT_EXPECT` is per-mutant and the right expectation is per-SUITE.** Corpus mutant 5
+in `falsify/mutants-v92-layout.sh` is a declared `hole` for `v92-text-collisions` and a genuine
+catch for `overflow-scan` (measured: `"Remove"` off the right edge by 17px at 320px, 7px at 330px).
+Swept against overflow-scan the harness therefore advises *"the hole is closed; update its
+MUTANT_EXPECT to die"*, which is wrong — the hole it names is in the other suite. The label needs
+to be keyed by suite, e.g. `MUTANT_EXPECT_5__v92_text_collisions="hole"`, with the bare form kept
+as the default.
+
+**M39-b — mutant 5's anchor matches 21 sites, not the one column it names.** It still bites and the
+measurement reproduces, but a corpus entry whose description says "the content column" and whose
+anchor rewrites twenty-one places is a corpus entry nobody can reason about. Narrow the anchor.
+
+**M39-c — `overflow-scan` never opens a report SUB-screen.** It walks the top-level screens and two
+overlay passes. So of the three row sites the app-v92 fix touches, it renders exactly one: History's
+row lives behind a report tile and `missedRow` needs a missed dose, and neither is in the fixture.
+All six findings the badge mutant produces are `HOME` variants. The two app-v92 suites do walk all
+nine report screens, so the coverage exists — it is split across instruments, and the scan's own
+summary line does not say so.
+
+**M39-d — one report screen scales at 320px and nothing looks at it.** On `paracentesis` at 320px
+the Back pill's top measures 736 rather than the 714 every other combination reports, and the
+reserve moves with it (770 vs 748), so the clearance invariant holds and there is no defect. The
+cause is the same scaling mechanism the app-v91 audit logged as F11, and it implies a horizontal
+overflow on that sub-screen — which, per M39-c, no instrument renders. Measure it before assuming
+it is cosmetic.
+
+**M39-e — corpus mutant 7 is labelled `die` and is caught by nothing.** The auditor measured five
+variants of "the time cell can shrink" (the cell's `flexShrink` alone; with the badge out of the
+fixture; the wrapper's `flexShrink`; both; and mutant 5 + mutant 7) and every one reported
+`170/170 … 0 overflowing, CLEAN`. The *"3 overflowing, '10:00 AM' by 5px"* figure in its comment
+belongs to the pre-app-v92 row STRUCTURE as a whole and is not reproducible by reverting that one
+property: the name absorbs the squeeze instead. See the sweep result committed with this release
+for what was done about it.
+
+**M39-f — `v92-text-collisions` skips any text run with a `fixed`/`sticky`/`absolute` ancestor.**
+That is deliberate and documented (a toast over a row is not a collision), and it is also the
+reason the suite cannot see the Back pill sitting on a row — which is why
+`v92-pill-clearance.mjs` exists and now carries the reserve invariant. Written down here so the
+exemption is a stated exemption rather than an undiscovered gap.

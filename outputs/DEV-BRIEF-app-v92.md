@@ -117,6 +117,15 @@ scrolls, it does not photograph a still frame:
   empty-Home trap `test/overflow-scan.mjs` paid for twice, and it does not get a third outing.
 - A completeness check over the Reports sub-screen list: if a seventh sub-screen is added without a
   clearance assertion, the suite fails — the class, not the instance.
+  **DELIVERED HALF-WAY, AND THE AUDIT SAID SO (2026-11-03).** Discovering the screens from the
+  app's own `data-report-tile` hooks delivers the ADD direction: a tenth report is walked on the
+  day it lands. It delivers nothing in the REMOVE direction, which is the direction that bites —
+  the auditor stripped the hook from three of nine tiles and the walk narrowed 27 → 18 and passed,
+  printing "6 report screens discovered". A floor on the discovered count (`MIN_REPORT_TILES`, a
+  ratchet in the shape `v75-no-other-patient.mjs` uses) now closes it, together with a guard that
+  a walked screen is a report the app actually knows. **This bullet was written in the future
+  tense and then read as if it had been done** — the same shape as the "asserts the INVARIANT"
+  sentence in `README.md`, in the same release.
 
 **Falsification, mandatory, one mutant per claim:** restore the page padding to the current
 `calc(90px + …)` in a byte-copy outside the repo, md5-verified on disk and as served, served on its

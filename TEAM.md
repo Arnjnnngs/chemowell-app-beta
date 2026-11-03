@@ -904,3 +904,118 @@ under it. Both are cheap. Neither was there.
 Lightening the background was not enough on its own: at 12px the old muted grey still reached only
 **3.7:1** against the NEW page. A contrast problem has two sides and the fix usually has to touch
 both. Measure after each half rather than assuming the first one did it.
+
+---
+
+## A SUITE THAT DOES NOT PARSE IS NOT A WEAK CHECK. IT IS NO CHECK. (app-v92 delta)
+
+The app-v92 delta shipped `test/contrast-scan.mjs` in a state where `node --check` exits 1. A
+seven-line comment — written to make the file's own claims about itself more truthful — went inside
+`seed()`'s template literal with two unescaped backticks. The legibility gate for the exact defect
+the owner reported in his own words was dead, in the commit whose message said its runtime had been
+**measured**.
+
+Three things about it generalise, and all three are about the same habit.
+
+**1. The same edit, in the file beside it, was correct.** `test/v92-pill-clearance.mjs:101` escaped
+its backticks. So this was never a gap in knowledge: one of the two files was run again afterwards
+and the other was not. **The edit you are sure about is the one you do not re-run.**
+
+**2. A comment is code when it is inside a string.** Every rule in this repo about not trusting a
+check you have not watched fail assumes the check runs. A docs-only edit felt exempt from that, and
+in a template literal there is no such thing as a docs-only edit.
+
+**3. The record asserted a measurement that could not exist.** The same delta replaced an estimated
+timing comment with a measured one — and put `contrast-scan 28s` in it, for a file that cannot
+start. Replacing a guess the audit called out with a second guess is worse than leaving the guess,
+because the second one claims to be a measurement.
+
+### The gate
+
+`release_check.sh` now runs `node --check` over **every** `test/*.mjs` before the eleven-minute
+suite loop, and a parse failure breaks that loop rather than feeding it a file node cannot read.
+It costs under a second. It covers suites the gate does not yet run, because a dead instrument
+nobody calls is this project's single most repeated defect — `overflow-scan`, `contrast-scan` and
+`v90-chart-axes` all sat unrun — and the day one is finally wired in is the wrong day to find out
+it never parsed.
+
+## A SUITE CAN ASSERT THE SYMPTOM AND READ AS IF IT ASSERTED THE INVARIANT (app-v92 delta)
+
+`v92-pill-clearance.mjs`'s header said it *"asserts the INVARIANT rather than one row"*. It asserted
+a row: no glyph box may intersect the Back pill. That can only go red once a glyph has actually
+landed in the pill's band, so it passes on slack. The audit proved it with two mutants, both at
+844px:
+
+| mutant | page padding | reserve top | pill top | last glyph | verdict |
+|---|---|---|---|---|---|
+| shipped | 138px | 706 | 714 | 666–674 | correct |
+| `BACK_PILL_GAP = -24` | 106px | 738 | 714 | 705 | **survived on 9px of slack** |
+| `BACK_PILL_H = 0` | 96px | 748 | 738 | 715–716 | **survived on 22px of slack** |
+
+Both put the pill over the reserve the page sets aside for it. Both passed.
+
+**And the write-ups of those survivals blamed the app.** They said *"the gap is breathing room, not
+the guard"* and *"a mutant that edits a shared constant cannot break an agreement the sharing
+creates"*. Both read as laws about the code. Both were facts about **this fixture**: the second is
+false outright — at `BACK_PILL_H = 0` the pill still renders 18px tall because the constant enters
+it as a `minHeight` floor and enters the clearance as an exact term, so the agreement breaks by
+10px. It survived on slack, not on arithmetic.
+
+### The rule
+
+**When a mutant survives, the first hypothesis is that the ASSERTION is weak, not that the property
+is unnecessary.** A survivor is evidence about the instrument until the instrument has been shown
+to be able to see the thing at all. Writing the survival up as a law about the app — in a commit
+message, confidently — converts a measurement gap into documentation that will be believed.
+
+The invariant itself was one line: the pill's top must be at or below the top of the reserve the
+page's own `padding-bottom` creates (read through a `data-page-shell` hook, so it is measured rather
+than inferred). It catches both survivors, by 24px and by 10px.
+
+## DISCOVERING FROM THE APP PROTECTS AGAINST FORGETTING AND NOTHING ELSE (app-v92 delta)
+
+`v92-pill-clearance.mjs` discovers the nine report screens from the app's own `data-report-tile`
+hooks, never from a list in the suite, so a tenth report is walked automatically. That is a real
+property and it was over-claimed: it protects against a report being **added** and missed. It
+protects nothing against the hook being **dropped**. The audit removed it from three of nine tiles,
+consistently at every width, and the walk narrowed from 27 checks to 18 and **passed**, printing
+*"6 report screens discovered"* — the same silent-narrowing class as an emptied fixture, which the
+file already carried a per-screen guard against.
+
+Worse, a hook holding a value the app does not dispatch on made the suite walk three screens that
+do not exist, score them `ok`, and still print *"9 discovered"* — because the only guard was
+`where.reportsView === key`, which `openReport` satisfies for any string.
+
+**Two fixes, and the second is the one worth remembering.** A floor on the discovered count (a
+ratchet, like `v75-no-other-patient.mjs`'s three) closes the narrowing. The bogus screen could not
+be closed by reading the heading — the app prints a fallback `label: 'Report'` — but **the app was
+already saying so**: `console.warn('[reports] unknown report type:', type)`. The suite was deaf to
+it. `overflow-scan.mjs` has failed on console output since app-v84 (*"a caught-and-logged failure
+is still a failure"*) and this suite did not.
+
+So: **before building a new guard, check whether the app already reports the thing and the
+instrument is simply not listening.** That is the cheaper half of the fix and the more reliable one,
+because it cannot drift away from what the app actually considers an error.
+
+One consequence: a suite that fails on console output has to be hermetic, or the sandbox's own DNS
+failures make the check fire on a correct build. Routes are stubbed the way `overflow-scan` has
+stubbed them since app-v84. A check that always fails is as useless as one that cannot, and tuning
+it to ignore "resource" errors would have blinded it to real ones.
+
+## THE HARNESS CERTIFIED A KNOWN HOLE WITHOUT A MEASUREMENT (app-v92 delta)
+
+`falsify.sh` learned, during app-v92, that a suite can exit non-zero while printing no red line —
+a refusal, not a pass — and grew a branch to score that as an OVER-BLOCK rather than as
+*"survived as expected"*. The branch was gated on `MUTANT_EXPECT="survive"`.
+
+So a mutant labelled `hole` whose suite **refused to run** fell straight through to the hole branch,
+printed *"SURVIVED — KNOWN OPEN HOLE"*, and exited the sweep **0**. A refused run certified a hole
+as still-open without a single measurement — and `hole` does not even count toward `$ALIVE`, so
+nothing downstream noticed either. It was the same defect the branch was written to fix, one label
+along, in the same commit.
+
+Found by driving the scoring block through all four outcomes with a synthetic suite that reads the
+clone's own `index.html` for a marker and behaves accordingly — no browser, so every row of the
+resulting table is the harness's own code rather than a story about it. **A fix to a scoring rule
+should be falsified against every label the rule can see, not only the label that motivated it.**
+The status test is now hoisted above the label dispatch; the label only decides what to call it.
