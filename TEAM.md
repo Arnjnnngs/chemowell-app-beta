@@ -803,6 +803,39 @@ loudly or quietly; it is simply absent, while reading in the documentation as pr
 
 Declaring a gate and wiring a gate are two tasks. Do the second one in the same commit.
 
+### The instrument's own defects outnumbered the app's, and every one was found by RUNNING it
+
+The palette change was right the first time and three independent audits confirmed it against
+byte-identical code. The scan that proved it needed **four** attempts at one guard, and the score
+over the whole release is worth writing down plainly:
+
+| found in | how it was found |
+|---|---|
+| SVG text painted with `fill`, not `color` | a backdrop colour looked wrong |
+| a pinned version literal — the scan measured NOTHING and the record quoted a clean sweep | an audit ran it |
+| the gate was declared in TEAM.md and wired into nothing | an audit grepped for it |
+| `pointer-events: none` invisible to the hit-test | an audit built a bar |
+| asking the app instead — same blind spot, by design | **my own falsification, after I had written the fix** |
+| the A/B diff vs a 30ms timer | an audit built a timer |
+| the third photograph taken after un-hiding — 341 false flags | the first run of it |
+| `color: transparent` wiping `currentColor` paint | an audit built a bar, three guards deep |
+| fixtures dated from the wall clock — count drifted 309↔310 | two runs an hour apart |
+
+**Not one was found by reading the code**, including the ones where the reasoning was good enough
+that I would have shipped on it. Two in that list are mine finding my own fix wrong *after*
+writing it and *before* claiming it worked — which is the only reason they are not in the first
+column of someone else's audit.
+
+**The rule that falls out: a measuring instrument needs its own falsification corpus, kept and
+re-run, not a one-off check at the moment it is written.** Every mutant above is cheap to rebuild
+and each one is now the only thing standing between a future edit and a silent false green. They
+belong beside the scan, not in a scratch directory.
+
+**And the second rule, which cost the most:** three guards in a row failed because they were all
+downstream of the same hiding mechanism. **When a measurement modifies the thing it measures, every
+check built on top of it inherits that modification.** Look at the instrument's own effect on the
+subject before adding another layer on top of it.
+
 ### Two things about building it that generalise
 
 **1. The obvious implementation measures nothing.** Walking up the DOM for a `background-color`
