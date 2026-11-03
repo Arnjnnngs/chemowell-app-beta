@@ -1,7 +1,41 @@
 # PM sign-off — app-v90 (chart axes, plus F1 deferred from app-v89)
 
 AUDITED-COMMIT: 9f2259cdef450e5ef5121904b40681d7f433cc56
-VERDICT: SHIP
+VERDICT: DO NOT SHIP
+
+## Why, in one paragraph — and it is not the chart code
+
+**The Designer seat produced no report. `outputs/DESIGN-app-v90.md` does not exist**, and
+`release_check.sh` refuses the release for it: *"the design-time seats have not run for app-v90 …
+missing: an outputs/DESIGN\*app-v90\*.md pass."* Every release from app-v84 to app-v89 has that file;
+app-v90 is the first in seven without one, and `index.html` moved, which is the gate's own condition.
+The chart work itself is right, the two refusals are genuinely answered, and the gate found **exactly
+one** thing wrong when it finally ran end to end. One missing artifact is still a missing artifact:
+under my brief and under rule 5, that goes back down the chain rather than being signed past by me.
+**The Designer pass is the whole remaining cost of this release** — Rule 2.6's own wording allows a
+pass that found nothing to be written down as *"nothing this time"*, so this is a short file after a
+real walk of the two chart screens at 320/360/390, not a round of work.
+
+**And the reason nobody saw it until now is the finding worth keeping.** The chain-report stage sits
+BEFORE the design-time stage in `release_check.sh`, so for all three audit passes the gate stopped at
+*"missing: an outputs/PM\*app-v90\*.md sign-off"* and printed `⛔ STOPPED EARLY -- the checks after
+this point did NOT run. This is not the complete list of what is wrong with the release.` All three
+passes read that line, recorded the gate as *"stopping exactly where briefed"*, and treated the
+expected stop as the only stop. **The absent PM sign-off was the last thing masking the absent
+Designer pass**, which is precisely why this seat has to run the gate rather than predict it.
+
+The release also claims as an exemption that no Designer screenshots were needed *"because nothing in
+the release changes a layout a person taps."* The gate anticipates that sentence in its own comment:
+a pass that found nothing counts, **silence does not**. And the claim is narrower than it sounds —
+`pad.right` moved 20 → 34 on both charts and carried the fever-threshold label 14 units with it, so
+drawn geometry did change. No tap target moved and the width was measured from text metrics, but the
+person who measured it was the Auditor, at the end, which is the exact substitution the design-time
+gate was added in 2026-09-14 to stop.
+
+Everything else below is clear and stands on my own measurements. Clear the Designer seat and this
+ships on the same commit — nothing in `index.html` or `sw.js` needs to move.
+
+---
 
 This is the Project Manager gate under CLAUDE.md rule 5, not a fourth audit. Three independent Zero
 Day passes have read the drawing code; I did not re-read it line by line. My job was the one nobody
@@ -23,9 +57,11 @@ clean; HEAD pushed to `origin/claude/caretracker-team-review-i83ik2`.
 | Zero Day pass 1 | `outputs/AUDIT-app-v90.md` | `a7bd9c8` | SHIP, F1–F8 |
 | Zero Day pass 2 | `outputs/AUDIT-app-v90-delta.md` | `9e34a40` | refused, 2 blockers |
 | Zero Day pass 3 | `outputs/AUDIT-app-v90-delta2.md` | `196b999` | SHIP, 2 must-fix + 1 new finding |
-| PM | this file | `9f2259c` | SHIP |
+| **Designer** | **— none —** | — | **MISSING. This is the refusal.** |
+| PM | this file | `9f2259c` | refuses, on the missing Designer pass alone |
 
-No artifact is missing, so nothing goes back down the chain. The Enhancer running after the build is
+**One artifact is missing and it is the Designer's**, so this goes back down the chain for that seat
+and nothing else. The Enhancer running after the build is
 a real process miss and it is disclosed in its own first paragraph and in the README row rather than
 quietly skipped — which is the correct handling of a miss that cannot be undone retroactively.
 
@@ -175,8 +211,18 @@ was measured rather than screenshotted"* instead of implying nothing visual chan
 * **Whether the Enhancer's four proposals are right.** They are logged (M29, M30, tasks #32/#34) and
   are Aaron's call, not mine.
 
-## Conditions on this sign-off
+## What has to happen before this ships
 
-None blocking. Two record corrections should go in with the push, neither touching a rule 5 path:
-`v90 151/151` → `162/162` in both places, and `v87` recorded as a range with its DST root cause
-logged as its own backlog item beside task #30. I have no authority to push to `main` and have not.
+1. **The Designer seat runs and writes `outputs/DESIGN-app-v90.md`** — the two chart report screens
+   at 320, 360 and 390, screenshots sent to Aaron as produced, and the iPhone exemption stated. A
+   pass that finds nothing is written down as *"nothing this time"*; an absent file is not. This is
+   the only blocker.
+2. **Two record corrections**, neither touching a rule 5 path: `v90 151/151` → `162/162` in both
+   places, and `v87` recorded as a range with its DST root cause logged as its own backlog item
+   beside task #30.
+3. Then re-run `release_check.sh` and confirm **exit 0**. The whole gate ran this time and named
+   exactly one failure, so there is nothing else hiding behind it.
+
+Nothing in `index.html` or `sw.js` needs to move for any of the above, so the three audit passes and
+every figure in this file stay valid. I have no authority to push to `main` and have not; I made no
+change to any rule 5 path.
