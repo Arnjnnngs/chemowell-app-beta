@@ -932,6 +932,240 @@ function pairStatus(sessionId) { return syncApiCall('/api/pair/status?session=' 
 function profilePull(token) { return syncApiCall('/api/profile/pull?token=' + encodeURIComponent(token)); }
 function profilePush(payload) { return syncApiCall('/api/profile/push', { method: 'POST', body: payload }); }
 
+// ---- WHOSE PROFILE IS THIS? (app-v93) ---------------------------------------------------------
+// Aaron, 2026-11-03: "there's multiple profiles and getting notifications for all the accounts
+// ... but there's no indication on who's account that message is for."
+//
+// He is exactly right and the reason is app-v85's own fix. Before it, switching profiles DESTROYED
+// the other profile's armed alarms; since it, every profile's reminders survive and fire. So a
+// phone with three people on it now gets three people's reminders -- and every one of them says
+// only "Alpha Due". On a medication tracker that is not a cosmetic gap: the caregiver cannot tell
+// which patient to go and give a dose to.
+//
+// TWO PLACES HOLD A PROFILE'S NAME and they drift (see renameActiveProfile): `profiles.list[i].name`
+// is what Settings shows, and that profile's OWN `prefs.patientName` is what the greeting, the CSV
+// filename and the printed report use. For the ACTIVE profile this resolver prefers the live prefs
+// value, because that is the one the caregiver has most recently seen on screen. For any OTHER
+// profile it reads the list first and falls back to READING -- never writing -- that profile's
+// prefs blob. Cross-profile WRITES are what broke reminders in app-v85 and this file does not do
+// them; a cross-profile read is just localStorage, same origin, no coupling.
+function profileNameById(id) {
+  try {
+    if (id === ACTIVE_PROFILE_ID) {
+      const live = String((getPrefsDB().patientName || '')).trim();
+      if (live) return live;
+    }
+    const ps = profilesState();
+    const rec = (ps.list || []).find(x => x && x.id === id);
+    const listed = String((rec && rec.name) || '').trim();
+    if (listed) return listed;
+    const own = loadJSON('chemowell-app-p-' + id + '-prefs-v1', {});
+    const fromPrefs = String((own && (own.patientName || own.pendingName)) || '').trim();
+    if (fromPrefs) return fromPrefs;
+    // A profile with no name anywhere still has to be distinguishable from the others, so it is
+    // numbered by its position in the list rather than called "Patient" like every other unnamed
+    // one -- which would reproduce the defect this whole block exists to fix.
+    const idx = (ps.list || []).findIndex(x => x && x.id === id);
+    return idx >= 0 ? 'Profile ' + (idx + 1) : 'Profile';
+  } catch (e) { return 'Profile'; }
+}
+
+// ONE PLACE DECIDES WHETHER A NOTIFICATION CARRIES A NAME, and on a single-profile phone it does
+// not. Prefixing "Alex \u00b7 " onto every reminder for somebody tracking only themselves is noise
+// in the one line of text Android gives you before it truncates. The label is therefore empty
+// until there is genuinely somebody to tell apart.
+function multiProfile() {
+  try { return ((profilesState().list) || []).length > 1; } catch (e) { return false; }
+}
+function notifProfileLabel(id) {
+  return multiProfile() ? profileNameById(id || ACTIVE_PROFILE_ID) : '';
+}
+// The name goes FIRST. Android truncates a notification title from the END, so a name appended to
+// "Hydroxychloroquine (Morning) Due" is the part that disappears on exactly the long-medication-name
+// row that app-v92 was about.
+function withProfileLabel(label, title) {
+  return label ? label + ' \u00b7 ' + title : title;
+}
+
+// ---- WHO NEEDS A DOSE, AND WHO HAS BEEN SILENCED (app-v93) ------------------------------------
+// Aaron, 2026-11-03, two asks in one breath:
+//   "there should be a notification number on the app itself to say if there's a medication due ...
+//    you can look over on the left hand side with the drop down of the accounts or profile and you
+//    can see an indicator of who needs to take the medication."
+//   "we also need a way to silence a certain account profile. Maybe that person is currently in the
+//    hospital, they're currently not taking their meds, you don't want to keep receiving
+//    notifications for that individual on top of the other profile members."
+//
+// Everything below reads other profiles' storage and never writes it. Cross-profile WRITES are what
+// broke reminders in app-v85 and this file does not do them. The one shared thing that is written
+// is the profile LIST itself (PROFILES_KEY), which every profile already reads and writes -- that
+// is where `muted` lives, precisely so that silencing someone does not mean reaching into their
+// storage from here.
+
+// Another profile's medications, READ-ONLY. Deliberately NOT loadMedicationConfig(), which is bound
+// to the active profile's key AND persists a migration as a side effect -- calling it here would
+// write one profile's medications into another profile's storage. This takes the two normalisers
+// that decide whether a medication is even eligible for reminders (`alerts` is DERIVED by
+// normalizeMedication, never stored) and stops there. No migration, no write, no state.
+function readProfileMeds(id) {
+  try {
+    const saved = JSON.parse(localStorage.getItem('chemowell-app-p-' + id + '-med-v1'));
+    if (!saved || !Array.isArray(saved.meds)) return [];
+    return saved.meds.map(backfillDefaultMedFlags).map(normalizeMedication);
+  } catch (e) { return []; }
+}
+function readProfileEntries(id) {
+  try {
+    const raw = JSON.parse(localStorage.getItem('chemowell-app-p-' + id + '-entries-v1'));
+    return Array.isArray(raw) ? raw : [];
+  } catch (e) { return []; }
+}
+
+// A medication whose due-ness depends on TREATMENT CONTEXT cannot be judged from outside its own
+// profile, and this is the honest edge of this whole feature. `treatmentOnlyBlocks` and
+// `treatmentExcludedNow` read the ACTIVE profile's prefs and treatment dates through four layers
+// (isOtherTreatmentType -> treatmentType -> getPrefsDB, treatmentActiveOn -> chemoDayList ->
+// state.chemoDates). Threading a context object through those is a refactor of load-bearing
+// medical logic and belongs in its own release with its own audit, not inside a drawer feature.
+//
+// So: for a profile you do not have open, a medication that is treatment-coupled is COUNTED rather
+// than guessed at. That over-reports -- the dot can say someone is due on a day their medication is
+// actually withheld around treatment -- and it never under-reports, which for a medication reminder
+// is the safe direction: it sends you to look, it never hides somebody. The count is marked
+// approximate so the UI can say so, and it is EXACT the moment that profile is the open one, and
+// exact for every profile with no treatment-coupled medication at all -- which is most of them.
+function medIsTreatmentCoupled(med) {
+  return !!(med && (med.treatmentOnly || med.treatmentMode === 'excluded'));
+}
+
+// How many dose windows are OPEN RIGHT NOW with nothing logged in them. A level, not an edge --
+// dueRemindersAt() answers a different question (did a window just open, in the last five minutes)
+// and carries bookkeeping that must not run from a render.
+function profileDueCount(id, nowTs) {
+  nowTs = nowTs || simNow();
+  const active = id === ACTIVE_PROFILE_ID;
+  const meds = active ? state.meds : readProfileMeds(id);
+  const entries = active ? state.entries : readProfileEntries(id);
+  const d0 = dayStart(nowTs);
+  let count = 0, approx = false;
+  (meds || []).forEach(med => {
+    if (!med || !med.alerts || !med.windows || !med.windows.length) return;
+    if (med.paused) return;
+    if (!medScheduledOn(med, d0)) return;
+    if (active) {
+      // Every gate available, so this number is exact.
+      if (!medRemindersEnabledOn(med, d0)) return;
+    } else if (medIsTreatmentCoupled(med)) {
+      approx = true; // counted anyway -- see the comment above for why that is the safe direction
+    }
+    med.windows.forEach(w => {
+      const ws = d0 + w.start * 3600000, we = d0 + w.end * 3600000;
+      if (nowTs < ws || nowTs >= we) return;        // the window is not open right now
+      if (!medWindowDueAt(med, d0, w, entries)) return; // already logged in this window
+      count++;
+    });
+  });
+  return { count: count, approx: approx };
+}
+
+// MUTE LIVES ON THE SHARED PROFILE LIST, not in the muted profile's own storage, so that silencing
+// somebody never requires a cross-profile write. It is also the only place the OTHER profiles can
+// see it from, which is the whole point: the person doing the silencing is in a different profile
+// from the person being silenced.
+function profileIsMuted(id) {
+  try {
+    const rec = (profilesState().list || []).find(x => x && x.id === id);
+    return !!(rec && rec.muted);
+  } catch (e) { return false; }
+}
+function activeProfileMuted() { return profileIsMuted(ACTIVE_PROFILE_ID); }
+
+// SILENCE, OR UNSILENCE, ONE PROFILE. Aaron: "maybe that person is currently in the hospital,
+// they're currently not taking their meds."
+//
+// WHAT IT SILENCES, AND THE ONE THING IT DELIBERATELY DOES NOT. Dose reminders and the daily
+// check-in nudge stop. APPOINTMENT reminders keep coming, and that is a judgement call made on
+// purpose rather than an oversight: somebody in hospital is the person most likely to have a scan
+// or a clinic slot in the next three days, and an appointment is somewhere they have to BE, not a
+// task that pauses with their medication. The UI says so in plain words beside the switch, so it
+// is a stated behaviour and not a surprise. If that is wrong for how this is actually used, it is
+// one condition in this function.
+//
+// THE WRITE IS TO THE SHARED LIST, NEVER TO THE MUTED PROFILE'S OWN STORAGE. See the block above
+// and the app-v85 history in notifCancelCandidates.
+async function setProfileMuted(id, muted) {
+  const ps = profilesState();
+  const rec = (ps.list || []).find(x => x && x.id === id);
+  if (!rec) { setToast('Could not find that profile'); return false; }
+  if (!!rec.muted === !!muted) return true;
+  const name = profileNameById(id);
+  rec.muted = !!muted;
+  // saveJSON does not catch, and a full or blocked localStorage is a real condition on a phone.
+  // A silencing that silently did not persist would have the caregiver believing the alerts had
+  // stopped while the alarms stayed armed -- the exact false reassurance this project has shipped
+  // before and written rules about.
+  try { saveJSON(PROFILES_KEY, ps); }
+  catch (e) { setToast('Could not save that on this device — nothing was changed.'); return false; }
+
+  if (muted) {
+    // Disarm straight away rather than waiting for the next sync. A profile that is not the active
+    // one has no sync of its own to wait for, so for every profile but this one, this call IS the
+    // mechanism; notifCancelCandidates sweeping muted profiles is the backstop for when it fails.
+    try { await cancelRemindersForProfile(id); } catch (e) {}
+    if (id === ACTIVE_PROFILE_ID) markNotifDirty();
+    setToast('Medication reminders for ' + name + ' are off. Appointment reminders still come through.');
+  } else if (id === ACTIVE_PROFILE_ID) {
+    markNotifDirty();
+    setToast('Reminders for ' + name + ' are back on.');
+  } else {
+    // AND THIS IS SAID RATHER THAN HIDDEN. Re-arming another profile's reminders would mean
+    // BUILDING their plan from here, and their plan depends on treatment-day rules that are bound
+    // to whichever profile is open (see profileDueCount). Arming a dose reminder for a medication
+    // that should be withheld around treatment is not a rounding error on a medication tracker, so
+    // this does not guess -- it tells the caregiver exactly when the reminders come back.
+    setToast('Reminders for ' + name + ' resume next time you open their profile.');
+  }
+  setState({});
+  return true;
+}
+
+
+// One row per profile, for the drawer and for the badge. Sorted as the profile list is, so the
+// order a caregiver sees here is the order they see in Settings.
+function profileDueSummary(nowTs) {
+  let list = [];
+  try { list = (profilesState().list || []).filter(x => x && x.id); } catch (e) { list = []; }
+  return list.map(p => {
+    const d = profileDueCount(p.id, nowTs);
+    return { id: p.id, name: profileNameById(p.id), count: d.count, approx: d.approx,
+             muted: !!p.muted, active: p.id === ACTIVE_PROFILE_ID };
+  });
+}
+// A SILENCED PROFILE CONTRIBUTES NOTHING. If it did, the badge would keep asking about the person
+// in hospital, which is the exact complaint this feature answers.
+function totalDueCount(nowTs) {
+  return profileDueSummary(nowTs).reduce((n, r) => n + (r.muted ? 0 : r.count), 0);
+}
+
+// THE NUMBER ON THE APP ICON. `navigator.setAppBadge` is the Badging API: it works on an INSTALLED
+// PWA and is a silent no-op in a plain browser tab, which is why every call is wrapped and nothing
+// downstream depends on it. The native Android build has no badge plugin in package.json, so on the
+// APK this does nothing at all and the in-app count is what the caregiver sees -- said out loud
+// here rather than discovered, and logged in BACKLOG as the one piece of this that needs a
+// dependency and a rebuild rather than a line of JavaScript.
+let lastAppBadge = -1;
+function syncAppBadge() {
+  let n = 0;
+  try { n = totalDueCount(); } catch (e) { return; }
+  if (n === lastAppBadge) return;   // the badge is repainted on every render; the OS call is not
+  lastAppBadge = n;
+  try {
+    if (typeof navigator === 'undefined') return;
+    if (n > 0 && navigator.setAppBadge) navigator.setAppBadge(n).catch(() => {});
+    else if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
+  } catch (e) { /* unsupported or blocked -- the in-app count is unaffected */ }
+}
+
 const ENTRIES_KEY = 'chemowell-app-p-' + ACTIVE_PROFILE_ID + '-entries-v1';
 const PREFS_KEY = 'chemowell-app-p-' + ACTIVE_PROFILE_ID + '-prefs-v1';
 
@@ -4416,7 +4650,12 @@ function svgIcon(name, size) {
     help: '<circle cx="12" cy="12" r="9"/><path d="M9.3 9.2a2.7 2.7 0 0 1 5.2.9c0 1.8-2.5 2-2.5 3.6"/><path d="M12 17.2h.01"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2.06 2.06 0 1 1-2.92 2.92l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56v.17a2.06 2.06 0 1 1-4.12 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2.06 2.06 0 1 1-2.92-2.92l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H4.6a2.06 2.06 0 1 1 0-4.12h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2.06 2.06 0 1 1 2.92-2.92l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1.03-1.56V4.6a2.06 2.06 0 1 1 4.12 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2.06 2.06 0 1 1 2.92 2.92l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.56 1.03h.17a2.06 2.06 0 1 1 0 4.12h-.09a1.7 1.7 0 0 0-1.56 1.03Z"/>',
     bulb: '<path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6.5 6.5 0 0 0-3.8 11.8c.6.45 1 1.1 1.1 1.83V17h5.4v-.37c0-.72.5-1.38 1.1-1.83A6.5 6.5 0 0 0 12 3Z"/>',
-    bell: '<path d="M6 9a6 6 0 0 1 12 0c0 3.6 1 5.2 1.6 6H4.4C5 14.2 6 12.6 6 9Z"/><path d="M10 19a2 2 0 0 0 4 0"/>'
+    bell: '<path d="M6 9a6 6 0 0 1 12 0c0 3.6 1 5.2 1.6 6H4.4C5 14.2 6 12.6 6 9Z"/><path d="M10 19a2 2 0 0 0 4 0"/>',
+    // A REAL ICON, because the fallback below is silent. `paths[name] || paths.home` draws a HOUSE
+    // for any name this map does not have, so a missing icon is not a blank space anyone would
+    // notice -- it is the wrong picture, rendered confidently, next to the words "Reminders off".
+    // Same bell, same two paths, with a stroke through it.
+    bellOff: '<path d="M6 9a6 6 0 0 1 12 0c0 3.6 1 5.2 1.6 6H4.4C5 14.2 6 12.6 6 9Z"/><path d="M10 19a2 2 0 0 0 4 0"/><path d="M4 3.5 20 20.5"/>'
   };
   return '<svg ' + common + '>' + (paths[name] || paths.home) + '</svg>';
 }
@@ -4723,7 +4962,20 @@ function renderHeader(now) {
     // the drawer + Settings instead of cluttering the header).
     h('div', { style: { maxWidth: '720px', margin: '0 auto', height: '44px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', color: '#A83D0F', minWidth: '0' } },
-        h('button', { onClick: openDrawer, 'aria-label': 'Open menu', 'aria-expanded': state.drawerOpen ? 'true' : 'false', 'aria-controls': 'app-drawer', 'data-tour': 'menu-btn', style: { width: '44px', height: '44px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(191,76,26,0.10)', color: '#A83D0F', border: 'none', flexShrink: '0', cursor: 'pointer' } }, appIcon('menu', 21)),
+        // THE COUNT HAS TO BE VISIBLE SOMEWHERE THE APP CONTROLS (app-v93). The number on the app
+        // ICON depends on the Badging API, which an installed PWA has and a plain browser tab and
+        // today's APK do not -- so if that were the only place it appeared, Aaron would be told a
+        // feature exists that his own build cannot show him. The menu button carries it too, which
+        // is also the button he taps to reach the profile list it refers to. Hidden entirely on a
+        // single-profile phone: there, Home already says what is due and a second count beside the
+        // hamburger is just a number competing with itself.
+        (function () {
+          const total = multiProfile() ? totalDueCount() : 0;
+          return h('button', { onClick: openDrawer, 'aria-label': total > 0 ? 'Open menu \u2014 ' + total + ' dose' + (total === 1 ? '' : 's') + ' due' : 'Open menu', 'aria-expanded': state.drawerOpen ? 'true' : 'false', 'aria-controls': 'app-drawer', 'data-tour': 'menu-btn', style: { position: 'relative', width: '44px', height: '44px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(191,76,26,0.10)', color: '#A83D0F', border: 'none', flexShrink: '0', cursor: 'pointer' } },
+            appIcon('menu', 21),
+            total > 0 ? h('span', { 'data-menu-due': String(total), 'aria-hidden': 'true', style: { position: 'absolute', top: '-1px', right: '-1px', minWidth: '18px', height: '18px', padding: '0 5px', borderRadius: '9px', background: '#A83D0F', color: '#fff', fontSize: '11px', fontWeight: '800', lineHeight: '18px', textAlign: 'center', border: '2px solid #FDD9CC', boxSizing: 'content-box' } }, String(total)) : null
+          );
+        })(),
         appIcon('heart', 20),
         h('span', { style: { ...TYPE.caption, fontWeight: '800', color: '#A83D0F', letterSpacing: '0' } }, 'ChemoWell'),
         TEST_MODE ? h('span', { style: { color: '#8C5900', background: '#FFF3E2', border: '1px solid #E8C9A0', borderRadius: '99px', padding: '3px 9px', fontSize: '12px', fontWeight: '700', letterSpacing: '0.05em' } }, 'BETA') : null
@@ -4789,6 +5041,56 @@ function renderBottomNav() {
 // 32%-opacity scrim, decelerate-in slide animation, identity header, 56px menu rows with a
 // pill-shaped active indicator, and real dismissal (scrim tap, Escape, or the explicit X — see
 // the Tab-trap + focus-return wiring next to openDrawer/closeDrawer above).
+// The profile rows inside the drawer. Returns null for a single-profile phone.
+//
+// THE COUNT AND THE SWITCH SIT ON THE SAME ROW ON PURPOSE. They are the two halves of the same
+// question -- "does this person need something, and do I want to be told about it" -- and
+// splitting them across two screens is what made the caregiver ask for this in the first place.
+function renderDrawerProfiles() {
+  const rows = profileDueSummary();
+  if (rows.length < 2) return null;
+  return h('div', { 'data-drawer-profiles': '1', style: { padding: '10px 8px 4px', borderBottom: '1px solid #E9D8D1' } },
+    h('div', { style: { ...TYPE.label, color: '#6A4433', padding: '0 12px 6px' } }, 'Who you are tracking'),
+    ...rows.map(r => {
+      const due = r.count > 0 && !r.muted;
+      return h('div', { 'data-profile-row': r.id, style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' } },
+        // Switching is a tap on the person, which is what a caregiver expects from a list of people.
+        h('button', {
+          onClick: () => { if (!r.active) switchProfile(r.id); },
+          ...(r.active ? { 'aria-current': 'true', disabled: true } : {}),
+          'aria-label': r.active ? r.name + ' (open now)' : 'Switch to ' + r.name,
+          style: { flex: '1', minWidth: '0', display: 'flex', alignItems: 'center', gap: '10px', minHeight: '56px', padding: '0 10px', borderRadius: '28px', background: r.active ? 'rgba(46,125,79,0.12)' : 'transparent', color: '#2A2127', textAlign: 'left' } },
+          h('span', { 'aria-hidden': 'true', style: { width: '34px', height: '34px', borderRadius: '50%', background: due ? 'rgba(168,61,15,0.14)' : 'rgba(109,82,71,0.12)', color: due ? '#A83D0F' : '#6D5247', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', flexShrink: '0' } }, (r.name || '?').charAt(0).toUpperCase()),
+          h('div', { style: { minWidth: '0', flex: '1' } },
+            h('div', { style: { fontSize: '14.5px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, r.name),
+            // ONE LINE THAT SAYS THE WHOLE STATE. Silenced wins over a count, because a count the
+            // caregiver will not be told about reads as a promise the app is not keeping.
+            h('div', { style: { fontSize: '12px', fontWeight: '600', marginTop: '1px', color: r.muted ? '#6A4433' : (due ? '#A83D0F' : '#6A4433') } },
+              r.muted ? 'Reminders off'
+                : (r.count > 0 ? (r.count === 1 ? '1 dose due now' : r.count + ' doses due now') + (r.approx ? ' (about)' : '')
+                               : (r.active ? 'Open now' : 'Nothing due')))
+          ),
+          // THE NUMBER, which is the thing Aaron said he wanted to see at a glance.
+          due ? h('span', { 'data-profile-due': String(r.count), 'aria-hidden': 'true', style: { minWidth: '22px', height: '22px', padding: '0 6px', borderRadius: '11px', background: '#A83D0F', color: '#fff', fontSize: '12px', fontWeight: '800', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: '0' } }, String(r.count)) : null
+        ),
+        // Silence. A plain labelled button rather than a toggle graphic: at this size a switch is
+        // the control most often mis-tapped, and this one changes whether somebody is reminded to
+        // take medication.
+        h('button', {
+          onClick: () => { setProfileMuted(r.id, !r.muted); },
+          'data-profile-mute': r.id,
+          'aria-pressed': r.muted ? 'true' : 'false',
+          'aria-label': (r.muted ? 'Turn medication reminders back on for ' : 'Silence medication reminders for ') + r.name,
+          style: { width: '44px', height: '44px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: '0', background: r.muted ? 'rgba(168,61,15,0.12)' : 'transparent', color: r.muted ? '#A83D0F' : '#6D5247' } },
+          appIcon(r.muted ? 'bellOff' : 'bell', 20)
+        )
+      );
+    }),
+    h('div', { style: { fontSize: '11.5px', color: '#6A4433', lineHeight: '1.4', padding: '2px 12px 10px' } },
+      'Silencing stops medication reminders for that person. Appointment reminders still come through.')
+  );
+}
+
 function renderDrawer() {
   if (!state.drawerOpen) return null;
   const name = (CONFIG.patientName || '').trim() || 'Patient';
@@ -4841,6 +5143,17 @@ function renderDrawer() {
           )
         )
       ),
+      // ---- WHO NEEDS A DOSE, AND WHO IS SILENCED (app-v93) ----------------------------------
+      // Aaron asked for exactly this place: "you can look over on the left hand side with the drop
+      // down of the accounts or profile and you can see an indicator of who needs to take the
+      // medication." It renders only when there is more than one profile -- on a single-profile
+      // phone a list of one person, with a switch to silence the only person being tracked, is
+      // clutter in the first thing the menu shows.
+      //
+      // It does NOT re-create the v54 defect above. That was a heading that silently navigated to
+      // Settings; these are rows whose whole purpose is to be tapped, each labelled with what the
+      // tap does, and the identity header above them stays non-interactive.
+      renderDrawerProfiles(),
       h('nav', { 'aria-label': 'Secondary navigation', style: { padding: '10px 8px', flex: '1', overflowY: 'auto' } },
         ...items.map(item => {
           const active = state.view === item.key;
@@ -5472,6 +5785,10 @@ function positionTour() {
 
 function render() {
   const root = document.getElementById('root');
+  // The number on the app icon is kept in step with the number in the app, from the one place both
+  // are drawn from. syncAppBadge() no-ops unless the total actually moved, so this costs a single
+  // integer comparison on the overwhelming majority of renders.
+  syncAppBadge();
   if (state.prefsLoaded && !(CONFIG.patientName || '').trim()) { renderSetup(); return; }
   const now = state.now;
   // app-v77 phase 2: these four were computed from `state.meds.find(m => m.id === 'tylenol')` and
@@ -9406,7 +9723,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v92';
+const APP_VERSION = 'app-v93';
 
 // ---- WHAT'S NEW ------------------------------------------------------------------------------
 //
@@ -9429,6 +9746,12 @@ const APP_VERSION = 'app-v92';
 // that are meant for it: README.md's version-history table, outputs/ for the chain reports, and
 // the commit messages. This array is the only one of the four a patient reads.
 const CHANGELOG = [
+  { v: 'app-v93', date: 'Nov 3, 2026', title: 'Who the reminder is for',
+    points: [
+      'A reminder now starts with the name of the person it is for.',
+      'The menu button shows how many doses are due, and the menu lists everyone you track and who needs something.',
+      'To stop one person\u2019s medication reminders \u2014 someone in hospital, say \u2014 tap the bell beside their name. Appointment reminders still come through.',
+    ] },
   { v: 'app-v92', date: 'Nov 3, 2026', title: 'Clearer on a small phone',
     points: [
       'On a small phone, a long medication name could print across the time and the dose on your home screen. It wraps onto its own line now.',
@@ -12874,7 +13197,11 @@ function notifPermissionStatusBlock() {
   );
 }
 
-function sendNotif(title, body, tag) {
+function sendNotif(rawTitle, body, tag) {
+  // WHOSE PROFILE (app-v93). Applied here rather than at the two call sites so the reactive path
+  // cannot grow a third one that forgets. The native path does it in buildReminderPlan instead,
+  // because that plan is built once and armed days ahead -- see the comment there.
+  const title = withProfileLabel(notifProfileLabel(), rawTitle);
   if (isNativeApp()) {
     try {
       window.Capacitor.Plugins.LocalNotifications.schedule({
@@ -12964,6 +13291,9 @@ function checkNotifications() {
   // later and firing its own, differently-id'd native notification via sendNotif(). On native this
   // function's job is fully superseded by syncNativeReminders(); this early return is the whole fix.
   if (isNativeApp()) return;
+  // SILENCED (app-v93). Dose reminders only -- appointment reminders have their own function and
+  // are deliberately left alone; see setProfileMuted for why.
+  if (activeProfileMuted()) return;
   // v24 fix (Aaron-reported: "no notifications working"): this used to blanket-return whenever
   // TEST_MODE was true on the web build, full stop -- even on a normal day where Aaron never
   // touched the Beta Date Controls. That made every reminder dead on arrival on the exact build
@@ -13187,7 +13517,11 @@ function medWindowDueAt(med, dayTs, w, entries) {
 // Pure function of its inputs (no reads of `state`, no bookkeeping mutation) so it can be called
 // speculatively by syncNativeReminders() to compare against what's already armed, and is trivially
 // unit-testable on its own.
-function buildReminderPlan(nowTs, meds, entries, appts, profileId) {
+// `profileLabel` is passed in rather than read, because this function is pure by design (no reads
+// of `state`, no storage) so it can be called speculatively to compare against what is already
+// armed. The CALLER decides whether there is a name to show -- one profile means no label at all.
+function buildReminderPlan(nowTs, meds, entries, appts, profileId, profileLabel) {
+  const pfx = (t) => (profileLabel ? profileLabel + ' \u00b7 ' + t : t);
   const out = [];
   const horizonEnd = nowTs + NOTIF_HORIZON_MS;
   const earliest = nowTs + NOTIF_MIN_LEAD_MS;
@@ -13209,7 +13543,7 @@ function buildReminderPlan(nowTs, meds, entries, appts, profileId) {
         if (!medWindowDueAt(med, d0, w, entries)) return; // already logged in this window
         out.push({
           tag: notifDoseTag(profileId, med, w, d0), at: at,
-          title: med.name + ' Due',
+          title: pfx(med.name + ' Due'),
           body: med.name + (w.name ? ' — ' + w.name : '') + ' dose window has opened',
           channelId: NOTIF_CHANNEL_DOSE,
           extra: { kind: 'dose', profileId: profileId, medId: med.id, dayTs: d0 }
@@ -13232,7 +13566,7 @@ function buildReminderPlan(nowTs, meds, entries, appts, profileId) {
       if (at >= earliest && at <= horizonEnd) {
         out.push({
           tag: 'checkin-' + profileId + '-' + d0, at: at,
-          title: 'Daily check-in',
+          title: pfx('Daily check-in'),
           body: 'A couple quick questions about today — takes under a minute.',
           channelId: NOTIF_CHANNEL_CHECKIN,
           extra: { kind: 'checkin', profileId: profileId, dayTs: d0 }
@@ -13252,7 +13586,7 @@ function buildReminderPlan(nowTs, meds, entries, appts, profileId) {
     if (triggerTs == null || triggerTs < earliest || triggerTs > horizonEnd) return;
     out.push({
       tag: 'appt-' + profileId + '-' + appt.id, at: triggerTs,
-      title: 'Upcoming: ' + appt.title,
+      title: pfx('Upcoming: ' + appt.title),
       body: new Date(appt.ts).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + (appt.note ? ' — ' + appt.note : ''),
       channelId: NOTIF_CHANNEL_APPT,
       extra: { kind: 'appt', profileId: profileId, apptId: appt.id }
@@ -13410,6 +13744,16 @@ function notifCancelCandidates(pending, planIds, applied, nowTs) {
     // An id with NO profileId predates profile-tagged ids, cannot belong to anyone else, and stays
     // cancellable -- otherwise it could never be cleaned up at all.
     const pid = p.extra && p.extra.profileId;
+    // A SILENCED PROFILE IS NOT A PROTECTED ONE (app-v93). Muting calls cancelRemindersForProfile()
+    // straight away, but that is a bridge call that can fail and is swallowed on purpose. Without
+    // this clause a failed cancel would orphan the alarms of the very person the caregiver just
+    // silenced -- for the full 72-hour horizon, with nothing in the app able to stop them, which
+    // is precisely the shape of the orphaning defect the paragraph above is about. Keyed on the
+    // shared profile list, so the sweep self-heals on the next boot whatever the bridge did.
+    // Appointment alarms are deliberately NOT swept: silencing is about medication (see
+    // setProfileMuted), and an appointment is somewhere a person has to be.
+    const mutedHere = pid ? profileIsMuted(pid) : false;
+    if (mutedHere && (p.extra.kind === 'dose' || p.extra.kind === 'checkin')) return true;
     if (pid && pid !== ACTIVE_PROFILE_ID && (knownProfileIds === null || knownProfileIds.has(pid))) return false;
     // Protection band: don't race a cancel against an id that may already be mid-fire.
     const hit = (applied || []).find(a => a.id === p.id);
@@ -13449,7 +13793,13 @@ async function syncNativeReminders(opts) {
   if (notifSyncBusy) { notifSyncAgain = true; return; } // coalesce re-entrant calls, never stack them
 
   const nowTs = Date.now();
-  const plan = applyExactAlarmLeadBuffer(buildReminderPlan(nowTs, state.meds, state.entries, state.appts, ACTIVE_PROFILE_ID), nowTs)
+  // SILENCED (app-v93): the plan is built as normal and then stripped of dose and check-in
+  // reminders, rather than skipping the sync. Building it is what lets the ordinary reconcile
+  // below CANCEL what is already armed -- an early return would leave this profile's alarms
+  // sitting on the device, which is the whole thing the caregiver asked to stop.
+  const silenced = activeProfileMuted();
+  const plan = applyExactAlarmLeadBuffer(buildReminderPlan(nowTs, state.meds, state.entries, state.appts, ACTIVE_PROFILE_ID, notifProfileLabel()), nowTs)
+    .filter(n => !(silenced && (n.extra.kind === 'dose' || n.extra.kind === 'checkin')))
     .map(n => Object.assign({}, n, { pk: notifPayloadKey(n) }));
   const signature = notifPlanSignature(plan);
   if (!opts.force && signature === notifLastSignature) return;
@@ -13778,6 +14128,17 @@ if (typeof window !== 'undefined') {
   // exact label text of a bottom-nav button.
   window.__v86Test = {
     openReport: (r) => openReport(r),
+    // app-v93. The SHIPPED functions, not copies of them. test/v93-profile-notifications.mjs
+    // drives these directly so a mutant that breaks the real decision is caught, rather than the
+    // suite agreeing with its own re-implementation -- the failure this repo has been caught on
+    // about eight times (see the notifCancelCandidates comment).
+    notifProfileLabel: () => notifProfileLabel(),
+    withProfileLabel: (l, t) => withProfileLabel(l, t),
+    profileDueSummary: () => profileDueSummary(),
+    totalDueCount: () => totalDueCount(),
+    profileIsMuted: (id) => profileIsMuted(id),
+    setProfileMuted: (id, m) => setProfileMuted(id, m),
+    buildReminderTitles: () => buildReminderPlan(simNow(), state.meds, state.entries, state.appts, ACTIVE_PROFILE_ID, notifProfileLabel()).map(n => n.title),
     // app-v90 delta. chartTimeMax takes `now` as an argument so one drawing cannot hold two
     // clocks -- and a mutant that threw the argument away and called Date.now() again passed all
     // 89 checks, because nothing in the suite could move the app's clock away from the real one.
