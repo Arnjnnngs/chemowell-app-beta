@@ -1,0 +1,76 @@
+=== BASELINE (no mutant) -- every check must be green before any of them mean anything
+171 checks: 171 passed, 0 failed
+
+=== MUTANT 7: [overflow] the time cell can shrink -- '10:00 AM' over its box by 5px at 320px
+171 checks: 171 passed, 0 failed
+  ⚠️  SURVIVED -- no check went red. Either the check cannot fail, or this mutant is a no-op.
+
+=== MUTANT 8: [overflow] the badges cannot shrink -- 'Not scheduled - Early - Over limit' by 21px
+  FAIL  iOS iPhone SE (1st gen) (320px) HOME -- 1 element(s) overflowing
+  FAIL  iOS iPhone SE (1st gen) (320px) NO-STAY:HOME -- 1 element(s) overflowing
+  FAIL  iOS iPhone SE (1st gen) (320px) NO-DATES:HOME -- 1 element(s) overflowing
+  FAIL  Android Android small (display size) (330px) HOME -- 1 element(s) overflowing
+  FAIL  Android Android small (display size) (330px) NO-STAY:HOME -- 1 element(s) overflowing
+  FAIL  Android Android small (display size) (330px) NO-DATES:HOME -- 1 element(s) overflowing
+171 checks: 165 passed, 6 failed
+
+=== MUTANT 9: [overflow] SEED_ENTRIES loses the badge -- the fixture stops being able to see mutant 8
+171 checks: 171 passed, 0 failed
+  ⚠️  SURVIVED -- KNOWN OPEN HOLE, and its description names the ticket. Not a surprise and
+     not a catch. It stays in the corpus so the day it starts dying is noticed.
+
+=== 1 mutant(s) caught, 1 survived unexpectedly, 0 could not be measured, 0 anchor(s) stale
+=== 0 over-block control(s) correctly stayed green, 0 over-block(s) fired, 1 known open hole(s)
+    known open holes still open: mutant(s) 9 -- see their descriptions for the ticket
+
+real	29m0.315s
+user	0m34.809s
+sys	0m9.832s
+EXIT=1
+
+--------------------------------------------------------------------------------
+WHAT THIS RUN IS, AND WHY IT COULD NOT BE RUN BEFORE
+
+This is the sweep the app-v92 delta audit named as "the single most useful thing you can do that I
+did not", and the reason nobody had done it is that it was impossible: `test/overflow-scan.mjs`
+printed neither a `  FAIL` line nor a `checks:` line, the only one of the gate's ten suites with
+neither, so `falsify.sh` refused at the baseline -- after a completely healthy 7m17s run -- and
+mutants 7-9 were never reached. Both lines were added first; this is the first run of the group.
+
+READING IT
+
+  BASELINE   171 checks, 171 passed, 0 failed   -- overflow-scan is GREEN on this build, and the
+                                                   denominator is 170 screen/width combinations
+                                                   plus one page-error/console check of its own.
+  MUTANT 7   SURVIVED                           -- and it was right to. See below.
+  MUTANT 8   CAUGHT, 6 failed                   -- the badge `minWidth: '0'`: 1 element overflowing
+                                                   at 320px and at 330px, on HOME, NO-STAY:HOME and
+                                                   NO-DATES:HOME. Same six as the audit's and as
+                                                   the hand-run before it, to the finding.
+  MUTANT 9   SURVIVED, declared hole            -- an instrument mutant: it trims the fixture entry
+                                                   that makes mutant 8 visible. Run 8 and 9 as a
+                                                   pair; 9's job is to make the day somebody trims
+                                                   that fixture a loud day.
+
+EXIT=1, because of mutant 7, and that exit is what sent this to be measured rather than explained.
+
+MUTANT 7, THE ONE THAT MATTERED
+
+Its description claimed it was "the app-v92 defect itself ... 3 overflowing, '10:00 AM' by 5px".
+The audit had already measured five variants of it and found every one clean. This sweep makes six.
+`overflow-scan` cannot tell "the suite cannot see it" from "there is nothing to see", so the cell
+was measured directly -- `falsify/probe-timecell-width.mjs`, used width against text width by
+Range, four widths, 24 cells, shipped against the mutant:
+
+  shipped   flex-shrink=0   used 58.03 / 66.31   text 58.03 / 66.31   squeezed below text: 0
+  mutant 7  flex-shrink=1   used 58.03 / 66.31   text 58.03 / 66.31   squeezed below text: 0
+
+Identical, with `flex-shrink` reading 1 in the mutant, so the mutation applied and did nothing. The
+property is inert on every row this fixture can draw, because app-v92's own name fix removed its
+precondition: the name span has `minWidth: '0'` and `overflowWrap: break-word`, so a crowded row
+wraps the name instead of squeezing the time -- `Hydroxychloroquine` breaks mid-word. It stays in
+the app for a future row that cannot wrap, and the mutant is relabelled `survive` with the numbers
+in it. Mutants 5 and 8 are what actually pin that row. Both bite.
+
+The alternative was to "strengthen" an instrument until a mutant died. That is how a check that
+cannot fail gets built, and this file is the record of not doing it.

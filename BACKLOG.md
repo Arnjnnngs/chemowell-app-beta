@@ -1159,8 +1159,32 @@ variants of "the time cell can shrink" (the cell's `flexShrink` alone; with the 
 fixture; the wrapper's `flexShrink`; both; and mutant 5 + mutant 7) and every one reported
 `170/170 … 0 overflowing, CLEAN`. The *"3 overflowing, '10:00 AM' by 5px"* figure in its comment
 belongs to the pre-app-v92 row STRUCTURE as a whole and is not reproducible by reverting that one
-property: the name absorbs the squeeze instead. See the sweep result committed with this release
-for what was done about it.
+property: the name absorbs the squeeze instead.
+
+**CLOSED, by measuring it rather than by relabelling it on the audit's word.** The full group sweep
+was run (29m0s): mutant 7 **survived**, 171 checks / 171 passed / 0 failed, confirming the audit.
+`overflow-scan` cannot distinguish *"the suite cannot see it"* from *"there is nothing to see"* —
+it only ever reports a box too small for its text — so `falsify/probe-timecell-width.mjs` measures
+the time cell's used width against its own text's width by Range, four widths, 24 cells, shipped
+against the mutant:
+
+| build | `flex-shrink` | used widths | text widths | squeezed below text |
+|---|---|---|---|---|
+| shipped | 0 | 58.03 / 66.31 | 58.03 / 66.31 | 0 |
+| mutant 7 | 1 | 58.03 / 66.31 | 58.03 / 66.31 | 0 |
+
+**Identical**, with `flex-shrink` reading 1 in the mutant so the mutation applied. The property is
+inert on every row this fixture can draw, and app-v92's own name fix is the reason: the name span
+carries `minWidth: '0'` and `overflowWrap: break-word`, so a crowded row relieves itself by
+wrapping the name — even a single long token like `Hydroxychloroquine` breaks mid-word — and the
+time cell is never put under pressure. It stays in the app as defence-in-depth for a future row
+that cannot wrap; the mutant is `MUTANT_EXPECT="survive"` because surviving is the correct result.
+Mutants 5 and 8 are what actually pin that row and both bite.
+
+**What is still open here, and it is small:** no instrument can show that the time cell's
+`flexShrink: '0'` matters, because nothing can currently build a row that cannot wrap. A mutant
+that adds `white-space: nowrap` to the name AND removes the time cell's `flexShrink` would pin it
+under the condition the property exists for. Worth one run, not worth blocking a release.
 
 **M39-f — `v92-text-collisions` skips any text run with a `fixed`/`sticky`/`absolute` ancestor.**
 That is deliberate and documented (a toast over a row is not a collision), and it is also the

@@ -134,10 +134,36 @@ PY
 #         ./falsify.sh test/overflow-scan.mjs falsify/mutants-v92-layout.sh
 #     Each was also falsified on its own while app-v92 was built; the figures are in each one.
 
-MUTANT_DESC_7="[overflow] the time cell can shrink -- '10:00 AM' over its box by 5px at 320px"
-# The app-v92 defect itself, as overflow-scan sees it. Measured with it reverted: 3 overflowing,
-# "10:00 AM" by 5px, 320px only. That number badly understates what is on the screen -- the name
-# prints across the time and the dose -- and saying so is mutant 4's job, in the other suite.
+MUTANT_DESC_7="[overflow] the time cell can shrink -- INERT after the name fix, measured, not assumed"
+MUTANT_EXPECT_7="survive"
+# THIS DESCRIPTION USED TO CLAIM THE OPPOSITE AND THE CLAIM WAS WRONG. It said "the app-v92 defect
+# itself ... measured with it reverted: 3 overflowing, '10:00 AM' by 5px, 320px only". It survives:
+# the full sweep reports 171 checks, 171 passed, 0 failed (29m0s), and an audit had already
+# measured five further variants of it -- the cell's flexShrink alone, that plus the badge out of
+# the fixture, the wrapper's flexShrink, both, and mutant 5 + mutant 7 -- every one of them clean.
+# The "3 overflowing / 5px" figure belongs to the PRE-app-v92 row STRUCTURE as a whole and is not
+# reproducible by reverting this one property.
+#
+# "THE SUITE CANNOT SEE IT" AND "THERE IS NOTHING TO SEE" ARE DIFFERENT CLAIMS, and overflow-scan
+# cannot tell them apart -- it only ever reports a box too small for its text. So it was measured
+# directly, by `falsify/probe-timecell-width.mjs`: the time cell's used width against its own
+# text's width, by Range, four widths, 24 cells, shipped against this mutant.
+#
+#   shipped   flex-shrink=0   used 58.03 / 66.31   text 58.03 / 66.31   squeezed below text: 0
+#   mutant 7  flex-shrink=1   used 58.03 / 66.31   text 58.03 / 66.31   squeezed below text: 0
+#
+# Identical, with `flex-shrink` reading 1 in the mutant so the mutation did apply. The property is
+# INERT on every row this fixture can draw, and the reason is app-v92's own name fix: the name span
+# carries `minWidth: '0'` and `overflowWrap: break-word`, so a crowded row relieves itself by
+# wrapping the name -- a single long token like "Hydroxychloroquine" breaks mid-word -- and the time
+# cell is never put under pressure. `flexShrink: '0'` there is defence-in-depth whose precondition
+# the name fix removed. It stays in the app for a future row that cannot wrap; it is labelled
+# `survive` here because surviving is the CORRECT result and the sweep should not go red on it.
+#
+# WHAT ACTUALLY PINS THIS ROW, so nobody reads the label as "none of it matters": mutant 5 (the
+# name span's `minWidth: '0'`) bites -- "Remove" off the right edge by 17px at 320px, 7px at 330px
+# -- and mutant 8 (the badges' `minWidth: '0'`) bites -- 6 overflowing, 21px at 320px, 11px at
+# 330px. Two real catches. This one is the honest third. BACKLOG M39-e.
 mutant_7() {
   python3 - <<'MUT'
 import io

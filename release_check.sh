@@ -866,14 +866,29 @@ export FALSIFY_BASE="http://127.0.0.1:$RC_PORT/index.html"
 # box" -- and it was sitting in test/ with nothing calling it, exactly like contrast-scan before
 # app-v91 and v84-whatsnew before that. Third time in this file, so it goes in.
 #
-# IT COSTS REAL TIME AND THAT IS SAID OUT LOUD RATHER THAN DISCOVERED. Measured on this box
-# rather than estimated, because an earlier version of this comment guessed "13 minutes" and
+# IT COSTS REAL TIME AND THAT IS SAID OUT LOUD RATHER THAN DISCOVERED. Measured on this box,
+# idle, one suite at a time, because an earlier version of this comment guessed "13 minutes" and
 # "about seventeen" for the whole gate and an audit pointed out that neither was anybody's
-# measurement: `overflow-scan` 170 screen/width combinations at deviceScaleFactor 3, **7 to 13
-# minutes** depending on what else is running; `v90-chart-axes` 69s; `v92-pill-clearance` ~60s
-# (27 combinations since app-v92 widened it to all nine reports); `v92-text-collisions` 28s;
-# `contrast-scan` 28s. So the loop is minutes, not seconds, and `overflow-scan` is nearly all of
-# it. That is the price of a release, once, against a class of defect the owner has had to report
+# measurement:
+#
+#   overflow-scan         7-13 min   170 screen/width combinations at deviceScaleFactor 3
+#   v84-whatsnew          137s
+#   v89-everything-free    72s
+#   v90-chart-axes         68s
+#   v92-pill-clearance     47s       27 combinations, nine report screens
+#   contrast-scan          29s       327 strings, eight screens
+#   v92-text-collisions    29s
+#   v76-empty-window-render 14s
+#   v76-properties-equivalence, v75-no-other-patient  under a second each (no browser)
+#
+# So the loop is minutes, not seconds, and `overflow-scan` is still most of it.
+#
+# A NOTE ON THE PREVIOUS VERSION OF THIS BLOCK, because the obvious reading of the audit that
+# rejected it is wrong. It said `contrast-scan 28s`, and the audit refused it on the grounds that
+# the file did not parse at that commit so the figure could not have been measured, and that an
+# earlier pass had timed that suite at 6-7 minutes. The refusal was right about PROVENANCE and the
+# number was right about the suite: measured here, idle, it is 29s. An unverifiable figure that
+# turns out correct is still unverifiable, and the fix is to measure it, not to argue about it. That is the price of a release, once, against a class of defect the owner has had to report
 # himself. If it ever becomes the reason someone skips the gate, narrow the DEVICES list in the
 # scan -- do not quietly drop it from this loop.
 RC_DESIGNER_SUITE="test/${GATE_VERSION#app-}-designer-pass.mjs"
