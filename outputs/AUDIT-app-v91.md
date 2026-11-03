@@ -1,5 +1,8 @@
 # AUDIT — app-v91 (Zero Day Auditor)
 
+AUDITED-COMMIT: 2a6e89ab7767e85423a1842839763af42f0f9f72
+VERDICT: DO NOT SHIP
+
 **Audited sha: `2a6e89ab7767e85423a1842839763af42f0f9f72`** (branch `claude/caretracker-team-review-i83ik2`),
 `index.html` md5 `165a7a70dd4cc8547cbb4178901e0996`, `sw.js` CACHE `chemowell-app-v91-1`.
 Covers `11078f2` (palette + scan), `d358d86` (record), `74f3abd` (frozen clock), `2a6e89a` (gradient repair).
