@@ -154,7 +154,13 @@ async function openApp(seed) {
   ok('two profiles: the notification label is the active profile’s name', label === 'Dana', 'got ' + JSON.stringify(label));
 
   const titles = await page.evaluate(() => window.__v86Test.buildReminderTitles());
-  ok('every armed reminder title is prefixed with the name', titles.length > 0 && titles.every(t => t.startsWith('Dana · ')),
+  // THE CLAIM IS THE NAME, NOT THE GLYPH. A first version asserted startsWith('Dana · ') and the
+  // corpus's own over-block control -- swap the middle dot for an en dash, which a real release may
+  // well do -- turned that check red. Pinning today's punctuation would make this suite refuse a
+  // legitimate restyle while catching nothing extra, so it asserts what Aaron actually asked for:
+  // the name is there, it is first, and the medication name still follows it.
+  ok('every armed reminder title starts with the name and still names the medication',
+    titles.length > 0 && titles.every(t => t.startsWith('Dana') && /Alpha|Beta/.test(t.slice(4))),
     titles.length ? JSON.stringify(titles.slice(0, 3)) : 'the plan was EMPTY, so this check was vacuous');
   // THE NAME GOES FIRST, and that is the assertion -- Android truncates a title from the END, so a
   // name appended to a long medication name is the part that disappears.
@@ -244,7 +250,10 @@ async function openApp(seed) {
   // passes every check above and fails here.
   ok('one profile: no name is prefixed', label === '', 'got ' + JSON.stringify(label));
   const titles = await page.evaluate(() => window.__v86Test.buildReminderTitles());
-  ok('one profile: titles are unchanged', titles.length > 0 && titles.every(t => !t.includes('·')),
+  // Asserted as "the title BEGINS with the medication", not "contains no middle dot" -- same
+  // reasoning as the two-profile check above: a separator is styling, a name is the feature.
+  ok('one profile: the title begins with the medication, with nothing in front of it',
+    titles.length > 0 && titles.every(t => t.startsWith('Alpha')),
     titles.length ? JSON.stringify(titles.slice(0, 2)) : 'the plan was EMPTY, so this check was vacuous');
   const menuBadge = await page.$eval('[data-tour="menu-btn"]', (el) => !!el.querySelector('[data-menu-due]'));
   ok('one profile: the menu carries no count', menuBadge === false);
