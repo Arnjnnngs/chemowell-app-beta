@@ -861,6 +861,16 @@ export FALSIFY_BASE="http://127.0.0.1:$RC_PORT/index.html"
 # that touches no screen has no screens to walk and the artefact check above already covers the
 # seat. Never pin the literal (Rule 5): `app-v91` -> `v91`, so the next release's file is picked up
 # with nothing to remember.
+# AND test/overflow-scan.mjs, WHICH THE GATE HAS NEVER RUN. It is the instrument that found the
+# defect Aaron reported in his own words -- "on an iPhone, some wording spills outside the text
+# box" -- and it was sitting in test/ with nothing calling it, exactly like contrast-scan before
+# app-v91 and v84-whatsnew before that. Third time in this file, so it goes in.
+#
+# IT COSTS REAL TIME AND THAT IS SAID OUT LOUD RATHER THAN DISCOVERED: 170 screen/width
+# combinations at deviceScaleFactor 3 takes roughly 13 minutes, which takes this gate from about
+# four minutes to about seventeen. That is the price of a release, once, against a class of defect
+# the owner has had to report himself. If it ever becomes the reason someone skips the gate, narrow
+# the DEVICES list in the scan -- do not quietly drop it from this loop.
 RC_DESIGNER_SUITE="test/${GATE_VERSION#app-}-designer-pass.mjs"
 for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs test/overflow-scan.mjs "$RC_DESIGNER_SUITE"; do
   [ -f "$RC_SUITE_DIR/$SUITE" ] || continue

@@ -1,0 +1,59 @@
+=== BASELINE (no mutant) -- every check must be green before any of them mean anything
+310 checks: 310 passed, 0 failed
+
+=== MUTANT 1: an OPAQUE 390x140 bar at pointer-events:none -- the layer the second audit walked through
+  FAIL  6 string(s) were collected but did NOT change any pixel
+268 checks: 262 passed, 6 failed
+
+=== MUTANT 2: the same bar painted from currentColor with a 2s transition -- the deepest defect of app-v91
+  FAIL  6 string(s) were collected but did NOT change any pixel
+268 checks: 262 passed, 6 failed
+
+=== MUTANT 3: an opaque bar flipped by a 30ms setInterval -- a timer Playwright cannot settle
+  FAIL  Home  (6 of 63 below AA)
+  FAIL  Meds  (6 of 26 below AA)
+  FAIL  6 string(s) sit on a backdrop that was still MOVING
+  FAIL  6 string(s) were collected but did NOT change any pixel
+292 checks: 268 passed, 24 failed
+
+=== MUTANT 4: a TRANSLUCENT rgba(255,255,255,0.85) veil -- KNOWN OPEN HOLE, BACKLOG M38
+310 checks: 310 passed, 0 failed
+  ⚠️  SURVIVED -- KNOWN OPEN HOLE, and its description names the ticket. Not a surprise and
+     not a catch. It stays in the corpus so the day it starts dying is noticed.
+
+=== MUTANT 5: a mix-blend-mode:lighten layer -- paint the scan never reads out of any property
+  FAIL  6 string(s) were collected but did NOT change any pixel
+268 checks: 262 passed, 6 failed
+
+=== MUTANT 6: backdrop-filter: blur(8px) brightness(1.6) -- washes the text out without painting over it
+  FAIL  4 string(s) were collected but did NOT change any pixel
+282 checks: 278 passed, 4 failed
+
+=== MUTANT 7: an ANCESTOR opacity of 0.35 on #root -- getComputedStyle().opacity is the element's OWN value
+  FAIL  Home  (2 of 63 below AA)
+  FAIL  Reports / History  (2 of 48 below AA)
+  FAIL  Reports / Weight  (3 of 54 below AA)
+  FAIL  Reports / Temperature  (3 of 54 below AA)
+  FAIL  Meds  (1 of 26 below AA)
+  FAIL  Symptoms  (1 of 15 below AA)
+  FAIL  In-Patient  (1 of 18 below AA)
+310 checks: 297 passed, 13 failed
+
+=== MUTANT 8: an animated 400% page gradient -- OVER-BLOCK CONTROL, a real release may do this
+310 checks: 310 passed, 0 failed
+  ✅ SURVIVED AS EXPECTED -- the suite stayed green on a change a real release could
+     legitimately contain. That is this mutant's job: it is the over-block control.
+
+=== MUTANT 9: a 4px opaque line flipped every 30ms -- below the 25% area threshold by construction
+  FAIL  Home  (1 of 63 below AA)
+  FAIL  Reports / History  (1 of 48 below AA)
+  FAIL  Reports / Weight  (1 of 54 below AA)
+  FAIL  Meds  (1 of 26 below AA)
+  FAIL  Symptoms  (1 of 15 below AA)
+  FAIL  In-Patient  (1 of 18 below AA)
+310 checks: 304 passed, 6 failed
+
+=== 7 mutant(s) caught, 0 survived unexpectedly, 0 could not be measured, 0 anchor(s) stale
+=== 1 over-block control(s) correctly stayed green, 0 over-block(s) fired, 1 known open hole(s)
+    known open holes still open: mutant(s) 4 -- see their descriptions for the ticket
+exit=0

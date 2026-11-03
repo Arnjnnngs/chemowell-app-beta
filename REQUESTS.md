@@ -1,5 +1,34 @@
 # REQUESTS.md — Aaron's open requests
 
+## 2026-11-03 — care-tracker is closed, and the ChemoWell fixes continue
+
+- [x] **"We were no longer touching her life app. That app and its data is to be frozen no more
+  alerts on that app no more missed medication alerts. She passed away that app is not to be
+  touched whatsoever."** (2026-11-03). **Done.** Brandi passed away on 18 September 2026. The
+  notice is live on `care-tracker`'s `main` as commit `3a3722b` — three markdown files, no app
+  code — at the top of `CLAUDE.md`, `claude/care-tracker.md` and `NEW-CHAT-PROMPT.md`, which is
+  the one file loaded automatically into every session. It names the prohibitions concretely: no
+  app code, no Firestore, no re-enabled automations, **no fixes ported in from this repo or from
+  the staging copy**, and no pointing a browser or a harness at the live app. The only exception
+  is Aaron asking in his own words in the moment. This repo carries the other direction as
+  **Rule 0.0** in `claude/chemowell-app-beta.md`: items here of the form "the same defect exists
+  in care-tracker, port it back" are **closed, not queued**.
+
+- [x] **"yes add the note so no one touches it again unless asked. Start working on the other
+  fixes and color"** (2026-11-03). The note is the item above. The colour work is app-v91 below;
+  the other fixes are app-v92 (tasks #36 and #28), both measured.
+
+- [ ] **"This color would be too hard to read for some people and I'm talking mainly about the
+  background I don't want it to be white and I don't want it to be black but the background blends
+  in with some of the words that's not put in the box"** (2026-11-03, with a screenshot of the
+  History report). **app-v91, built and pushed to the working branch, awaiting Aaron's word to go
+  to `main`.** It was never one screen: measured across eight, **56 of 309 strings were below
+  WCAG AA, worst 2.1:1**. The page gradient is lifted out of the mid-tones and six ink tokens are
+  deepened — after: **310 strings, 0 below AA, worst 4.78:1**. Still warm, still visibly neither
+  white nor black, which is the constraint he set. Three independent audits cleared the palette
+  against byte-identical code; a fourth refused the release over what the *record* claimed about
+  the new contrast gate, not over the colours.
+
 ## 2026-10-25/26 — the pricing decision
 
 - [x] **"agreed. make backup free for all tiers. I might have read that wrong earlier. free
