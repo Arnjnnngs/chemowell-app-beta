@@ -1233,3 +1233,45 @@ report sub-screen coverage in M39-c, or by letting that grid wrap to two-up unde
 left unrendered after the delta2 audit walked Home and History. Its badge is the literal
 `'Missed'` — one six-letter word — so it cannot produce the multi-line wrap M39-g is about, which
 is why no one held a release for it. It is still a row that nothing has ever looked at.
+
+---
+
+### M40 — The app-icon badge does not work on the Android build (S, needs a dependency)
+
+app-v93 puts the due count on the app icon with `navigator.setAppBadge`, which an installed PWA
+supports and a plain browser tab ignores. **The native APK has no badge plugin in
+`package.json`**, so on the Android build the icon never carries a number and the in-app count on
+the menu button is the whole feature. That is why the count is on the menu button at all, and it
+is said out loud in the code, in `DESIGN-app-v93.md` and in `REQUESTS.md` rather than left to be
+discovered. Fix: add a badge plugin (`@capawesome/capacitor-badge` is the usual one), call it
+beside `setAppBadge` in `syncAppBadge()`, and rebuild. Needs a dependency and an Android build, so
+it is not a line of JavaScript and does not belong in a release that cannot verify it.
+
+### M41 — A silenced profile keeps accumulating missed doses (needs Aaron's intent, then S)
+
+Silencing stops the reminders. It does not stop the medication being RECORDED as missed, so a
+two-week hospital stay produces a wall of missed-dose flags the moment that profile is reopened —
+and the missed-dose banner still has no upper bound (task #17). The app already has the right
+mechanism for "not taking this at the moment": a medication **pause**, which `isPausedOn` keeps
+out of missed-dose history for exactly the days it covers. Proposal in
+`outputs/ENHANCER-app-v93.md` E5: when a profile is silenced, offer "also pause their medications"
+as a one-tap follow-up. **This changes the record and not just the alerts, so it is Aaron's call
+before anything is built.**
+
+### M42 — Silencing has no end date and the app never asks again (S)
+
+Aaron's own example is a hospital stay, which ends. The switch stays off until somebody notices.
+A caregiver who silences on admission and forgets is exactly the person this app exists to
+protect. Cheapest useful version, recommended: a plain "silenced since 3 Nov" line on the row — no
+new control, no new behaviour. The fuller version ("silence until a date") needs a picker and a
+wake-up path and should wait to see whether the date line is enough. `outputs/ENHANCER-app-v93.md` E4.
+
+### M43 — Another profile's reminders cannot be re-armed from here (by design, worth revisiting)
+
+Un-silencing a profile you are not in tells the caregiver "reminders resume next time you open
+their profile", because building their plan from here would apply the OPEN profile's treatment-day
+rules to someone else's medications — and arming a dose reminder for a medication that should be
+withheld around treatment is not a rounding error on a medication tracker. The real fix is the
+same one M39-c and `profileDueCount` want: make the treatment gates take a context object instead
+of reading `getPrefsDB()` and `state.chemoDates`. That is a refactor of load-bearing medical logic
+and wants its own release and its own audit. It would also make every cross-profile count exact.

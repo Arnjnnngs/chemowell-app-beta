@@ -1077,3 +1077,40 @@ unconfirmed on a real device.
   session and shown to Aaron (as a checklist, in chat) at the end of every completed one, so
   nothing gets lost to a context reset or an easily-forgotten ask. Added 2026-08-07 per
   Aaron: "I can't remember all the things I've mentioned and still needs to be completed."
+
+---
+
+## 2026-11-03 — multi-profile notifications (app-v93)
+
+Aaron, in one message, immediately after approving the app-v92 push. Logged here the moment he
+asked, which is what this file is for and what the app-v92 PM gate found had not been happening.
+
+1. **"There's multiple profiles and getting notifications for all the accounts ... but there's no
+   indication on who's account that message is for."**
+   *Built, app-v93.* The profile's name leads the notification title. Not on a single-profile
+   phone. His complaint is a consequence of app-v85's fix: before it, the other profiles' alarms
+   were destroyed on every switch, so there was only ever one person's reminders to receive.
+
+2. **"There should be a notification number on the app itself to say if there's a medication due.
+   For example it would say one and then you click on the app and then you can look over on the
+   left hand side with the drop down of the accounts or profile and you can see an indicator of
+   who needs to take the medication."**
+   *Built, app-v93.* The drawer had no profile list at all — he was describing something that did
+   not exist. It has one now, with a per-person count. The count is also on the menu button. On
+   the app ICON it depends on the Badging API: an installed PWA has it, a plain browser tab and
+   today's APK do not. **Needs confirming on his phone**, and the APK needs a badge plugin and a
+   rebuild, which is `BACKLOG` M40.
+
+3. **"If there's not a way for right now we also need a way to silent a certain account profile.
+   Maybe that person is currently in the hospital, they're currently not taking their meds, you
+   don't want to keep receiving notifications for that individual on top of the other profile
+   members."**
+   *Built, app-v93.* A bell beside each name. **Appointment reminders deliberately keep coming**
+   and the UI says so — somebody in hospital is the person most likely to have a scan in the next
+   three days. One condition to reverse if that is wrong for how this is used.
+
+**Two decisions queued for him out of this work**, both in `outputs/ENHANCER-app-v93.md`:
+silencing has no end date and the app never prompts (E4), and a silenced profile's missed doses
+keep accumulating behind the scenes, so a two-week hospital stay produces a wall of missed-dose
+flags when the profile is reopened (E5). E5 is the one that needs his intent before anything is
+built, because it changes the record and not just the alerts.
