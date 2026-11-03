@@ -935,11 +935,15 @@ fi
 #   v90-chart-axes  -- 162 checks, built in app-v90 and never wired in. Same omission, again.
 #   v92-pill-clearance -- scrolls to the END and asks whether anything is behind the floating
 #     Back pill. Every other gate here photographs a still frame at scroll 0.
+#   v93-profile-notifications -- the only instrument that knows there is more than one patient on
+#     the phone. Every other suite here runs a single profile, so nothing else can see a reminder
+#     that does not say whose it is, a count that belongs to the wrong person, or a silenced
+#     profile that still fires. 27 checks, ~40s.
 #   v92-text-collisions -- asks whether two pieces of text IN NORMAL FLOW land on each other,
 #     which overflow-scan cannot see: it compares each element against its own box, one at a
 #     time, and reported the app-v92 defect as "over by 5px" when what was on the screen was
 #     a medication name printed across the time and the dose.
-for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs test/overflow-scan.mjs test/v90-chart-axes.mjs test/v92-pill-clearance.mjs test/v92-text-collisions.mjs "$RC_DESIGNER_SUITE"; do
+for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs test/overflow-scan.mjs test/v90-chart-axes.mjs test/v92-pill-clearance.mjs test/v92-text-collisions.mjs test/v93-profile-notifications.mjs "$RC_DESIGNER_SUITE"; do
   # A dead suite makes the next eleven minutes meaningless, so the parse gate above stops this
   # loop rather than feeding it a file node cannot read. The rest of the gate still runs and
   # still reports, and this is what makes the parse gate falsifiable in a second instead of in

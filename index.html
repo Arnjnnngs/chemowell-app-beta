@@ -936,7 +936,7 @@ function profilePush(payload) { return syncApiCall('/api/profile/push', { method
 // Aaron, 2026-11-03: "there's multiple profiles and getting notifications for all the accounts
 // ... but there's no indication on who's account that message is for."
 //
-// He is exactly right and the reason is app-v85's own fix. Before it, switching profiles DESTROYED
+// That is exactly right, and the reason is app-v85's own fix. Before it, switching profiles DESTROYED
 // the other profile's armed alarms; since it, every profile's reminders survive and fire. So a
 // phone with three people on it now gets three people's reminders -- and every one of them says
 // only "Alpha Due". On a medication tracker that is not a cosmetic gap: the caregiver cannot tell
@@ -4965,8 +4965,8 @@ function renderHeader(now) {
         // THE COUNT HAS TO BE VISIBLE SOMEWHERE THE APP CONTROLS (app-v93). The number on the app
         // ICON depends on the Badging API, which an installed PWA has and a plain browser tab and
         // today's APK do not -- so if that were the only place it appeared, Aaron would be told a
-        // feature exists that his own build cannot show him. The menu button carries it too, which
-        // is also the button he taps to reach the profile list it refers to. Hidden entirely on a
+        // feature exists that the owner's own build cannot show. The menu button carries it too,
+        // and is also the button tapped to reach the profile list it refers to. Hidden entirely on a
         // single-profile phone: there, Home already says what is due and a second count beside the
         // hamburger is just a number competing with itself.
         (function () {
@@ -5070,7 +5070,7 @@ function renderDrawerProfiles() {
                 : (r.count > 0 ? (r.count === 1 ? '1 dose due now' : r.count + ' doses due now') + (r.approx ? ' (about)' : '')
                                : (r.active ? 'Open now' : 'Nothing due')))
           ),
-          // THE NUMBER, which is the thing Aaron said he wanted to see at a glance.
+          // THE NUMBER, which is the thing Aaron asked to see at a glance.
           due ? h('span', { 'data-profile-due': String(r.count), 'aria-hidden': 'true', style: { minWidth: '22px', height: '22px', padding: '0 6px', borderRadius: '11px', background: '#A83D0F', color: '#fff', fontSize: '12px', fontWeight: '800', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: '0' } }, String(r.count)) : null
         ),
         // Silence. A plain labelled button rather than a toggle graphic: at this size a switch is
