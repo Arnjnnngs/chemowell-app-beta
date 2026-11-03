@@ -845,9 +845,17 @@ saying the sharing is deliberate, rather than splitting it.
 
 ### M31 — `dayOf()` decides "same day" from the container's clock, and no test can reach the gap (S)
 
-Named twice by the Zero Day Auditor (`AUDIT-app-v90.md` A4, `AUDIT-app-v90-delta.md` M11) and
-**still alive**, recorded here because a hole reported twice and written down nowhere is a hole that
-gets closed by accident or not at all.
+Named twice by the Zero Day Auditor (`AUDIT-app-v90.md` A4, `AUDIT-app-v90-delta.md` M11),
+recorded here because a hole reported twice and written down nowhere is a hole that gets closed
+by accident or not at all.
+
+**CORRECTED 2026-11-03, and the correction is the point of the entry.** This said "still alive",
+and the third audit killed it: the `setUTCHours` mutant **reds 14 checks under
+`TZ=America/Chicago`**. The sections added for the two blockers reach it after all. What is still
+true, and is the reason this entry stays open: **it is invisible in this container**, which runs
+UTC, where local and UTC midnight are the same instant and the mutant is exactly equivalent. So
+the net exists but only an auditor who re-runs under another zone is holding it. **An entry
+written from one run of one container is a measurement of the container.**
 
 `timeAxisLabels()` decides between time labels and date labels with
 `dayOf(ts) => { const d = new Date(ts); d.setHours(0,0,0,0); return d.getTime(); }`. A mutant that
@@ -878,3 +886,38 @@ the repeats are adjacent, which the OLD rule already handled.
 **So M2 is now a genuinely equivalent mutant, not an uncovered one.** The global `Set` is belt and
 braces behind the format. Written down so that nobody later reads "no test distinguishes these" and
 deletes the `Set` as dead weight — it is the thing that holds if the format rule is ever relaxed.
+
+### M33 — The suite now hard-depends on `TEST_MODE === true`, and store prep will turn it red (S)
+
+Section 4d drives the app's date through `window.__v86Test.simDate`, which calls `setSimDate`, which
+early-returns when `TEST_MODE` is false. The third audit proved this by building the store case:
+with `TEST_MODE = false`, `typeof simDate === 'function'` is **still true** — the hook ships — and
+the eight checks in 4d go red because the clock will not move.
+
+**This is not a defect; it is a dependency that has to be written down before the day it bites.**
+Hard rule 4 keeps `TEST_MODE = true` until store submission prep, and at that moment:
+
+* 4d's eight checks must be skipped with a stated reason, not deleted and not left failing.
+* The hook itself ships inert into the store build. **Say that plainly rather than discovering it
+  in a review**: `window.__v86Test` and `window.__eraseTest` are exposed behind
+  `if (typeof window !== 'undefined')`, not behind `TEST_MODE` — and `__eraseTest` is a factory
+  reset, which is a far larger surface than a date setter. Gating that whole block on `TEST_MODE`
+  is the real fix and belongs in store prep, where it can be audited on its own.
+
+### M34 — `checkFullyLabelled` saw a dropped label but not a dropped HALF of them (S)
+
+The third audit built the mutant this entry exists for: `if (i % 2 === 0) out.push(...)` drops every
+other label from every axis in the app and **scored 149/151**. The two reds are preconditions
+(`3b.*.0`), not the check written to catch this.
+
+**Why the check could not see it.** `f1` asserts the gaps between labels are all EQUAL, because the
+mutant it was written against dropped ONE label from the middle and left unequal gaps. Drop every
+second label and the gaps are equal again — twice as wide, perfectly regular, and invisible to an
+equality test. **A proportional thinning is the one failure shape an evenness check cannot detect**,
+and that is worth keeping as a lesson in its own right: a check derived from one mutant tends to
+describe that mutant rather than the property.
+
+Closed in part in app-v90 by asserting a floor on the label COUNT alongside the evenness, which
+kills this mutant. The complete fix is M31's option 2 — `timeAxisLabels()` is a pure function, so a
+unit test can assert `out.length === count + 1` exactly, with no browser, no clock and no floor
+chosen by measurement.

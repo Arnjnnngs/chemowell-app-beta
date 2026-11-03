@@ -170,6 +170,19 @@ const checkFullyLabelled = (tag, r) => {
   t(tag + '.f1  every tick on the axis carries a label -- none dropped from the middle',
     xs.length >= 3 && xs.slice(1).every((v, i) => Math.abs((v - xs[i]) - (xs[1] - xs[0])) <= 0.3),
     'gaps ' + JSON.stringify(xs.slice(1).map((v, i) => Math.round((v - xs[i]) * 10) / 10)));
+  // AND THE COUNT, BECAUSE EVENNESS ALONE IS BLIND TO HALF OF THEM GOING MISSING. The third audit
+  // built `if (i % 2 === 0) out.push(...)` -- every other label dropped from every axis in the app
+  // -- and it scored 149/151, the two reds being preconditions rather than this check. f1 was
+  // derived from a mutant that dropped ONE label and left the gaps uneven, so it tests evenness;
+  // a proportional thinning is even, twice as wide, and perfectly invisible to it. **A check
+  // derived from one mutant describes that mutant, not the property.**
+  //   The floor is five because every axis f1 is applied to is drawn with at least four intervals
+  // (measured, not assumed: the gap lists above read [147,294,147] at four and five entries at
+  // six). It is a floor and not an equality because the tick count is the app's choice and is not
+  // visible from the DOM -- the exact test is `out.length === count + 1` against the pure function,
+  // which is BACKLOG M31/M34 and needs `timeAxisLabels()` exported.
+  t(tag + '.f2  and there are as many labels as the axis has ticks, not half of them',
+    xs.length >= 5, xs.length + ' labels at ' + JSON.stringify(xs));
 };
 
 // Every section runs this. It is the half the suite was missing.
@@ -308,8 +321,16 @@ for (const chart of CHARTS) {
   // Rule 5's `|| true` hazard with better camouflage, in the very commit whose message was about
   // checks that cannot be reached. It now asserts the claim its name makes: the first label is
   // the DATE OF THE EARLIEST READING, which is a different statement from p3's positional one.
+  //
+  // AND THE NAME IS NARROWED BECAUSE THE SECOND AUDIT WAS RIGHT ABOUT WHAT IT CAN SEE.
+  // `wantFirst` builds `M/D` from the same two fields the app builds it from, so on the
+  // question "is this the right date?" it compares the formatter with a copy of itself: a
+  // shared misreading of the timestamp would satisfy both. What it genuinely pins is the
+  // SHAPE and the SOURCE -- M/D rather than D/M or M/D/YY, built from the earliest reading
+  // rather than from `now` or from the last one. Position is p3's, and only p3's. A check
+  // named wider than it can see is how the vacuous version survived an audit.
   const wantFirst = (new Date(t0).getMonth() + 1) + '/' + new Date(t0).getDate();
-  t('3b.' + chart.key + '.2  the first label names the earliest reading\u2019s own date',
+  t('3b.' + chart.key + '.2  the first label is the earliest reading\u2019s date, in M/D shape',
     r.labels[0] === wantFirst, 'first label ' + JSON.stringify(r.labels[0]) + ', want ' + JSON.stringify(wantFirst));
   checkPositions('3b.' + chart.key, r);
 }
@@ -336,9 +357,12 @@ for (const chart of CHARTS) {
     r.xs.length > 0 && cxs.length > 0
       && Math.abs(r.xs[r.xs.length - 1] - Math.max.apply(null, cxs)) <= 0.11,
     'last label at ' + r.xs[r.xs.length - 1] + ', newest reading at ' + (cxs.length ? Math.max.apply(null, cxs) : 'none'));
-  // And said the other way round, in the axis's own words rather than its geometry.
+  // And said the other way round, in the axis's own words rather than its geometry. Same
+  // narrowing as 3b.2: this re-derives `M/D` from the app's own two fields, so it pins the
+  // shape and WHICH timestamp the label came from -- the newest reading, not `now` -- and
+  // not the arithmetic inside the formatter.
   const wantLast = (new Date(tLast).getMonth() + 1) + '/' + new Date(tLast).getDate();
-  t('3c.' + chart.key + '.2  and the last label is that reading\u2019s date, not today\u2019s',
+  t('3c.' + chart.key + '.2  and the last label is the newest reading\u2019s date in M/D, not today\u2019s',
     r.labels[r.labels.length - 1] === wantLast,
     'last label ' + JSON.stringify(r.labels[r.labels.length - 1]) + ', want ' + JSON.stringify(wantLast));
   t('3c.' + chart.key + '.3  distinct, and nothing after today',
@@ -363,7 +387,12 @@ console.log('\n=== 3d. A span longer than a year carries the year, and loses no 
   const r = await axisOf(chart.key, [chart.mk(t0, 0), chart.mk(tLast, 1)]);
   t('3d.0  precondition: the fallback rendered a chart from two out-of-window readings',
     r.labels.length >= 3, 'labels=' + JSON.stringify(r.labels));
-  t('3d.1  every label carries the year, so no two can be confused across one',
+  // Shape only, and that is what the name says: a two-digit year on every label. It is the
+  // ONLY check in the suite that reads the year branch at all (one assertion, on the weight
+  // chart alone, because the temperature chart has no unbounded fallback that can reach a
+  // span this long) -- so if the year branch is ever touched, this is the whole net. Both
+  // audits measured it at exactly one red. That is not a comfortable number.
+  t('3d.1  every label carries a two-digit year, so no two can be confused across one',
     r.labels.length >= 3 && r.labels.every(L => /^\d{1,2}\/\d{1,2}\/\d{2}$/.test(L)),
     JSON.stringify(r.labels));
   t('3d.2  and the tick under the newest reading still has its label',
@@ -407,24 +436,53 @@ for (const chart of CHARTS) {
 // --- 4d. THE TEST_MODE DATE OVERRIDE. chartTimeMax is handed the same `now` the rest of the
 //         chart was built from, instead of calling simNow() a second time -- so one drawing holds
 //         one clock. A mutant that ignored the argument and called Date.now() passed every one of
-//         the 89 checks before this, because no fixture ever moved the app's clock. With the
-//         clock pushed three days forward, a reading logged that morning draws a normal axis; a
-//         chart reading the REAL clock collapses the span to nothing and draws a single label.
+//         the 89 checks before this, because no fixture ever moved the app's clock.
+//
+//         THE FIXTURE IS PLACED RELATIVE TO THE SIMULATED CLOCK, NOT THE WALL CLOCK, and that is
+//         the whole point of this comment. The first version of this section put the reading at
+//         9 AM on the simulated day and asserted same-day time labels -- but `simNow()` is
+//         `Date.now() + N whole days`, so the simulated clock keeps the REAL time of day. Run
+//         before 09:00 local, the reading was in the simulated FUTURE, the span collapsed, and
+//         four checks went red on correct code -- every day, for nine hours, in the one section
+//         that kills this mutant. Exactly the defect class this release exists to fix, in the
+//         test written to prove it fixed. A fixture whose truth depends on the hour it runs is
+//         not a fixture.
+//
+//         So: one reading twelve hours in the REAL future, which is two and a half SIMULATED
+//         days in the past. Nothing here depends on the time of day.
+//           correct  -- tMax = min(tMin + one day, simulated now) = tMin + one day. The axis is
+//                       a full day wide and the reading sits at its left edge, so the rightmost
+//                       label is most of the chart away from the reading's own dot.
+//           mutant   -- `now` is the real clock, which is BEFORE the reading, so tMax collapses
+//                       back to the reading itself. Every tick lands on the same instant, every
+//                       label reads the same, de-duplication leaves exactly ONE, and it sits on
+//                       the dot.
+//         The assertion is that geometry, not the label text: how MANY labels a 24-hour span
+//         carries depends on whether it crosses midnight, which on a DST fall-back day it need
+//         not -- so this checks the floor (more than one) and the distance (the axis extends
+//         past the reading). `checkFullyLabelled` is deliberately not used here for the same
+//         reason: these labels are meant to collapse.
 console.log('\n=== 4d. A simulated future date moves the axis with it');
 {
-  const future = new Date(); future.setHours(0, 0, 0, 0);
-  future.setTime(future.getTime() + 3 * DAY);
-  const ymd = future.getFullYear() + '-' + String(future.getMonth() + 1).padStart(2, '0')
-    + '-' + String(future.getDate()).padStart(2, '0');
+  const simAhead = 3;                                  // whole days, as the date picker sets it
+  const sim = new Date(); sim.setTime(sim.getTime() + simAhead * DAY);
+  const ymd = sim.getFullYear() + '-' + String(sim.getMonth() + 1).padStart(2, '0')
+    + '-' + String(sim.getDate()).padStart(2, '0');
+  const reading = Date.now() + 12 * HOUR;              // real future, simulated past, always
   for (const chart of CHARTS) {
-    const r = await axisOf(chart.key, [chart.mk(future.getTime() + 9 * HOUR, 0)], false, ymd);
+    const r = await axisOf(chart.key, [chart.mk(reading, 0)], false, ymd);
     t('4d.' + chart.key + '.0  precondition: the chart rendered on the simulated day',
       r.labels.length >= 1, 'labels=' + JSON.stringify(r.labels));
-    t('4d.' + chart.key + '.1  the axis runs from the reading to the SIMULATED now, not collapsed',
-      r.labels.length >= 3 && new Set(r.labels).size === r.labels.length,
+    t('4d.' + chart.key + '.1  the axis runs on past the reading, so it carries more than one label',
+      r.labels.length >= 2 && new Set(r.labels).size === r.labels.length,
       r.labels.length + ' labels: ' + JSON.stringify(r.labels));
-    t('4d.' + chart.key + '.2  and they are times on one day, since the reading is today there',
-      r.labels.length >= 3 && r.labels.every(L => /(AM|PM)/i.test(L)), JSON.stringify(r.labels));
+    const xs = (r.xs || []).filter(Number.isFinite);
+    const cxs = (r.cxs || []).filter(Number.isFinite);
+    t('4d.' + chart.key + '.2  and the far end of the axis is a long way from the one reading',
+      xs.length > 0 && cxs.length > 0
+        && Math.max.apply(null, xs) - Math.min.apply(null, cxs) > 100,
+      'last label at ' + (xs.length ? Math.max.apply(null, xs) : 'none')
+        + ', the reading at ' + (cxs.length ? Math.min.apply(null, cxs) : 'none'));
     checkPositions('4d.' + chart.key, r);
   }
 }
