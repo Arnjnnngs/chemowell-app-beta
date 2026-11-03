@@ -122,6 +122,25 @@ await film.evaluate(() => {
     const g = window.__cv.getContext('2d');
     return pts.map(([x, y]) => { const d = g.getImageData(x, y, 1, 1).data; return [d[0], d[1], d[2]]; });
   };
+  window.__stash = () => { window.__cvA = window.__cv; };
+  // HOW MANY PIXELS INSIDE THIS BOX CHANGED WHEN THE TEXT WAS HIDDEN. Zero means the text is not
+  // painting there -- something is on top of it, or it is invisible for some other reason -- and
+  // whatever colour was sampled is not the colour behind that word.
+  window.__diff = (boxes) => {
+    const ga = window.__cvA.getContext('2d'), gb = window.__cv.getContext('2d');
+    const W = window.__cv.width, H = window.__cv.height;
+    return boxes.map(([x, y, w, h]) => {
+      x = Math.max(0, Math.round(x)); y = Math.max(0, Math.round(y));
+      w = Math.min(Math.round(w), W - x); h = Math.min(Math.round(h), H - y);
+      if (w < 1 || h < 1) return -1;
+      const a2 = ga.getImageData(x, y, w, h).data, b2 = gb.getImageData(x, y, w, h).data;
+      let n = 0;
+      for (let i = 0; i < a2.length; i += 4) {
+        if (a2[i] !== b2[i] || a2[i+1] !== b2[i+1] || a2[i+2] !== b2[i+2]) n++;
+      }
+      return n;
+    });
+  };
 });
 
 // SVG TEXT IS PAINTED WITH `fill`, NOT `color`, AND THE FIRST VERSION OF THIS FILE FORGOT IT.
@@ -182,36 +201,65 @@ const collect = () => page.evaluate(() => {
     out.push({
       text: s.slice(0, 48), color: [p[0], p[1], p[2]],
       px: parseFloat(cs.fontSize), weight: cs.fontWeight, pts: pts,
-      tag: el.tagName.toLowerCase(), svg: isSvg,
+      tag: el.tagName.toLowerCase(), svg: isSvg, box: [r.left, r.top, r.width, r.height],
       // The identity used to de-duplicate across scroll passes. The viewport is 844 and the step
       // is 700, so a 144px band is photographed twice and everything in it is collected twice.
-      key: s + '\u241f' + el.tagName + '\u241f' + cs.color + '\u241f' + cs.fontSize + '\u241f' + cs.fontWeight,
+      key: s + '\u241f' + el.tagName + '\u241f' + paint + '\u241f' + cs.fontSize + '\u241f' + cs.fontWeight,
     });
   }
   return { out: out, skip: skip };
 });
 
+// TWO PHOTOGRAPHS, AND THE DIFFERENCE BETWEEN THEM IS THE PROOF THE TEXT IS VISIBLE.
+//
+// THE FIRST VERSION OF THIS GUARD DID NOT WORK AND MY OWN FALSIFICATION SAID SO. The audit showed
+// that `elementFromPoint` ignores `pointer-events: none`, so an opaque layer that is painted but
+// not hit-testable is invisible to the per-point coverage check and the scan measures text
+// THROUGH it, against the layer's own pixels, and prints PASS. I first closed that by asking the
+// app -- `window.__backTest.overlayNow()` -- and ran the audit's own mutant against it: **it
+// still passed, byte for byte.** Of course it did. `anyOverlayOpen()` knows about the app's
+// overlays; the mutant's bar is a div the app never heard of. A guard that asks the wrong
+// authority is not a weaker guard, it is no guard.
+//
+// So this asks nobody. Photograph the viewport twice -- once as it is, once with every glyph
+// made transparent -- and count the pixels inside each text box that CHANGED. A visible word
+// changes pixels. Zero changed pixels means the word is not painting there: something is over it,
+// or it is invisible, and the colour sampled underneath is not the colour behind that word.
+// Mechanism-independent: it does not care who painted the layer, whether it is hit-testable,
+// whether the app knows about it, or whether the text escaped `color` through `fill` or anything
+// else invented later.
 const shotAndSample = async (items) => {
+  // A: as the viewer sees it.
+  const shotA = await page.screenshot({ type: 'png' });
+  await film.evaluate((u) => window.__load(u), 'data:image/png;base64,' + shotA.toString('base64'));
+  await film.evaluate(() => window.__stash());
+  // B: the same frame with every glyph transparent -- this is what the backdrop is read from.
   const style = await page.addStyleTag({ content: HIDE });
   await page.waitForTimeout(120);
-  const buf = await page.screenshot({ type: 'png' });
-  await page.evaluate((id) => { const e = document.querySelector('style[data-hide]'); if (e) e.remove(); }, null);
+  const shotB = await page.screenshot({ type: 'png' });
   await style.evaluate((n) => n.remove());
   await page.waitForTimeout(80);
-  const url = 'data:image/png;base64,' + buf.toString('base64');
-  await film.evaluate((u) => window.__load(u), url);
+  await film.evaluate((u) => window.__load(u), 'data:image/png;base64,' + shotB.toString('base64'));
+
   const flat = [];
   for (const it of items) for (const p of it.pts) flat.push(p);
   const cols = await film.evaluate((pts) => window.__px(pts), flat);
   let k = 0;
-  for (const it of items) {
-    it.back = it.pts.map(() => cols[k++]);
+  for (const it of items) it.back = it.pts.map(() => cols[k++]);
+
+  const diffs = await film.evaluate((bx) => window.__diff(bx), items.map(it => it.box));
+  const live = [];
+  for (let i = 0; i < items.length; i++) {
+    items[i].changed = diffs[i];
+    if (diffs[i] > 0) live.push(items[i]);
+    else invisible.push({ text: items[i].text, box: items[i].box.map(Math.round) });
   }
-  return items;
+  return live;
 };
 
 const SCREENS = [];
 const skipped = {};
+const invisible = [];
 const goNav = async (key) => { await page.click('[data-tour="nav-' + key + '"]'); await page.waitForTimeout(900); };
 const goReport = async (k) => { await page.evaluate((r) => window.__v86Test.openReport(r), k); await page.waitForTimeout(900); };
 
@@ -223,7 +271,34 @@ const scan = async (label, setup) => {
   while (y < hMax && guard++ < 12) {
     await page.evaluate((v) => window.scrollTo(0, v), y);
     await page.waitForTimeout(260);
-      const got = await collect();
+      // NOTHING MAY BE COVERING THE SCREEN. `elementFromPoint` ignores `pointer-events: none`, so a
+    // painted-but-not-hit-testable layer is INVISIBLE to the per-point coverage check: the points
+    // are kept, the text is "measured", and the backdrop sampled is the OVERLAY's pixels, because
+    // the backdrop comes from the photograph and the photograph does show it. The audit proved it
+    // with a 390x140 opaque white bar at `pointer-events: none`: six Home strings were measured
+    // against #FFFFFF instead of the gradient behind them, every printed number was byte-identical
+    // to a clean run, and the scan exited 0. A silent false green, and the skip denominator this
+    // same release added did not move by one count.
+    //
+    // This is not hypothetical in this app: `#tour-layer` and `#tour-scrim` are full-viewport
+    // `pointer-events: none` layers, and the only thing keeping the tour shut is `tourDone: true`
+    // in the fixture above -- pinned by nothing, exactly like the version literal that caused the
+    // last blocker.
+    //
+    // So ask the APP whether anything is over the screen. `anyOverlayOpen()` exists because
+    // "whether something covers the screen is a fact about the screen" -- it replaced a flag list
+    // that had ten of twenty-three flags wrong -- and it covers What's New, the tour, the drawer,
+    // the upgrade sheet and every overlay added after this comment. One assertion, whole class.
+    const over = await page.evaluate(() =>
+      (window.__backTest && typeof window.__backTest.overlayNow === 'function')
+        ? window.__backTest.overlayNow() : 'no hook');
+    if (over !== false) {
+      console.error('REFUSING: ' + label + ' at scroll ' + y + ' has something over the screen'
+        + ' (overlayNow = ' + JSON.stringify(over) + '). Every measurement here would be taken'
+        + ' against that layer rather than against the app.');
+      await b.close(); process.exit(3);
+    }
+    const got = await collect();
     for (const k of Object.keys(got.skip)) skipped[k] = (skipped[k] || 0) + got.skip[k];
     if (got.out.length) rows.push(...await shotAndSample(got.out));
     y += 700;
@@ -282,6 +357,16 @@ for (const s of report) {
     console.log('          ' + String(f.ratio).padStart(5) + ':1  needs ' + f.need + '   ' + f.color + ' on ' + f.back
       + '   ' + f.px + 'px/' + f.weight + '   "' + f.text + '"');
 }
+// A STRING THAT CANNOT BE PROVEN VISIBLE IS NOT A STRING THAT PASSED. Reporting these and
+// exiting 0 would be the same silent green the audit walked through -- the count would move and
+// the verdict would not.
+if (invisible.length) {
+  console.log('\n  FAIL  ' + invisible.length + ' string(s) were collected but did NOT change any pixel');
+  console.log('        when the text was hidden, so something is painted over them, or they are');
+  console.log('        invisible. Whatever colour sits under them is not the colour behind them.');
+  for (const v of invisible.slice(0, 12)) console.log('          ' + JSON.stringify(v.text) + '  box ' + JSON.stringify(v.box));
+  if (invisible.length > 12) console.log('          ... and ' + (invisible.length - 12) + ' more');
+}
 const skipTotal = Object.values(skipped).reduce((a2, b2) => a2 + b2, 0);
 console.log('\n' + measured + ' DISTINCT strings measured (' + samples + ' samples), '
   + failures + ' below AA, worst ' + (Math.round(worstAll * 100) / 100) + ':1');
@@ -289,7 +374,10 @@ console.log('\n' + measured + ' DISTINCT strings measured (' + samples + ' sampl
 // seen again on a later pass -- but a number that MOVES when the app starts hiding things from
 // the scan, which is the failure this exists to make visible.
 console.log('skipped while collecting: ' + skipTotal + '  ' + JSON.stringify(skipped));
+console.log('  (NOT a coverage figure. `offscreen` is overwhelmingly the SAME string seen again on'
+  + ' another pass; measured coverage is ~96%. This number is here to MOVE when the app starts'
+  + ' hiding text from the scan, not to be read as the unmeasured surface.)');
 console.log('page errors: ' + thrown.length + (thrown.length ? ' -> ' + thrown.slice(0, 2).join(' | ') : ''));
 if (JSON_OUT) fs.writeFileSync(JSON_OUT, JSON.stringify(report, null, 2));
 await b.close();
-process.exit(failures || thrown.length ? 1 : 0);
+process.exit(failures || thrown.length || invisible.length ? 1 : 0);
