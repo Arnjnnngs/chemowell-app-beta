@@ -75,7 +75,12 @@ const seed = () => `(() => {
     { id: 'med-1', name: 'Blood pressure', schedule: 'daily', times: ['08:00'], doses: [{ label: '1 tablet', single: true }] }
   ] }));
   localStorage.setItem('chemowell-app-p-p1-entries-v1', JSON.stringify(e));
-  localStorage.setItem('chemowell-app-seen-version', 'app-v90');
+  // NO VERSION LITERAL HERE. An earlier version of this file pinned 'app-v90' to suppress the
+  // What's New modal, which worked exactly until the release that bumped APP_VERSION -- in the
+  // same commit as the palette. The modal then opened on load, its scrim swallowed the scan's
+  // first click, and the scan exited having measured NOTHING while the record quoted figures as
+  // if it had. Rule 5 names this: never pin a version literal in a suite. Setting it to
+  // 'app-v91' would only move the bug one release. The modal is dismissed after load instead.
 })()`;
 
 const b = await chromium.launch();
@@ -86,6 +91,18 @@ const page = await ctx.newPage();
 await page.addInitScript(seed());
 await page.goto(BASE, { waitUntil: 'load' });
 await page.waitForTimeout(2200);
+// With no seen-version pinned, What's New opens on first load and its scrim intercepts every
+// pointer event. Dismiss it by its own hook, and FAIL LOUDLY if it is still up afterwards --
+// a scan that quietly measures a scrim is worse than one that crashes.
+{
+  const close = await page.$('[data-whatsnew-close="true"]');
+  if (close) { await close.click(); await page.waitForTimeout(500); }
+  if (await page.$('[data-whatsnew-modal="true"]')) {
+    console.error('REFUSING: the What\u2019s New modal is still open, so every measurement would be\n'
+      + 'taken against its scrim rather than against the app.');
+    process.exit(3);
+  }
+}
 
 // The decoder: a blank page whose only job is to let the browser turn a PNG back into pixels.
 const film = await ctx.newPage();
@@ -120,6 +137,11 @@ svg text,svg tspan{fill:transparent !important;stroke:none !important;}`;
 // sit inside the text's own box, which is why the text has to be hidden before the photograph.
 const collect = () => page.evaluate(() => {
   const out = [];
+  // EVERY SKIP IS COUNTED. Seven branches below drop an element, and until this was added none
+  // of them left a trace -- so "0 below AA" could not be told apart from "did not look at it".
+  // Add a sticky header tomorrow and the labels under it leave the count silently while the scan
+  // still prints PASS. A denominator is the cheapest guard there is against that.
+  const skip = { hidden: 0, tiny: 0, offscreen: 0, nopaint: 0, translucent: 0, covered: 0 };
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const seen = new Set();
   let n;
@@ -130,19 +152,23 @@ const collect = () => page.evaluate(() => {
     if (!el || seen.has(el)) continue;
     seen.add(el);
     const cs = getComputedStyle(el);
-    if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) < 0.95) continue;
+    if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) < 0.95) { skip.hidden++; continue; }
     const r = el.getBoundingClientRect();
-    if (r.width < 2 || r.height < 2) continue;
-    if (r.top < 0 || r.bottom > innerHeight || r.left < 0 || r.right > innerWidth) continue;
+    if (r.width < 2 || r.height < 2) { skip.tiny++; continue; }
+    // OFF-SCREEN AT THIS SCROLL POSITION -- usually caught on a later pass, so this count is not
+    // a coverage figure on its own. The one shape that escapes every pass is an element TALLER
+    // than the overlap between passes (144px): `bottom > innerHeight` on one, `top < 0` on the
+    // next. Nothing in the app is that tall today. A longer paragraph would be, silently.
+    if (r.top < 0 || r.bottom > innerHeight || r.left < 0 || r.right > innerWidth) { skip.offscreen++; continue; }
     // ...and the colour has to be read from the same property that paints it. An SVG label's
     // computed `color` is whatever it inherited from the page and has nothing to do with what is
     // drawn; `fill` is the ink.
     const isSvg = el.namespaceURI === 'http://www.w3.org/2000/svg';
     const paint = isSvg ? (cs.fill || '') : (cs.color || '');
     const m = paint.match(/rgba?\(([^)]+)\)/);
-    if (!m) continue;
+    if (!m) { skip.nopaint++; continue; }
     const p = m[1].split(',').map(Number);
-    if (p.length > 3 && p[3] < 0.95) continue;         // translucent text: not measured, reported
+    if (p.length > 3 && p[3] < 0.95) { skip.translucent++; continue; }   // translucent ink
     // Sample points spread across the box, inset so a border is not read as the backdrop.
     const pts = [];
     for (const fx of [0.2, 0.5, 0.8]) for (const fy of [0.3, 0.7]) {
@@ -152,14 +178,17 @@ const collect = () => page.evaluate(() => {
       if (top !== el && !el.contains(top)) continue;    // covered by something: skip the point
       pts.push([x, y]);
     }
-    if (!pts.length) continue;                           // entirely covered: not measurable
+    if (!pts.length) { skip.covered++; continue; }      // wholly covered: not measurable here
     out.push({
       text: s.slice(0, 48), color: [p[0], p[1], p[2]],
       px: parseFloat(cs.fontSize), weight: cs.fontWeight, pts: pts,
       tag: el.tagName.toLowerCase(), svg: isSvg,
+      // The identity used to de-duplicate across scroll passes. The viewport is 844 and the step
+      // is 700, so a 144px band is photographed twice and everything in it is collected twice.
+      key: s + '\u241f' + el.tagName + '\u241f' + cs.color + '\u241f' + cs.fontSize + '\u241f' + cs.fontWeight,
     });
   }
-  return out;
+  return { out: out, skip: skip };
 });
 
 const shotAndSample = async (items) => {
@@ -182,6 +211,7 @@ const shotAndSample = async (items) => {
 };
 
 const SCREENS = [];
+const skipped = {};
 const goNav = async (key) => { await page.click('[data-tour="nav-' + key + '"]'); await page.waitForTimeout(900); };
 const goReport = async (k) => { await page.evaluate((r) => window.__v86Test.openReport(r), k); await page.waitForTimeout(900); };
 
@@ -193,8 +223,9 @@ const scan = async (label, setup) => {
   while (y < hMax && guard++ < 12) {
     await page.evaluate((v) => window.scrollTo(0, v), y);
     await page.waitForTimeout(260);
-    const items = await collect();
-    if (items.length) rows.push(...await shotAndSample(items));
+      const got = await collect();
+    for (const k of Object.keys(got.skip)) skipped[k] = (skipped[k] || 0) + got.skip[k];
+    if (got.out.length) rows.push(...await shotAndSample(got.out));
     y += 700;
   }
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -211,10 +242,26 @@ await scan('Symptoms', async () => { await goNav('symptoms'); });
 await scan('In-Patient', async () => { await goNav('inpatient'); });
 
 const hex = (c) => '#' + c.map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
-let worstAll = 99, failures = 0, measured = 0;
+// DISTINCT STRINGS, NOT SAMPLES. The first version of this counted rows and called them
+// "strings": the viewport is 844 and the scroll step 700, so a 144px band is photographed twice
+// and everything in it was counted twice. 565 "strings" was really 295, a 1.9x inflation, and one
+// mutant changing ONE literal on ONE line was reported as 18 failures -- all the same string.
+// The ratios were right; the word was wrong, in four places in the record. A string is counted
+// once per screen, at its WORST sample anywhere on that screen.
+let worstAll = 99, failures = 0, measured = 0, samples = 0;
 const report = [];
 for (const sc of SCREENS) {
   const fails = [];
+  const best = new Map();
+  for (const r of sc.rows) {
+    let w = 99, wb = null;
+    for (const bk of r.back) { const v = ratio(r.color, bk); if (v < w) { w = v; wb = bk; } }
+    samples++;
+    const k = r.key || (r.text + r.px + r.weight);
+    const prev = best.get(k);
+    if (!prev || w < prev.worst) best.set(k, { r: r, worst: w, back: wb });
+  }
+  sc.rows = [...best.values()].map(v => Object.assign({}, v.r, { back: [v.back] }));
   for (const r of sc.rows) {
     // The WORST point under the word is the one that decides whether it can be read.
     let worst = 99, worstBack = null;
@@ -235,7 +282,13 @@ for (const s of report) {
     console.log('          ' + String(f.ratio).padStart(5) + ':1  needs ' + f.need + '   ' + f.color + ' on ' + f.back
       + '   ' + f.px + 'px/' + f.weight + '   "' + f.text + '"');
 }
-console.log('\n' + measured + ' strings measured, ' + failures + ' below AA, worst ' + (Math.round(worstAll * 100) / 100) + ':1');
+const skipTotal = Object.values(skipped).reduce((a2, b2) => a2 + b2, 0);
+console.log('\n' + measured + ' DISTINCT strings measured (' + samples + ' samples), '
+  + failures + ' below AA, worst ' + (Math.round(worstAll * 100) / 100) + ':1');
+// The denominator. Not a coverage figure on its own -- `offscreen` is mostly the same element
+// seen again on a later pass -- but a number that MOVES when the app starts hiding things from
+// the scan, which is the failure this exists to make visible.
+console.log('skipped while collecting: ' + skipTotal + '  ' + JSON.stringify(skipped));
 console.log('page errors: ' + thrown.length + (thrown.length ? ' -> ' + thrown.slice(0, 2).join(' | ') : ''));
 if (JSON_OUT) fs.writeFileSync(JSON_OUT, JSON.stringify(report, null, 2));
 await b.close();

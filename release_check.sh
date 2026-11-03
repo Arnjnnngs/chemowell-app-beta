@@ -842,9 +842,21 @@ export FALSIFY_BASE="http://127.0.0.1:$RC_PORT/index.html"
 #
 # A guard that runs when somebody remembers is the same as no guard. That sentence is already in
 # this file twice, about other suites. This is the third.
-for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs; do
+#
+# AND THE FOURTH IS test/contrast-scan.mjs, added app-v91. TEAM.md declared it "the gate" for
+# whether the words can be read, in the same release that shipped it -- and wired it into
+# nothing. Worse than the v84 case above: that one ran and was ignored, this one would not have
+# run at all. It also CRASHED on the build it was supposed to gate, for a whole release, and
+# nobody found out from the gate, because the gate never called it.
+#
+# It needs the server, so it goes in this loop rather than beside the static checks, and it is
+# given its base explicitly -- its default port is a developer convenience and would silently
+# measure whatever happens to be served there instead of the clean export this gate built.
+for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs; do
   [ -f "$RC_SUITE_DIR/$SUITE" ] || continue
-  if (cd "$RC_SUITE_DIR" && node "$SUITE") >"/tmp/rc-$(basename "$SUITE").log" 2>&1; then
+  RC_SUITE_ARGS=""
+  [ "$SUITE" = "test/contrast-scan.mjs" ] && RC_SUITE_ARGS="--base http://127.0.0.1:$RC_PORT/index.html"
+  if (cd "$RC_SUITE_DIR" && node "$SUITE" $RC_SUITE_ARGS) >"/tmp/rc-$(basename "$SUITE").log" 2>&1; then
     echo "ℹ️  $(basename "$SUITE"): green."
   else
     echo "❌ RELEASE CHECK FAILED: $SUITE"

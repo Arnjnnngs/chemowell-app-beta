@@ -765,8 +765,10 @@ the check and let the one that bites carry the claim.
 and I'm talking mainly about the background… the background blends in with some of the words
 that's not put in the box."*
 
-He was right, and it was not one screen. A scan of eight screens found **102 of 565 strings below
-the WCAG AA floor, the worst at 2.1:1 where 4.5:1 is required.** Every piece of text inside a white
+He was right, and it was not one screen. A scan of eight screens found **56 of 309 strings below
+the WCAG AA floor, the worst at 2.1:1 where 4.5:1 is required.** (First written as *"102 of 565"*. Those
+were SAMPLES, not strings: the viewport and the scroll step overlap by 144px, so every string in
+that band was counted twice.) Every piece of text inside a white
 card was fine; almost everything printed straight onto the page gradient was not.
 
 Look at what this project checks, and the hole is obvious in hindsight:
@@ -786,6 +788,20 @@ screenshot sees text they can already read, having been told what it says.
 
 `test/contrast-scan.mjs` is the gate for it. Treat it as the sixth question: **can the words be
 read.**
+
+### "Treat it as a gate" is not a gate
+
+This section was written in the release that shipped the scan, called it the gate, and **wired it
+into nothing** — not `release_check.sh`, not any runner. The audit found that, citing this repo's
+own Hard Rule 6: *a rule enforced only by the person it constrains is the one that gets skipped.*
+
+**And the cost was immediate and invisible.** The scan ALSO crashed on the very build it existed to
+gate — it seeded a pinned version literal, the release bumped the version, the What's New modal
+opened over it, and the scan exited having measured nothing. For a whole release nobody learned
+that from the gate, **because the gate never called it.** A guard nothing invokes does not fail
+loudly or quietly; it is simply absent, while reading in the documentation as present.
+
+Declaring a gate and wiring a gate are two tasks. Do the second one in the same commit.
 
 ### Two things about building it that generalise
 

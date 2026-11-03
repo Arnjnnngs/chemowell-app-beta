@@ -998,21 +998,26 @@ practice. But "this is probably a capture artifact" is a hypothesis, and a seat 
 should measure it rather than reason it away: one viewport-coordinate rect comparison separates the
 two cases in seconds. A declined finding needs the same evidence standard as a filed one.
 
-### M37 — The other two apps have never been measured for contrast at all (M)
+### M37 — ~~The other two apps have never been measured for contrast~~ — CLOSED for `care-tracker`, and NOT queued for staging
 
-`test/contrast-scan.mjs` found **102 of 565 strings below WCAG AA** in this app, worst 2.1:1, and
-the cause was the page gradient rather than any one label. `care-tracker` and `chemowell-beta` are
-the same codebase's ancestors with **the same light-pink glassmorphism theme**, so the same class
-of defect is almost certainly live on a patient's phone right now.
+**WRITTEN WRONG, AND THE AUDIT CAUGHT IT. Corrected 2026-11-03.** The original entry read *"Order:
+scan both, report the numbers"* and named `care-tracker` first. By the time it was written, Aaron
+had frozen that app: *"That app and its data is to be frozen… that app is not to be touched
+whatsoever."* `care-tracker/CLAUDE.md` now opens with **⛔ THIS APP IS CLOSED. DO NOT CHANGE IT. DO
+NOT RUN ANYTHING AGAINST IT**, and this repo's Rule 0.0 says items of this shape are closed, not
+queued.
 
-**What makes this worth doing rather than assuming:** the scanner is theme-agnostic. It reads
-painted pixels, so it runs against either app unchanged except for the navigation hooks and the
-seed. Nothing about the fix transfers automatically — the two apps have their own palettes and
-their own stop colours — but the MEASUREMENT does, and the measurement is the part nobody has.
+**As written, a future session working the backlog in order would have pointed a browser suite at
+a dead patient's app** — exactly the failure the notice exists to prevent, written into the backlog
+hours after the notice went up, by the same session that wrote the notice.
 
-Order: scan both, report the numbers, then decide the palette per app. Do NOT port this app's
-colours across: `care-tracker` is one named person's app with its own look, and a blanket swap
-would be exactly the ancestry leak Rule 0 exists to stop.
+* **`care-tracker`: CLOSED. Do not scan it. Do not open it. There is no number worth having.**
+* **`chemowell-beta`: not queued either.** It is `care-tracker`'s staging copy. It holds fabricated
+  test data and nobody's medical record, so it is not covered by the freeze — but it is still her
+  app's test bed, and nothing there gets touched unless Aaron asks for it in his own words.
+
+What survives of the original point: the scanner is theme-agnostic and reads painted pixels, so it
+*could* run against either. That is a fact about the tool, not a reason to use it.
 
 ### M38 — The contrast scan has no sanity check on its own backdrop readings (S)
 
