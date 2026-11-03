@@ -38,22 +38,26 @@ io.open(p,'w',encoding='utf-8').write(s.replace(old,"paddingBottom: 'calc(90px +
 PY
 }
 
-MUTANT_DESC_2="[pill] BACK_PILL_H is zeroed -- the derived clearance stops matching the pill"
-# The pill's clearance is derived from BACK_PILL_BOTTOM + BACK_PILL_H + BACK_PILL_GAP, and this
-# mutant breaks the derivation at the term that carries the pill's own size.
+MUTANT_DESC_2="[pill] the clearance drops the pill's own height -- the derivation, not the constants"
+# TWO EARLIER VERSIONS OF THIS MUTANT SURVIVED, and both survivals are facts about the fix.
 #
-# THE FIRST VERSION OF THIS MUTANT MOVED BACK_PILL_GAP INSTEAD, AND IT SURVIVED -- correctly, and
-# that is a fact about the fix worth keeping rather than a mutant worth strengthening. Even at
-# -24 the gap does not expose a glyph, because the last row ends roughly 32px above the padding
-# edge anyway. **The 8px gap is breathing room, not the guard.** What holds the clearance is
-# BACK_PILL_BOTTOM + BACK_PILL_H, and this mutant is pointed there.
+#   * Moving BACK_PILL_GAP to -24 exposed no glyph: the last row ends roughly 32px above the
+#     padding edge anyway, so the 8px gap is breathing room and not the guard.
+#   * Zeroing BACK_PILL_H changed the pill's own `minHeight` at the same time, because both the
+#     pill and the padding are derived from that one constant -- so the two stayed in agreement
+#     and nothing was covered. **A mutant that edits a SHARED constant cannot break an agreement
+#     that the sharing is what creates.** That is the refactor working, measured.
+#
+# So this one breaks the DERIVATION instead: the clearance forgets the pill's height while the
+# pill keeps it. That is exactly the shape of the defect app-v92 fixed -- two numbers that have
+# to agree, disagreeing.
 mutant_2() {
   python3 - <<'MUT'
 import io
 p='index.html'; s=io.open(p,encoding='utf-8').read()
-old = "const BACK_PILL_H = 42;"
+old = "function backPillClearancePx() { return BACK_PILL_BOTTOM + BACK_PILL_H + BACK_PILL_GAP; }"
 assert s.count(old)==1
-io.open(p,'w',encoding='utf-8').write(s.replace(old,"const BACK_PILL_H = 0;"))
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"function backPillClearancePx() { return BACK_PILL_BOTTOM; }"))
 MUT
 }
 
