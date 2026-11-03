@@ -25,6 +25,8 @@ for (const w of [320, 360, 390]) {
   await p.goto(base, { waitUntil:'load' });
   await p.waitForTimeout(2400);
   const close = await p.$('[data-whatsnew-close="true"]'); if (close) { await close.click(); await p.waitForTimeout(400); }
+  // ...and refuse if it is still up, rather than photographing a scrim and calling it a screen.
+  if (await p.$('[data-whatsnew-modal="true"]')) { console.error('REFUSING: What\u2019s New still open at ' + w + 'px'); process.exit(3); }
   await p.screenshot({ path: out + '/' + tag + '-home-' + w + '.png' });
   await p.click('[data-tour="nav-reports"]'); await p.waitForTimeout(800);
   await p.screenshot({ path: out + '/' + tag + '-reports-' + w + '.png' });
@@ -37,3 +39,8 @@ for (const w of [320, 360, 390]) {
 }
 console.log('page errors: ' + errs.length + (errs.length ? ' -> ' + errs.slice(0,3).join(' | ') : ''));
 await b.close();
+// IT HAS TO BE ABLE TO FAIL. The first version of this script printed its error count and exited
+// 0 whatever it found -- so a page error at every width would have been reported as a successful
+// design pass. app-v90's designer script already exited non-zero on a finding; this one lost that
+// on the way across. A script that cannot fail is the `|| true` shape with a different spelling.
+process.exit(errs.length ? 1 : 0);

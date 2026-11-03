@@ -28,7 +28,10 @@
 //
 // Run: python3 -m http.server 8899 --directory <repo>  then
 //      env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy node test/contrast-scan.mjs
-//      [--file <index.html>] [--json <out>]
+//      [--base <url>] [--json <out>] [--width <px>]
+//
+// There is no --file: this scan needs a SERVED page, because it photographs a rendered viewport.
+// An earlier header advertised one and nothing implemented it.
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 const require = createRequire(import.meta.url);
@@ -123,6 +126,12 @@ await film.evaluate(() => {
     return pts.map(([x, y]) => { const d = g.getImageData(x, y, 1, 1).data; return [d[0], d[1], d[2]]; });
   };
   window.__stash = () => { window.__cvA = window.__cv; };
+  window.__stashB = () => { window.__cvB = window.__cv; };
+  window.__restoreB = () => { window.__cv = window.__cvB; };
+  window.__diffBC = (boxes) => {
+    const saved = window.__cvA; window.__cvA = window.__cvB;
+    const r = window.__diff(boxes); window.__cvA = saved; return r;
+  };
   // HOW MANY PIXELS INSIDE THIS BOX CHANGED WHEN THE TEXT WAS HIDDEN. Zero means the text is not
   // painting there -- something is on top of it, or it is invisible for some other reason -- and
   // whatever colour was sampled is not the colour behind that word.
@@ -237,9 +246,32 @@ const shotAndSample = async (items) => {
   const style = await page.addStyleTag({ content: HIDE });
   await page.waitForTimeout(120);
   const shotB = await page.screenshot({ type: 'png' });
+  // C IS TAKEN WHILE THE TEXT IS STILL HIDDEN. The first version of this removed the HIDE sheet
+  // before photographing C, so C showed the glyphs again and EVERY string differed between B and
+  // C -- the clean build reported 341 strings on a "moving" backdrop and measured nothing. The
+  // falsification run caught it on the first build it touched, which is the only reason this
+  // comment is here rather than a green release containing a guard that flags everything.
+  await page.waitForTimeout(260);
+  const shotC = await page.screenshot({ type: 'png' });
   await style.evaluate((n) => n.remove());
   await page.waitForTimeout(80);
   await film.evaluate((u) => window.__load(u), 'data:image/png;base64,' + shotB.toString('base64'));
+  await film.evaluate(() => window.__stashB());
+  // C: THE SAME HIDDEN FRAME AGAIN, AND THE THIRD AUDIT IS WHY IT EXISTS. The diff above assumes
+  // that anything changing between A and B is a glyph. `HIDE` is wider than that: it sets
+  // `color: transparent` on every element, so a border, background, box-shadow or SVG fill drawn
+  // from `currentColor` changes too -- where no glyph ever was. A mutant whose opaque bar used
+  // `background: currentColor` with a 2s transition therefore produced a NON-zero diff inside
+  // every covered box and a headline byte-identical to a clean build: 309 / 0 / 4.71, exit 0.
+  // A second mutant flipping an opaque bar on a 30ms `setInterval` leaked 36 of 108 covered
+  // strings the same way, because Playwright settles CSS animations and cannot settle a timer.
+  //
+  // C is taken in the same hidden state as B, a moment later. A still backdrop is IDENTICAL in
+  // B and C; anything moving -- a transition, a timer, an animation the harness did not settle --
+  // is not, and a box whose backdrop is still moving is a box whose sampled colour means nothing.
+  await film.evaluate((u) => window.__load(u), 'data:image/png;base64,' + shotC.toString('base64'));
+  const moving = await film.evaluate((bx) => window.__diffBC(bx), items.map(it => it.box));
+  await film.evaluate(() => window.__restoreB());
 
   const flat = [];
   for (const it of items) for (const p of it.pts) flat.push(p);
@@ -251,6 +283,7 @@ const shotAndSample = async (items) => {
   const live = [];
   for (let i = 0; i < items.length; i++) {
     items[i].changed = diffs[i];
+    if (moving[i] > 0) { unstable.push({ text: items[i].text, box: items[i].box.map(Math.round), px: moving[i] }); continue; }
     if (diffs[i] > 0) live.push(items[i]);
     else invisible.push({ text: items[i].text, box: items[i].box.map(Math.round) });
   }
@@ -260,6 +293,7 @@ const shotAndSample = async (items) => {
 const SCREENS = [];
 const skipped = {};
 const invisible = [];
+const unstable = [];
 const goNav = async (key) => { await page.click('[data-tour="nav-' + key + '"]'); await page.waitForTimeout(900); };
 const goReport = async (k) => { await page.evaluate((r) => window.__v86Test.openReport(r), k); await page.waitForTimeout(900); };
 
@@ -285,10 +319,29 @@ const scan = async (label, setup) => {
     // in the fixture above -- pinned by nothing, exactly like the version literal that caused the
     // last blocker.
     //
-    // So ask the APP whether anything is over the screen. `anyOverlayOpen()` exists because
-    // "whether something covers the screen is a fact about the screen" -- it replaced a flag list
-    // that had ten of twenty-three flags wrong -- and it covers What's New, the tour, the drawer,
-    // the upgrade sheet and every overlay added after this comment. One assertion, whole class.
+    // WHAT THIS ASSERTION ACTUALLY COVERS, after the third audit measured the sentence that used
+    // to be here and found it false. It said `anyOverlayOpen()` "covers What's New, the tour, the
+    // drawer, the upgrade sheet and every overlay added after this comment. One assertion, whole
+    // class." **It does not cover the tour, and the tour is the one example that comment named.**
+    //
+    // `anyOverlayOpen()` (index.html:1920) SKIPS `pointer-events: none` by deliberate design --
+    // twenty lines of comment there record that treating `#tour-layer` as an overlay once froze
+    // the body through the whole first-run guide, so a new user could not add their first
+    // medication. That behaviour is correct and must not change. It also means this assertion is
+    // STRUCTURALLY incapable of catching the exact class the pixel diff below exists for.
+    //
+    // Measured, not argued: with `tourDone: false` in the fixture and no other change, the scan
+    // reports 184 phantom failures at worst 1.39:1 and prints no REFUSING line at all.
+    //
+    // So: this catches an overlay the APP considers open -- What's New, the drawer, the upgrade
+    // sheet -- early and with a clear message, which is worth having and costs one evaluate. It
+    // is NOT the guard for painted-but-not-hit-testable layers. That is the pixel diff, and its
+    // own limits are written where it lives.
+    //
+    // (The sentence it replaced was written beside a real fix and was wrong about the case it
+    // named. index.html's own rule, ten lines above the `pointer-events` line it was wrong about:
+    // "A claim about behaviour that nobody measured does not become true by being written into
+    // the code next to a real fix.")
     const over = await page.evaluate(() =>
       (window.__backTest && typeof window.__backTest.overlayNow === 'function')
         ? window.__backTest.overlayNow() : 'no hook');
@@ -360,12 +413,29 @@ for (const s of report) {
 // A STRING THAT CANNOT BE PROVEN VISIBLE IS NOT A STRING THAT PASSED. Reporting these and
 // exiting 0 would be the same silent green the audit walked through -- the count would move and
 // the verdict would not.
-if (invisible.length) {
-  console.log('\n  FAIL  ' + invisible.length + ' string(s) were collected but did NOT change any pixel');
+// DE-DUPLICATED, BECAUSE THE FIRST VERSION OF THIS LINE COUNTED COLLECTIONS AND CALLED THEM
+// STRINGS -- the identical inflation pass 1 blocked on, printed four lines under the comment that
+// records that lesson. 108 "strings" against the opaque-bar mutant was 48; the clean run measures
+// 309 and the mutant 261, and 309 - 261 = 48 is the arithmetic that says so.
+const uniq = (list) => {
+  const m = new Map();
+  for (const v of list) m.set(v.text + '\u241f' + JSON.stringify(v.box), v);
+  return [...m.values()];
+};
+const invisibleU = uniq(invisible), unstableU = uniq(unstable);
+if (unstableU.length) {
+  console.log('\n  FAIL  ' + unstableU.length + ' string(s) sit on a backdrop that was still MOVING');
+  console.log('        between two photographs of the same hidden frame, so the colour sampled');
+  console.log('        under them is a frame of an animation, not the colour behind them.');
+  for (const v of unstableU.slice(0, 8)) console.log('          ' + JSON.stringify(v.text) + '  ' + v.px + 'px changed');
+  if (unstableU.length > 8) console.log('          ... and ' + (unstableU.length - 8) + ' more');
+}
+if (invisibleU.length) {
+  console.log('\n  FAIL  ' + invisibleU.length + ' string(s) were collected but did NOT change any pixel');
   console.log('        when the text was hidden, so something is painted over them, or they are');
   console.log('        invisible. Whatever colour sits under them is not the colour behind them.');
-  for (const v of invisible.slice(0, 12)) console.log('          ' + JSON.stringify(v.text) + '  box ' + JSON.stringify(v.box));
-  if (invisible.length > 12) console.log('          ... and ' + (invisible.length - 12) + ' more');
+  for (const v of invisibleU.slice(0, 12)) console.log('          ' + JSON.stringify(v.text) + '  box ' + JSON.stringify(v.box));
+  if (invisibleU.length > 12) console.log('          ... and ' + (invisibleU.length - 12) + ' more');
 }
 const skipTotal = Object.values(skipped).reduce((a2, b2) => a2 + b2, 0);
 console.log('\n' + measured + ' DISTINCT strings measured (' + samples + ' samples), '
@@ -380,4 +450,4 @@ console.log('  (NOT a coverage figure. `offscreen` is overwhelmingly the SAME st
 console.log('page errors: ' + thrown.length + (thrown.length ? ' -> ' + thrown.slice(0, 2).join(' | ') : ''));
 if (JSON_OUT) fs.writeFileSync(JSON_OUT, JSON.stringify(report, null, 2));
 await b.close();
-process.exit(failures || thrown.length || invisible.length ? 1 : 0);
+process.exit(failures || thrown.length || invisibleU.length || unstableU.length ? 1 : 0);

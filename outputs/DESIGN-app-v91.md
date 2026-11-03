@@ -46,6 +46,11 @@ At **320 and 360**, on the Weight report, the floating **Back** pill sits square
 real-viewport screenshot, not a `fullPage` capture** — which matters, because the app-v90 Designer
 pass declined exactly this finding as a capture artifact and was wrong. It is `BACKLOG M36`,
 measured independently at 88×7 px over the last list row at maximum scroll, pre-existing, and
+**re-measured by the third audit at scroll 0, where it is worse and where I had it wrong:** 62×21 at
+320 (the whole box), 73×18 at 360, and **83×21 = 1743px² at 390 — the whole box, and the largest of
+the three.** I wrote "320 and 360" above and called 390 clean; 390 is the worst of them, **and it is
+the only width the contrast gate runs at**, where that covered value is dropped into `covered: 65`
+rather than measured. The number nobody can read is also the number nothing checks.
 queued.
 
 Recording it again here for one reason: **this is the second seat to see it and the first one
