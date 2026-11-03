@@ -38,17 +38,23 @@ io.open(p,'w',encoding='utf-8').write(s.replace(old,"paddingBottom: 'calc(90px +
 PY
 }
 
-MUTANT_DESC_2="[pill] the gap goes to 0 -- the last line TOUCHES the pill instead of clearing it"
-# BACK_PILL_GAP is the only part of the clearance that is a judgement rather than geometry. If the
-# suite cannot tell 0 from 8 it is measuring the pill's own box and not the clearance.
+MUTANT_DESC_2="[pill] BACK_PILL_H is zeroed -- the derived clearance stops matching the pill"
+# The pill's clearance is derived from BACK_PILL_BOTTOM + BACK_PILL_H + BACK_PILL_GAP, and this
+# mutant breaks the derivation at the term that carries the pill's own size.
+#
+# THE FIRST VERSION OF THIS MUTANT MOVED BACK_PILL_GAP INSTEAD, AND IT SURVIVED -- correctly, and
+# that is a fact about the fix worth keeping rather than a mutant worth strengthening. Even at
+# -24 the gap does not expose a glyph, because the last row ends roughly 32px above the padding
+# edge anyway. **The 8px gap is breathing room, not the guard.** What holds the clearance is
+# BACK_PILL_BOTTOM + BACK_PILL_H, and this mutant is pointed there.
 mutant_2() {
-  python3 - <<'PY'
+  python3 - <<'MUT'
 import io
 p='index.html'; s=io.open(p,encoding='utf-8').read()
-old = "const BACK_PILL_GAP = 8;"
+old = "const BACK_PILL_H = 42;"
 assert s.count(old)==1
-io.open(p,'w',encoding='utf-8').write(s.replace(old,"const BACK_PILL_GAP = -24;"))
-PY
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"const BACK_PILL_H = 0;"))
+MUT
 }
 
 MUTANT_DESC_3="[pill] data-report-tile is removed -- the suite must REFUSE, not walk zero screens"
@@ -77,7 +83,13 @@ io.open(p,'w',encoding='utf-8').write(s.replace(old,"h('span', null, nameOf(e.me
 MUT
 }
 
-MUTANT_DESC_5="[collisions] the content column cannot shrink -- the other half of the same guard"
+MUTANT_DESC_5="[overflow] the content column cannot shrink -- NOT a collision, measured"
+MUTANT_EXPECT_5="hole"
+# Written as a collision mutant and it SURVIVED, which is the corpus doing its job: with the
+# name span still carrying `minWidth: '0'`, the name gives way on its own and nothing collides.
+# The content column's `minWidth: '0'` is load-bearing for OVERFLOW (it is what let the name
+# line shrink in the first place), not for collisions. Kept here, declared, so nobody writes it
+# a third time expecting a red; sweep it against test/overflow-scan.mjs to see it bite.
 mutant_5() {
   python3 - <<'MUT'
 import io

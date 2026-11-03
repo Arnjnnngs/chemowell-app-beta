@@ -191,6 +191,11 @@ for (const W of WIDTHS) {
   const close = await page.$('[data-whatsnew-close="true"]');
   if (close) { await close.click(); await page.waitForTimeout(500); }
   if (await page.$('[data-whatsnew-modal="true"]')) {
+        // A REFUSAL PRINTS A `FAIL` LINE TOO. `falsify.sh` scores a run with neither a FAIL line nor a
+    // `checks:` summary as COULD NOT MEASURE -- which is right in general and wrong here: a refusal
+    // IS the suite catching something. Measured: the mutant that removes `data-report-tile` made
+    // this suite exit 3 correctly and the sweep scored it "could not measure" rather than caught.
+    console.log('  FAIL  the What’s New modal is still open');
     console.error('REFUSING: the What’s New modal is still open, so every measurement would be\n'
       + 'taken against its scrim rather than against the app.');
     await b.close(); if (server) server.close(); process.exit(3);
@@ -200,6 +205,7 @@ for (const W of WIDTHS) {
   await page.waitForTimeout(900);
   const tiles = await page.$$eval('[data-report-tile]', (els) => els.map((e) => e.getAttribute('data-report-tile')));
   if (!tiles.length) {
+    console.log('  FAIL  the Reports menu rendered no [data-report-tile] elements');
     console.error('REFUSING: the Reports menu rendered no [data-report-tile] elements, so this suite\n'
       + 'has nothing to walk. Either the hook was removed or the menu did not render — and a suite\n'
       + 'that walks zero screens must FAIL, not report clean.');
@@ -264,6 +270,7 @@ if (server) server.close();
 
 // A run where nothing scrolled is a run that could not have caught this defect, whatever it printed.
 if (scrolledScreens === 0) {
+  console.log('  FAIL  not one report screen scrolled');
   console.error('\nREFUSING: not one report screen scrolled. The fixture is not producing enough rows,\n'
     + 'so every "none under the pill" above is vacuous. This is the empty-Home trap overflow-scan.mjs\n'
     + 'paid for twice; a suite that cannot see the defect must fail rather than report clean.');

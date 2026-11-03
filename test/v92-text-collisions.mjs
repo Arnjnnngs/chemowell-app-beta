@@ -153,6 +153,11 @@ for (const W of WIDTHS) {
   const close = await page.$('[data-whatsnew-close="true"]');
   if (close) { await close.click(); await page.waitForTimeout(400); }
   if (await page.$('[data-whatsnew-modal="true"]')) {
+        // A REFUSAL PRINTS A `FAIL` LINE TOO. `falsify.sh` scores a run with neither a FAIL line nor a
+    // `checks:` summary as COULD NOT MEASURE -- which is right in general and wrong here: a refusal
+    // IS the suite catching something. Measured: the mutant that removes `data-report-tile` made
+    // this suite exit 3 correctly and the sweep scored it "could not measure" rather than caught.
+    console.log('  FAIL  the What’s New modal is still open');
     console.error('REFUSING: the What’s New modal is still open, so this would measure its scrim.');
     await b.close(); if (server) server.close(); process.exit(3);
   }
@@ -187,6 +192,7 @@ if (server) server.close();
 
 // A run that collected almost nothing cannot have seen a collision, whatever it printed.
 if (runsTotal < 100) {
+  console.log('  FAIL  too few in-flow text runs collected');
   console.error('\nREFUSING: only ' + runsTotal + ' in-flow text runs were collected across '
     + combos + ' screen×width combinations. The fixture is not rendering, so every "none'
     + ' overlapping" above is vacuous.');
