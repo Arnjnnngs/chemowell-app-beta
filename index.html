@@ -5073,7 +5073,7 @@ function renderSetup() {
       setupChipRow('Treatment type', [['chemo', 'Chemo'], ['radiation', 'Radiation'], ['both', 'Both'], ['other', 'Other']], setupTreatmentDraft, (v) => { setupTreatmentDraft = v; render(); }),
       h('button', {
         onClick: completeSetup,
-        style: { width: '100%', padding: '14px', fontSize: '16px', fontWeight: '800', color: '#FFFFFF', background: 'linear-gradient(135deg, #A83D0F 0%, #A83D0F 100%)', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 8px 22px rgba(200,83,32,0.35)' } }, 'Get started'),
+        style: { width: '100%', padding: '14px', fontSize: '16px', fontWeight: '800', color: '#FFFFFF', background: 'linear-gradient(135deg, #A83D0F 0%, #8F3410 100%)', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 8px 22px rgba(200,83,32,0.35)' } }, 'Get started'),
       h('div', { style: { fontSize: '12px', color: '#5C4E52', marginTop: '14px', lineHeight: '1.5' } },
         'That\u2019s the whole setup \u2014 these answers just tailor which cards the app shows. A short interactive guide comes next.')
     ),
@@ -5139,7 +5139,7 @@ function renderUpgradeModal() {
     const buyBtn = tier === 'free' ? null : h('button', {
       onClick: () => { setLicense({ tier: tier, simulated: true, purchasedAt: Date.now() }); setToast(title + ' unlocked (simulated for beta)'); setState({}); },
       style: variant === 'plus'
-        ? { marginTop: '12px', width: '100%', minHeight: '50px', borderRadius: '13px', background: 'linear-gradient(135deg, #A83D0F 0%, #A83D0F 100%)', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: '0 6px 18px rgba(168,61,15,0.32)' }
+        ? { marginTop: '12px', width: '100%', minHeight: '50px', borderRadius: '13px', background: 'linear-gradient(135deg, #A83D0F 0%, #8F3410 100%)', color: '#fff', fontSize: '15px', fontWeight: '700', boxShadow: '0 6px 18px rgba(168,61,15,0.32)' }
         : { marginTop: '12px', width: '100%', minHeight: '46px', borderRadius: '13px', background: '#FFFFFF', border: '1.5px solid #A83D0F', color: '#A83D0F', fontSize: '14px', fontWeight: '700' }
     }, TEST_MODE ? 'Simulate purchase (beta)' : 'Buy');
     if (variant === 'free') {
@@ -6644,7 +6644,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         )
       ),
       rPlanned ? h('div', { style: { height: '8px', borderRadius: '99px', background: 'rgba(191,76,26,0.10)', overflow: 'hidden' } },
-        h('div', { style: { height: '100%', width: Math.min(100, Math.round(rCount / rPlanned * 100)) + '%', borderRadius: '99px', background: rDone ? '#0F9D57' : 'linear-gradient(90deg, #A83D0F, #A83D0F)', transition: 'width .3s ease' } })
+        h('div', { style: { height: '100%', width: Math.min(100, Math.round(rCount / rPlanned * 100)) + '%', borderRadius: '99px', background: rDone ? '#0F9D57' : 'linear-gradient(90deg, #A83D0F, #8F3410)', transition: 'width .3s ease' } })
       ) : null,
       h('div', { style: { display: 'flex', gap: '8px' } },
         rToday
@@ -6998,7 +6998,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
         h('div', { style: { ...TYPE.bodyBold, fontSize: '14px', color: '#2A2127', marginBottom: '2px' } }, 'Enjoying ChemoWell?'),
         h('div', { style: { ...TYPE.caption, color: '#554A52', marginBottom: '10px' } }, 'If it’s been helpful, you’re welcome to leave an optional one-time gift for the developer. Totally optional — nothing about the app changes either way.'),
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
-          h('button', { onClick: openSupportLink, style: { minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: 'linear-gradient(135deg, #A83D0F 0%, #A83D0F 100%)', color: '#fff', fontSize: '13px', fontWeight: '700', border: 'none', cursor: 'pointer' } }, 'Send a gift'),
+          h('button', { onClick: openSupportLink, style: { minHeight: '44px', padding: '0 16px', borderRadius: '12px', background: 'linear-gradient(135deg, #A83D0F 0%, #8F3410 100%)', color: '#fff', fontSize: '13px', fontWeight: '700', border: 'none', cursor: 'pointer' } }, 'Send a gift'),
           h('button', { onClick: acknowledgeSupportPrompt, style: { minHeight: '44px', padding: '0 10px', borderRadius: '12px', background: 'transparent', border: 'none', color: '#5C4E52', fontSize: '13px', fontWeight: '600', cursor: 'pointer' } }, 'Maybe later')
         ),
         h('button', { onClick: optOutSupportPrompt, style: { marginTop: '8px', padding: '0', background: 'none', border: 'none', color: '#9D7F71', fontSize: '11.5px', fontWeight: '600', textDecoration: 'underline', cursor: 'pointer' } }, 'Don’t ask again')
@@ -11699,7 +11699,7 @@ function renderRadiationReport(now) {
       h('span', { style: { fontSize: '13px', fontWeight: '700', color: '#554A52' } }, (planned ? 'sessions' : 'session' + (sessions.length === 1 ? '' : 's')) + ' completed' + (done ? ' — course complete 🎉' : ''))
     ),
     planned ? h('div', { style: { height: '8px', borderRadius: '99px', background: 'rgba(191,76,26,0.10)', overflow: 'hidden' } },
-      h('div', { style: { height: '100%', width: Math.min(100, Math.round(sessions.length / planned * 100)) + '%', borderRadius: '99px', background: done ? '#0F9D57' : 'linear-gradient(90deg, #A83D0F, #A83D0F)' } })
+      h('div', { style: { height: '100%', width: Math.min(100, Math.round(sessions.length / planned * 100)) + '%', borderRadius: '99px', background: done ? '#0F9D57' : 'linear-gradient(90deg, #A83D0F, #8F3410)' } })
     ) : null,
     h('div', { style: { fontSize: '12.5px', color: '#5C4E52' } }, 'First session ' + new Date(first.ts).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' · most recent ' + new Date(last.ts).toLocaleDateString([], { month: 'short', day: 'numeric' }))
   );
