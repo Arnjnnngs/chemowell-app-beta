@@ -1139,3 +1139,18 @@ tighter one (a two-hour early reach) and the reasoning written into the code, th
 **Queued out of this work, not built:** `outputs/ENHANCER-app-v94.md` E7 — when a medication has
 more than one window the card does not say *which* one it is asking for, which is the ambiguity
 this whole release is about. One string. Recommended.
+
+**2026-11-10, after the independent audit.** The first build fixed the three screen surfaces and
+the audit refused it over three more on the notification path: the Home card stopped asking and the
+**OS alarm stayed armed**, so the phone would still have gone off at 17:00 for the dose he logged at
+16:45. The armed plan for that day was byte-identical to a day with nothing logged. Fixed in the
+same release — `medWindowDueAt` (which feeds both the alarm plan and the app-icon badge),
+`dueRemindersAt` and `cancelReminderForEntry` all read the one walk now, the suite went from 15 to
+30 checks, and four mutants were added, one per surface plus the app-v93 appointment fix, which had
+shipped with nothing behind it.
+
+**Worth saying plainly, because it is the second time in two releases:** both blocks were the same
+shape — the screen promising one thing while the notification layer did another. app-v93 silenced a
+profile's appointment alarms while five surfaces said it did not; app-v94 stopped asking on screen
+while the phone kept asking. Every gate this project has reads the screen. That is logged as the
+reason the v94 suite now reads the armed plan, and it is the one structural lesson from this pair.

@@ -1292,3 +1292,40 @@ build credits the 13-15 window, a build whose late reach runs to midnight credit
 renders identically for both**. Closing it needs a suite that reads the missed rows — which would
 also cover task #17 (the missed-dose banner has no upper bound) and `M39-j` (`missedRow` has never
 been rendered by any gate). Worth doing as one piece of work rather than three.
+
+---
+
+### M45 — A medication carrying `linkedTo` still has its card and its ring on different windows (S)
+
+Found on the builder's own re-read during app-v94, and the shape is the one that release exists to
+end — one screen's two halves answering the same question differently — one level up from the walk
+itself. `status()` takes `med.linkedTo ? linkedWindowsFor(med, d0) : medWindowsFor(med, d0)`.
+`doseProgressToday` and `missedDosesFor` take `medWindowsFor` alone. So the three now share the
+WALK but not the WINDOW LIST.
+
+**It is deliberate and it was settled by measurement**: the phase 1 audit's B5 found that folding
+the linked variant into `medWindowsFor` moved the ring's and the missed walk's windows by an hour,
+so the divergence was kept on purpose. And it is **unreachable on today's data** — RULE 0 item 4:
+every one of the five phase 1 medication properties, `linkedTo` among them, is absent in the field.
+
+So this is not a defect today. It is a defect waiting for `HARDCODED_MEDS_PLAN.md` phase 2, which
+migrates the thirteen legacy ids onto those properties and makes `linkedTo` real. Settle it before
+that lands: either all three take the linked windows (and B5's hour is re-measured and fixed), or
+the ring is documented as deliberately counting the unlinked schedule. The comment in
+`doseProgressToday` now states the qualification rather than claiming the three cannot disagree.
+
+### M46 — No fixture pins a DST transition day, so the clock mutants cannot be caught (M)
+
+Declared in the app-v94 corpus as `MUTANT_EXPECT_12="hole"`. `hourTs(d0, h)` is calendar-correct
+and `d0 + h * 3600000` is a fixed hop; they differ by exactly one hour on the two DST transition
+days a year and are identical on the other 363. app-v94 removed the last fixed-hop arithmetic from
+`status()` (audit F2), but **nothing in the repo can see a regression**: every suite freezes its
+clock to a non-transition day in UTC, deliberately, because `v90-chart-axes` was red one hour a day
+on correct code when it did not.
+
+The fix is a fixture, not a rule: one context pinned to `America/Chicago` on 2026-11-01 (the autumn
+transition) and 2027-03-14 (the spring one), asserting that a window's open time and the coverage
+walk agree. That would guard every `hourTs` / `nextDay` call site at once — there are about forty —
+rather than only the one `status()` just lost. Worth its own small suite, `test/dst-clock.mjs`,
+because it is the only check in the repo that needs a non-UTC context and the reason wants writing
+down where the next person will find it.
