@@ -275,7 +275,15 @@ async function notif(meds, entries, clock) {
       due0: t.medWindowDue('bp2', 0),
       due1: t.medWindowDue('bp2', 1),
       reactive: t.dueReminderKeys(),
-      claims: t.windowClaimTs('bp2')
+      claims: t.windowClaimTs('bp2'),
+      // THE APP-ICON BADGE AND THE DRAWER DOT. The delta audit's D1: the README claimed
+      // profileDueCount as one of the five surfaces this release fixed, and nothing could falsify
+      // that claim -- a fourth naive copy of the deleted predicate planted there left this suite
+      // at 33/33 and the profile suite green, because its fixture logs INSIDE the window, where
+      // the naive test gives the right answer by accident. A claim with no mutant behind it is the
+      // thing that turned out false in app-v93 and again in app-v94's first build. Third time it
+      // gets a check.
+      dueCount: t.totalDueCount()
     };
   }, D0);
   await ctx.close();
@@ -326,6 +334,18 @@ async function notif(meds, entries, clock) {
     r.claims[0] === null && r.claims[1] === H(16, 45), JSON.stringify(r.claims));
   ok('and tonight\'s alarm is dropped while the morning stays missed, not armed',
     r.doseTags.length === 0, JSON.stringify(r.doseTags));
+}
+
+// ---- THE COUNT ON THE APP ICON (the delta audit's D1) -----------------------------------------
+// profileDueCount counts windows OPEN RIGHT NOW with nothing logged in them, so this one needs the
+// 17:03 clock -- at 16:50 the window is not open and the count is zero either way, which is how a
+// naive copy planted there would pass unnoticed.
+{
+  const given = await notif([win(EVENING)], [dose('a', H(16, 45))], FROZEN);
+  const nothing = await notif([win(EVENING)], [], FROZEN);
+  ok('nothing logged puts a 1 on the app icon', nothing.dueCount === 1, String(nothing.dueCount));
+  ok('a dose logged 15 minutes early takes it off the app icon', given.dueCount === 0,
+    String(given.dueCount));
 }
 
 // ---- WHICH WINDOW IS CREDITED FOR A DOSE LOGGED IN A GAP (closes BACKLOG M44's hole) ----------

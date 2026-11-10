@@ -171,3 +171,35 @@ assert s.count(old)==1
 io.open(p,'w',encoding='utf-8').write(s.replace(old,"  const d0 = dayStart(now), atH = (h) => d0 + h * 3600000;"))
 MUT
 }
+
+MUTANT_DESC_13="a FOURTH private copy of the naive test, in the app-icon badge -- the delta audit's D1"
+# The delta audit planted exactly this on a copy outside the repo and the suite stayed 33/33, and
+# v93-profile-notifications stayed green because its fixture logs INSIDE the window where the naive
+# test is accidentally right. The README claimed profileDueCount as one of the five surfaces this
+# release fixed; nothing could falsify that claim. Now something can.
+mutant_13() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+old = """      if (nowTs < ws || nowTs >= we) return;        // the window is not open right now
+      if (!medWindowDueAt(med, d0, w, entries)) return; // already logged in this window"""
+assert s.count(old)==1
+new = """      if (nowTs < ws || nowTs >= we) return;        // the window is not open right now
+      if ((entries || []).some(e => e && e.medId === med.id && e.ts >= ws && e.ts < we)) return;"""
+io.open(p,'w',encoding='utf-8').write(s.replace(old,new))
+MUT
+}
+
+MUTANT_DESC_14="an unknown window reads as covered instead of due -- the fail-safe reversed"
+# Unreachable on today's call sites, which is why the audit called it latent. A mutant anyway: the
+# whole point of choosing this direction is that it is a decision, and a decision with nothing
+# holding it is a comment.
+mutant_14() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+old = "  if (wi < 0) return true;"
+assert s.count(old)==1
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"  if (wi < 0) return false;"))
+MUT
+}

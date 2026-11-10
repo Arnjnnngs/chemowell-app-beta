@@ -1316,7 +1316,13 @@ WALK but not the WINDOW LIST.
 
 **It is deliberate and it was settled by measurement**: the phase 1 audit's B5 found that folding
 the linked variant into `medWindowsFor` moved the ring's and the missed walk's windows by an hour,
-so the divergence was kept on purpose. And it is **unreachable on today's data** — RULE 0 item 4:
+so the divergence was kept on purpose.
+
+**`chemoRelativeWindows` belongs in this entry too** (delta audit D2's second half). `status()` and
+the missed walk take their windows from `medWindowsFor`, which resolves that property, while
+`buildReminderPlan` and `profileDueCount` iterate `med.windows` raw. So a treatment-relative
+medication's alarm is armed from a different window list than its card is drawn from — the same
+divergence as `linkedTo`, reachable by the same phase 2, and to be settled in the same pass. And it is **unreachable on today's data** — RULE 0 item 4:
 every one of the five phase 1 medication properties, `linkedTo` among them, is absent in the field.
 
 So this is not a defect today. It is a defect waiting for `HARDCODED_MEDS_PLAN.md` phase 2, which
@@ -1337,6 +1343,65 @@ on correct code when it did not.
 The fix is a fixture, not a rule: one context pinned to `America/Chicago` on 2026-11-01 (the autumn
 transition) and 2027-03-14 (the spring one), asserting that a window's open time and the coverage
 walk agree. That would guard every `hourTs` / `nextDay` call site at once — there are about forty —
-rather than only the one `status()` just lost. Worth its own small suite, `test/dst-clock.mjs`,
+rather than only the one `status()` just lost. The delta audit put the cost of killing mutant 12
+alone at about forty lines, so the **M** on this entry is for the whole class, not for that mutant.
+
+**Two sites the delta audit named (D2), because "one clock" stopped at `status()`:**
+* `profileDueCount` (index.html:1062) computes `ws` / `we` with raw `d0 + h * 3600000` two lines
+  above a call that goes through `hourTs`. Same mixed clock inside one function that F2 fixed next
+  door.
+* `missedDosesFor` (index.html:2860) filters the day with `e.ts < d0 + 86400000` while the walk it
+  hands those entries to uses `nextDay(d0)`. On the 25-hour autumn day the last hour falls outside
+  the filter and inside the walk, so a dose given in it reads as **missed**.
+
+Both are pre-existing and DST-only. Fix them in the same pass as the fixture, not before it — a
+clock change with nothing able to see it is how this class got here. Worth its own small suite, `test/dst-clock.mjs`,
 because it is the only check in the repo that needs a non-UTC context and the reason wants writing
 down where the next person will find it.
+
+### M47 — An alarm with no `extra` survives every cancel path (S)
+
+The app-v93 audit's F2, restated as the delta re-audit's F3 and **lost for a release** — it was in
+neither `BACKLOG.md` nor `REQUESTS.md` until now, which is exactly the failure Rule 7 exists for and
+why that rule carries dates. Logged properly here.
+
+`cancelRemindersForProfile` filters `p.extra && p.extra.profileId === profileId`, so a pending
+notification with no `extra` object at all is never cancelled — not by silencing a profile, and not
+by **deleting** one. Nothing this app arms is missing `extra` (every `out.push` in
+`buildReminderPlan` sets it), so it is unreachable from the current arming sites. It becomes
+reachable the moment anything else on the device arms through the same plugin, or an older build's
+alarm survives an upgrade: that alarm would then outlive the profile it belonged to and fire with a
+name for somebody who is no longer on the phone.
+
+Fix is one line (treat a missing `extra` as cancellable **on the deletion path only** — on the mute
+path it must stay protected, because `notifCancelCandidates` deliberately falls back to the
+existence rule for alarms whose kind it cannot read). Wants its own check and mutant, since the two
+paths want opposite answers.
+
+### M48 — The window fixtures use shapes `deriveWindowEnds` cannot produce (S)
+
+The delta re-audit's F4 on the first pass, also lost until now. User-created windows are
+**contiguous**: `deriveWindowEnds` sets each window's `end` to the next window's `start` and the
+last to 24, so a real medication has no gaps. Gapped windows exist only in legacy configs (one
+entry, index.html:1566) and in test fixtures.
+
+That matters for how much the app-v94 corpus proves. Under contiguous geometry pass 2 is nearly a
+no-op — every dose is inside some window — and the two-hour early grace reaches two hours back
+*into the previous window* rather than into empty time. So the gap cases this suite leans on are
+real but rare, and the contiguous case, which is what nearly every user has, is under-tested by
+comparison. Add a contiguous fixture (08–17, 17–24) alongside the gapped ones and check what the
+grace does where two windows touch: a dose at 16:50 is early for the 17:00 window and also inside
+the 08–17 one, and only one of them should claim it.
+
+### M49 — `window.__v86Test` is ungated and now drives the plugin cancel (S, before store submission)
+
+Noted by the app-v94 delta audit (D5). The hook block is attached unconditionally, not behind
+`TEST_MODE`, and it has grown: as of app-v94 it exposes `setProfileMuted`, `cancelForEntry` and
+`armedTags`, so anything running in the page can mute a profile or cancel armed alarms. Pre-existing
+since app-v85/86 and harmless in a single-file app with no third-party script and a CSP that admits
+one CDN — but it is a surface, and "no third-party script" is a property of today's file rather than
+a guarantee.
+
+Gate the whole block behind `TEST_MODE` before store submission, and make the suites run against the
+`TEST_MODE = true` build they already use. Belongs with the `TEST_MODE = false` flip on the
+store-readiness list rather than in a dose-logic release.

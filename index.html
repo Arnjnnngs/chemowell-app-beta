@@ -13645,15 +13645,21 @@ function medRemindersEnabledOn(med, dayTs) {
 // that for appointments.
 //
 // `indexOf` against the medication's OWN window list is what gives the shared walk its index.
-// Every call site iterates `med.windows` and passes the object it got from that array, so the
-// identity holds. A window that is not in that list (a derived or linked one) is judged on its
-// own rather than against a guessed index -- never silently treated as covered.
+// All five call sites iterate `med.windows` and pass the object they got from that array, so the
+// identity holds and `wi < 0` is unreachable today -- the delta audit checked every one of them.
+//
+// IT FAILS SAFE RATHER THAN FAILING CLEVER. The first version judged an unknown window on its own,
+// which the audit pointed out is MORE permissive than the indexed path, not less: a lone window is
+// the last window, so its late reach runs to midnight and any dose that day covers it. On a
+// medication tracker the two wrong answers are not equal. Hiding a dose that is still needed is
+// the dangerous one -- it is the bug Aaron reported, in reverse -- and nagging for a dose already
+// given is merely annoying. So an unknown window reads as DUE.
 function medWindowDueAt(med, dayTs, w, entries) {
   const d0 = dayStart(dayTs);
   const mine = (entries || []).filter(e => e && e.medId === med.id);
   const windows = (med && med.windows) || [];
   const wi = windows.indexOf(w);
-  if (wi < 0) return !coveredWindowFlags(d0, mine, [w])[0];
+  if (wi < 0) return true;
   return !coveredWindowFlags(d0, mine, windows)[wi];
 }
 

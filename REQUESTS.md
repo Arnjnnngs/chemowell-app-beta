@@ -1146,8 +1146,16 @@ the audit refused it over three more on the notification path: the Home card sto
 16:45. The armed plan for that day was byte-identical to a day with nothing logged. Fixed in the
 same release — `medWindowDueAt` (which feeds both the alarm plan and the app-icon badge),
 `dueRemindersAt` and `cancelReminderForEntry` all read the one walk now, the suite went from 15 to
-30 checks, and four mutants were added, one per surface plus the app-v93 appointment fix, which had
-shipped with nothing behind it.
+**35** checks, and the mutant corpus from 7 to 14 — one per notification surface, one restoring the
+app-v93 appointment block, one planting a fourth naive copy in the app-icon badge, and one reversing
+the unknown-window fail-safe.
+
+The delta re-audit said SHIP and found five more things, four of them in the documentation rather
+than the code. One mattered: the README **claimed** the app-icon badge as a surface this release
+fixed and nothing could falsify the claim — a fourth naive copy planted in `profileDueCount` left
+every suite green, because the profile suite's fixture logs a dose *inside* its window, where the
+naive test is accidentally right. **That is the third release running in which the one unfalsifiable
+claim was the one that would have been false.** It has a check and a mutant now.
 
 **Worth saying plainly, because it is the second time in two releases:** both blocks were the same
 shape — the screen promising one thing while the notification layer did another. app-v93 silenced a
