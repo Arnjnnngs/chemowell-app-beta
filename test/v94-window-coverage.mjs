@@ -110,7 +110,10 @@ async function home(meds, entries) {
   await page.waitForTimeout(1100);
   const r = await page.evaluate(() => {
     const hero = document.querySelector('[data-home="up-next"]');
-    const ring = hero ? hero.querySelector('[aria-label*="scheduled doses logged"]') : null;
+    // The ring is read from ANYWHERE on Home, not only from inside the hero: when every window is
+    // either covered or already missed there is no hero at all, and the first version of this
+    // suite could not see the count in exactly the cases the corpus cared about.
+    const ring = document.querySelector('[aria-label*="scheduled doses logged"]');
     const all = document.body.innerText || '';
     return {
       hasHero: !!hero,
@@ -168,6 +171,31 @@ async function home(meds, entries) {
   ok('a late dose credits the window it was late for, not the next one (v68)', r.due,
     JSON.stringify(r));
   ok('and the ring counts it as one of two', /1 of 2/.test(r.ring || ''), 'ring: ' + r.ring);
+}
+
+// ---- A DOSE GIVEN FOR *THIS* WINDOW IS NOT STOLEN BY AN EARLIER ONE ---------------------------
+// Both of these came from the mutant corpus, which found a real flaw in the first version of the
+// fix: with a single claim pass in window order, the MORNING window took a dose logged at 16:00 as
+// a late catch-up, so the app turned round at 17:00 and asked for the evening dose that had just
+// been given -- Aaron's original complaint in a different hat.
+{
+  // 16:00 is four hours after the morning window closed AND one hour before the evening one opens.
+  // Both have a claim. The dose was given for the evening, so the evening gets it and the morning
+  // is the one that reads as missed.
+  const r = await home([win(TWO)], [dose('a', H(16))]);
+  // The discriminator is `allIn`, not `due`. Claiming it for the evening leaves the MORNING
+  // uncovered and in the past -- a missed dose, so the day is not "all in". A rule that let both
+  // windows take the same dose would report the day complete and nothing would ever be flagged.
+  ok('a dose an hour before a window belongs to THAT window, not to an earlier one',
+    !r.due && !r.allIn && /1 of 2/.test(r.ring || ''), JSON.stringify(r));
+}
+{
+  // The same thing from the other side: a dose at 18:00 is inside the evening window and the
+  // morning window must not reach forward and swallow it.
+  const r = await home([win(TWO)], [dose('a', H(18))]);
+  ok('a dose inside a window is never claimed by an earlier window', !r.due,
+    JSON.stringify(r));
+  ok('and the day still reads as one of two covered', /1 of 2/.test(r.ring || ''), 'ring: ' + r.ring);
 }
 
 // ---- NOTHING LOGGED AT ALL --------------------------------------------------------------------

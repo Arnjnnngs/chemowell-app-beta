@@ -2569,15 +2569,35 @@ function coveredWindowFlags(dayTs, entries, windows) {
   const bounds = (windows || []).map((w, i) => ({
     // Never reach back past midnight: a dose logged yesterday belongs to yesterday.
     lo: Math.max(d0, hourTs(d0, w.start) - WINDOW_EARLY_GRACE_MS),
+    we: hourTs(d0, w.end),
     hi: i + 1 < windows.length ? hourTs(d0, windows[i + 1].start) : end
   }));
   const day = (entries || []).filter(e => e && e.ts >= d0 && e.ts < end).sort((a, b) => a.ts - b.ts);
   const claimed = new Set();
-  return bounds.map(b => {
-    const hit = day.find(e => !claimed.has(e) && e.ts >= b.lo && e.ts < b.hi);
-    if (hit) { claimed.add(hit); return true; }
-    return false;
+  const covered = bounds.map(() => false);
+  // TWO PASSES, AND THE ORDER BETWEEN THEM IS THE WHOLE POINT. The corpus found this: with a
+  // single pass in window order, a dose logged at 16:00 with windows at 8 and 17 was claimed by
+  // the MORNING window as a late catch-up -- so the app turned round at 17:00 and asked for the
+  // evening dose that had just been given. That is Aaron's original complaint wearing a different
+  // hat, and a single pass cannot avoid it, because both windows have a legitimate claim and only
+  // one of them is what the caregiver meant.
+  //
+  // Pass 1 -- ON TIME OR EARLY FOR THIS WINDOW. A dose inside [start - grace, end] was given
+  // around this window's time, so it is this window's dose and no other window may take it.
+  bounds.forEach((b, i) => {
+    const hit = day.find(e => !claimed.has(e) && e.ts >= b.lo && e.ts <= b.we);
+    if (hit) { claimed.add(hit); covered[i] = true; }
   });
+  // Pass 2 -- LATE. Whatever is left over, in window order, so the earliest uncovered window gets
+  // first call: v68's finding, that a 1pm dose credits the 8am window it was late for rather than
+  // being stolen by the 2pm window. Running this AFTER pass 1 is what stops a late claim
+  // outbidding a window the dose was actually given for.
+  bounds.forEach((b, i) => {
+    if (covered[i]) return;
+    const hit = day.find(e => !claimed.has(e) && e.ts >= b.lo && e.ts < b.hi);
+    if (hit) { claimed.add(hit); covered[i] = true; }
+  });
+  return covered;
 }
 
 // Missed-dose detection. A window counts as covered by any dose logged that day
