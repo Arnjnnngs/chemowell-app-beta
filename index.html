@@ -1111,7 +1111,9 @@ async function setProfileMuted(id, muted) {
     // Disarm straight away rather than waiting for the next sync. A profile that is not the active
     // one has no sync of its own to wait for, so for every profile but this one, this call IS the
     // mechanism; notifCancelCandidates sweeping muted profiles is the backstop for when it fails.
-    try { await cancelRemindersForProfile(id); } catch (e) {}
+    // DOSE AND CHECK-IN ONLY. An appointment is somewhere a person has to BE; it does not pause
+    // with their medication, and the UI promises in so many words that it still comes through.
+    try { await cancelRemindersForProfile(id, ['dose', 'checkin']); } catch (e) {}
     if (id === ACTIVE_PROFILE_ID) markNotifDirty();
     setToast('Medication reminders for ' + name + ' are off. Appointment reminders still come through.');
   } else if (id === ACTIVE_PROFILE_ID) {
@@ -2528,6 +2530,56 @@ function dailyCeiling(med) {
   // so claiming "counts all of them" there would be false.
   return { used, max, unit: 'mg', label, windowH: isRolling ? med.rollingCeilingH : 0, group: !isRolling && !!med.ceilingGroup };
 }
+// ---- ONE DEFINITION OF "HAS THIS WINDOW BEEN COVERED". (app-v94) -----------------------------
+// There were THREE, and two of them were wrong. Aaron, 2026-11-06, with a screenshot: "I just
+// logged my medication for the 5:00 round and it still shows me to log it."
+//
+//   missedDosesFor  -- claimed each window's first unused dose logged before the NEXT window
+//                      opens. Correct, deliberate, and fixed in v68 after Aaron reported the
+//                      mirror image of this bug (a late dose still flagged missed). Its own
+//                      comment says "early logs like a 7:45 AM Protonix still cover the 8 AM
+//                      window".
+//   status()        -- asked `e.ts >= windowStart && e.ts < windowEnd`. A dose logged at 4:45 for
+//                      a 5 o'clock window is not in that interval, so the Home card kept saying
+//                      DUE NOW for a dose that had already been given. Reproduced exactly.
+//   doseProgressToday -- counted ENTRIES today, capped at the window count. Two doses logged into
+//                      one window read as two windows done, so the ring said "4 of 4 logged" on
+//                      the same screen as "Due now".
+//
+// On a medication tracker the first of those is the dangerous one: the app asks for a second dose
+// of something the caregiver has already given, and the progress ring agrees with neither.
+//
+// THE EARLY REACH IS BOUNDED, which is the one way this differs from the old missed-dose walk.
+// That walk let ANY unused dose earlier in the day cover a later window, so two doses logged in
+// the morning silently covered an evening window and the app stopped asking for it. Unbounded
+// generosity is safe for "do not nag about a miss" and not safe for "you still need to give this".
+// Two hours is longer than any plausible "I gave it a bit early" and shorter than the gap between
+// two real dose rounds. The LATE direction is unchanged and still runs to the next window's open,
+// so v68's finding -- a 1pm dose credits the 8am window it was late for, rather than being stolen
+// by the 2pm window -- still holds, and its test still passes.
+const WINDOW_EARLY_GRACE_MS = 2 * 3600000;
+
+// Returns one boolean per window, in window order: was that window covered by a dose that day?
+// Pure: no reads of `state`, no bookkeeping. Windows are processed IN ORDER and each claims at
+// most one dose, so an earlier window always gets first call on a dose that could serve either --
+// that ordering IS the v68 fix and it is why this cannot be written as a per-window `some()`.
+function coveredWindowFlags(dayTs, entries, windows) {
+  const d0 = dayStart(dayTs);
+  const end = nextDay(d0);
+  const bounds = (windows || []).map((w, i) => ({
+    // Never reach back past midnight: a dose logged yesterday belongs to yesterday.
+    lo: Math.max(d0, hourTs(d0, w.start) - WINDOW_EARLY_GRACE_MS),
+    hi: i + 1 < windows.length ? hourTs(d0, windows[i + 1].start) : end
+  }));
+  const day = (entries || []).filter(e => e && e.ts >= d0 && e.ts < end).sort((a, b) => a.ts - b.ts);
+  const claimed = new Set();
+  return bounds.map(b => {
+    const hit = day.find(e => !claimed.has(e) && e.ts >= b.lo && e.ts < b.hi);
+    if (hit) { claimed.add(hit); return true; }
+    return false;
+  });
+}
+
 // Missed-dose detection. A window counts as covered by any dose logged that day
 // before the window closed (and after the previous window closed) — so early logs
 // like a 7:45 AM Protonix still cover the 8 AM window. Only meds with alerts:true.
@@ -2763,11 +2815,15 @@ function missedDosesFor(dayTs, now) {
     if (!medScheduledOn(med, d0)) return; // not taken on this calendar day — nothing to miss
     const windows = medWindowsFor(med, d0);
     const dayEntries = entriesFor(med.id).filter(e => e.ts >= d0 && e.ts < d0 + 86400000).sort((a, b) => a.ts - b.ts);
-    const used = new Set();
+    // app-v94: the claim walk that used to be written out here is now coveredWindowFlags, shared
+    // with status() and doseProgressToday so all three answer the same question. Behaviour is
+    // unchanged in the LATE direction (v68's finding); the EARLY reach is now bounded -- see the
+    // comment on WINDOW_EARLY_GRACE_MS for why unbounded is safe here and not on the Home card.
+    const coveredFlags = coveredWindowFlags(d0, dayEntries, windows);
     const wins = windows.map((w, i) => ({ w,
       ws: hourTs(d0, w.start), we: hourTs(d0, w.end),
       nextStart: i + 1 < windows.length ? hourTs(d0, windows[i + 1].start) : nextDay(d0),
-      covered: false }));
+      covered: coveredFlags[i] }));
     // Single pass, processed in window order: each window gets first claim (before later windows
     // are considered) over any unused same-day dose logged before this window's cutoff (i.e. any
     // time up to just before the next window opens) -- covering doses given early, on time, or
@@ -2776,10 +2832,6 @@ function missedDosesFor(dayTs, now) {
     // dose given at 1pm, between the 8am and 2pm windows, must credit the 8am window it was late
     // for, not get grabbed by the 2pm window just because 1pm also happens to be before 2pm's close.
     // (Fixed in v68 -- found via Aaron's report that a late-logged dose could still show as missed.)
-    wins.forEach(win => {
-      const hit = dayEntries.find(e => !used.has(e) && e.ts < win.nextStart);
-      if (hit) { used.add(hit); win.covered = true; }
-    });
     wins.forEach(win => {
       if (win.covered || now < win.we) return;
       // v23 bugfix (Aaron report): adding a brand-new medication mid-day immediately flagged every
@@ -2858,8 +2910,12 @@ function doseProgressToday(now) {
       if (treatmentExcludedNow(med, now)) return;
       const windows = medWindowsFor(med, d0);
       scheduled += windows.length;
-      const logs = entriesFor(med.id).filter(e => e.ts >= d0 && e.ts < nextDay(d0)).length; // skipped entries count as handled
-      taken += Math.min(windows.length, logs);
+      // app-v94: COUNT THE WINDOWS COVERED, not the entries logged. Counting entries and capping
+      // them at the window count meant two doses logged into one window read as two windows done,
+      // so this ring printed "4 of 4 scheduled doses logged today" on the same screen as a card
+      // saying "Due now". Same walk as status() and the missed-dose check, so the three cannot
+      // disagree again. Skipped entries still count as handled -- they are entries like any other.
+      taken += coveredWindowFlags(d0, entriesFor(med.id), windows).filter(Boolean).length;
     });
   return { scheduled, taken };
 }
@@ -3009,10 +3065,13 @@ function status(med) {
   // generically, so it picks this up with no changes of its own.
   const lastForGap = es[es.length - 1];
   const gapAvailableAt = (med.gapH && lastForGap) ? lastForGap.ts + med.gapH * 3600000 : null;
-  for (const w of windows) {
+  // app-v94: coverage comes from the ONE shared walk, not from a private `e.ts >= ws && e.ts < we`
+  // that could not see a dose logged minutes before its window opened. See coveredWindowFlags.
+  const coveredHere = coveredWindowFlags(d0, es, windows);
+  for (let wi = 0; wi < windows.length; wi++) {
+    const w = windows[wi];
     const ws = atH(w.start), we = atH(w.end);
-    const used = es.some(e => e.ts >= ws && e.ts < we);
-    if (used) continue;
+    if (coveredHere[wi]) continue;
     if (now < ws) return { locked: true, availableAt: gapAvailableAt ? Math.max(ws, gapAvailableAt) : ws, windowName: w.name };
     if (now >= ws && now < we) {
       if (gapAvailableAt && now < gapAvailableAt) return { locked: true, availableAt: gapAvailableAt, windowName: w.name };
@@ -9723,7 +9782,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v93';
+const APP_VERSION = 'app-v94';
 
 // ---- WHAT'S NEW ------------------------------------------------------------------------------
 //
@@ -9746,6 +9805,11 @@ const APP_VERSION = 'app-v93';
 // that are meant for it: README.md's version-history table, outputs/ for the chain reports, and
 // the commit messages. This array is the only one of the four a patient reads.
 const CHANGELOG = [
+  { v: 'app-v94', date: 'Nov 10, 2026', title: 'A dose logged early counts',
+    points: [
+      'If you logged a dose a little before its scheduled time, the app kept asking you to give it. It counts now.',
+      'The ring on Home counted two doses logged in one time slot as two slots done. It counts the slots you have actually covered.',
+    ] },
   { v: 'app-v93', date: 'Nov 3, 2026', title: 'Who the reminder is for',
     points: [
       'A reminder now starts with the name of the person it is for.',
@@ -13771,13 +13835,29 @@ function notifCancelCandidates(pending, planIds, applied, nowTs) {
 //
 // Deliberately tolerant: the profile is already gone from storage by the time this runs, so a
 // failure here must not surface as a failed deletion. It logs nothing and throws nothing.
-async function cancelRemindersForProfile(profileId) {
+// `kinds` (app-v94): when given, ONLY alarms of those kinds are cancelled. Omitted, everything
+// belonging to the profile goes, which is what deleting a profile needs.
+//
+// IT HAD NO SUCH FILTER AND app-v93 SHIPPED A LIE BECAUSE OF IT. Silencing a profile called this
+// with the id alone, so it cancelled every armed alarm that profile had -- appointments included --
+// while the toast, the drawer footnote, the patient-facing changelog, the README row and the
+// comments in setProfileMuted all said in those words that appointment reminders still come
+// through. The Zero Day Auditor measured it: arm a dose alarm and an appointment alarm, mute the
+// profile, and BOTH ids reach cancel().
+//
+// For the ACTIVE profile it self-heals -- markNotifDirty() re-arms the appointment on the next
+// sync. For a profile you are NOT in, nothing re-arms it, and the release's own toast says so:
+// "Reminders for X resume next time you open their profile." So the appointment alarm was gone for
+// up to the full 72-hour horizon, for the person the feature was designed around: somebody in
+// hospital, who is the most likely person on that phone to have a scan inside those 72 hours.
+async function cancelRemindersForProfile(profileId, kinds) {
   if (!profileId) return;
   const ln = lnPlugin();
   if (!ln) return;
   try {
     const res = await ln.getPending();
-    const mine = ((res && res.notifications) || []).filter(p => p.extra && p.extra.profileId === profileId);
+    const mine = ((res && res.notifications) || []).filter(p => p.extra && p.extra.profileId === profileId
+      && (!kinds || kinds.indexOf(p.extra.kind) !== -1));
     if (mine.length) await ln.cancel({ notifications: mine.map(p => ({ id: p.id })) });
   } catch (e) { /* the profile is deleted either way; a bridge failure must not block that */ }
 }
