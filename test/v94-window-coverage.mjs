@@ -75,6 +75,10 @@ const win = (windows) => ({ id: 'bp2', name: 'Blood pressure dose 2', type: 'win
   quickLog: true, doses: [{ label: '10 mg', mg: 10 }], windows });
 const EVENING = [{ start: 17, end: 21, name: 'Daily' }];
 const TWO = [{ start: 8, end: 12, name: 'Morning' }, { start: 17, end: 21, name: 'Daily' }];
+// Two windows with a real GAP after the second: a dose at 16:00 is three hours past the last
+// window's close and in neither window's early reach, so only the LATE reach decides which window
+// is credited for it. That is the case BACKLOG M44 recorded as unobservable.
+const GAP = [{ start: 6, end: 8, name: 'Early' }, { start: 11, end: 13, name: 'Mid' }];
 const dose = (id, ts) => ({ id, medId: 'bp2', dose: '10 mg', ts });
 
 let server = null, BASE = BASE_IN;
@@ -322,6 +326,73 @@ async function notif(meds, entries, clock) {
     r.claims[0] === null && r.claims[1] === H(16, 45), JSON.stringify(r.claims));
   ok('and tonight\'s alarm is dropped while the morning stays missed, not armed',
     r.doseTags.length === 0, JSON.stringify(r.doseTags));
+}
+
+// ---- WHICH WINDOW IS CREDITED FOR A DOSE LOGGED IN A GAP (closes BACKLOG M44's hole) ----------
+// M44 recorded this as unobservable, and it was -- from the Home screen, which is all this suite
+// could read at the time. It is observable now, because cancel-on-log needs to know which window a
+// dose belongs to and so the claim became readable. Windows 6-8 and 11-13, one dose at 16:00:
+// the later window's late reach runs to midnight and takes it. If the EARLIER window's reach also
+// ran to midnight it would take it instead, and the wrong window would be recorded as missed.
+{
+  const r = await notif([win(GAP)], [dose('a', H(16))], FROZEN);
+  ok('a dose in a gap is credited to the last window, not the first',
+    r.claims[0] === null && r.claims[1] === H(16), JSON.stringify(r.claims));
+}
+
+// ---- CANCEL-ON-LOG, THROUGH THE REAL FUNCTION AND A STUBBED BRIDGE ----------------------------
+// The claim check above reads the WALK, and a mutant reverting cancelReminderForEntry's own guard
+// to the old inside-the-window test survived it: that mutant does not touch the walk. This drives
+// the shipped function and watches what reaches the plugin's cancel().
+//
+// The clock is 16:50 and the fixture logs NOTHING at boot, deliberately: the alarm has to be armed
+// before there is anything to cancel. Then the entry is handed to the shipped function exactly as
+// the write path hands it over.
+{
+  const ctx = await b.newContext({ viewport: { width: 390, height: 900 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1, timezoneId: 'UTC' });
+  await ctx.route('**/*', (route) => {
+    const u = route.request().url();
+    if (u.startsWith('http://127.0.0.1')) return route.continue();
+    if (u.includes('cdn.jsdelivr.net')) return route.fulfill({ status: 200, contentType: 'application/javascript', body: '/* stubbed */' });
+    return route.abort();
+  });
+  await ctx.addInitScript(freezeAt(BEFORE));
+  const page = await ctx.newPage();
+  await page.addInitScript(`(() => {
+    const P = 'chemowell-app-p-p1-';
+    localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Aaron', createdAt: 1 }], activeId: 'p1' }));
+    localStorage.setItem('chemowell-app-license-v1', JSON.stringify({ tier: 'free' }));
+    localStorage.setItem(P + 'prefs-v1', JSON.stringify({ patientName: 'Aaron', onboarded: true, treatmentType: 'chemo', tourDone: true }));
+    localStorage.setItem(P + 'med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: ${JSON.stringify([win(EVENING)])} }));
+    localStorage.setItem(P + 'entries-v1', JSON.stringify([]));
+    window.__cancelled = [];
+    const ln = {
+      getPending: async () => ({ notifications: [] }),
+      cancel: async (o) => { ((o && o.notifications) || []).forEach(n => window.__cancelled.push(n.id)); },
+      schedule: async () => {}, createChannel: async () => {},
+      checkPermissions: async () => ({ display: 'granted' }),
+      requestPermissions: async () => ({ display: 'granted' }),
+      checkExactNotificationSetting: async () => ({ exact_alarm: 'granted' }),
+      addListener: () => ({ remove: () => {} }), removeAllListeners: async () => {}
+    };
+    window.Capacitor = { isNativePlatform: () => true, Plugins: { LocalNotifications: ln } };
+  })()`);
+  await page.goto(BASE, { waitUntil: 'load' });
+  await page.waitForTimeout(1500);
+  const r = await page.evaluate(async (ts) => {
+    const t = window.__v86Test;
+    const armed = t.armedTags().filter(a => a.tag.indexOf('dose-') === 0);
+    const tonight = armed.find(a => /-17-21-/.test(a.tag));
+    window.__cancelled.length = 0;
+    await t.cancelForEntry({ medId: 'bp2', ts: ts });
+    await new Promise(res => setTimeout(res, 300));
+    return { armedCount: armed.length, tonightId: tonight ? tonight.id : null, cancelled: window.__cancelled.slice() };
+  }, H(16, 45));
+  await ctx.close();
+  ok('tonight\'s dose alarm is armed before anything is logged', r.tonightId !== null,
+    JSON.stringify(r));
+  ok('logging the dose 15 minutes early CANCELS that armed alarm',
+    r.tonightId !== null && r.cancelled.indexOf(r.tonightId) !== -1, JSON.stringify(r));
 }
 
 // ---- SILENCING A PROFILE MUST NOT TAKE THEIR APPOINTMENT ALARMS (app-v93's BLOCK) -------------

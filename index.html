@@ -14341,9 +14341,16 @@ if (typeof window !== 'undefined') {
       try { return dueRemindersAt(new Date(simNow())).map(d => d.med.id + '|' + d.window.start); }
       finally { notifSentToday = saved; }
     },
-    // WHICH window each dose covers, which is the decision cancel-on-log makes. Asserting on this
-    // rather than stubbing the Capacitor bridge: the bridge call is three lines of plugin plumbing,
-    // the claim is the part that was wrong. Stated so the gap is not silent.
+    // WHICH window each dose covers: the decision cancel-on-log makes, at unit level.
+    //
+    // ON ITS OWN THIS IS NOT ENOUGH, AND THE CORPUS PROVED IT. A mutant that reverted
+    // cancelReminderForEntry's guard to the old inside-the-window test SURVIVED a suite that
+    // asserted only on this hook -- because this hook reads the walk, and that mutant does not
+    // touch the walk. The comment that used to sit here said the bridge call was "three lines of
+    // plugin plumbing" and called the gap stated rather than silent. It was neither: it was the
+    // check unable to fail, which is the one thing this repo has been caught on most. So
+    // cancelForEntry below drives the shipped function against a stubbed bridge, and this hook
+    // stays as the unit-level companion to it.
     windowClaimTs: (medId) => {
       const med = (state.meds || []).find(m => m.id === medId);
       if (!med) return null;
@@ -14351,6 +14358,10 @@ if (typeof window !== 'undefined') {
       return windowClaims(d0, (state.entries || []).filter(e => e && e.medId === medId), med.windows || [])
         .map(c => (c ? c.ts : null));
     },
+    // THE SHIPPED cancel-on-log function, so a suite can watch what reaches the plugin's cancel()
+    // instead of agreeing with a re-implementation. Takes the entry the write path would hand it.
+    cancelForEntry: (e) => cancelReminderForEntry(e),
+    armedTags: () => notifPlanApplied.map(p => ({ tag: p.tag, id: p.id })),
     // app-v90 delta. chartTimeMax takes `now` as an argument so one drawing cannot hold two
     // clocks -- and a mutant that threw the argument away and called Date.now() again passed all
     // 89 checks, because nothing in the suite could move the app's clock away from the real one.

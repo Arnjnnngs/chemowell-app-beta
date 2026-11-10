@@ -61,8 +61,7 @@ io.open(p,'w',encoding='utf-8').write(s.replace(old,"    const hit = day.find(e 
 MUT
 }
 
-MUTANT_EXPECT_6="hole"
-MUTANT_DESC_6="every window's late reach runs to midnight -- NOT OBSERVABLE FROM HOME, see BACKLOG M44"
+MUTANT_DESC_6="every window's late reach runs to midnight -- the wrong window recorded as missed"
 # A DECLARED HOLE, measured rather than excused. Before the two-pass change this mutant was simply
 # uncaught; after it, pass 1 claims every dose that is on time or early for a window, so `hi` only
 # decides which window is credited for a dose that falls in a GAP -- after one window closes and
@@ -71,7 +70,13 @@ MUTANT_DESC_6="every window's late reach runs to midnight -- NOT OBSERVABLE FROM
 # the missed-dose rows. This suite reads the Home screen. Constructed and measured at a fixed
 # 17:03 clock with windows at 6-8, 13-15 and 20-22 and one dose at 16:00: the correct build
 # credits the 13-15 window, this mutant credits 6-8, and Home renders identically for both.
-# Closing it means a suite that reads the missed rows, which is BACKLOG M44.
+#
+# CLOSED 2026-11-10, in the same delta that fixed the notification path, and not by reading the
+# missed rows. cancel-on-log has to know WHICH window a dose belongs to, so the claim became
+# readable through a hook -- and a dose at 16:00 against windows 6-8 and 11-13 is credited to the
+# 11-13 window by the correct build and to 6-8 by this mutant. The hole was never in the app; it
+# was in what the suite could see. BACKLOG M44's remaining half -- that no gate RENDERS a missed
+# row -- is still open and still worth the suite it asks for.
 mutant_6() {
   python3 - <<'MUT'
 import io

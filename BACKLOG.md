@@ -1278,7 +1278,7 @@ and wants its own release and its own audit. It would also make every cross-prof
 
 ---
 
-### M44 — Which window is credited for a mid-gap late dose is unchecked (S)
+### M44 — Which window is credited for a mid-gap late dose is unchecked (S) — **HALF CLOSED 2026-11-10**
 
 Found by the app-v94 mutant corpus and declared there as `MUTANT_EXPECT_6="hole"` rather than
 excused. After app-v94's two-pass claim, pass 1 takes every dose that is on time or early for a
@@ -1289,9 +1289,20 @@ lives in History and the missed-dose rows. `test/v94-window-coverage.mjs` reads 
 
 Measured, at a 17:03 clock with windows 6-8, 13-15 and 20-22 and one dose at 16:00: the correct
 build credits the 13-15 window, a build whose late reach runs to midnight credits 6-8, and **Home
-renders identically for both**. Closing it needs a suite that reads the missed rows — which would
-also cover task #17 (the missed-dose banner has no upper bound) and `M39-j` (`missedRow` has never
-been rendered by any gate). Worth doing as one piece of work rather than three.
+renders identically for both**.
+
+**HALF CLOSED in the app-v94 delta, and not the way this entry predicted.** It said closing it
+needs a suite that reads the missed rows. It did not: fixing the notification path meant
+cancel-on-log had to know *which* window a dose belongs to, so the claim became readable through a
+hook, and `test/v94-window-coverage.mjs` now asserts that a dose at 16:00 against windows 6-8 and
+11-13 is credited to the later one. Mutant 6 is a **catch** rather than a declared hole.
+**The hole was never in the app — it was in what the suite could see**, and it closed as a side
+effect of making a different surface honest. Worth remembering before writing off the next one.
+
+**Still open, and still worth the suite it asks for:** no gate RENDERS a missed row. That is the
+other half of this entry, and it also covers task #17 (the missed-dose banner has no upper bound —
+it once read "20751 missed doses") and `M39-j` (`missedRow` has never been rendered by any gate).
+One piece of work rather than three.
 
 ---
 
