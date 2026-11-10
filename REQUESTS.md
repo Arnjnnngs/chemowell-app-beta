@@ -1114,3 +1114,28 @@ silencing has no end date and the app never prompts (E4), and a silenced profile
 keep accumulating behind the scenes, so a two-week hospital stay produces a wall of missed-dose
 flags when the profile is reopened (E5). E5 is the one that needs his intent before anything is
 built, because it changes the record and not just the alerts.
+
+
+---
+
+## 2026-11-06 — "I just logged my medication and it still shows me to log it" (app-v94)
+
+Aaron, with a screenshot of his own Home screen, 5:03 PM: *"I just logged my medication for the
+5:00 round and it still shows me to log it. I'm not sure if this has been fixed in the previous
+update."* It had not. Nothing in any previous release touched it.
+
+*Fixed, app-v94.* He had logged the dose at about 4:45, a few minutes before the 5 o'clock window
+opened. The Home card asked `e.ts >= windowStart && e.ts < windowEnd`, 16:45 is not in that
+interval, and it kept asking — while the ring beside it, which counted entries rather than covered
+windows, said every dose was in. **The app asked for a second dose of something he had already
+given.** Three different answers to one question, and the correct one was already written in
+`missedDosesFor` after he reported the mirror image of this in v68.
+
+**2026-11-10, Aaron:** *"Just build and fix. It all needs to be fixed regardless."* — given when
+asked whether the Home card should use the existing generous rule or a tighter one. Built with the
+tighter one (a two-hour early reach) and the reasoning written into the code, the README row and
+`BACKLOG` M44.
+
+**Queued out of this work, not built:** `outputs/ENHANCER-app-v94.md` E7 — when a medication has
+more than one window the card does not say *which* one it is asking for, which is the ambiguity
+this whole release is about. One string. Recommended.
