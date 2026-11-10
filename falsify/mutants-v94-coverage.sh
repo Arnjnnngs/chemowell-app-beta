@@ -109,7 +109,7 @@ mutant_8() {
   python3 - <<'MUT'
 import io
 p='index.html'; s=io.open(p,encoding='utf-8').read()
-old = """  if (wi < 0) return !coveredWindowFlags(d0, mine, [w])[0];
+old = """  if (wi < 0) return true;
   return !coveredWindowFlags(d0, mine, windows)[wi];"""
 assert s.count(old)==1
 new = """  const ws = d0 + w.start * 3600000, we = d0 + w.end * 3600000;
@@ -190,10 +190,18 @@ io.open(p,'w',encoding='utf-8').write(s.replace(old,new))
 MUT
 }
 
-MUTANT_DESC_14="an unknown window reads as covered instead of due -- the fail-safe reversed"
-# Unreachable on today's call sites, which is why the audit called it latent. A mutant anyway: the
-# whole point of choosing this direction is that it is a decision, and a decision with nothing
-# holding it is a comment.
+MUTANT_EXPECT_14="hole"
+MUTANT_DESC_14="an unknown window reads as covered instead of due -- NO-OP TODAY, see the comment"
+# IT SURVIVED THE FIRST SWEEP AND THAT IS THE CORRECT ANSWER, so it is declared rather than left as
+# a surprise. `wi < 0` is unreachable: all five call sites iterate `med.windows` and pass the object
+# they got from it, which the delta audit checked one by one. So reversing the fallback changes
+# nothing that runs, and no check can go red.
+#
+# It stays in the corpus for the one thing a hole is good for: THE DAY IT STARTS DYING IS THE DAY
+# `wi < 0` BECAME REACHABLE -- a sixth call site, a derived window list, a cloned medication -- and
+# that is exactly when somebody needs to look at which direction this fails in. Making it catchable
+# today would mean a test-only entry point that hands medWindowDueAt a foreign window object, and
+# a test-only path through production logic is worse than a declared hole.
 mutant_14() {
   python3 - <<'MUT'
 import io
