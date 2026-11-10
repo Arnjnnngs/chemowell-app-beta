@@ -2531,8 +2531,13 @@ function dailyCeiling(med) {
   return { used, max, unit: 'mg', label, windowH: isRolling ? med.rollingCeilingH : 0, group: !isRolling && !!med.ceilingGroup };
 }
 // ---- ONE DEFINITION OF "HAS THIS WINDOW BEEN COVERED". (app-v94) -----------------------------
-// There were THREE, and two of them were wrong. Aaron, 2026-11-06, with a screenshot: "I just
+// There were SIX, and three of them were wrong. Aaron, 2026-11-06, with a screenshot: "I just
 // logged my medication for the 5:00 round and it still shows me to log it."
+//
+// THE COUNT IN THIS COMMENT WAS "THREE" WHEN THE FIRST BUILD WENT TO AUDIT, AND THE AUDIT REFUSED
+// IT OVER THE THREE IT HAD NOT COUNTED -- all on the notification path: the alarm plan, the
+// reactive web notification, and cancel-on-log. A comment asserting the unification is finished is
+// exactly how the remainder gets missed, so the number is stated and every site is named below.
 //
 //   missedDosesFor  -- claimed each window's first unused dose logged before the NEXT window
 //                      opens. Correct, deliberate, and fixed in v68 after Aaron reported the
@@ -2545,6 +2550,14 @@ function dailyCeiling(med) {
 //   doseProgressToday -- counted ENTRIES today, capped at the window count. Two doses logged into
 //                      one window read as two windows done, so the ring said "4 of 4 logged" on
 //                      the same screen as "Due now".
+//   medWindowDueAt  -- the same naive interval test, feeding BOTH the OS alarm plan
+//                      (buildReminderPlan) and the app-icon badge and drawer dot
+//                      (profileDueCount). The one the audit refused the release over: the screen
+//                      stopped asking and the phone did not.
+//   dueRemindersAt  -- the reactive web notification, its own private copy of the same test.
+//   cancelReminderForEntry -- decided which window's alarm to cancel with the same test, so for a
+//                      dose logged early it cancelled nothing. That is why none of this
+//                      self-healed on the next log.
 //
 // On a medication tracker the first of those is the dangerous one: the app asks for a second dose
 // of something the caregiver has already given, and the progress ring agrees with neither.
@@ -2559,11 +2572,17 @@ function dailyCeiling(med) {
 // by the 2pm window -- still holds, and its test still passes.
 const WINDOW_EARLY_GRACE_MS = 2 * 3600000;
 
-// Returns one boolean per window, in window order: was that window covered by a dose that day?
-// Pure: no reads of `state`, no bookkeeping. Windows are processed IN ORDER and each claims at
-// most one dose, so an earlier window always gets first call on a dose that could serve either --
-// that ordering IS the v68 fix and it is why this cannot be written as a per-window `some()`.
-function coveredWindowFlags(dayTs, entries, windows) {
+// Returns, for each window in order, the ENTRY that covers it, or null. Pure: no reads of
+// `state`, no bookkeeping. Windows are processed IN ORDER and each claims at most one dose, so an
+// earlier window always gets first call on a dose that could serve either -- that ordering IS the
+// v68 fix and it is why this cannot be written as a per-window `some()`.
+//
+// WHY THIS RETURNS THE ENTRY AND NOT A BOOLEAN. Cancel-on-log needs to know WHICH window the dose
+// just logged belongs to, so it can cancel that window's alarm and no other. Before the app-v94
+// delta it worked that out with its own `ts >= start && ts < end` test -- the same wrong predicate
+// in a fourth place -- and so it returned without cancelling anything for a dose logged early,
+// which is why nothing self-healed. One walk answers both questions or they drift apart again.
+function windowClaims(dayTs, entries, windows) {
   const d0 = dayStart(dayTs);
   const end = nextDay(d0);
   const bounds = (windows || []).map((w, i) => ({
@@ -2586,7 +2605,7 @@ function coveredWindowFlags(dayTs, entries, windows) {
   // around this window's time, so it is this window's dose and no other window may take it.
   bounds.forEach((b, i) => {
     const hit = day.find(e => !claimed.has(e) && e.ts >= b.lo && e.ts <= b.we);
-    if (hit) { claimed.add(hit); covered[i] = true; }
+    if (hit) { claimed.add(hit); covered[i] = hit; }
   });
   // Pass 2 -- LATE. Whatever is left over, in window order, so the earliest uncovered window gets
   // first call: v68's finding, that a 1pm dose credits the 8am window it was late for rather than
@@ -2595,9 +2614,13 @@ function coveredWindowFlags(dayTs, entries, windows) {
   bounds.forEach((b, i) => {
     if (covered[i]) return;
     const hit = day.find(e => !claimed.has(e) && e.ts >= b.lo && e.ts < b.hi);
-    if (hit) { claimed.add(hit); covered[i] = true; }
+    if (hit) { claimed.add(hit); covered[i] = hit; }
   });
-  return covered;
+  return covered.map(c => c || null);
+}
+// The boolean form, which is what the three screen surfaces want.
+function coveredWindowFlags(dayTs, entries, windows) {
+  return windowClaims(dayTs, entries, windows).map(c => !!c);
 }
 
 // Missed-dose detection. A window counts as covered by any dose logged that day
@@ -2844,14 +2867,10 @@ function missedDosesFor(dayTs, now) {
       ws: hourTs(d0, w.start), we: hourTs(d0, w.end),
       nextStart: i + 1 < windows.length ? hourTs(d0, windows[i + 1].start) : nextDay(d0),
       covered: coveredFlags[i] }));
-    // Single pass, processed in window order: each window gets first claim (before later windows
-    // are considered) over any unused same-day dose logged before this window's cutoff (i.e. any
-    // time up to just before the next window opens) -- covering doses given early, on time, or
-    // late. Processing strictly in window order prevents a later window from "stealing" a dose that
-    // legitimately belongs to an earlier window's late-catch-up range: e.g. a single Dexamethasone
-    // dose given at 1pm, between the 8am and 2pm windows, must credit the 8am window it was late
-    // for, not get grabbed by the 2pm window just because 1pm also happens to be before 2pm's close.
-    // (Fixed in v68 -- found via Aaron's report that a late-logged dose could still show as missed.)
+    // The claim walk this used to describe now lives in windowClaims, and so does the v68
+    // reasoning it carried. Left here, it read as though the logic were still in this function --
+    // and it said "single pass" after the shared walk became two. Rule 7's whole history is notes
+    // that outlived their subject and then sent real work at a problem already solved.
     wins.forEach(win => {
       if (win.covered || now < win.we) return;
       // v23 bugfix (Aaron report): adding a brand-new medication mid-day immediately flagged every
@@ -2933,8 +2952,17 @@ function doseProgressToday(now) {
       // app-v94: COUNT THE WINDOWS COVERED, not the entries logged. Counting entries and capping
       // them at the window count meant two doses logged into one window read as two windows done,
       // so this ring printed "4 of 4 scheduled doses logged today" on the same screen as a card
-      // saying "Due now". Same walk as status() and the missed-dose check, so the three cannot
-      // disagree again. Skipped entries still count as handled -- they are entries like any other.
+      // saying "Due now". Same walk as status() and the missed-dose check.
+      //
+      // ONE QUALIFICATION, STATED RATHER THAN IMPLIED. The three now share the walk, not the
+      // WINDOW LIST: status() takes `med.linkedTo ? linkedWindowsFor(...) : medWindowsFor(...)`
+      // and this and the missed walk take medWindowsFor alone, which the phase 1 audit (B5)
+      // settled deliberately -- folding the linked variant in moved this ring's windows by an
+      // hour. So a medication carrying `linkedTo` could still have its card and its ring walking
+      // different windows. No medication in the field has that property set (RULE 0 item 4: every
+      // phase 1 property is absent on today's data), so it is unreachable rather than fixed, and
+      // it is BACKLOG M45 to settle before phase 2 makes it reachable.
+      // Skipped entries still count as handled -- they are entries like any other.
       taken += coveredWindowFlags(d0, entriesFor(med.id), windows).filter(Boolean).length;
     });
   return { scheduled, taken };
@@ -3072,7 +3100,12 @@ function status(med) {
     const at = last.ts + med.gapH * 3600000;
     return { locked: now < at, availableAt: at };
   }
-  const d0 = dayStart(now), atH = (h) => d0 + h * 3600000;
+  // ONE CLOCK IN THIS FUNCTION. (app-v94 delta, audit F2.) `atH` was a fixed-3600000ms hop while
+  // the coverage walk this release wired in uses `hourTs`, which is calendar-correct. On the two
+  // DST days a year the two disagreed by an hour INSIDE this function: coverage judged against
+  // the real 17:00 and the window's open/close against an hour either side of it. `hourTs` is
+  // what every other dated calculation in this file already uses.
+  const d0 = dayStart(now), atH = (h) => hourTs(d0, h);
   // A medication whose window follows another medication's actual dose keeps that at status()'s
   // own call site, as it always has -- the missed-dose walk and the dose-progress ring never
   // applied it, and folding it into medWindowsFor moved their windows by an hour (the phase 1
@@ -3098,11 +3131,15 @@ function status(med) {
       return { locked: false, windowName: w.name };
     }
   }
-  const chemoOver = treatmentOnlyBlocks(med, d0 + 86400000);
+  // nextDay(), not d0 + 86400000 -- same DST reason as atH above. A fixed 24-hour hop lands on the
+  // wrong calendar day twice a year, so "is the course over tomorrow" and "what are tomorrow's
+  // windows" were being asked about 23:00 today or 01:00 the day after.
+  const tomorrow = nextDay(d0);
+  const chemoOver = treatmentOnlyBlocks(med, tomorrow);
   if (chemoOver) {
     return { locked: true, courseComplete: true };
   }
-  const tomorrowWindows = medWindowsFor(med, d0 + 86400000).length ? medWindowsFor(med, d0 + 86400000) : windows;
+  const tomorrowWindows = medWindowsFor(med, tomorrow).length ? medWindowsFor(med, tomorrow) : windows;
   const first = tomorrowWindows[0];
   // AN EMPTY WINDOW LIST MUST NOT THROW. In app-v75 this could not happen: normalizeMedication
   // guarantees a 'win' medication at least one window, so med.windows was never empty and
@@ -3114,7 +3151,7 @@ function status(med) {
   // Locked with no availableAt is an established shape here -- the daily-ceiling branch returns it
   // and every consumer already guards `st.availableAt` before formatting it.
   if (!first) return { locked: true, noWindowToday: true };
-  return { locked: true, availableAt: d0 + 86400000 + first.start * 3600000, windowName: first.name };
+  return { locked: true, availableAt: hourTs(tomorrow, first.start), windowName: first.name };
 }
 
 // ---- app-v76 PHASE 1 RESOLVERS ------------------------------------------------------------------
@@ -13359,9 +13396,11 @@ function dueRemindersAt(nowDate) {
       const key = 'win-' + med.id + '-' + w.start + '-' + w.end + '-' + d0;
       if (notifSentToday[key]) return;
       notifSentToday[key] = true; // mark now so this window is never re-checked again today
-      const ws = d0 + w.start * 3600000, we = d0 + w.end * 3600000;
-      const taken = entriesFor(med.id).some(e => e.ts >= ws && e.ts < we);
-      if (!taken) due.push({ med, window: w });
+      // app-v94 delta: the SAME walk the screens and the alarm plan use, via medWindowDueAt,
+      // instead of a fourth private `ts >= ws && ts < we` that could not see a dose logged
+      // minutes before the window opened. This path fires a notification, so it had the same
+      // cost as the alarm: a reminder to give a dose that was already given.
+      if (medWindowDueAt(med, d0, w, state.entries)) due.push({ med, window: w });
     });
   });
   return due;
@@ -13590,10 +13629,31 @@ function medRemindersEnabledOn(med, dayTs) {
   if (treatmentExcludedNow(med, dayTs)) return false;
   return true;
 }
+// THE DEFECT THE app-v94 AUDIT REFUSED THE RELEASE OVER, AND THE REASON IT MATTERED MORE THAN THE
+// ONE IT WAS FIXING. app-v94 replaced the naive `e.ts >= ws && e.ts < we` coverage test on the
+// three SCREEN surfaces and left it here, character for character -- and this one function feeds
+// the OS alarm (buildReminderPlan) and the app-icon badge (profileDueCount). So on Aaron's own
+// fixture -- one 17:00-21:00 window, one dose logged at 16:45 -- the screen said "All scheduled
+// doses are in" and the phone still woke him at 17:00 to give it again. The armed plan for that
+// day was byte-identical to the plan for a day with nothing logged at all.
+//
+// A screen that has stopped asking is a fix. A phone that is still asking is the bug, because the
+// notification is the surface that reaches somebody who is not looking at the app -- which on a
+// medication tracker at 5am is most of the time. It is also the app-v93 BLOCK's exact shape (the
+// UI promising one thing while the notification layer does another) inside the release that fixed
+// that for appointments.
+//
+// `indexOf` against the medication's OWN window list is what gives the shared walk its index.
+// Every call site iterates `med.windows` and passes the object it got from that array, so the
+// identity holds. A window that is not in that list (a derived or linked one) is judged on its
+// own rather than against a guessed index -- never silently treated as covered.
 function medWindowDueAt(med, dayTs, w, entries) {
   const d0 = dayStart(dayTs);
-  const ws = d0 + w.start * 3600000, we = d0 + w.end * 3600000;
-  return !(entries || []).some(e => e.medId === med.id && e.ts >= ws && e.ts < we);
+  const mine = (entries || []).filter(e => e && e.medId === med.id);
+  const windows = (med && med.windows) || [];
+  const wi = windows.indexOf(w);
+  if (wi < 0) return !coveredWindowFlags(d0, mine, [w])[0];
+  return !coveredWindowFlags(d0, mine, windows)[wi];
 }
 
 // Builds the full set of reminders that should be armed right now: every dose window opening in the
@@ -13992,8 +14052,21 @@ async function cancelReminderForEntry(entry) {
     if (!Number.isFinite(ts)) return;
     const d0 = dayStart(ts);
     const ids = [];
-    med.windows.forEach(w => {
-      if (ts < hourTs(d0, w.start) || ts >= hourTs(d0, w.end)) return; // dose isn't in this window
+    // app-v94 delta: ask the shared walk WHICH window this dose covers, rather than testing
+    // whether the dose falls inside each window's own hours. The old test returned without
+    // cancelling anything for a dose logged before its window opened -- so the alarm the audit
+    // found still armed also never got cancelled when the caregiver logged the dose, and the
+    // whole thing was invisible because the screen looked right.
+    //
+    // The entry is included explicitly: this runs from the write path and may land before the new
+    // entry is in `state.entries`, in which case the walk would be asked about a day that does
+    // not contain the dose it is being asked about.
+    const mine = (state.entries || []).filter(e => e && e.medId === med.id);
+    if (!mine.some(e => Number(e.ts) === ts)) mine.push({ medId: med.id, ts: ts });
+    const claims = windowClaims(d0, mine, med.windows);
+    med.windows.forEach((w, wi) => {
+      const claim = claims[wi];
+      if (!claim || Number(claim.ts) !== ts) return; // some other dose covers this window, or none does
       const tag = notifDoseTag(ACTIVE_PROFILE_ID, med, w, d0);
       const hit = notifPlanApplied.find(p => p.tag === tag);
       if (hit) ids.push(hit);
@@ -14239,6 +14312,45 @@ if (typeof window !== 'undefined') {
     profileIsMuted: (id) => profileIsMuted(id),
     setProfileMuted: (id, m) => setProfileMuted(id, m),
     buildReminderTitles: () => buildReminderPlan(simNow(), state.meds, state.entries, state.appts, ACTIVE_PROFILE_ID, notifProfileLabel()).map(n => n.title),
+    // app-v94 delta. THE NOTIFICATION PATH, which is where the audit refused this release.
+    // `buildReminderTitles` above returns titles, and titles are identical whether or not a dose
+    // has been logged -- so a suite built on it could not see an alarm that should have been
+    // dropped from the plan. These three read the DECISION instead.
+    //
+    // reminderPlan: the armed plan itself. The assertion that bites is that the plan for a day
+    // with a dose logged early DIFFERS from the plan for a day with nothing logged -- those two
+    // were byte-identical, which is the defect in one line.
+    reminderPlan: () => buildReminderPlan(simNow(), state.meds, state.entries, state.appts, ACTIVE_PROFILE_ID, notifProfileLabel())
+      .map(n => ({ tag: n.tag, at: n.at, kind: n.extra && n.extra.kind })),
+    // The shipped predicate, by window index, as both the alarm plan and the app-icon badge ask it.
+    medWindowDue: (medId, wi) => {
+      const med = (state.meds || []).find(m => m.id === medId);
+      if (!med) return null;
+      const w = ((med.windows) || [])[wi];
+      if (!w) return null;
+      return medWindowDueAt(med, dayStart(simNow()), w, state.entries);
+    },
+    // The reactive web path, which has its own loop and so needs its own check -- a mutant that
+    // reverts only this call site leaves the predicate above correct. Its day bookkeeping is saved
+    // and restored so the hook is repeatable and changes nothing: the real function marks each
+    // window sent-today on the way past, which is correct in the app and would make a second read
+    // here return nothing.
+    dueReminderKeys: () => {
+      const saved = notifSentToday;
+      notifSentToday = {};
+      try { return dueRemindersAt(new Date(simNow())).map(d => d.med.id + '|' + d.window.start); }
+      finally { notifSentToday = saved; }
+    },
+    // WHICH window each dose covers, which is the decision cancel-on-log makes. Asserting on this
+    // rather than stubbing the Capacitor bridge: the bridge call is three lines of plugin plumbing,
+    // the claim is the part that was wrong. Stated so the gap is not silent.
+    windowClaimTs: (medId) => {
+      const med = (state.meds || []).find(m => m.id === medId);
+      if (!med) return null;
+      const d0 = dayStart(simNow());
+      return windowClaims(d0, (state.entries || []).filter(e => e && e.medId === medId), med.windows || [])
+        .map(c => (c ? c.ts : null));
+    },
     // app-v90 delta. chartTimeMax takes `now` as an argument so one drawing cannot hold two
     // clocks -- and a mutant that threw the argument away and called Date.now() again passed all
     // 89 checks, because nothing in the suite could move the app's clock away from the real one.

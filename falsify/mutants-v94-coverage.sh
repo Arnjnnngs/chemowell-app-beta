@@ -93,3 +93,76 @@ assert s.count(old)==1
 io.open(p,'w',encoding='utf-8').write(s.replace(old,"background: 'linear-gradient(152deg, #B8481A 0%, #9C3A16 52%, #722F14 100%)',"))
 MUT
 }
+
+# ---- THE NOTIFICATION PATH. Added after the independent audit refused the first build. ---------
+# Mutants 1-7 above all read the SCREEN, and every one of them was green on a build whose OS alarm
+# still fired for a dose already given. That is the gap these four close: one per notification
+# surface, plus one for the app-v93 appointment fix, which shipped with no mutant behind it at all.
+
+MUTANT_DESC_8="the ALARM PLAN goes back to the naive window test -- the audit's BLOCK, restored"
+mutant_8() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+old = """  if (wi < 0) return !coveredWindowFlags(d0, mine, [w])[0];
+  return !coveredWindowFlags(d0, mine, windows)[wi];"""
+assert s.count(old)==1
+new = """  const ws = d0 + w.start * 3600000, we = d0 + w.end * 3600000;
+  return !mine.some(e => e.ts >= ws && e.ts < we);"""
+io.open(p,'w',encoding='utf-8').write(s.replace(old,new))
+MUT
+}
+
+MUTANT_DESC_9="the REACTIVE web notification keeps its own private copy of the same test"
+mutant_9() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+old = "      if (medWindowDueAt(med, d0, w, state.entries)) due.push({ med, window: w });"
+assert s.count(old)==1
+new = """      const ws = d0 + w.start * 3600000, we = d0 + w.end * 3600000;
+      if (!entriesFor(med.id).some(e => e.ts >= ws && e.ts < we)) due.push({ med, window: w });"""
+io.open(p,'w',encoding='utf-8').write(s.replace(old,new))
+MUT
+}
+
+MUTANT_DESC_10="CANCEL-ON-LOG only cancels a window the dose falls inside -- so it cancels nothing"
+mutant_10() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+old = "      if (!claim || Number(claim.ts) !== ts) return; // some other dose covers this window, or none does"
+assert s.count(old)==1
+new = "      if (ts < hourTs(d0, w.start) || ts >= hourTs(d0, w.end)) return;"
+io.open(p,'w',encoding='utf-8').write(s.replace(old,new))
+MUT
+}
+
+MUTANT_DESC_11="silencing a profile drops the kind filter -- the app-v93 BLOCK, restored exactly"
+mutant_11() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+old = "      && (!kinds || kinds.indexOf(p.extra.kind) !== -1));"
+assert s.count(old)==1
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"      );"))
+MUT
+}
+
+MUTANT_EXPECT_12="hole"
+MUTANT_DESC_12="status() goes back to a fixed 24-hour hop -- DST ONLY, see BACKLOG M46"
+# A DECLARED HOLE, and the reason is in the fixture rather than in the check. `atH` and `hourTs`
+# differ by exactly one hour on the two DST transition days a year and are identical on the other
+# 363, and this suite's clock is frozen to 2026-11-06 in UTC -- deliberately, because a suite whose
+# answer depends on the host's zone was red one hour a day on correct code (v90-chart-axes). So
+# this mutant cannot be observed here without a second fixture pinned to a transition day in a
+# zone that has one, which is BACKLOG M46. Logged rather than left as an uncaught survivor.
+mutant_12() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+old = "  const d0 = dayStart(now), atH = (h) => hourTs(d0, h);"
+assert s.count(old)==1
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"  const d0 = dayStart(now), atH = (h) => d0 + h * 3600000;"))
+MUT
+}
