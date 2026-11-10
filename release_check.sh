@@ -938,7 +938,16 @@ fi
 #   v94-window-coverage -- the only instrument that reads the dose ring and the Up next card on the
 #     SAME screen and asks whether they agree. Aaron reported them disagreeing -- "4/4 DOSES" beside
 #     "Due now" -- and no suite here could have seen it, because each half was correct on its own
-#     terms. 15 checks, ~25s.
+#     terms. 33 checks, ~35s. It grew from 15 in the app-v94 delta: the first build fixed the screen
+#     and left the OS alarm armed for the dose that had just been given, and every check in this
+#     file reads the SCREEN, so nothing here could see that either. The later checks read the armed
+#     plan and the shipped cancel instead.
+#   v85-profile-reminders -- WIRED IN HERE in the app-v94 delta, and it existed since app-v85.
+#     The app-v93 audit found it (F3) and said so: that release edited the very function this suite
+#     exists to guard and the gate did not run it. 43 checks, ~31s. Same omission as v90-chart-axes
+#     above and as the three suites app-v92 found unwired -- which is now five, so the pattern is
+#     the point rather than any one of them: a suite that is written and not wired is a suite that
+#     passes forever.
 #   v93-profile-notifications -- the only instrument that knows there is more than one patient on
 #     the phone. Every other suite here runs a single profile, so nothing else can see a reminder
 #     that does not say whose it is, a count that belongs to the wrong person, or a silenced
@@ -947,7 +956,7 @@ fi
 #     which overflow-scan cannot see: it compares each element against its own box, one at a
 #     time, and reported the app-v92 defect as "over by 5px" when what was on the screen was
 #     a medication name printed across the time and the dose.
-for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs test/overflow-scan.mjs test/v90-chart-axes.mjs test/v92-pill-clearance.mjs test/v92-text-collisions.mjs test/v93-profile-notifications.mjs test/v94-window-coverage.mjs "$RC_DESIGNER_SUITE"; do
+for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs test/overflow-scan.mjs test/v90-chart-axes.mjs test/v92-pill-clearance.mjs test/v92-text-collisions.mjs test/v93-profile-notifications.mjs test/v94-window-coverage.mjs test/v85-profile-reminders.mjs "$RC_DESIGNER_SUITE"; do
   # A dead suite makes the next eleven minutes meaningless, so the parse gate above stops this
   # loop rather than feeding it a file node cannot read. The rest of the gate still runs and
   # still reports, and this is what makes the parse gate falsifiable in a second instead of in
