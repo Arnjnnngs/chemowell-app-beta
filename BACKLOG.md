@@ -1275,3 +1275,20 @@ withheld around treatment is not a rounding error on a medication tracker. The r
 same one M39-c and `profileDueCount` want: make the treatment gates take a context object instead
 of reading `getPrefsDB()` and `state.chemoDates`. That is a refactor of load-bearing medical logic
 and wants its own release and its own audit. It would also make every cross-profile count exact.
+
+---
+
+### M44 — Which window is credited for a mid-gap late dose is unchecked (S)
+
+Found by the app-v94 mutant corpus and declared there as `MUTANT_EXPECT_6="hole"` rather than
+excused. After app-v94's two-pass claim, pass 1 takes every dose that is on time or early for a
+window, so a window's LATE reach (`hi`) only decides which window is credited for a dose logged in
+a **gap** — after one window closes and more than two hours before the next opens. The dose count
+is identical either way; the only difference is which window is recorded as **missed**, and that
+lives in History and the missed-dose rows. `test/v94-window-coverage.mjs` reads the Home screen.
+
+Measured, at a 17:03 clock with windows 6-8, 13-15 and 20-22 and one dose at 16:00: the correct
+build credits the 13-15 window, a build whose late reach runs to midnight credits 6-8, and **Home
+renders identically for both**. Closing it needs a suite that reads the missed rows — which would
+also cover task #17 (the missed-dose banner has no upper bound) and `M39-j` (`missedRow` has never
+been rendered by any gate). Worth doing as one piece of work rather than three.

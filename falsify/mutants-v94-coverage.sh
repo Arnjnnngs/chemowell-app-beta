@@ -50,24 +50,28 @@ io.open(p,'w',encoding='utf-8').write(s.replace(old,"const WINDOW_EARLY_GRACE_MS
 MUT
 }
 
-MUTANT_DESC_5="each window claims independently -- the ordering that IS the v68 fix is gone"
+MUTANT_DESC_5="pass 1 reaches as far as pass 2 -- the two passes collapse back into one"
 mutant_5() {
   python3 - <<'MUT'
 import io
 p='index.html'; s=io.open(p,encoding='utf-8').read()
-old = """  const claimed = new Set();
-  return bounds.map(b => {
-    const hit = day.find(e => !claimed.has(e) && e.ts >= b.lo && e.ts < b.hi);
-    if (hit) { claimed.add(hit); return true; }
-    return false;
-  });"""
+old = "    const hit = day.find(e => !claimed.has(e) && e.ts >= b.lo && e.ts <= b.we);"
 assert s.count(old)==1
-new = """  return bounds.map(b => day.some(e => e.ts >= b.lo && e.ts < b.hi));"""
-io.open(p,'w',encoding='utf-8').write(s.replace(old,new))
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"    const hit = day.find(e => !claimed.has(e) && e.ts >= b.lo && e.ts < b.hi);"))
 MUT
 }
 
-MUTANT_DESC_6="every window's late reach runs to midnight -- a later window steals an earlier dose"
+MUTANT_EXPECT_6="hole"
+MUTANT_DESC_6="every window's late reach runs to midnight -- NOT OBSERVABLE FROM HOME, see BACKLOG M44"
+# A DECLARED HOLE, measured rather than excused. Before the two-pass change this mutant was simply
+# uncaught; after it, pass 1 claims every dose that is on time or early for a window, so `hi` only
+# decides which window is credited for a dose that falls in a GAP -- after one window closes and
+# more than two hours before the next opens. The dose count is identical either way, and the only
+# place the difference shows is WHICH window is recorded as missed, which lives in History and in
+# the missed-dose rows. This suite reads the Home screen. Constructed and measured at a fixed
+# 17:03 clock with windows at 6-8, 13-15 and 20-22 and one dose at 16:00: the correct build
+# credits the 13-15 window, this mutant credits 6-8, and Home renders identically for both.
+# Closing it means a suite that reads the missed rows, which is BACKLOG M44.
 mutant_6() {
   python3 - <<'MUT'
 import io
