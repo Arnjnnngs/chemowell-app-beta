@@ -1405,3 +1405,43 @@ a guarantee.
 Gate the whole block behind `TEST_MODE` before store submission, and make the suites run against the
 `TEST_MODE = true` build they already use. Belongs with the `TEST_MODE = false` flip on the
 store-readiness list rather than in a dose-logic release.
+
+### M50 — Four wrong numbers in one release, and the next one is a mechanical check (S)
+
+**First, the two open ones, with their exact lines, so they cannot go the way F3/F4 went.** Both are
+the delta-3 audit's findings, both are prose with zero behavioural effect, and both are the **first
+commit of the next touch** — not fixed in app-v94 because `release_check.sh`'s supersession rule
+requires an audit SHIP naming a commit at which `index.html` is current, so two words would have
+cost a full extra audit-plus-PM cycle. The independent auditor's own judgement, followed here.
+
+* `index.html:2534` — *"There were SIX, and **three** of them were wrong."* **Five** were wrong:
+  `status`, `doseProgressToday`, `medWindowDueAt`, `dueRemindersAt` and `cancelReminderForEntry`.
+  Only `missedDosesFor` was right. The release corrected `THREE` → `SIX` for the count of
+  definitions and left the other half of the sentence behind, so it now matches neither framing —
+  **in the comment whose whole job is to stop the next person miscounting.**
+* `index.html:13648`, `falsify/mutants-v94-coverage.sh:196` and the `README.md` app-v94 row —
+  *"all **five** call sites"* of `medWindowDueAt`. There are **four**: `profileDueCount`,
+  `dueRemindersAt`, `buildReminderPlan` and the test hook. `cancelReminderForEntry` is not one of
+  them; it calls `windowClaims` directly. The conclusion the sentence supports (that `wi < 0` is
+  unreachable) is unaffected — the auditor re-derived it by instrumentation — only the count is
+  wrong.
+
+**Now the actual entry, because four of these in one release is the finding.** app-v94 produced:
+F5 (the header comment said three definitions when there were six), D3 (the README row and
+`REQUESTS.md` said 30 checks when there were 33), the gate's own comment (33 when there were 35 —
+and that file was the one that was *right* when D3 was written), and now these two. Every one is the
+same shape: **a count written in prose next to the thing it counts, which goes stale on the next
+commit and is then read as true by the next session.** This project has already paid for that
+specific mistake at a much higher price — Rule 7's standing-exceptions list had three entries
+describing defects that had been fixed for weeks, and one of them nearly sent a second build at a
+solved problem.
+
+**The fix is not more care. It is a check.** The repo already has the right pattern in
+`test/v75-no-other-patient.mjs`: a two-sided ratchet that counts the real thing and fails if the
+written number drifts in either direction. Do the same for the counts that appear in comments:
+derive the number of coverage definitions and the number of `medWindowDueAt` call sites from the
+file, and require the comment beside them to state it. Then a stale count is a red suite rather than
+a finding somebody has to notice. Cheap, and it retires a whole class.
+
+Out of scope for M50 and worth saying: this does **not** extend to the README's version-history
+prose, which is a historical record and is allowed to describe what was true at the time.
