@@ -23,8 +23,10 @@ Home. All three are green on this build. Nothing here needed a measurement they 
 **The ring can now show a smaller number than the same data showed yesterday.** A caregiver who
 logged two doses into one window saw "2 of 2" before this release and sees "1 of 2" after it. That
 is the honest number and the point of the change, but it will look like the app lost a dose. The
-changelog says it plainly — *"The ring on Home counted two doses logged in one time slot as two
-slots done. It counts the slots you have actually covered."* — and that is the right place for it.
+changelog says it plainly — *"The ring on Home counted two doses in one slot as two slots done. It
+now counts the slots you covered."* — and that is the right place for it. (That quote was the
+pre-ship wording until the PM caught it; the bullet was tightened when a third one was added about
+the reminder and the app-icon count, to keep the entry inside Rule 0.9's word budget.)
 No in-app notice beyond the changelog is proposed: a one-off banner explaining a counting change is
 more alarming than the change.
 

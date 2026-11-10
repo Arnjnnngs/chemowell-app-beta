@@ -938,7 +938,7 @@ fi
 #   v94-window-coverage -- the only instrument that reads the dose ring and the Up next card on the
 #     SAME screen and asks whether they agree. Aaron reported them disagreeing -- "4/4 DOSES" beside
 #     "Due now" -- and no suite here could have seen it, because each half was correct on its own
-#     terms. 33 checks, ~35s. It grew from 15 in the app-v94 delta: the first build fixed the screen
+#     terms. 35 checks, ~40s. It grew from 15 in the app-v94 delta: the first build fixed the screen
 #     and left the OS alarm armed for the dose that had just been given, and every check in this
 #     file reads the SCREEN, so nothing here could see that either. The later checks read the armed
 #     plan and the shipped cancel instead.
