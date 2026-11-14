@@ -1162,3 +1162,26 @@ shape — the screen promising one thing while the notification layer did anothe
 profile's appointment alarms while five surfaces said it did not; app-v94 stopped asking on screen
 while the phone kept asking. Every gate this project has reads the screen. That is logged as the
 reason the v94 suite now reads the armed plan, and it is the one structural lesson from this pair.
+
+
+---
+
+## 2026-11-13 — "it backs out and then I have to go back into the time part again" (app-v95)
+
+Aaron, having just confirmed app-v94 live on his own phone: *"I do notice that when I'm trying to
+log my medication and there's two in a row for example my 5:00 medication the first one I'm able to
+enter just fine but when I go to enter the second one and try to adjust the time it backs out and
+then I have to go back into the time part again and fill it out. check on that"*
+
+*Fixed, app-v95.* Reproduced through the real UI before anything was touched. The confirmation
+message from the FIRST log expires 4.5 seconds later, clearing it redraws the whole page, and the
+redraw destroys the time field he is standing in. On Android that field is the system clock dialog.
+
+**The guard against this already existed and had been extended five times — on the wrong thing.**
+It was attached to the once-a-second clock refresh and written inline in that condition, so the
+timers that call the same redraw had no way to consult it. One shared function now, asked by both.
+
+**Not built, and queued for him to pick:** `outputs/ENHANCER-app-v95.md` E11 (the sheet does not
+say which window it is confirming, which is the ambiguity his own report is about) and E13 (the
+confirmation says what was logged but not the adjusted time it was logged at). Both small. Neither
+belongs in a defect fix on a medication path.
