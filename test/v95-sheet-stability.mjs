@@ -85,7 +85,7 @@ const ok = (label, cond, detail) => {
 
 const b = await chromium.launch();
 const noise = [];
-async function open(meds) {
+async function open(meds, entries) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 900 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1, timezoneId: 'UTC' });
   await ctx.route('**/*', (route) => {
     const u = route.request().url();
@@ -105,9 +105,9 @@ async function open(meds) {
     const P = 'chemowell-app-p-p1-';
     localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Aaron', createdAt: 1 }], activeId: 'p1' }));
     localStorage.setItem('chemowell-app-license-v1', JSON.stringify({ tier: 'free' }));
-    localStorage.setItem(P + 'prefs-v1', JSON.stringify({ patientName: 'Aaron', onboarded: true, treatmentType: 'chemo', tourDone: true }));
+    localStorage.setItem(P + 'prefs-v1', JSON.stringify({ patientName: 'Aaron', onboarded: true, treatmentType: 'chemo', sex: 'other', tourDone: true }));
     localStorage.setItem(P + 'med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: ${JSON.stringify(meds || MEDS)} }));
-    localStorage.setItem(P + 'entries-v1', JSON.stringify([]));
+    localStorage.setItem(P + 'entries-v1', JSON.stringify(${JSON.stringify(entries || [])}));
   })()`);
   await page.goto(BASE, { waitUntil: 'load' });
   await page.waitForTimeout(1100);
@@ -262,6 +262,48 @@ const toastShowing = (page) => page.evaluate(() => !!document.querySelector('[da
       ok('the card-flash timer does not destroy the open sheet', s2.present && s2.isOriginal,
         JSON.stringify(s2));
     } else { ok('and its dose opens a sheet', false, 'no dose button found on the card'); }
+  }
+  await ctx.close();
+}
+
+// ---- THE IN-PATIENT UNDO TIMER (the audit's BLOCK F1) ----------------------------------------
+// A bottom-nav screen where `+` (log a past stay, which opens a sheet with a time field) and
+// `Undo` (which arms a 5-second timer) sit 8px apart in the same row. "Undo that, then + to log it
+// properly instead" is the natural corrective sequence, and the audit measured the open field
+// ceasing to exist 5315ms into it. The first build of this release moved that from 4.5s to 5.3s
+// and called it fixed; this is the check that would have said otherwise.
+{
+  const active = [{ id: 'ip1', medId: 'inpatient_start', dose: null, mg: 0, ts: Date.UTC(2026, 10, 13, 9, 0, 0) }];
+  const ctxp = await open(MEDS, active);
+  const { ctx, page } = ctxp;
+  // EXACT match. `has-text("In-Patient")` also matches the card's own "Log In-Patient End"
+  // button, and the first version of this clicked that instead -- ending the stay, so the Undo
+  // control it was about to look for no longer existed. A substring selector that silently hits
+  // a different control is Rule 5's text-selector hazard in its most expensive form: the check
+  // did not error, it just quietly tested nothing.
+  // By ACCESSIBLE NAME, exact. `has-text` also matches the card's own "Log In-Patient End" button
+  // and the first version of this clicked that instead -- ending the stay, so the Undo control it
+  // was about to look for no longer existed. The check did not error; it quietly tested nothing,
+  // which is Rule 5's text-selector hazard in its most expensive form. `:text-is` then found
+  // nothing at all, because the nav label sits in a child element rather than on the button.
+  const tab = page.getByRole('button', { name: 'In-Patient', exact: true }).first();
+  if (await tab.count()) { await tab.click(); await page.waitForTimeout(500); }
+  const undo = page.locator('button:has-text("Undo")').first();
+  ok('the In-Patient screen shows Undo for an active stay', await undo.count() > 0);
+  if (await undo.count()) {
+    await undo.click();                                   // arms the 5s timer
+    await page.waitForTimeout(250);
+    const plus = page.locator('[aria-label="Log a past hospital stay"]').first();
+    ok('and the past-stay control sits beside it', await plus.count() > 0);
+    if (await plus.count()) {
+      await plus.click();
+      await page.waitForTimeout(400);
+      ok('which opens a sheet with a time field', await markInput(page));
+      await page.waitForTimeout(6400);                    // past the undo timer's 5s
+      const s2 = await sampleInput(page);
+      ok('the Undo timer does not destroy that open sheet', s2.present && s2.isOriginal,
+        JSON.stringify(s2));
+    }
   }
   await ctx.close();
 }

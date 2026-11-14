@@ -12,6 +12,7 @@ mutant_1() {
 import io
 p='index.html'; s=io.open(p,encoding='utf-8').read()
 old = """  toastTimer = setTimeout(function clearToast() {
+    if (!state.toast) return;
     if (liveEditingSurfaceOpen()) { toastTimer = setTimeout(clearToast, 600); return; }
     setState({ toast: null });
   }, 4500);"""
