@@ -2094,6 +2094,32 @@ function restoreView() {
 function persistView(view) { try { sessionStorage.setItem(UI_VIEW_KEY, view); } catch (e) {} }
 let state = { heroSnoozeUntil: 0, whatsNewOpen: false, vitalOpen: null, symptomFilter: null, symptomRange: 'weeks', medFlash: null, entries: [], chemoDates: [], now: Date.now(), toast: null, warn: null, demo: false, view: restoreView(), reportsView: null, meds: initialMedicationConfig.meds, archivedMeds: initialMedicationConfig.archivedMeds, medEditor: null, confirmDeleteMed: null, override: null, confirmRemove: null, tempInput: '', weightInput: '', bpSysInput: '', bpDiaInput: '', chemoInput: '', weightRange: 'weeks', timeModal: null, loaded: false, dateOffsetDays: 0, testDateControlsOpen: false, missedClearedAt: 0, dismissedMisses: [], supportPromptAt: 0, supportOptOut: false, browserNoticeSeen: false, confirmClearChemo: false, chemoCalOpen: false, chemoCalCursor: null, historyMissedOnly: false, tourStep: null, eraseAllModalOpen: false, upgradeOpen: false, addingProfile: false, confirmDeleteProfile: null, renamingProfile: null, drawerOpen: false, appts: loadAppointments(), apptModal: null, confirmDeleteAppt: null, faqOpenId: null, help: { cat: null, topic: null }, calendarCursor: null, calendarSelectedDate: null, infoModal: null, notes: loadNotes(), noteModal: null, confirmDeleteNote: null, checkinModal: null, editingDaily: null, paraInput: '', confirmRemovePara: null, bkNotice: null, bkPending: null, bkBusy: false };
 let toastTimer = null;
+
+// IS THE CAREGIVER IN THE MIDDLE OF SOMETHING? (app-v95)
+//
+// render() rebuilds the entire tree -- `root.innerHTML = ''` then one appendChild -- so EVERY
+// re-render destroys every DOM node, including an <input> that is currently open. On Android a
+// `type="time"` input opens the system clock dialog, and destroying the input dismisses it.
+//
+// Aaron, 2026-11-13: "the first one I'm able to enter just fine but when I go to enter the second
+// one and try to adjust the time it backs out." Reproduced exactly: log one dose, open the next
+// dose's sheet, and ~4.5 seconds later the toast from the FIRST log expires, setState clears it,
+// the tree is rebuilt and the open time field is destroyed mid-edit. The first dose is fine
+// because nothing is pending; the second is the one that lands inside the toast's lifetime.
+//
+// The 1s tick has had a guard list against exactly this since v11, grown in v22, v27, v45 and v55
+// -- but the guard was put on the TICK and not on the timers, and the timers call the same
+// render(). This is that list, extracted so there is one of it rather than two, and so a cosmetic
+// timer can ask the same question the tick asks.
+function liveEditingSurfaceOpen() {
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return true;
+  return !!(state.timeModal || state.upgradeOpen || state.drawerOpen || state.apptModal
+    || state.noteModal || state.checkinModal || state.medEditor || state.infoModal
+    || state.eraseAllModalOpen || state.confirmDeleteMed || state.confirmRestoreMed
+    || state.confirmDeleteAppt || state.confirmDeleteNote || state.confirmDeleteProfile
+    || state.confirmRemove);
+}
 let unsub = null;
 let unsubPrefs = null;
 let pendingEntries = null;
@@ -2531,7 +2557,7 @@ function dailyCeiling(med) {
   return { used, max, unit: 'mg', label, windowH: isRolling ? med.rollingCeilingH : 0, group: !isRolling && !!med.ceilingGroup };
 }
 // ---- ONE DEFINITION OF "HAS THIS WINDOW BEEN COVERED". (app-v94) -----------------------------
-// There were SIX, and three of them were wrong. Aaron, 2026-11-06, with a screenshot: "I just
+// There were SIX, and five of them were wrong. Aaron, 2026-11-06, with a screenshot: "I just
 // logged my medication for the 5:00 round and it still shows me to log it."
 //
 // THE COUNT IN THIS COMMENT WAS "THREE" WHEN THE FIRST BUILD WENT TO AUDIT, AND THE AUDIT REFUSED
@@ -2928,7 +2954,13 @@ function scrollToMedCard(medId) {
   clearTimeout(medFlashTimer);
   const grp = el.getAttribute && el.getAttribute('data-med-group');
   setState({ medFlash: { id: safe, group: grp || null } });
-  medFlashTimer = setTimeout(() => { if (state.medFlash && state.medFlash.id === safe) setState({ medFlash: null }); }, 1800);
+  // Same deferral as the toast, same reason: fading the flash is cosmetic and a re-render while a
+  // sheet is open destroys whatever is being typed into.
+  medFlashTimer = setTimeout(function clearFlash() {
+    if (!state.medFlash || state.medFlash.id !== safe) return;
+    if (liveEditingSurfaceOpen()) { medFlashTimer = setTimeout(clearFlash, 600); return; }
+    setState({ medFlash: null });
+  }, 1800);
 }
 
 // True exactly when Home is already showing the day's dose count, which is the only condition
@@ -3273,7 +3305,15 @@ function medHomeCardKind(med) {
 function setToast(msg) {
   setState({ toast: msg });
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => setState({ toast: null }), 4500);
+  // Clearing the toast is cosmetic, and it must never tear the DOM out from under an open sheet
+  // -- see liveEditingSurfaceOpen(). Retry rather than clear: the toast lingers a little while a
+  // sheet is open, which costs nothing, and it goes the moment the sheet closes. Named so the
+  // retry reassigns toastTimer, which keeps `clearTimeout(toastTimer)` above able to cancel the
+  // whole chain when a newer toast replaces this one.
+  toastTimer = setTimeout(function clearToast() {
+    if (liveEditingSurfaceOpen()) { toastTimer = setTimeout(clearToast, 600); return; }
+    setState({ toast: null });
+  }, 4500);
 }
 
 function afterLog(entry, warnBatch) {
@@ -5562,7 +5602,7 @@ function renderSetup() {
     // own copy of the exact same toast pill. (This gap predates v33 \u2014 the old one-field welcome
     // had the same silent swallow on an empty name \u2014 but three validations made it a guaranteed
     // first-run wall instead of an occasional one.)
-    state.toast ? h('div', { role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: 'calc(40px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(59,25,10,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(136,57,24,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', pointerEvents: 'none' } }, state.toast) : null
+    state.toast ? h('div', { 'data-toast': '1', role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: 'calc(40px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(59,25,10,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(136,57,24,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', pointerEvents: 'none' } }, state.toast) : null
   );
   root.replaceChildren(page);
 }
@@ -5952,7 +5992,7 @@ function render() {
     // still on screen after the person had navigated to Help, describing an action on a screen they
     // had left. navigateTo() now clears it, which closes the Auditor's repro at the root and fixes
     // the same class on every other screen at once.
-    state.toast ? h('div', { role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: toastNeedsLift() ? 'calc(142px + env(safe-area-inset-bottom))' : 'calc(96px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(59,25,10,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(136,57,24,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', pointerEvents: 'none' } }, state.toast) : null,
+    state.toast ? h('div', { 'data-toast': '1', role: 'status', 'aria-live': 'polite', style: { position: 'fixed', bottom: toastNeedsLift() ? 'calc(142px + env(safe-area-inset-bottom))' : 'calc(96px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', background: 'rgba(59,25,10,0.88)', color: '#fff', padding: '12px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', lineHeight: '1.4', boxShadow: '0 10px 28px rgba(136,57,24,0.2), 0 0 0 1px rgba(255,255,255,0.3)', zIndex: '50', maxWidth: 'min(90vw, 340px)', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', pointerEvents: 'none' } }, state.toast) : null,
     renderTimeModal(),
     renderWhatsNewModal(),
     renderUpgradeModal(),
@@ -9839,7 +9879,7 @@ function renderNotesView(now) {
   ];
 }
 
-const APP_VERSION = 'app-v94';
+const APP_VERSION = 'app-v95';
 
 // ---- WHAT'S NEW ------------------------------------------------------------------------------
 //
@@ -9862,7 +9902,12 @@ const APP_VERSION = 'app-v94';
 // that are meant for it: README.md's version-history table, outputs/ for the chain reports, and
 // the commit messages. This array is the only one of the four a patient reads.
 const CHANGELOG = [
-  { v: 'app-v94', date: 'Nov 10, 2026', title: 'A dose logged early counts',
+  { v: 'app-v95', date: 'Nov 14, 2026', title: 'The time field stays open',
+    points: [
+      'Logging two doses in a row, the second one\u2019s time could close itself while you were setting it. It stays open now.',
+      'Nothing about how doses are recorded has changed.',
+    ] },
+  { v: 'app-v94', date: 'Nov 13, 2026', title: 'A dose logged early counts',
     points: [
       'If you logged a dose a little before its scheduled time, the app kept asking for it. It counts now.',
       'The ring on Home counted two doses in one slot as two slots done. It now counts the slots you covered.',
@@ -13645,7 +13690,7 @@ function medRemindersEnabledOn(med, dayTs) {
 // that for appointments.
 //
 // `indexOf` against the medication's OWN window list is what gives the shared walk its index.
-// All five call sites iterate `med.windows` and pass the object they got from that array, so the
+// All four call sites iterate `med.windows` and pass the object they got from that array, so the
 // identity holds and `wi < 0` is unreachable today -- the delta audit checked every one of them.
 //
 // IT FAILS SAFE RATHER THAN FAILING CLEVER. The first version judged an unknown window on its own,
@@ -14182,8 +14227,7 @@ unsub = subscribeEntries((entries) => {
 
 setInterval(() => {
   state.now = simNow();
-  const activeTag = document.activeElement && document.activeElement.tagName;
-  const isEditing = activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA';
+
   // upgradeOpen joins timeModal in the tick guard (v11): rebuilding the plans sheet every second
   // replayed its 320ms sheetUp entry animation and reset its internal scroll — the "flickering,
   // adjusting popup" Aaron saw on his phone. Interaction re-renders still repaint it instantly.
@@ -14208,8 +14252,12 @@ setInterval(() => {
   // excluded outright because nothing on it is time-dependent, so there is nothing for the
   // tick to update there and no reason to leave a second way for this bug to come back a
   // fifth time. Interaction re-renders (setState/render) still repaint it instantly.
-  if (state.view !== 'help'
-      && !state.timeModal && !state.upgradeOpen && !state.drawerOpen && !state.apptModal && !state.noteModal && !state.checkinModal && !state.medEditor && !state.infoModal && !state.eraseAllModalOpen && !state.confirmDeleteMed && !state.confirmRestoreMed && !state.confirmDeleteAppt && !state.confirmDeleteNote && !state.confirmDeleteProfile && !state.confirmRemove && !isEditing) render();
+  // app-v95: this condition WAS the list, written out here and nowhere else, which is why the
+  // cosmetic timers below never got the same protection -- they could not ask the question without
+  // copying it. It is liveEditingSurfaceOpen() now, in one place, and the tick and the timers ask
+  // the same thing. Adding a new sheet still means adding it to that one function; at least there
+  // is now only one to forget.
+  if (state.view !== 'help' && !liveEditingSurfaceOpen()) render();
   checkNotifications();
   checkAppointmentReminders();
   // v35 backstop. Everything that changes the plan already calls markNotifDirty(), but a backstop

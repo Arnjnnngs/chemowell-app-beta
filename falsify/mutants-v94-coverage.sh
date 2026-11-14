@@ -193,7 +193,7 @@ MUT
 MUTANT_EXPECT_14="hole"
 MUTANT_DESC_14="an unknown window reads as covered instead of due -- NO-OP TODAY, see the comment"
 # IT SURVIVED THE FIRST SWEEP AND THAT IS THE CORRECT ANSWER, so it is declared rather than left as
-# a surprise. `wi < 0` is unreachable: all five call sites iterate `med.windows` and pass the object
+# a surprise. `wi < 0` is unreachable: all four call sites iterate `med.windows` and pass the object
 # they got from it, which the delta audit checked one by one. So reversing the fallback changes
 # nothing that runs, and no check can go red.
 #

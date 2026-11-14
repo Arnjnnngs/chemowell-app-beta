@@ -942,6 +942,11 @@ fi
 #     and left the OS alarm armed for the dose that had just been given, and every check in this
 #     file reads the SCREEN, so nothing here could see that either. The later checks read the armed
 #     plan and the shipped cancel instead.
+#   v95-sheet-stability -- the only instrument here that asks what happens to a sheet WHILE it is
+#     open. Every other check in this file photographs a still frame, and a rebuilt tree looks
+#     identical in a screenshot: same markup, same value, different node. Aaron reported the log
+#     sheet's time field closing itself on the second dose of a pair; what it measures is node
+#     identity across the timers that fire underneath. 12 checks, ~31s.
 #   v85-profile-reminders -- WIRED IN HERE in the app-v94 delta, and it existed since app-v85.
 #     The app-v93 audit found it (F3) and said so: that release edited the very function this suite
 #     exists to guard and the gate did not run it. 43 checks, ~31s. Same omission as v90-chart-axes
@@ -956,7 +961,7 @@ fi
 #     which overflow-scan cannot see: it compares each element against its own box, one at a
 #     time, and reported the app-v92 defect as "over by 5px" when what was on the screen was
 #     a medication name printed across the time and the dose.
-for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs test/overflow-scan.mjs test/v90-chart-axes.mjs test/v92-pill-clearance.mjs test/v92-text-collisions.mjs test/v93-profile-notifications.mjs test/v94-window-coverage.mjs test/v85-profile-reminders.mjs "$RC_DESIGNER_SUITE"; do
+for SUITE in test/v76-properties-equivalence.mjs test/v76-empty-window-render.mjs test/v89-everything-free.mjs test/v84-whatsnew.mjs test/contrast-scan.mjs test/overflow-scan.mjs test/v90-chart-axes.mjs test/v92-pill-clearance.mjs test/v92-text-collisions.mjs test/v93-profile-notifications.mjs test/v94-window-coverage.mjs test/v85-profile-reminders.mjs test/v95-sheet-stability.mjs "$RC_DESIGNER_SUITE"; do
   # A dead suite makes the next eleven minutes meaningless, so the parse gate above stops this
   # loop rather than feeding it a file node cannot read. The rest of the gate still runs and
   # still reports, and this is what makes the parse gate falsifiable in a second instead of in
