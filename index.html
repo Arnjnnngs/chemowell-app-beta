@@ -2114,11 +2114,19 @@ let toastTimer = null;
 function liveEditingSurfaceOpen() {
   const tag = document.activeElement && document.activeElement.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return true;
+  // whatsNewOpen was never on the old inline list either, and the audit of the release that
+  // consolidated that list found it: the What's New sheet is the one modal that opens for EVERY
+  // user on EVERY release, and it was being torn down and rebuilt once a second the whole time it
+  // sat there -- entry animation replaying, internal scroll resetting (so a changelog taller than
+  // the screen could not be read to the end), and the "Got it" tap sometimes eaten. Eight releases
+  // have now added a term to this list; see the completeness check in test/v95-sheet-stability.mjs,
+  // which exists so there is not a ninth found by a person instead of by a suite.
   return !!(state.timeModal || state.upgradeOpen || state.drawerOpen || state.apptModal
     || state.noteModal || state.checkinModal || state.medEditor || state.infoModal
-    || state.eraseAllModalOpen || state.confirmDeleteMed || state.confirmRestoreMed
-    || state.confirmDeleteAppt || state.confirmDeleteNote || state.confirmDeleteProfile
-    || state.confirmRemove);
+    || state.eraseAllModalOpen || state.whatsNewOpen || state.addingProfile || state.override
+    || state.bkNotice || state.chemoCalOpen || state.confirmDeleteMed
+    || state.confirmRestoreMed || state.confirmDeleteAppt || state.confirmDeleteNote
+    || state.confirmDeleteProfile || state.confirmRemove || state.confirmRemovePara);
 }
 let unsub = null;
 let unsubPrefs = null;
@@ -3311,6 +3319,11 @@ function setToast(msg) {
   // retry reassigns toastTimer, which keeps `clearTimeout(toastTimer)` above able to cancel the
   // whole chain when a newer toast replaces this one.
   toastTimer = setTimeout(function clearToast() {
+    // Bail if there is nothing left to clear, the way clearFlash does. navigateTo() nulls the
+    // toast through setState without touching this handle, so without this a chain can outlive
+    // its toast and keep polling every 600ms for as long as a sheet stays open. (navigateTo now
+    // cancels the handle too -- both halves, because either alone leaves the other reachable.)
+    if (!state.toast) return;
     if (liveEditingSurfaceOpen()) { toastTimer = setTimeout(clearToast, 600); return; }
     setState({ toast: null });
   }, 4500);
@@ -4722,7 +4735,20 @@ async function undoInpatientStart() {
     setState({ confirmUndoInpatient: true });
     setToast('Tap Undo again to remove this In-Patient entry');
     clearTimeout(_undoInpatientTimer);
-    _undoInpatientTimer = setTimeout(() => setState({ confirmUndoInpatient: false }), 5000);
+    // DEFERRED, and the first version of this release said it could not be -- wrongly. The
+    // reasoning was that a tap-to-arm confirm cannot defer its own disarm because its state IS the
+    // open surface, so deferring would leave it armed for ever. That is true of `confirmRemove`,
+    // which is in liveEditingSurfaceOpen()'s list. It is NOT true of this one, which is not in
+    // that list -- so it disarms normally and only waits when something ELSE is open.
+    //
+    // It matters because this is a bottom-nav screen and the two buttons sit 8px apart in the same
+    // row: `+` opens the past-stay sheet with its time field, `Undo` arms this timer. "Undo, then
+    // + to log it properly instead" is the natural corrective sequence, and the audit measured the
+    // open field ceasing to exist 5315ms into it.
+    _undoInpatientTimer = setTimeout(function clearUndo() {
+      if (liveEditingSurfaceOpen()) { _undoInpatientTimer = setTimeout(clearUndo, 600); return; }
+      setState({ confirmUndoInpatient: false });
+    }, 5000);
     return;
   }
   clearTimeout(_undoInpatientTimer);
@@ -4856,7 +4882,7 @@ function navigateTo(view) {
   // Carrying it across a navigation is noise at best, and at worst it paints over the destination's
   // own content for 4.5s -- which is how it ended up covering the Help search screen's care-team
   // button at 320px. Cleared here rather than chased with offsets on each screen it might land on.
-  if (state.toast) next.toast = null;
+  if (state.toast) { next.toast = null; clearTimeout(toastTimer); }
   setState(next);
   persistView(view);
   scrollToTop();
@@ -7139,7 +7165,7 @@ function renderToday(now, mg, pct, tyColor, ceiling) {
       chemoTs ? (state.confirmClearChemo ? h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center', flexShrink: '0' } },
         h('button', { onClick: async () => { setState({ confirmClearChemo: false }); await addEntryDB({ medId: 'chemo_date', dose: 'Treatment date cleared', mg: 0, ts: 0, loggedAt: Date.now() }); setToast('Treatment date cleared'); }, style: { color: '#fff', background: '#C0453B', fontSize: '12.5px', fontWeight: '700', padding: '8px 12px', borderRadius: '9px' } }, 'Confirm clear'),
         h('button', { onClick: () => setState({ confirmClearChemo: false }), style: { color: '#5C4E52', fontSize: '12.5px', padding: '8px 6px', fontWeight: '600' } }, 'Keep')
-      ) : h('button', { onClick: () => { setState({ confirmClearChemo: true }); setTimeout(() => { if (state.confirmClearChemo) setState({ confirmClearChemo: false }); }, 6000); }, style: { color: '#6A4433', fontSize: '12.5px', padding: '6px', fontWeight: '600' } }, 'Clear')) : null
+      ) : h('button', { onClick: () => { setState({ confirmClearChemo: true }); setTimeout(function clearChemoArm() { if (!state.confirmClearChemo) return; if (liveEditingSurfaceOpen()) { setTimeout(clearChemoArm, 600); return; } setState({ confirmClearChemo: false }); }, 6000); }, style: { color: '#6A4433', fontSize: '12.5px', padding: '6px', fontWeight: '600' } }, 'Clear')) : null
     ),
     h('div', null,
       h('button', { onClick: () => setState({ chemoCalOpen: !state.chemoCalOpen }), style: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '44px', border: '1px solid #E9D8D1', borderRadius: '11px', padding: '0 12px', fontSize: '14px', background: '#FFFFFF', color: '#2A2127' } },
@@ -14416,6 +14442,10 @@ if (typeof window !== 'undefined') {
     // THE SHIPPED cancel-on-log function, so a suite can watch what reaches the plugin's cancel()
     // instead of agreeing with a re-implementation. Takes the entry the write path would hand it.
     cancelForEntry: (e) => cancelReminderForEntry(e),
+    // The guard's SOURCE, so the completeness check can ask which layers it names without
+    // re-implementing it -- a check that keeps its own copy of the list is a check that agrees
+    // with itself, which is the failure this repo has been caught on most.
+    guardSource: String(liveEditingSurfaceOpen),
     armedTags: () => notifPlanApplied.map(p => ({ tag: p.tag, id: p.id })),
     // app-v90 delta. chartTimeMax takes `now` as an argument so one drawing cannot hold two
     // clocks -- and a mutant that threw the argument away and called Date.now() again passed all

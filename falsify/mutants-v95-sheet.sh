@@ -82,3 +82,43 @@ assert s.count(old)>=1
 io.open(p,'w',encoding='utf-8').write(s.replace(old,"background: 'rgba(49,21,8,0.9)'"))
 MUT
 }
+
+# ---- Added after the app-v95 audit refused the first build -----------------------------------
+
+MUTANT_DESC_7="the In-Patient Undo timer clears without deferring -- the audit's BLOCK F1"
+mutant_7() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+old = """    _undoInpatientTimer = setTimeout(function clearUndo() {
+      if (liveEditingSurfaceOpen()) { _undoInpatientTimer = setTimeout(clearUndo, 600); return; }
+      setState({ confirmUndoInpatient: false });
+    }, 5000);"""
+assert s.count(old)==1
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"    _undoInpatientTimer = setTimeout(() => setState({ confirmUndoInpatient: false }), 5000);"))
+MUT
+}
+
+MUTANT_DESC_8="the What's New sheet drops out of the guard -- the audit's BLOCK F2"
+mutant_8() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+old = "|| state.eraseAllModalOpen || state.whatsNewOpen || state.addingProfile"
+assert s.count(old)==1
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"|| state.eraseAllModalOpen || state.addingProfile"))
+MUT
+}
+
+MUTANT_DESC_9="a layer leaves the guard entirely -- the completeness check must notice"
+# Not about any one surface: this is the check that exists so a NINTH omission is found by a suite
+# rather than by a person. Any removed term should redden it.
+mutant_9() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+old = " || state.confirmRemovePara);"
+assert s.count(old)==1
+io.open(p,'w',encoding='utf-8').write(s.replace(old,");"))
+MUT
+}

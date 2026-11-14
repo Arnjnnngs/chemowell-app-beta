@@ -266,6 +266,59 @@ const toastShowing = (page) => page.evaluate(() => !!document.querySelector('[da
   await ctx.close();
 }
 
+// ---- COMPLETENESS: EVERY DISMISSIBLE LAYER IS ACCOUNTED FOR --------------------------------
+// The audit of this release's first build found `whatsNewOpen` missing from the guard -- the one
+// modal that opens for EVERY user on EVERY release, rebuilt once a second the whole time it sat
+// there. It had been missing from the old inline list too. That is the eighth instance of
+// "somebody added a surface and forgot the list" (v11, v22, v27, v45, v55, and three in this
+// release), and the audit's own recommendation was that a list which must be remembered will be
+// forgotten a ninth time.
+//
+// So this does not read the guard and nod. It reads the app's OWN registry of dismissible layers
+// -- `backLayerKeys`, which the Back-button handling already maintains and already exports -- and
+// requires every key in it to be either guarded or named below with a reason. Add a layer and
+// this goes red until somebody decides which it is. That is the same shape as
+// harness/scrolllock-test.mjs's completeness check, and for the same reason.
+{
+  const { ctx, page } = await open();
+  const r = await page.evaluate(() => ({
+    // backLayerKeys is exported as-is and is a function in this build; take either shape rather
+    // than assume, so this check does not break the next time its form changes.
+    keys: (() => {
+      const k = window.__backTest && window.__backTest.keys;
+      const list = typeof k === 'function' ? k() : k;
+      return (list || []).map(x => (x && x.key) || x).filter(Boolean);
+    })(),
+    guard: String(window.__v86Test && window.__v86Test.guardSource || '')
+  }));
+  await ctx.close();
+  ok('the app exposes its own layer registry', r.keys.length > 10, 'keys: ' + r.keys.length);
+  ok('and the guard source is readable', r.guard.length > 50, 'len ' + r.guard.length);
+
+  // Each exemption is a DECISION with a reason, not a hole. If one of these ever needs guarding,
+  // delete its line here and add the term -- the check then goes green again on purpose.
+  const EXEMPT = {
+    confirmClearChemo: 'deferred by its OWN timer; guarding it would mean its disarm never runs',
+    tourStep: 'a fixed banner that can sit for minutes -- stopping the 1s tick for it would let Home go stale',
+    vitalOpen: 'an inline panel, not a sheet; its field values live in state and survive a rebuild, and a focused field is covered by the first clause',
+    symptomFilter: 'a filter selection, not a surface',
+    help: 'handled separately: the tick skips the Help view outright via state.view'
+  };
+  // The four view names (home, meds, reports, inpatient) were in this list when it was first
+  // written, from a static grep that had picked up a different array in the file. The anti-rot
+  // check below caught them on its first run: they are not layers and never were. Left recorded
+  // because an exemption list is exactly where a plausible-looking wrong line survives longest.
+  const unaccounted = r.keys.filter(k => r.guard.indexOf('state.' + k) < 0 && !EXEMPT[k]);
+  ok('EVERY dismissible layer is either guarded or exempted with a reason',
+    unaccounted.length === 0,
+    unaccounted.length ? 'unaccounted: ' + unaccounted.join(', ') + ' — guard it, or exempt it here and say why' : '');
+  // The exemption list must not rot either: a name that is no longer a layer is a line nobody
+  // will question, and the next person reads it as a considered decision about something real.
+  const stale = Object.keys(EXEMPT).filter(k => r.keys.indexOf(k) < 0);
+  ok('and no exemption names a layer that no longer exists', stale.length === 0,
+    stale.length ? 'stale exemptions: ' + stale.join(', ') : '');
+}
+
 if (noise.length) {
   const uniq = [...new Set(noise)];
   checks++; fails.push('console: ' + uniq.slice(0, 2).join(' | '));
