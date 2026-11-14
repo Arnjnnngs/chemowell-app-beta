@@ -47,7 +47,13 @@ if [ -n "$(git status --porcelain -- index.html sw.js)" ] && [ "$REF" = "HEAD" ]
   echo "   re-run -- otherwise this record names a build that does not exist anywhere."
 fi
 
-DATE=$(git show -s --format=%cd --date=short "$SHA")
+# WHEN IT WENT LIVE, not when it was written. This read the COMMIT date, which is the same day
+# only when a release is pushed the day it is built. app-v94 was committed on 11 November and
+# promoted on the 14th, so the record said the 11th -- a field named published_at carrying a date
+# the thing was not published on. The gate reads the commit, the version and the cache and never
+# the date, so nothing was mechanically wrong; it was just untrue, which on this project is the
+# defect that costs the most (see Rule 7 and BACKLOG M50).
+DATE=$(date -u +%F)
 
 python3 - "$SHA" "$VERSION" "$CACHE" "$DATE" <<'PY'
 import json, sys, io

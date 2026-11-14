@@ -19,8 +19,8 @@
     "so GitHub mints its own commit that this sandbox has never seen and could not resolve. What",
     "the gate needs from this field is a local tree to diff against, and the local commit is that."
   ],
-  "commit": "acb42f3e5be112b9d47c346403b92d933faaf2ef",
-  "app_version": "app-v92",
-  "cache": "chemowell-app-v92-1",
-  "published_at": "2026-11-03"
+  "commit": "b8eb524fc10b34c3cbe944ef0a87b955ba1e0b48",
+  "app_version": "app-v94",
+  "cache": "chemowell-app-v94-1",
+  "published_at": "2026-11-14"
 }
