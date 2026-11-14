@@ -1443,6 +1443,17 @@ derive the number of coverage definitions and the number of `medWindowDueAt` cal
 file, and require the comment beside them to state it. Then a stale count is a red suite rather than
 a finding somebody has to notice. Cheap, and it retires a whole class.
 
+**A third item for the same commit, found on Aaron's phone on 13 November.** The `CHANGELOG`
+entry for app-v94 carries `date: 'Nov 10, 2026'` and the release reached him on the **13th** — the
+date was written when the entry was, and then the release spent three days in the chain. He read
+"Nov 10" on a screen on the 13th. Nothing computes from that field, so it is the same shape as the
+two counts above and as `mark_published.sh`'s `published_at` (fixed 14 November, which had been
+recording the commit date): **a date or a number written by hand at build time and read as true
+later.** Correct it to the day it shipped in the same commit as N1 and N2, and consider whether the
+ratchet this entry proposes should also assert that the newest `CHANGELOG` entry's date matches
+`PUBLISHED.json`'s `published_at` once a release is live — that is the one version of this check
+that would have caught all four instances.
+
 Out of scope for M50 and worth saying: this does **not** extend to the README's version-history
 prose, which is a historical record and is allowed to describe what was true at the time.
 
