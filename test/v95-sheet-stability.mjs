@@ -73,8 +73,24 @@ if (!BASE) {
   BASE = 'http://127.0.0.1:' + server.address().port + '/index.html';
 }
 
+// A CRASH MUST READ AS A FAILURE, NOT AS NOTHING. Under `--file` this suite died with an
+// uncaught click timeout and printed no checks line and no FAILURES list -- which looks far more
+// like "did not run" than like "found a defect", and the v93 corpus already lost a mutant to a
+// suite that crashed instead of failing. Same shape as v94's lesson: a check that cannot report
+// is a check that cannot fail.
 const fails = [];
 let checks = 0;
+const bail = (what) => (err) => {
+  console.log('  FAIL  the suite ' + what + ': ' + (err && err.message || err));
+  console.log('');
+  console.log((checks + 1) + ' checks: ' + (checks - fails.length) + ' passed, ' + (fails.length + 1) + ' failed');
+  console.log('\nFAILURES:');
+  fails.forEach(f => console.log('  - ' + f));
+  console.log('  - ' + what + ': ' + (err && err.message || err));
+  process.exit(1);
+};
+process.on('uncaughtException', bail('threw'));
+process.on('unhandledRejection', bail('rejected a promise'));
 const ok = (label, cond, detail) => {
   checks++;
   if (cond) { console.log('  ok    ' + label); return true; }
@@ -85,7 +101,7 @@ const ok = (label, cond, detail) => {
 
 const b = await chromium.launch();
 const noise = [];
-async function open(meds, entries) {
+async function open(meds, entries, keepWhatsNew, seenVersion) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 900 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1, timezoneId: 'UTC' });
   await ctx.route('**/*', (route) => {
     const u = route.request().url();
@@ -108,12 +124,21 @@ async function open(meds, entries) {
     localStorage.setItem(P + 'prefs-v1', JSON.stringify({ patientName: 'Aaron', onboarded: true, treatmentType: 'chemo', sex: 'other', tourDone: true }));
     localStorage.setItem(P + 'med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: ${JSON.stringify(meds || MEDS)} }));
     localStorage.setItem(P + 'entries-v1', JSON.stringify(${JSON.stringify(entries || [])}));
+    // AN OLDER SEEN-MARKER, which is the only way the What's New sheet opens. An UNSET marker
+    // deliberately shows nothing (a brand-new phone should not be handed a changelog), so the
+    // first version of the scenario below never opened the modal at all and was marking an
+    // inline card on Home instead -- which the tick rebuilds quite correctly, so the check
+    // failed on a healthy build and said the fix was broken. Measuring the wrong element reads
+    // exactly like a defect.
+    ${seenVersion ? `localStorage.setItem('chemowell-app-seen-version', ${JSON.stringify(seenVersion)});` : ''}
   })()`);
   await page.goto(BASE, { waitUntil: 'load' });
   await page.waitForTimeout(1100);
-  for (const label of ['Got it', 'Close']) {
-    const btn = page.locator(`button:has-text("${label}")`).first();
-    if (await btn.count() && await btn.isVisible().catch(() => false)) { await btn.click(); await page.waitForTimeout(250); break; }
+  if (!keepWhatsNew) {
+    for (const label of ['Got it', 'Close']) {
+      const btn = page.locator(`button:has-text("${label}")`).first();
+      if (await btn.count() && await btn.isVisible().catch(() => false)) { await btn.click(); await page.waitForTimeout(250); break; }
+    }
   }
   return { ctx, page };
 }
@@ -266,6 +291,39 @@ const toastShowing = (page) => page.evaluate(() => !!document.querySelector('[da
   await ctx.close();
 }
 
+// ---- THE WHAT'S NEW SHEET MUST SURVIVE A TICK (the audit's BLOCK F2) -------------------------
+// Every scenario above dismisses this modal during setup, so for a while the only thing holding
+// F2 was the string check below -- the delta audit's G2, and a fair hit: "the term is in the
+// guard" is not the same claim as "the modal survives". This is the behavioural half. It is the
+// one sheet that opens for every user on every release, so a second's rebuild here is the most
+// widely felt version of this defect in the whole app.
+{
+  const { ctx, page } = await open(MEDS, [], true, 'app-v93');
+  // SETTLE FIRST. Boot does a few legitimate renders of its own (the badge sync, the native
+  // reminder arming), and marking the node before those have run measures them rather than the
+  // tick. The question here is only whether the ONCE-A-SECOND rebuild is held off.
+  await page.waitForTimeout(1800);
+  // The modal's OWN hook, not an ancestor found by walking up from a button -- `closest('div[style]')`
+  // picks whichever wrapper happens to carry a style attribute, which is a different question.
+  const marked = await page.evaluate(() => {
+    const card = document.querySelector('[data-whatsnew-modal]');
+    if (!card) return false;
+    card.__probeMark = 'original';
+    return true;
+  });
+  ok("the What's New sheet is open on first run", marked);
+  if (marked) {
+    await page.waitForTimeout(3200);                       // three ticks
+    const still = await page.evaluate(() => {
+      const card = document.querySelector('[data-whatsnew-modal]');
+      return { present: !!card, isOriginal: !!(card && card.__probeMark === 'original') };
+    });
+    ok("three seconds of ticks do not rebuild the What's New sheet",
+      still.present && still.isOriginal, JSON.stringify(still));
+  }
+  await ctx.close();
+}
+
 // ---- THE IN-PATIENT UNDO TIMER (the audit's BLOCK F1) ----------------------------------------
 // A bottom-nav screen where `+` (log a past stay, which opens a sheet with a time field) and
 // `Undo` (which arms a 5-second timer) sit 8px apart in the same row. "Undo that, then + to log it
@@ -334,6 +392,11 @@ const toastShowing = (page) => page.evaluate(() => !!document.querySelector('[da
     guard: String(window.__v86Test && window.__v86Test.guardSource || '')
   }));
   await ctx.close();
+  // WHAT THIS REGISTRY IS, stated so the check is not read as broader than it is: backLayerKeys
+  // is the set of surfaces the BACK BUTTON can dismiss. The delta audit checked rather than
+  // assumed -- all ten `role: 'dialog'` surfaces in the file have an entry -- but a confirm with
+  // no Back entry (confirmUndoInpatient is one) is invisible here. So this catches a registered
+  // layer losing its guard; it does not catch a surface that was never registered.
   ok('the app exposes its own layer registry', r.keys.length > 10, 'keys: ' + r.keys.length);
   ok('and the guard source is readable', r.guard.length > 50, 'len ' + r.guard.length);
 
@@ -350,7 +413,23 @@ const toastShowing = (page) => page.evaluate(() => !!document.querySelector('[da
   // written, from a static grep that had picked up a different array in the file. The anti-rot
   // check below caught them on its first run: they are not layers and never were. Left recorded
   // because an exemption list is exactly where a plausible-looking wrong line survives longest.
-  const unaccounted = r.keys.filter(k => r.guard.indexOf('state.' + k) < 0 && !EXEMPT[k]);
+  // TOKENS, NOT SUBSTRINGS, AND ONLY FROM THE EXPRESSION. The first version asked
+  // `guard.indexOf('state.' + key) >= 0`, and the guard's last two terms are
+  // `state.confirmRemove || state.confirmRemovePara` -- so 'state.confirmRemove' matched INSIDE
+  // 'state.confirmRemovePara'. The delta audit deleted `state.confirmRemove` from the guard and
+  // ran the whole suite against it: 26/26 PASS, while the 1s tick rebuilt the document under an
+  // armed delete confirmation -- Aaron's own v45 report, restored, with the completeness check
+  // green over the top of it. A check built to stop a ninth omission could not see the first one
+  // it was given.
+  //
+  // Slicing from `return !!(` also shuts a second mouth: the guard's comment is inside
+  // String(liveEditingSurfaceOpen) and happens to contain no `state.` token today, so a future
+  // comment mentioning `state.foo` would silently exempt it.
+  const expr = r.guard.slice(r.guard.indexOf('return !!('));
+  const guarded = new Set([...expr.matchAll(/state\.(\w+)/g)].map(m => m[1]));
+  ok('the guard parses into whole tokens, not a text blob', guarded.size > 15,
+    'tokens: ' + guarded.size);
+  const unaccounted = r.keys.filter(k => !guarded.has(k) && !EXEMPT[k]);
   ok('EVERY dismissible layer is either guarded or exempted with a reason',
     unaccounted.length === 0,
     unaccounted.length ? 'unaccounted: ' + unaccounted.join(', ') + ' — guard it, or exempt it here and say why' : '');

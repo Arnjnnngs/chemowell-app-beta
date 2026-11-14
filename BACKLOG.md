@@ -1493,34 +1493,48 @@ commit is already published and GitHub Pages and the Android build have both run
 **Never put backticks in a double-quoted `-m` argument**; use a heredoc with `-F -`, which is what
 every other commit in this release used.
 
-### M52 — Four more timers can rebuild the tree under an open sheet (S)
+### M52 — Timers that can rebuild the tree under an open sheet — **TWO FIXED, TWO OPEN (corrected 2026-11-14)**
 
 app-v95 fixed the two that fire after every log — the toast (4.5s) and the card flash (1.8s) — and
 unified the guard the 1s tick had carried alone since v11 into `liveEditingSurfaceOpen()`. **Four
 more `setTimeout` callbacks still call `setState` on a wall clock**, and `render()` rebuilds the
 whole tree every time, so each can destroy an input the caregiver is using:
 
-* `_undoInpatientTimer`, 5000ms — clears `confirmUndoInpatient`
-* the inline 6000ms timer that disarms `confirmRemove`
-* the inline 6000ms timer that disarms `confirmClearChemo`
+* ~~`_undoInpatientTimer`, 5000ms — clears `confirmUndoInpatient`~~ **FIXED in app-v95's delta**
+* the inline 6000ms timer that disarms `confirmRemove` — still open, and correctly so
+* ~~the inline 6000ms timer that disarms `confirmClearChemo`~~ **FIXED in app-v95's delta**
 * `medFormRerenderTimer`, 450ms — gated on `state.medEditor`, so it only fires while that sheet is
   open, which is the one case where a rebuild is certain to hit something
 
-**They were deliberately not given the same deferral, and the reason is worth keeping.** For the
-three confirms, *their own state is the open surface*: `confirmRemove` is in
-`liveEditingSurfaceOpen()`'s own list, so deferring its auto-disarm while it is open would mean
-never disarming it. A tap-to-arm control that stays armed indefinitely is a worse defect than the
-one being fixed — it is a delete button that stays hot. Their fix is a different shape: clear the
-state without forcing a render, and let the next interaction repaint, accepting that the button
-looks armed slightly longer than it is.
+**THE REASON ORIGINALLY GIVEN HERE WAS WRONG, AND THE app-v95 AUDIT CAUGHT IT.** This entry said
+all three confirms must keep an undeferred disarm because *their own state is the open surface* —
+true of **`confirmRemove` alone**, which is in `liveEditingSurfaceOpen()`'s list, so deferring its
+auto-disarm would leave a delete button hot indefinitely. **`confirmUndoInpatient` and
+`confirmClearChemo` are not in that list**, so they can defer and still disarm normally, and they
+do as of app-v95.
+
+What believing the wrong version cost, measured by the auditor rather than argued: In-Patient is a
+bottom-nav screen whose `+` (open the past-stay sheet, which carries a time field) and `Undo` (arm
+the 5-second timer) sit **8px apart in the same row**, so *"Undo that, then + to log it properly"*
+is the natural corrective sequence — and the open field ceased to exist **5315ms** into it.
+app-v95's first build had moved that from 4.5s to 5.3s and called it fixed.
+
+**Still open, and genuinely so:**
+* `confirmRemove`'s 6000ms disarm — the one the original reasoning actually describes. Its fix is a
+  different shape: clear the state without forcing a render and let the next interaction repaint,
+  accepting that the button looks armed slightly longer than it is.
+* `medFormRerenderTimer`, 450ms — it exists to reflow the medication editor as you type, so it
+  *must* re-render. What it needs is to preserve the focused field across that render, not to skip
+  it.
 
 `medFormRerenderTimer` is its own case: it exists to reflow the medication editor as you type, so
 it *must* re-render, and what it needs is to preserve the focused field across that render rather
 than to skip it.
 
-**Reachability is low but not zero** — each needs a confirm armed or the editor open, and then a
-sheet opened on top within six seconds. The toast was the one that fires after *every single log*,
-which is why Aaron hit it immediately and these have never been reported. Fix them when something
+**Reachability was called low here and that was wrong too** — the In-Patient pair is two adjacent
+buttons on a bottom-nav screen, which is as reachable as the toast. The lesson is the one this
+whole release is about: an exclusion written from reasoning rather than measurement is a defect
+with a note attached. Fix them when something
 else takes that area, and give each a mutant in `falsify/mutants-v95-sheet.sh` when you do.
 
 **The structural point, for whoever reads this next.** `render()` tearing down the whole document

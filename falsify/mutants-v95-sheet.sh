@@ -115,15 +115,20 @@ io.open(p,'w',encoding='utf-8').write(s.replace(old,"|| state.eraseAllModalOpen 
 MUT
 }
 
-MUTANT_DESC_9="a layer leaves the guard entirely -- the completeness check must notice"
+MUTANT_DESC_9="state.confirmRemove leaves the guard -- the substring trap the delta audit found"
 # Not about any one surface: this is the check that exists so a NINTH omission is found by a suite
 # rather than by a person. Any removed term should redden it.
 mutant_9() {
   python3 - <<'MUT'
 import io
 p='index.html'; s=io.open(p,encoding='utf-8').read()
-old = " || state.confirmRemovePara);"
+# REPOINTED. It used to remove `state.confirmRemovePara`, whose name is unique -- so the old
+# substring-matching check caught it and the corpus read "0 known open holes" while the real hole
+# was open. `state.confirmRemove` is the one that hides inside its neighbour, so it is the one
+# worth reverting: on the old check the whole suite scored 26/26 with this term gone and the tick
+# rebuilding under an armed delete confirmation.
+old = " || state.confirmRemove || state.confirmRemovePara);"
 assert s.count(old)==1
-io.open(p,'w',encoding='utf-8').write(s.replace(old,");"))
+io.open(p,'w',encoding='utf-8').write(s.replace(old," || state.confirmRemovePara);"))
 MUT
 }
