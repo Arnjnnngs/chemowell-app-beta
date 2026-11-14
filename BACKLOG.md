@@ -1445,3 +1445,39 @@ a finding somebody has to notice. Cheap, and it retires a whole class.
 
 Out of scope for M50 and worth saying: this does **not** extend to the README's version-history
 prose, which is a historical record and is allowed to describe what was true at the time.
+
+### M51 — `verify-live.yml` is red on main and hides the deploy check behind it (M)
+
+Found while promoting app-v94 on 14 November. Two defects, and the second is the one that matters.
+
+**It has been red since app-v92.** That run failed two suites that are green in the sandbox and
+green on `release_check.sh`: `contrast-scan` reported *"Reports / Temperature (1 of 54 below AA)"*
+at 326/327, and `overflow-scan` crashed with a Node error before reporting. Neither was
+investigated, so for two releases the only automated statement about what is live has been a red
+tick nobody read — and this workflow's own header comment says *"a gate that is always red says
+nothing; a gate that dies before it runs says less."*
+
+**And the live check cannot run while that is true.** The job's steps are ordered: *"The quality
+chain must have run for what is on main"* calls `release_check.sh` and `exit 1`s on failure, so
+*"Wait for Pages, then read the live files"* never executes. Those are two independent facts —
+whether the chain ran, and whether the deploy landed — and the step's own error text calls the
+chain check *"a report rather than a block"* once the push has happened. So the **app-v40 failure
+this entire file exists to catch** (`index.html` changed, `sw.js`'s CACHE not, every installed copy
+serving the old shell forever, no error, no warning) is unguarded exactly when the other check is
+red. app-v94's deploy had to be confirmed by reading GitHub's own `pages build and deployment` run
+for the sha instead, because **the live site is unreachable from this environment**: the network
+policy answers `403` to `CONNECT` for `arnjnnngs.github.io`, which is the same wall the file's
+header comment describes hitting ten times after app-v75.
+
+**The fix, in order:** give the live step `if: always()` so it reports whatever the chain check did;
+then diagnose the two runner-only failures (the contrast one smells like font rendering differing
+between the runner and this sandbox, which would mean the threshold or the fixture needs to tolerate
+it rather than the app needing a change — measure before assuming). It touches
+`.github/workflows/`, which is in `RULE5_PATHS`, so it needs an audit and a PM sign-off.
+
+**Also worth a line, since it cost a published commit message.** `9719ee8` on `main` reads *"the
+live step wants ,"* — a pair of backticks inside a `git commit -m "..."` string made bash run the
+enclosed text as a command, and the phrase vanished. The message is not amended, because that
+commit is already published and GitHub Pages and the Android build have both run against it.
+**Never put backticks in a double-quoted `-m` argument**; use a heredoc with `-F -`, which is what
+every other commit in this release used.
