@@ -132,3 +132,17 @@ assert s.count(old)==1
 io.open(p,'w',encoding='utf-8').write(s.replace(old," || state.confirmRemovePara);"))
 MUT
 }
+
+MUTANT_DESC_10="a guard term is NEGATED rather than removed -- the delta-3 audit's N1"
+# One character. The term is still present, so a check that asks "is this key mentioned" stays
+# green while the add-profile sheet -- which has a name field in it -- is rebuilt once a second.
+# The completeness check requires each `||` arm to be exactly `state.<key>`, so this reddens.
+mutant_10() {
+  python3 - <<'MUT'
+import io
+p='index.html'; s=io.open(p,encoding='utf-8').read()
+old = "|| state.whatsNewOpen || state.addingProfile"
+assert s.count(old)==1
+io.open(p,'w',encoding='utf-8').write(s.replace(old,"|| state.whatsNewOpen || !state.addingProfile"))
+MUT
+}

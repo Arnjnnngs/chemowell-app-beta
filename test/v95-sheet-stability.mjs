@@ -311,7 +311,7 @@ const toastShowing = (page) => page.evaluate(() => !!document.querySelector('[da
     card.__probeMark = 'original';
     return true;
   });
-  ok("the What's New sheet is open on first run", marked);
+  ok("the What's New sheet is open after an update", marked);
   if (marked) {
     await page.waitForTimeout(3200);                       // three ticks
     const still = await page.evaluate(() => {
@@ -425,10 +425,22 @@ const toastShowing = (page) => page.evaluate(() => !!document.querySelector('[da
   // Slicing from `return !!(` also shuts a second mouth: the guard's comment is inside
   // String(liveEditingSurfaceOpen) and happens to contain no `state.` token today, so a future
   // comment mentioning `state.foo` would silently exempt it.
-  const expr = r.guard.slice(r.guard.indexOf('return !!('));
-  const guarded = new Set([...expr.matchAll(/state\.(\w+)/g)].map(m => m[1]));
-  ok('the guard parses into whole tokens, not a text blob', guarded.size > 15,
-    'tokens: ' + guarded.size);
+  // AND IT MUST BE A DISJUNCT, NOT MERELY MENTIONED. The token version of this check proved a
+  // key appeared somewhere in the expression, which is a weaker claim than "this key makes the
+  // guard true". The delta-3 audit showed the gap with one character: `|| !state.addingProfile`
+  // leaves the whole suite green while the add-profile sheet -- which has a name field in it --
+  // is rebuilt once a second. So each `||` arm must be exactly `state.<key>` and nothing else;
+  // a negation, a parenthesised expression or a `false &&` no longer counts as cover.
+  // Cut to the matching parenthesis rather than stripping a trailing `);` -- the source of a
+  // function ends `);\n}`, so the naive strip left the closing brace glued to the LAST arm and
+  // that one arm alone failed the shape test. It surfaced the moment the shape test went in,
+  // which is the check doing its job on itself.
+  const src = r.guard.slice(r.guard.indexOf('return !!('));
+  const expr = src.slice(src.indexOf('(') + 1, src.lastIndexOf(')'));
+  const arms = expr.split('||').map(x => x.trim());
+  const guarded = new Set(arms.filter(a => /^state\.\w+$/.test(a)).map(a => a.slice(6)));
+  ok('the guard parses into plain state.<key> disjuncts', guarded.size > 15,
+    'disjuncts: ' + guarded.size + ' of ' + arms.length + ' arms');
   const unaccounted = r.keys.filter(k => !guarded.has(k) && !EXEMPT[k]);
   ok('EVERY dismissible layer is either guarded or exempted with a reason',
     unaccounted.length === 0,
@@ -452,3 +464,9 @@ console.log('');
 console.log(checks + ' checks: ' + (checks - fails.length) + ' passed, ' + fails.length + ' failed');
 if (fails.length) { console.log('\nFAILURES:'); fails.forEach(f => console.log('  - ' + f)); process.exit(1); }
 console.log('PASS — a sheet survives the timers that fire underneath it, and the toast still clears.');
+// Stand the crash handlers down and exit explicitly. Without this a late rejection arriving after
+// the tally prints a SECOND, contradictory tally and exits 1 -- a false red, which hides nothing
+// but which release_check.sh reads as a failure.
+process.removeAllListeners('uncaughtException');
+process.removeAllListeners('unhandledRejection');
+process.exit(0);
