@@ -50,6 +50,12 @@ const freeze = `(() => { const F = ${FROZEN}; const R = Date;
 const win = (id, name) => ({ id, name, type: 'win', schemaV: 2, quickLog: true,
   doses: [{ label: '10 mg', mg: 10 }], windows: [{ start: 17, end: 21, name: 'Daily' }] });
 const MEDS = [win('bp2', 'Blood pressure dose 2'), win('bp3', 'Blood pressure dose 3')];
+// TWO dose options, so the hero cannot log it directly (`canLogHere = openNow && doses.length <= 1`)
+// and offers "Show me the card" instead -- which is the only control that arms the card-flash
+// timer. Without this fixture the flash timer never runs and its mutant is a no-op.
+const TWO_DOSE = [{ id: 'bp4', name: 'Blood pressure dose 4', type: 'win', schemaV: 2, quickLog: true,
+  doses: [{ label: '5 mg', mg: 5 }, { label: '10 mg', mg: 10 }],
+  windows: [{ start: 17, end: 21, name: 'Daily' }] }];
 
 let server = null, BASE = BASE_IN;
 if (!BASE) {
@@ -79,7 +85,7 @@ const ok = (label, cond, detail) => {
 
 const b = await chromium.launch();
 const noise = [];
-async function open() {
+async function open(meds) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 900 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1, timezoneId: 'UTC' });
   await ctx.route('**/*', (route) => {
     const u = route.request().url();
@@ -100,7 +106,7 @@ async function open() {
     localStorage.setItem('chemowell-app-profiles-v1', JSON.stringify({ list: [{ id: 'p1', name: 'Aaron', createdAt: 1 }], activeId: 'p1' }));
     localStorage.setItem('chemowell-app-license-v1', JSON.stringify({ tier: 'free' }));
     localStorage.setItem(P + 'prefs-v1', JSON.stringify({ patientName: 'Aaron', onboarded: true, treatmentType: 'chemo', tourDone: true }));
-    localStorage.setItem(P + 'med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: ${JSON.stringify(MEDS)} }));
+    localStorage.setItem(P + 'med-v1', JSON.stringify({ version: 2, archivedMeds: {}, meds: ${JSON.stringify(meds || MEDS)} }));
     localStorage.setItem(P + 'entries-v1', JSON.stringify([]));
   })()`);
   await page.goto(BASE, { waitUntil: 'load' });
@@ -198,6 +204,65 @@ const toastShowing = (page) => page.evaluate(() => !!document.querySelector('[da
   const s = await sampleInput(page);
   ok('three seconds of ticks do not replace the open field', s.present && s.isOriginal,
     JSON.stringify(s));
+  await ctx.close();
+}
+
+// ---- A FOCUSED FIELD WITH NO SHEET OPEN ------------------------------------------------------
+// The guard's first clause is "is something focused", inherited from the tick's `isEditing`. Every
+// scenario above also has a sheet open, so the sheet clause alone satisfies them and a build that
+// stopped caring about focus passes all of them. This is the case where focus is the ONLY thing
+// protecting the field: the Beta date controls' date input, on Home, with a toast still counting
+// down and no modal anywhere.
+{
+  const { ctx, page } = await open();
+  await page.locator('button:has-text("Log this dose")').first().click();
+  await page.waitForTimeout(350);
+  await page.locator('button:has-text("Confirm")').first().click();
+  await page.waitForTimeout(350);
+  ok('a toast is counting down with no sheet open', await toastShowing(page));
+  const panel = page.locator('button:has-text("BETA DATE CONTROLS"), [role="button"]:has-text("BETA DATE CONTROLS")').first();
+  if (await panel.count()) { await panel.click(); await page.waitForTimeout(350); }
+  const focused = await page.evaluate(() => {
+    const el = document.querySelector('input[type="date"]');
+    if (!el) return false;
+    el.__probeMark = 'original';
+    el.focus();
+    return document.activeElement === el;
+  });
+  ok('the beta date field is focused and no sheet is open', focused
+    && !(await page.locator('input[type="time"]').count()));
+  await page.waitForTimeout(5200);
+  const after = await page.evaluate(() => {
+    const el = document.querySelector('input[type="date"]');
+    return { present: !!el, isOriginal: !!(el && el.__probeMark === 'original'), focused: !!(el && document.activeElement === el) };
+  });
+  ok('a focused field alone is enough to hold the rebuild off', after.present && after.isOriginal,
+    JSON.stringify(after));
+  await ctx.close();
+}
+
+// ---- THE CARD-FLASH TIMER, WHICH ONLY ARMS FROM "SHOW ME THE CARD" ---------------------------
+// A medication with two dose options cannot be logged from the hero, so the hero offers the card
+// instead -- and that control is the only thing that sets the flash. Its timer is 1.8s, so this
+// scenario does not need the toast at all.
+{
+  const { ctx, page } = await open(TWO_DOSE);
+  const show = page.locator('button:has-text("Show me the card")').first();
+  ok('a two-dose medication offers the card instead of logging in place', await show.count() > 0);
+  if (await show.count()) {
+    await show.click();                       // arms the 1.8s flash
+    await page.waitForTimeout(250);
+    const dose = page.locator('button:has-text("10 mg")').first();
+    if (await dose.count()) {
+      await dose.click();
+      await page.waitForTimeout(350);
+      ok('and its dose opens a sheet', await markInput(page));
+      await page.waitForTimeout(2600);        // past the flash's 1.8s
+      const s2 = await sampleInput(page);
+      ok('the card-flash timer does not destroy the open sheet', s2.present && s2.isOriginal,
+        JSON.stringify(s2));
+    } else { ok('and its dose opens a sheet', false, 'no dose button found on the card'); }
+  }
   await ctx.close();
 }
 
