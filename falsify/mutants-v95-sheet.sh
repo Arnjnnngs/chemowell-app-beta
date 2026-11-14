@@ -11,13 +11,17 @@ mutant_1() {
   python3 - <<'MUT'
 import io
 p='index.html'; s=io.open(p,encoding='utf-8').read()
-old = """  toastTimer = setTimeout(function clearToast() {
-    if (!state.toast) return;
+# ANCHOR ON THE DECIDING LINES, NOT THE BLOCK. This mutant spanned the whole callback twice and
+# went stale twice -- once when app-v95's F4 fix added a bail line, once when the comment above
+# that line was written. Both times falsify.sh reported DID NOT APPLY and the mutant for the
+# defect this release exists to fix silently did not run. A mutant's anchor should be the smallest
+# text that identifies the decision it is reverting, so that editing the prose around it cannot
+# disarm it.
+old = """    if (!state.toast) return;
     if (liveEditingSurfaceOpen()) { toastTimer = setTimeout(clearToast, 600); return; }
-    setState({ toast: null });
-  }, 4500);"""
+"""
 assert s.count(old)==1
-io.open(p,'w',encoding='utf-8').write(s.replace(old,"  toastTimer = setTimeout(() => setState({ toast: null }), 4500);"))
+io.open(p,'w',encoding='utf-8').write(s.replace(old,""))
 MUT
 }
 
