@@ -1492,3 +1492,39 @@ enclosed text as a command, and the phrase vanished. The message is not amended,
 commit is already published and GitHub Pages and the Android build have both run against it.
 **Never put backticks in a double-quoted `-m` argument**; use a heredoc with `-F -`, which is what
 every other commit in this release used.
+
+### M52 — Four more timers can rebuild the tree under an open sheet (S)
+
+app-v95 fixed the two that fire after every log — the toast (4.5s) and the card flash (1.8s) — and
+unified the guard the 1s tick had carried alone since v11 into `liveEditingSurfaceOpen()`. **Four
+more `setTimeout` callbacks still call `setState` on a wall clock**, and `render()` rebuilds the
+whole tree every time, so each can destroy an input the caregiver is using:
+
+* `_undoInpatientTimer`, 5000ms — clears `confirmUndoInpatient`
+* the inline 6000ms timer that disarms `confirmRemove`
+* the inline 6000ms timer that disarms `confirmClearChemo`
+* `medFormRerenderTimer`, 450ms — gated on `state.medEditor`, so it only fires while that sheet is
+  open, which is the one case where a rebuild is certain to hit something
+
+**They were deliberately not given the same deferral, and the reason is worth keeping.** For the
+three confirms, *their own state is the open surface*: `confirmRemove` is in
+`liveEditingSurfaceOpen()`'s own list, so deferring its auto-disarm while it is open would mean
+never disarming it. A tap-to-arm control that stays armed indefinitely is a worse defect than the
+one being fixed — it is a delete button that stays hot. Their fix is a different shape: clear the
+state without forcing a render, and let the next interaction repaint, accepting that the button
+looks armed slightly longer than it is.
+
+`medFormRerenderTimer` is its own case: it exists to reflow the medication editor as you type, so
+it *must* re-render, and what it needs is to preserve the focused field across that render rather
+than to skip it.
+
+**Reachability is low but not zero** — each needs a confirm armed or the editor open, and then a
+sheet opened on top within six seconds. The toast was the one that fires after *every single log*,
+which is why Aaron hit it immediately and these have never been reported. Fix them when something
+else takes that area, and give each a mutant in `falsify/mutants-v95-sheet.sh` when you do.
+
+**The structural point, for whoever reads this next.** `render()` tearing down the whole document
+is the root cause, not any one timer. Five releases have now patched a guard list instead
+(v11, v22, v27, v45, v55 on the tick, and app-v95 on two timers). A renderer that reconciles rather
+than replaces would retire the entire class — it is a large change and wants its own release, but
+every one of these entries is interest on it.
